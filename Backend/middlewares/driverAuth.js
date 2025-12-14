@@ -4,20 +4,27 @@ import { isTokenRevoked } from '../services/redis-jwt-service.js';
 
 export default async function driverAuth(req, res, next) {
   try {
-    const token = req.cookies?.driverToken;
+    // Get token from Authorization header instead of cookie
+    const authHeader = req.headers.authorization;
+    const token = authHeader && authHeader.startsWith('Bearer ')
+      ? authHeader.substring(7)
+      : null;
+
     if (!token) {
       return res.status(HttpStatus.UNAUTHORIZED).json({ message: 'UNAUTHORIZED' });
     }
+
     const isRevoked = await isTokenRevoked(token);
-    if(isRevoked){
+    if (isRevoked) {
       console.log('driver token is revoked')
       return res.status(HttpStatus.UNAUTHORIZED).json({ message: 'UNAUTHORIZED' });
     }
+
     const decoded = verifyToken(token);
     req.driver = decoded;
     next();
   } catch (err) {
-    console.log('driver auth middleware error',err.message)
+    console.log('driver auth middleware error', err.message)
     return res.status(HttpStatus.UNAUTHORIZED).json({ message: 'UNAUTHORIZED' });
   }
 }

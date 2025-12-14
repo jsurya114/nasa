@@ -3,36 +3,48 @@ import axios from "axios";
 import { toast } from "react-toastify";
 import { API_BASE_URL } from "../../../config";
 
+// Helper function to get auth headers
+const getAuthHeaders = () => {
+  const token = localStorage.getItem('adminToken');
+  return {
+    ...(token && { "Authorization": `Bearer ${token}` })
+  };
+};
+
 // Async thunk to fetch driver payment data
 export const fetchDriverPayment = createAsyncThunk(
   "driverPayment/fetchDriverPayment",
   async (_, { rejectWithValue }) => {
     try {
-      const res = await axios.get(`${API_BASE_URL}/admin/doubleStop/calculatePayment`);
+      const res = await axios.get(`${API_BASE_URL}/admin/doubleStop/calculatePayment`, {
+        headers: getAuthHeaders()
+      });
       return res.data;
     } catch (error) {
       return rejectWithValue(error.response?.data || "Something went wrong");
     }
   }
 );
-
 
 export const updateWeeklyExcelToDashboard = createAsyncThunk(
   "driverPayment/update-weekly-excel-to-dashboard",
   async (_, { rejectWithValue }) => {
     try {
-      const res = await axios.post(`${API_BASE_URL}/admin/doubleStop/update-weekly-excel-to-dashboard`);
-      console.log("Data after updating data in dashboard ",res.data);
+      const res = await axios.post(`${API_BASE_URL}/admin/doubleStop/update-weekly-excel-to-dashboard`, {}, {
+        headers: getAuthHeaders()
+      });
+      console.log("Data after updating data in dashboard ", res.data);
       return res.data;
     } catch (error) {
       return rejectWithValue(error.response?.data || "Something went wrong");
     }
   }
 );
+
 const driverPaymentSlice = createSlice({
   name: "driverPayment",
   initialState: {
-    message:true,
+    message: true,
     data: null,
     loading: false,
     error: null,
@@ -60,14 +72,14 @@ const driverPaymentSlice = createSlice({
       })
       .addCase(updateWeeklyExcelToDashboard.fulfilled, (state, action) => {
         state.loading = false;
-        state.data=null;
+        state.data = null;
       })
       .addCase(updateWeeklyExcelToDashboard.rejected, (state, action) => {
         state.loading = false;
         console.log(action.payload);
         state.error = action.payload;
         toast.error(`Error: ${action.payload}`);
-      })
+      });
   },
 });
 

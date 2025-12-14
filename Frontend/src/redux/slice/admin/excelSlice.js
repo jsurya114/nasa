@@ -1,26 +1,43 @@
-import {createSlice,createAsyncThunk} from "@reduxjs/toolkit"
+import { createSlice, createAsyncThunk } from "@reduxjs/toolkit"
 import { API_BASE_URL } from "../../../config"
+
+// Helper function to get auth headers for file uploads
+const getAuthHeaders = (isFormData = false) => {
+  const token = localStorage.getItem('adminToken');
+  const headers = {};
+  
+  // Don't set Content-Type for FormData - browser will set it with boundary
+  if (!isFormData) {
+    headers['Content-Type'] = 'application/json';
+  }
+  
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+  
+  return headers;
+};
+
+// Async thunk for daily file upload
 export const excelDailyFileUpload = createAsyncThunk(
-    'admin/uploadExcel',
-    async(formData,{rejectWithValue})=>{
-        try {
-            // const form = new FormData(fkr)
-            // form.append('file',file)
-            const res = await fetch(`${API_BASE_URL}/admin/doubleStop/dailyFileUpload`,{
-                method:'POST',
-                body:formData,
-                credentials: 'include',
-            })
-            const data = await res.json()
-            console.log(data,'excel file upload staus')
-            if(!res.ok){
-                return rejectWithValue(data.message || 'Excel file upload failed')
-            }
-            return data
-        } catch (error) {
-            return rejectWithValue(error.message)
-        }
+  'admin/uploadExcel',
+  async (formData, { rejectWithValue }) => {
+    try {
+      const res = await fetch(`${API_BASE_URL}/admin/doubleStop/dailyFileUpload`, {
+        method: 'POST',
+        body: formData,
+        headers: getAuthHeaders(true), // true = FormData, don't set Content-Type
+      })
+      const data = await res.json()
+      console.log(data, 'excel file upload status')
+      if (!res.ok) {
+        return rejectWithValue(data.message || 'Excel file upload failed')
+      }
+      return data
+    } catch (error) {
+      return rejectWithValue(error.message)
     }
+  }
 )
 
 // Async thunk for weekly file upload
@@ -28,15 +45,20 @@ export const excelWeeklyFileUpload = createAsyncThunk(
   "excel/uploadWeekly",
   async (formData, { rejectWithValue }) => {
     try {
-      console.log("File from React ",formData);
+      console.log("File from React ", formData);
       const res = await fetch(`${API_BASE_URL}/admin/doubleStop/weekly-upload`, {
         method: "POST",
         body: formData,
-        credentials: 'include',
+        headers: getAuthHeaders(true), // true = FormData, don't set Content-Type
       });
-      let data= await res.json();
-      console.log(data,"Data from backend for weekly")
-      if (!res.ok) throw new Error("Weekly upload failed");
+      
+      if (!res.ok) {
+        const error = await res.json();
+        return rejectWithValue(error.message || "Weekly upload failed");
+      }
+      
+      let data = await res.json();
+      console.log(data, "Data from backend for weekly")
       return data;
     } catch (error) {
       return rejectWithValue(error.message);
@@ -44,15 +66,13 @@ export const excelWeeklyFileUpload = createAsyncThunk(
   }
 );
 
-
-
-
 const excelSlice = createSlice({
   name: "excel",
-  initialState: {  weekly: {
+  initialState: {
+    weekly: {
       loading: false,
       success: null,
-      message:null,
+      message: null,
       error: null,
       data: null,
     },
@@ -64,8 +84,8 @@ const excelSlice = createSlice({
     }
   },
   reducers: {
-      clearWeeklyState: (state) => {
-      state.weekly = { loading: false, success: false, error: null, data: null };
+    clearWeeklyState: (state) => {
+      state.weekly = { loading: false, success: false, error: null, data: null, message: null };
     },
     clearDailyState: (state) => {
       state.daily = { loading: false, success: false, error: null, data: null };
@@ -75,20 +95,20 @@ const excelSlice = createSlice({
     // Daily Upload
     builder
       .addCase(excelDailyFileUpload.pending, (state) => {
-        state.loading = true;
-        state.error = null;
-        state.success = false;
+        state.daily.loading = true;
+        state.daily.error = null;
+        state.daily.success = false;
       })
       .addCase(excelDailyFileUpload.fulfilled, (state) => {
-        state.loading = false;
-        state.success = true;
+        state.daily.loading = false;
+        state.daily.success = true;
       })
       .addCase(excelDailyFileUpload.rejected, (state, action) => {
-        state.loading = false;
-        state.error = action.payload || "Upload failed";
+        state.daily.loading = false;
+        state.daily.error = action.payload || "Upload failed";
       });
 
-      // Weekly Upload
+    // Weekly Upload
     builder
       .addCase(excelWeeklyFileUpload.pending, (state) => {
         state.weekly.loading = true;
@@ -96,21 +116,18 @@ const excelSlice = createSlice({
         state.weekly.success = false;
       })
       .addCase(excelWeeklyFileUpload.fulfilled, (state, action) => {
-        console.log("Excel upload",action.payload);
+        console.log("Excel upload", action.payload);
         state.weekly.loading = false;
         state.weekly.success = action.payload.message;
-        state.weekly.message=action.payload.message;
+        state.weekly.message = action.payload.message;
         state.weekly.data = action.payload.insertedData;
       })
       .addCase(excelWeeklyFileUpload.rejected, (state, action) => {
         state.weekly.loading = false;
-        // state.weekly.message="Uploading";
-        state.weekly.error =action.payload.message || "Error while Uploading";
+        state.weekly.error = action.payload || "Error while Uploading";
       });
-
   },
 });
 
-
-export const {clearDailyState,clearWeeklyState} = excelSlice.actions
+export const { clearDailyState, clearWeeklyState } = excelSlice.actions
 export default excelSlice.reducer;

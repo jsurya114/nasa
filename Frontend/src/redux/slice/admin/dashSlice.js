@@ -2,12 +2,22 @@ import { createSlice, createAsyncThunk } from "@reduxjs/toolkit";
 import axios from "axios";
 import { API_BASE_URL } from "../../../config";
 
+// Helper function to get auth headers
+const getAuthHeaders = () => {
+  const token = localStorage.getItem('adminToken');
+  return {
+    ...(token && { "Authorization": `Bearer ${token}` })
+  };
+};
+
 // Async thunk to fetch dashboard data (cities, drivers, routes)
 export const fetchDashboardData = createAsyncThunk(
   "dashboard/fetchDashboardData",
   async (_, { rejectWithValue }) => {
     try {
-      const res = await axios.get(`${API_BASE_URL}/admin/dashboard/data`);
+      const res = await axios.get(`${API_BASE_URL}/admin/dashboard/data`, {
+        headers: getAuthHeaders()
+      });
       if (!res.data.success) throw new Error(res.data.message);
       return res.data.data;
     } catch (err) {
@@ -22,7 +32,8 @@ export const fetchFilteredPaymentData = createAsyncThunk(
   async (filters, { rejectWithValue }) => {
     try {
       const res = await axios.get(`${API_BASE_URL}/admin/dashboard/paymentTable`, {
-        params: filters
+        params: filters,
+        headers: getAuthHeaders()
       });
       if (!res.data.success) throw new Error(res.data.message);
       return res.data.data;

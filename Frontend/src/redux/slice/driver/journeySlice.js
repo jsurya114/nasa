@@ -1,12 +1,24 @@
 import { createSlice, createAsyncThunk } from "@reduxjs/toolkit";
 import { API_BASE_URL } from "../../../config";
 
+// Helper function to get auth headers
+const getAuthHeaders = () => {
+  const token = localStorage.getItem('adminToken') || localStorage.getItem('driverToken');
+  return {
+    "Content-Type": "application/json",
+    ...(token && { "Authorization": `Bearer ${token}` })
+  };
+};
+
 // Fetch all routes (for driver app) with request cancellation
 export const fetchRoutes = createAsyncThunk(
   "routes/fetchRoutes", 
   async (_, { signal, rejectWithValue }) => {
     try {
-      const res = await fetch(`${API_BASE_URL}/driver/routes-list`, { signal, credentials: 'include' });
+      const res = await fetch(`${API_BASE_URL}/driver/routes-list`, { 
+        signal, 
+        headers: getAuthHeaders() 
+      });
       
       if (!res.ok) {
         const error = await res.json().catch(() => ({}));
@@ -24,7 +36,6 @@ export const fetchRoutes = createAsyncThunk(
     }
   },
   {
-    // Prevent duplicate fetches - check status before dispatching
     condition: (_, { getState }) => {
       const { journey } = getState();
       return journey.routesStatus !== 'loading' && journey.routesStatus !== 'succeeded';
@@ -37,10 +48,9 @@ export const fetchAdminRoutes = createAsyncThunk(
   "routes/fetchAdminRoutes", 
   async (_, { signal, rejectWithValue }) => {
     try {
-      // Use routes-list endpoint instead of paginated routes endpoint
       const res = await fetch(`${API_BASE_URL}/admin/routes-list`, { 
         signal, 
-        credentials: 'include' 
+        headers: getAuthHeaders() 
       });
       
       if (!res.ok) {
@@ -49,7 +59,6 @@ export const fetchAdminRoutes = createAsyncThunk(
       }
       
       const data = await res.json();
-      // Handle different response formats
       return data.routes || data.data || data || [];
     } catch (error) {
       if (error.name === 'AbortError') {
@@ -76,7 +85,10 @@ export const fetchTodayJourney = createAsyncThunk(
         return rejectWithValue("Driver ID is required");
       }
 
-      const res = await fetch(`${API_BASE_URL}/driver/journey/${driver_id}`, { signal, credentials: 'include' });
+      const res = await fetch(`${API_BASE_URL}/driver/journey/${driver_id}`, { 
+        signal, 
+        headers: getAuthHeaders() 
+      });
       
       if (!res.ok) {
         const error = await res.json().catch(() => ({}));
@@ -102,9 +114,8 @@ export const saveJourney = createAsyncThunk(
     try {
       const res = await fetch(`${API_BASE_URL}/driver/journey`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: getAuthHeaders(),
         body: JSON.stringify(journeyData),
-        credentials: 'include',
       });
       
       const data = await res.json();
@@ -126,7 +137,10 @@ export const fetchAllJourneys = createAsyncThunk(
   "journeys/fetchAllJourneys",
   async (_, { signal, rejectWithValue }) => {
     try {
-      const res = await fetch(`${API_BASE_URL}/admin/journeys`, { signal, credentials: 'include' });
+      const res = await fetch(`${API_BASE_URL}/admin/journeys`, { 
+        signal, 
+        headers: getAuthHeaders() 
+      });
       
       if (!res.ok) {
         return rejectWithValue("Failed to fetch all journeys");
@@ -151,9 +165,8 @@ export const addJourney = createAsyncThunk(
     try {
       const res = await fetch(`${API_BASE_URL}/admin/journey`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: getAuthHeaders(),
         body: JSON.stringify(journeyData),
-        credentials: 'include',
       });
       
       const data = await res.json();
@@ -175,7 +188,10 @@ export const fetchAllDrivers = createAsyncThunk(
   "drivers/fetchAll",
   async (_, { signal, rejectWithValue }) => {
     try {
-      const res = await fetch(`${API_BASE_URL}/admin/drivers`, { signal, credentials: 'include' });
+      const res = await fetch(`${API_BASE_URL}/admin/drivers`, { 
+        signal, 
+        headers: getAuthHeaders() 
+      });
       
       if (!res.ok) {
         return rejectWithValue("Failed to fetch drivers");
@@ -206,16 +222,14 @@ export const updateJourney = createAsyncThunk(
     try {
       const res = await fetch(`${API_BASE_URL}/admin/journey/${journey_id}`, {
         method: "PUT",
-        headers: { "Content-Type": "application/json" },
+        headers: getAuthHeaders(),
         body: JSON.stringify(updatedData),
-        credentials: 'include',
       });
 
       const data = await res.json();
 
-      // FIX: properly handle backend validation errors
       if (!res.ok) {
-        return rejectWithValue(data); // contains { errors: ... }
+        return rejectWithValue(data);
       }
 
       return data.data;
@@ -225,7 +239,6 @@ export const updateJourney = createAsyncThunk(
     }
   }
 );
-
 
 const journeySlice = createSlice({
   name: "journey",
@@ -257,14 +270,12 @@ const journeySlice = createSlice({
     resetJourneyStatus(state) {
       state.journeyStatus = "idle";
     },
-    // Reset all status to force fresh data fetch
     resetAllStatus(state) {
       state.routesStatus = "idle";
       state.journeyStatus = "idle";
       state.adminStatus = "idle";
       state.driversStatus = "idle";
     },
-    // Clear all data (useful for logout)
     clearAllData(state) {
       state.routes = [];
       state.journeys = [];
@@ -294,7 +305,6 @@ const journeySlice = createSlice({
         state.routesError = null;
       })
       .addCase(fetchRoutes.rejected, (state, action) => {
-        // Don't set error for cancelled requests
         if (action.payload !== 'Request cancelled') {
           state.routesStatus = "failed";
           state.routesError = action.payload || action.error.message;
@@ -343,10 +353,9 @@ const journeySlice = createSlice({
       })
       .addCase(saveJourney.fulfilled, (state, action) => {
         state.journeyStatus = "succeeded";
-        // Add to journeys array if not duplicate
         const exists = state.journeys.some(j => j.id === action.payload.id);
         if (!exists) {
-          state.journeys.unshift(action.payload); // Add at beginning
+          state.journeys.unshift(action.payload);
         }
         state.journeyError = null;
       })
@@ -383,10 +392,8 @@ const journeySlice = createSlice({
       })
       .addCase(addJourney.rejected, (state, action) => {
         const isValidationError = action.payload?.errors && Object.keys(action.payload.errors).length > 0;
-
-state.adminStatus = isValidationError ? "succeeded" : "failed"; 
-state.adminError = action.payload?.message || "Failed to add journey";
-
+        state.adminStatus = isValidationError ? "succeeded" : "failed"; 
+        state.adminError = action.payload?.message || "Failed to add journey";
       })
       .addCase(updateJourney.pending, (state) => {
         state.adminStatus = "loading";
@@ -401,14 +408,11 @@ state.adminError = action.payload?.message || "Failed to add journey";
         state.adminError = null;
       })
       .addCase(updateJourney.rejected, (state, action) => {
-        // Don’t mark as "failed" for validation errors
-  const isValidationError = action.payload?.errors && Object.keys(action.payload.errors).length > 0;
-  state.adminStatus = isValidationError ? "succeeded" : "failed";
-
-  state.adminError = isValidationError
-    ? null
-    : (action.payload?.message || "Failed to update journey");
-
+        const isValidationError = action.payload?.errors && Object.keys(action.payload.errors).length > 0;
+        state.adminStatus = isValidationError ? "succeeded" : "failed";
+        state.adminError = isValidationError
+          ? null
+          : (action.payload?.message || "Failed to update journey");
       });
 
     // ============ DRIVERS ============

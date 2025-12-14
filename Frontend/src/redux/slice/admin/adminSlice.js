@@ -1,152 +1,178 @@
-import {createSlice,createAsyncThunk} from "@reduxjs/toolkit"
+import { createSlice, createAsyncThunk } from "@reduxjs/toolkit"
 import { API_BASE_URL } from "../../../config"
 
-const initialState={
-    admin:null,
-    isAuthenticated:null,
-    loading:false,
-    error:null,
-    isSuperAdmin:false,
+const initialState = {
+    admin: null,
+    isAuthenticated: null,
+    loading: false,
+    error: null,
+    isSuperAdmin: false,
 }
 
-export const adminLogin=createAsyncThunk(
+// Helper function to get auth headers
+const getAuthHeaders = () => {
+    const token = localStorage.getItem('adminToken');
+    return {
+        "Content-Type": "application/json",
+        ...(token && { "Authorization": `Bearer ${token}` })
+    };
+};
+
+export const adminLogin = createAsyncThunk(
     "admin/login",
-    async(credentials ,{rejectWithValue})=>{
+    async (credentials, { rejectWithValue }) => {
         try {
-            const res=await fetch(`${API_BASE_URL}/admin/login`,{
-                method:"POST",
-                credentials:'include',
-                headers:{"Content-Type":"application/json"},
-                body:JSON.stringify(credentials),
-                credentials:"include"
+            const res = await fetch(`${API_BASE_URL}/admin/login`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(credentials),
             })
             const data = await res.json();
-           
-            if(!res.ok){
+
+            if (!res.ok) {
                 return rejectWithValue(data)
             }
-              return data;
+
+            // Store token in localStorage
+            if (data.token) {
+                localStorage.setItem('adminToken', data.token);
+            }
+
+            return data;
         } catch (error) {
             return rejectWithValue({ message: error.message })
         }
     }
 )
 
-export const accessAdminUser=createAsyncThunk(
+export const accessAdminUser = createAsyncThunk(
     "admin/access-admin",
-    async(_ ,{rejectWithValue})=>{
+    async (_, { rejectWithValue }) => {
         try {
-            const res=await fetch(`${API_BASE_URL}/admin/access-admin`,{
-                method:"GET",
-                
-                // headers:{"Content-Type":"application/json"},   
-                credentials:"include"             
+            const res = await fetch(`${API_BASE_URL}/admin/access-admin`, {
+                method: "GET",
+                headers: getAuthHeaders(),
             })
             const data = await res.json();
-            
-            if(!res.ok){
-                return rejectWithValue(data.message||"Unable to get Users")
+
+            if (!res.ok) {
+                // If blocked or unauthorized, clear token
+                if (data.blocked) {
+                    localStorage.removeItem('adminToken');
+                }
+                return rejectWithValue(data.message || "Unable to get Users")
             }
-              return data;
+            return data;
         } catch (error) {
             return rejectWithValue(error.message)
         }
     }
 )
 
-
-export const adminLogout=createAsyncThunk(
+export const adminLogout = createAsyncThunk(
     "admin/logout",
-    async(_ ,{rejectWithValue})=>{
+    async (_, { rejectWithValue }) => {
         try {
-            const res=await fetch(`${API_BASE_URL}/admin/logout`,{
-                method:"POST",
-                // headers:{"Content-Type":"application/json"},   
-                credentials:"include"             
+            const res = await fetch(`${API_BASE_URL}/admin/logout`, {
+                method: "POST",
+                headers: getAuthHeaders(),
             })
             const data = await res.json();
-            
-            if(!res.ok){
-                return rejectWithValue(data.message||"Logout Error")
+
+            if (!res.ok) {
+                return rejectWithValue(data.message || "Logout Error")
             }
-              return data;
+
+            // Always remove token from localStorage
+            localStorage.removeItem('adminToken');
+
+            return data;
         } catch (error) {
+            // Even if logout fails, remove token
+            localStorage.removeItem('adminToken');
             return rejectWithValue(error.message)
         }
     }
 )
 
 const adminSlice = createSlice({
-    name:"admin",
+    name: "admin",
     initialState,
-    reducers:{
-        // logout:(state)=>{
-        //     state.isAuthenticated=null
-        //     state.error=null
-        // },
-        clearError:(state)=>{
-            state.error=null;
+    reducers: {
+        clearError: (state) => {
+            state.error = null;
+        },
+        // Add manual logout action for client-side logout
+        manualLogout: (state) => {
+            state.isAuthenticated = false;
+            state.admin = null;
+            state.isSuperAdmin = false;
+            localStorage.removeItem('adminToken');
         }
     },
-    extraReducers:(builder)=>{
+    extraReducers: (builder) => {
         builder
-        .addCase(adminLogin.pending,(state)=>{
-            state.loading=true
-            state.error=null
-        })
-        .addCase(adminLogin.fulfilled,(state,action)=>{
-            state.loading=false;
-            state.isAuthenticated=true;
-            state.admin=action.payload.admin;          
-            
-        })
-        .addCase(adminLogin.rejected,(state,action)=>{
-            state.loading=false
-            if(action.payload?.errors){
-                state.error=null
-            }else{
-                state.error=action.payload?.message||"Login Failed"
-            }
-        })
-         .addCase(adminLogout.pending,(state)=>{
-            state.loading=true
-            state.error=null
-        })
-        .addCase(adminLogout.fulfilled,(state)=>{
-            state.loading=false;
-            state.isAuthenticated=false;
-            state.admin=null;
-        })
-        .addCase(adminLogout.rejected,(state,action)=>{
-            state.loading=false;
-            state.error=action.payload;
-        })
-        .addCase(accessAdminUser.pending,(state)=>{
-            state.loading=true
-            state.error=null
-        })
-        .addCase(accessAdminUser.fulfilled,(state,action)=>{
-            state.loading=false;
-            state.isAuthenticated=true;
-            state.admin=action.payload.admin;
-            // console.log(state.admin);
-            if(action.payload.admin.role==='superadmin'){
-                state.isSuperAdmin= true;
-            }else
-                state.isSuperAdmin= false;
-                // console.log("State of SuperAdmin ", state.isSuperAdmin);
-        })
-        .addCase(accessAdminUser.rejected,(state,action)=>{
-            state.loading=false;
-            state.isAuthenticated = false
-        if(action.payload!=="UNAUTHORIZED"){
-            state.error=action.payload||"Access denied"
-        }else{
-            state.error=null
-        }
-        })
+            .addCase(adminLogin.pending, (state) => {
+                state.loading = true
+                state.error = null
+            })
+            .addCase(adminLogin.fulfilled, (state, action) => {
+                state.loading = false;
+                state.isAuthenticated = true;
+                state.admin = action.payload.admin;
+            })
+            .addCase(adminLogin.rejected, (state, action) => {
+                state.loading = false
+                if (action.payload?.errors) {
+                    state.error = null
+                } else {
+                    state.error = action.payload?.message || "Login Failed"
+                }
+            })
+            .addCase(adminLogout.pending, (state) => {
+                state.loading = true
+                state.error = null
+            })
+            .addCase(adminLogout.fulfilled, (state) => {
+                state.loading = false;
+                state.isAuthenticated = false;
+                state.admin = null;
+                state.isSuperAdmin = false;
+            })
+            .addCase(adminLogout.rejected, (state, action) => {
+                state.loading = false;
+                state.isAuthenticated = false;
+                state.admin = null;
+                state.isSuperAdmin = false;
+                state.error = action.payload;
+            })
+            .addCase(accessAdminUser.pending, (state) => {
+                state.loading = true
+                state.error = null
+            })
+            .addCase(accessAdminUser.fulfilled, (state, action) => {
+                state.loading = false;
+                state.isAuthenticated = true;
+                state.admin = action.payload.admin;
+                if (action.payload.admin.role === 'superadmin') {
+                    state.isSuperAdmin = true;
+                } else {
+                    state.isSuperAdmin = false;
+                }
+            })
+            .addCase(accessAdminUser.rejected, (state, action) => {
+                state.loading = false;
+                state.isAuthenticated = false;
+                // Clear token on rejection
+                localStorage.removeItem('adminToken');
+                if (action.payload !== "UNAUTHORIZED") {
+                    state.error = action.payload || "Access denied"
+                } else {
+                    state.error = null
+                }
+            })
     },
 })
 
-export const {logout,clearError} = adminSlice.actions;
+export const { clearError, manualLogout } = adminSlice.actions;
 export default adminSlice.reducer;

@@ -1,14 +1,22 @@
 import { createSlice, createAsyncThunk } from "@reduxjs/toolkit";
 import { API_BASE_URL } from "../../../config";
 
+// Helper function to get auth headers
+const getAuthHeaders = () => {
+  const token = localStorage.getItem('driverToken');
+  return {
+    "Content-Type": "application/json",
+    ...(token && { "Authorization": `Bearer ${token}` })
+  };
+};
+
 const initialState = {
   driver: null,
   loading: false,
   error: null,
-  isAuthenticated: false, // Changed from null to false for consistency
+  isAuthenticated: false,
 };
 
-//  Optimized: Added better error handling and response validation
 export const driverLogin = createAsyncThunk(
   "driver/login",
   async (credentials, { rejectWithValue }) => {
@@ -17,7 +25,6 @@ export const driverLogin = createAsyncThunk(
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(credentials),
-        credentials: "include",
       });
 
       const data = await res.json();
@@ -26,9 +33,13 @@ export const driverLogin = createAsyncThunk(
         return rejectWithValue(data);
       }
 
-      //  Validate response structure
       if (!data.driver) {
         return rejectWithValue({ message: "Invalid response from server" });
+      }
+
+      // Store token in localStorage
+      if (data.token) {
+        localStorage.setItem('driverToken', data.token);
       }
 
       return data;
@@ -38,27 +49,28 @@ export const driverLogin = createAsyncThunk(
   }
 );
 
-//  Fixed: Removed unused __dirname parameter
 export const accessDriver = createAsyncThunk(
   "driver/access-driver",
   async (_, { rejectWithValue }) => {
     try {
       const res = await fetch(`${API_BASE_URL}/driver/access-driver`, {
         method: "GET",
-        credentials: "include",
+        headers: getAuthHeaders(),
       });
 
       const data = await res.json();
 
       if (!res.ok) {
-        //  Return structured error for better handling
+        // If blocked or unauthorized, remove token
+        if (data.reason === "Account has been disabled") {
+          localStorage.removeItem('driverToken');
+        }
         return rejectWithValue({
           message: data.message || "Unable to get Driver",
           status: res.status,
         });
       }
 
-      //  Validate response structure
       if (!data.driver) {
         return rejectWithValue({ message: "Invalid response from server" });
       }
@@ -76,7 +88,7 @@ export const driverLogout = createAsyncThunk(
     try {
       const res = await fetch(`${API_BASE_URL}/driver/logout`, {
         method: "POST",
-        credentials: "include",
+        headers: getAuthHeaders(),
       });
 
       const data = await res.json();
@@ -87,8 +99,13 @@ export const driverLogout = createAsyncThunk(
         });
       }
 
+      // Always remove token from localStorage
+      localStorage.removeItem('driverToken');
+
       return data;
     } catch (error) {
+      // Even if logout fails, remove token
+      localStorage.removeItem('driverToken');
       return rejectWithValue({ message: error.message || "Network error" });
     }
   }
@@ -101,13 +118,12 @@ const driverSlice = createSlice({
     clearError: (state) => {
       state.error = null;
     },
-    //  Keep this for programmatic logout (e.g., token expiry)
     logout: (state) => {
       state.driver = null;
       state.isAuthenticated = false;
       state.error = null;
+      localStorage.removeItem('driverToken');
     },
-    //  New: Set driver directly (useful for optimistic updates)
     setDriver: (state, action) => {
       state.driver = action.payload;
       state.isAuthenticated = true;
@@ -130,13 +146,10 @@ const driverSlice = createSlice({
         state.loading = false;
         state.isAuthenticated = false;
         state.driver = null;
-        
-        //  Better error handling - check for validation errors
+
         if (action.payload?.errors) {
-          // Validation errors (handled by form)
           state.error = null;
         } else {
-          // General errors (show in toast/UI)
           state.error = action.payload?.message || "Login Failed";
         }
       })
@@ -154,7 +167,6 @@ const driverSlice = createSlice({
       })
       .addCase(driverLogout.rejected, (state, action) => {
         state.loading = false;
-        //  Even if logout fails, clear local state for security
         state.isAuthenticated = false;
         state.driver = null;
         state.error = action.payload?.message || "Logout failed";
@@ -175,16 +187,15 @@ const driverSlice = createSlice({
         state.loading = false;
         state.isAuthenticated = false;
         state.driver = null;
-        
-        //  Better unauthorized handling
-        const isUnauthorized = action.payload?.status === 401 || 
-                               action.payload === "UNAUTHORIZED";
-        
+        // Clear token on rejection
+        localStorage.removeItem('driverToken');
+
+        const isUnauthorized = action.payload?.status === 401 ||
+          action.payload === "UNAUTHORIZED";
+
         if (isUnauthorized) {
-          // Silent failure for unauthorized (expected on initial load)
           state.error = null;
         } else {
-          // Show error for other failures
           state.error = action.payload?.message || "Access denied";
         }
       });

@@ -15,15 +15,29 @@ export const fetchDeliverySummary = createAsyncThunk(
         return rejectWithValue("Both from_date and to_date are required");
       }
 
+      // ✅ Get token from localStorage
+      const token = localStorage.getItem('driverToken');
+
+      if (!token) {
+        return rejectWithValue("No authentication token found");
+      }
+
       const res = await fetch(
         `${API_BASE_URL}/driver/deliveries/${driverId}?from_date=${encodeURIComponent(from_date)}&to_date=${encodeURIComponent(to_date)}`,
         {
-          credentials: "include",
+          headers: {
+            "Authorization": `Bearer ${token}`, // ✅ Send token in header
+          },
           signal, // Support request cancellation
         }
       );
 
       if (!res.ok) {
+        // ✅ Handle 401 - clear token
+        if (res.status === 401) {
+          localStorage.removeItem('driverToken');
+        }
+        
         const errorData = await res.json().catch(() => ({}));
         return rejectWithValue(errorData.message || errorData.error || "Failed to fetch deliveries");
       }
@@ -63,7 +77,7 @@ const deliverySlice = createSlice({
       state.lastFetch = null;
     },
     
-    // New: Set deliveries from cache without triggering loading state
+    // Set deliveries from cache without triggering loading state
     setDeliveriesFromCache: (state, action) => {
       state.deliveries = action.payload;
       state.status = "succeeded";
@@ -79,7 +93,7 @@ const deliverySlice = createSlice({
       })
       .addCase(fetchDeliverySummary.fulfilled, (state, action) => {
         state.status = "succeeded";
-        console.log("Deliveries ",action.payload);
+        console.log("Deliveries ", action.payload);
         state.deliveries = action.payload;
         state.error = null;
         state.lastFetch = Date.now();

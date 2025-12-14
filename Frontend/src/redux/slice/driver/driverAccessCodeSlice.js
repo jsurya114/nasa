@@ -2,6 +2,23 @@
 import { createSlice, createAsyncThunk } from "@reduxjs/toolkit";
 import { API_BASE_URL } from "../../../config";
 
+// Helper function to get auth headers for file uploads
+const getAuthHeaders = (isFormData = false) => {
+  const token = localStorage.getItem('driverToken');
+  const headers = {};
+
+  // Don't set Content-Type for FormData - browser will set it with boundary
+  if (!isFormData) {
+    headers['Content-Type'] = 'application/json';
+  }
+
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+
+  return headers;
+};
+
 // Fetch paginated access codes
 export const fetchAccessCodes = createAsyncThunk(
   "driverAccessCodes/fetchAccessCodes",
@@ -16,10 +33,7 @@ export const fetchAccessCodes = createAsyncThunk(
 
       const res = await fetch(`${API_BASE_URL}/driver/access-codes/list?${params}`, {
         method: 'GET',
-        credentials:"include",
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: getAuthHeaders(),
       });
 
       if (!res.ok) {
@@ -41,7 +55,6 @@ export const createAccessCode = createAsyncThunk(
   async (accessCodeData, { rejectWithValue, dispatch, getState }) => {
     try {
       let body;
-      let headers = {};
       if (typeof FormData !== 'undefined' && accessCodeData instanceof FormData) {
         body = accessCodeData; // browser will set multipart boundaries
       } else {
@@ -51,34 +64,33 @@ export const createAccessCode = createAsyncThunk(
           if (accessCodeData.address) form.append('address', accessCodeData.address);
           if (accessCodeData.access_code) form.append('access_code', accessCodeData.access_code);
           const images = accessCodeData.images || [];
-          images.slice(0,3).forEach((f) => form.append('images', f));
+          images.slice(0, 3).forEach((f) => form.append('images', f));
         }
         body = form;
       }
 
       const res = await fetch(`${API_BASE_URL}/driver/access-codes`, {
         method: "POST",
-        credentials:"include",
-        headers,
+        headers: getAuthHeaders(true), // true = FormData
         body,
       });
-      
+
       if (!res.ok) {
         const error = await res.json();
         throw new Error(error.message || `HTTP ${res.status}: Failed to create access code`);
       }
-      
+
       const data = await res.json();
-      
+
       // Refetch with current pagination settings
       const { currentPage, pageLimit, searchTerm, zipCodeFilter } = getState().driverAccessCodes;
-      dispatch(fetchAccessCodes({ 
-        page: currentPage, 
-        limit: pageLimit, 
-        search: searchTerm, 
-        zipCodeFilter 
+      dispatch(fetchAccessCodes({
+        page: currentPage,
+        limit: pageLimit,
+        search: searchTerm,
+        zipCodeFilter
       }));
-      
+
       return data.data;
     } catch (error) {
       return rejectWithValue(error.message);

@@ -1,21 +1,43 @@
 // src/features/paymentDashboard/paymentDashboardSlice.js
 import { createSlice, createAsyncThunk } from "@reduxjs/toolkit";
-import axios from "axios";
 import { API_BASE_URL } from "../../../config";
+
+// Helper function to get auth headers
+const getAuthHeaders = () => {
+  const token = localStorage.getItem('adminToken');
+  return {
+    "Content-Type": "application/json",
+    ...(token && { "Authorization": `Bearer ${token}` })
+  };
+};
 
 // Async thunk to fetch data
 export const fetchPaymentDashboard = createAsyncThunk(
   "paymentDashboard/fetch",
-  async (_, { getState }) => {
-    const { data } = getState().paymentDashboard;
+  async (_, { getState, rejectWithValue }) => {
+    try {
+      const { data } = getState().paymentDashboard;
 
-    // Only call API if no data is present
-    if (data.length > 0) {
-      return { success: true, data }; // return cached data
+      // Only call API if no data is present
+      if (data.length > 0) {
+        return { success: true, data }; // return cached data
+      }
+
+      const response = await fetch(`${API_BASE_URL}/admin/dashboard/paymentTable`, {
+        method: "GET",
+        headers: getAuthHeaders(),
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        return rejectWithValue(error.message || "Failed to fetch payment dashboard");
+      }
+
+      const responseData = await response.json();
+      return responseData; // { success: true, data: [...] }
+    } catch (error) {
+      return rejectWithValue(error.message);
     }
-
-    const response = await axios.get(`${API_BASE_URL}/admin/dashboard/paymentTable`);
-    return response.data; // { success: true, data: [...] }
   }
 );
 
@@ -43,7 +65,7 @@ const paymentDashboardSlice = createSlice({
       })
       .addCase(fetchPaymentDashboard.rejected, (state, action) => {
         state.loading = false;
-        state.error = action.error.message;
+        state.error = action.payload || action.error.message;
       });
   },
 });

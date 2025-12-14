@@ -1,17 +1,24 @@
 import { createSlice, createAsyncThunk } from "@reduxjs/toolkit";
 import { API_BASE_URL } from "../../../config"
 
-
+// Helper function to get auth headers
+const getAuthHeaders = () => {
+  const token = localStorage.getItem('adminToken');
+  return {
+    "Content-Type": "application/json",
+    ...(token && { "Authorization": `Bearer ${token}` })
+  };
+};
 
 // Fetch all routes
-export const fetchRoutes = createAsyncThunk("routes/fetchRoutes", async ({ page, limit,search="" }) => {
+export const fetchRoutes = createAsyncThunk("routes/fetchRoutes", async ({ page, limit, search = "" }) => {
   try {
-    console.log("Fetching routes from ",API_BASE_URL,"/admin/routes..."); // Debug log
-    const res = await fetch(`${API_BASE_URL}/admin/routes?page=${page}&limit=${limit}&search=${search}`,
-      { credentials: "include" }
+    console.log("Fetching routes from", API_BASE_URL, "/admin/routes..."); // Debug log
+    const res = await fetch(
+      `${API_BASE_URL}/admin/routes?page=${page}&limit=${limit}&search=${search}`,
+      { headers: getAuthHeaders() }
     );
 
-    console.log("Fetching routes from http://localhost:3251/admin/routes..."); // Debug log
     if (!res.ok) {
       const error = await res.json();
       throw new Error(error.error || "Failed to fetch routes");
@@ -31,9 +38,8 @@ export const addRoute = createAsyncThunk("routes/addRoute", async (routeData) =>
     console.log("Adding route:", routeData); // Debug log
     const res = await fetch(`${API_BASE_URL}/admin/routes`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: getAuthHeaders(),
       body: JSON.stringify(routeData),
-      credentials: "include",
     });
 
     if (!res.ok) {
@@ -53,7 +59,10 @@ export const addRoute = createAsyncThunk("routes/addRoute", async (routeData) =>
 export const toggleRouteStatus = createAsyncThunk("routes/toggleRouteStatus", async (id) => {
   try {
     console.log(`Toggling status for route id: ${id}`); // Debug log
-    const res = await fetch(`${API_BASE_URL}/admin/routes/${id}/status`, { method: "PATCH", credentials: "include" });
+    const res = await fetch(`${API_BASE_URL}/admin/routes/${id}/status`, { 
+      method: "PATCH", 
+      headers: getAuthHeaders() 
+    });
 
     if (!res.ok) {
       const error = await res.json();
@@ -72,7 +81,10 @@ export const toggleRouteStatus = createAsyncThunk("routes/toggleRouteStatus", as
 export const deleteRoute = createAsyncThunk("routes/deleteRoute", async (id) => {
   try {
     console.log(`Deleting route id: ${id}`); // Debug log
-    const res = await fetch(`${API_BASE_URL}/admin/routes/${id}`, { method: "DELETE", credentials: "include" });
+    const res = await fetch(`${API_BASE_URL}/admin/routes/${id}`, { 
+      method: "DELETE", 
+      headers: getAuthHeaders() 
+    });
 
     if (!res.ok) {
       const error = await res.json();
@@ -86,13 +98,12 @@ export const deleteRoute = createAsyncThunk("routes/deleteRoute", async (id) => 
   }
 });
 
-export const updateRoute=createAsyncThunk("routes/updateRoute",async({id,routeData})=>{
+export const updateRoute = createAsyncThunk("routes/updateRoute", async ({ id, routeData }) => {
   try {
-    const res = await fetch(`${API_BASE_URL}/admin/routes/${id}`,{
-      method:"PUT",
-      headers: { "Content-Type": "application/json" },
+    const res = await fetch(`${API_BASE_URL}/admin/routes/${id}`, {
+      method: "PUT",
+      headers: getAuthHeaders(),
       body: JSON.stringify(routeData),
-      credentials: "include",
     })
 
     if (!res.ok) {
@@ -114,10 +125,10 @@ const routeSlice = createSlice({
     routes: [],
     status: "idle", // idle | loading | succeeded | failed
     error: null,
-    page:1,
-    total:0,
-    totalPages:0,
-    limit:4
+    page: 1,
+    total: 0,
+    totalPages: 0,
+    limit: 4
   },
   reducers: {},
   extraReducers: (builder) => {
@@ -158,20 +169,20 @@ const routeSlice = createSlice({
         console.error("addRoute: Failed:", action.error.message); // Debug log
       })
       //update Route
-      .addCase(updateRoute.pending,(state)=>{
-        state.status ="loading"
-        state.error=null
-         console.log("updateRoute: Status set to loading");
+      .addCase(updateRoute.pending, (state) => {
+        state.status = "loading"
+        state.error = null
+        console.log("updateRoute: Status set to loading");
       })
-      .addCase(updateRoute.fulfilled,(state,action)=>{
-        state.status="succeeded"
-        const index = state.routes.findIndex((r)=>r.id===action.payload.id)
-        if(index!==-1){
-          state.routes[index]=action.payload
-           console.log("updateRoute: Route updated:", action.payload);
+      .addCase(updateRoute.fulfilled, (state, action) => {
+        state.status = "succeeded"
+        const index = state.routes.findIndex((r) => r.id === action.payload.id)
+        if (index !== -1) {
+          state.routes[index] = action.payload
+          console.log("updateRoute: Route updated:", action.payload);
         }
       })
-        .addCase(updateRoute.rejected, (state, action) => {
+      .addCase(updateRoute.rejected, (state, action) => {
         state.status = "failed";
         state.error = action.error.message;
         console.error("updateRoute: Failed:", action.error.message);

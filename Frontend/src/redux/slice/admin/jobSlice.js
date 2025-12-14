@@ -1,6 +1,15 @@
 import { createSlice, createAsyncThunk } from "@reduxjs/toolkit";
 import { API_BASE_URL } from "../../../config";
 
+// Helper function to get auth headers
+const getAuthHeaders = () => {
+  const token = localStorage.getItem('adminToken');
+  return {
+    "Content-Type": "application/json",
+    ...(token && { "Authorization": `Bearer ${token}` })
+  };
+};
+
 // Fetch paginated jobs with search and request cancellation support
 export const fetchPaginatedJobs = createAsyncThunk(
   "jobs/fetchPaginated",
@@ -8,7 +17,10 @@ export const fetchPaginatedJobs = createAsyncThunk(
     try {
       const res = await fetch(
         `${API_BASE_URL}/admin/jobs?page=${page}&limit=${limit}&search=${encodeURIComponent(search)}&status=${status}`,
-        { signal, credentials: "include" }
+        { 
+          signal, 
+          headers: getAuthHeaders()
+        }
       );
 
       if (!res.ok) {
@@ -33,7 +45,9 @@ export const fetchJobs = createAsyncThunk(
   "jobs/fetchJobs",
   async (_, { rejectWithValue }) => {
     try {
-      const res = await fetch(`${API_BASE_URL}/admin/jobs`, { credentials: "include" });
+      const res = await fetch(`${API_BASE_URL}/admin/jobs`, { 
+        headers: getAuthHeaders()
+      });
 
       if (!res.ok) {
         const error = await res.json();
@@ -55,9 +69,8 @@ export const addJob = createAsyncThunk(
     try {
       const res = await fetch(`${API_BASE_URL}/admin/addjob`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: getAuthHeaders(),
         body: JSON.stringify({ job, city_code, enabled }),
-        credentials: "include",
       });
 
       if (!res.ok) {
@@ -81,9 +94,8 @@ export const updateJob = createAsyncThunk(
     try {
       const res = await fetch(`${API_BASE_URL}/admin/updatejob/${id}`, {
         method: "PUT",
-        headers: { "Content-Type": "application/json" },
+        headers: getAuthHeaders(),
         body: JSON.stringify({ job, city_code }),
-        credentials: "include",
       });
 
       if (!res.ok) {
@@ -107,7 +119,7 @@ export const deleteJob = createAsyncThunk(
     try {
       const res = await fetch(`${API_BASE_URL}/admin/deletejob/${id}`, {
         method: "DELETE",
-        credentials: "include",
+        headers: getAuthHeaders(),
       });
 
       if (!res.ok) {
@@ -130,7 +142,7 @@ export const jobStatus = createAsyncThunk(
     try {
       const res = await fetch(`${API_BASE_URL}/admin/${id}/status`, {
         method: "PATCH",
-        credentials: "include",
+        headers: getAuthHeaders(),
       });
 
       if (!res.ok) {
@@ -146,13 +158,14 @@ export const jobStatus = createAsyncThunk(
     }
   }
 );
+
 export const fetchAllCities = createAsyncThunk(
   "jobs/fetchAllCities",
   async (_, { rejectWithValue }) => {
     try {
       console.log("Fetching all enabled cities...");
       const res = await fetch(`${API_BASE_URL}/admin/get-cities`, {
-        credentials: "include"
+        headers: getAuthHeaders()
       });
 
       if (!res.ok) {
@@ -174,12 +187,12 @@ const jobSlice = createSlice({
   name: "jobs",
   initialState: {
     cities: [],           // For paginated jobs management
-    allCities: [],        // NEW: For dropdowns - all enabled cities
+    allCities: [],        // For dropdowns - all enabled cities
     total: 0,
     totalPages: 0,
     page: 1,
     status: "idle",       // idle | loading | succeeded | failed
-    allCitiesStatus: "idle", // NEW: Separate status for all cities
+    allCitiesStatus: "idle", // Separate status for all cities
     error: null,
   },
   reducers: {
@@ -222,7 +235,7 @@ const jobSlice = createSlice({
         }
       })
 
-      // NEW: Fetch all enabled cities
+      // Fetch all enabled cities
       .addCase(fetchAllCities.pending, (state) => {
         state.allCitiesStatus = "loading";
       })

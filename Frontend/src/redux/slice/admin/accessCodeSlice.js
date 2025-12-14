@@ -1,6 +1,23 @@
 import { createSlice, createAsyncThunk } from "@reduxjs/toolkit";
 import { API_BASE_URL } from "../../../config";
 
+// Helper function to get auth headers
+const getAuthHeaders = (isFormData = false) => {
+  const token = localStorage.getItem('adminToken');
+  const headers = {};
+  
+  // Don't set Content-Type for FormData - browser will set it with boundary
+  if (!isFormData) {
+    headers['Content-Type'] = 'application/json';
+  }
+  
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+  
+  return headers;
+};
+
 // Fetch paginated access codes
 export const fetchAccessCodes = createAsyncThunk(
   "accessCodes/fetchAccessCodes",
@@ -15,10 +32,7 @@ export const fetchAccessCodes = createAsyncThunk(
 
       const res = await fetch(`${API_BASE_URL}/admin/access-codes/list?${params}`, {
         method: 'GET',
-        credentials:'include',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: getAuthHeaders(),
       });
 
       if (!res.ok) {
@@ -42,8 +56,7 @@ export const createAccessCode = createAsyncThunk(
       const isFormData = typeof FormData !== 'undefined' && accessCodeData instanceof FormData;
       const res = await fetch(`${API_BASE_URL}/admin/access-codes`, {
         method: "POST",
-        credentials:'include',
-        headers: isFormData ? undefined : { "Content-Type": "application/json" },
+        headers: getAuthHeaders(isFormData),
         body: isFormData ? accessCodeData : JSON.stringify(accessCodeData),
       });
       
@@ -81,8 +94,7 @@ export const updateAccessCode = createAsyncThunk(
 
       const res = await fetch(`${API_BASE_URL}/admin/access-codes/${id}`, {
         method: "PUT",
-        credentials:'include',
-        headers: isFormData ? undefined : { "Content-Type": "application/json" },
+        headers: getAuthHeaders(isFormData),
         body: isFormData ? payload : JSON.stringify({
           zip_code: payload.zip_code,
           address: payload.address,
@@ -120,10 +132,7 @@ export const deleteAccessCode = createAsyncThunk(
     try {
       const res = await fetch(`${API_BASE_URL}/admin/access-codes/${id}`, {
         method: "DELETE",
-        credentials:'include',
-        headers: { 
-          "Content-Type": "application/json",
-        },
+        headers: getAuthHeaders(),
       });
       
       if (!res.ok) {
