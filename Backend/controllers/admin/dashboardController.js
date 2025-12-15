@@ -51,17 +51,37 @@ export const updatePaymentData = async (req, res) => {
   }
 };
 
-// export const updateWeeklyTempDataToDashboard=async(req,res)=>{
-//     try {
-//         console.log("Reached Update of Temp data to dashboard");        
-//         let insertData= await WeeklyExcelQueries.createEntriesFromWeeklyCount();
+// NEW: Update driver payment status
+export const payDriver = async (req, res) => {
+  try {
+    const { driverName, startDate, endDate } = req.body;
+    
+    if (!driverName) {
+      return res.status(HttpStatus.BAD_REQUEST).json({ 
+        success: false, 
+        message: "Driver name is required" 
+      });
+    }
 
-//         return res.status(HttpStatus.OK).json({insertData});        
-//     } catch (err) {
-//         console.error(err)
-//         return res.status(HttpStatus.INTERNAL_SERVER_ERROR).json({success:false});
-//     }
-// }
+    const result = await AdminDashboardQueries.updateDriverPaymentStatus(
+      driverName, 
+      startDate, 
+      endDate
+    );
+    
+    return res.status(HttpStatus.OK).json({ 
+      success: true, 
+      message: `Payment marked as paid for ${driverName}`,
+      rowsUpdated: result.rowCount 
+    });
+  } catch (error) {
+    console.error("Error in payDriver:", error);
+    return res.status(HttpStatus.INTERNAL_SERVER_ERROR).json({ 
+      success: false, 
+      message: error.message || "Failed to update payment status" 
+    });
+  }
+};
 
 export const updateWeeklyTempDataToDashboard = async (req, res) => {
     try {

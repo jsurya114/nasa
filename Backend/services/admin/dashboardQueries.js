@@ -114,4 +114,46 @@ export const AdminDashboardQueries = {
       throw error;
     }
   },
+
+  // NEW: Update driver payment status to paid
+  updateDriverPaymentStatus: async (driverName, startDate, endDate) => {
+    try {
+      const whereClauses = [];
+      const queryParams = [driverName];
+      
+      whereClauses.push(`d.name = $1`);
+      
+      if (startDate) {
+        whereClauses.push(`pd.journey_date >= $${queryParams.length + 1}::date`);
+        queryParams.push(startDate);
+      }
+      
+      if (endDate) {
+        whereClauses.push(`pd.journey_date <= $${queryParams.length + 1}::date`);
+        queryParams.push(endDate);
+      }
+
+      const updateQuery = `
+        UPDATE payment_dashboard pd
+        SET 
+          paid = true,
+          payment_date = CURRENT_DATE
+        FROM drivers d
+        WHERE pd.driver_id = d.id
+          AND ${whereClauses.join(' AND ')}
+          AND pd.paid = false;
+      `;
+
+      console.log("Executing payment update query:", updateQuery);
+      console.log("With params:", queryParams);
+
+      const result = await pool.query(updateQuery, queryParams);
+      console.log(`Updated ${result.rowCount} payment records to paid`);
+      
+      return result;
+    } catch (error) {
+      console.error("Error in updateDriverPaymentStatus:", error);
+      throw error;
+    }
+  },
 };

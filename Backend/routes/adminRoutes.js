@@ -9,7 +9,7 @@ import { createAccessCode } from '../controllers/admin/accessCodeControllers.js'
 import {DailyExcelUpload, getUpdatedTempDashboardData} from '../controllers/admin/fileUploadsController.js';
 import { getAccessCodes,updateAccessCode, } from '../controllers/admin/accessCodeControllers.js';
 import { changeRoleAdmin, changeStatusAdmin, createAdmins, getAdmins } from '../controllers/admin/addAdminController.js';
-import { getPaymentDashboardData, updatePaymentData,updateWeeklyTempDataToDashboard } from '../controllers/admin/dashboardController.js';
+import { getPaymentDashboardData, updatePaymentData, updateWeeklyTempDataToDashboard, payDriver } from '../controllers/admin/dashboardController.js';
 import adminJourneyController from '../controllers/admin/adminJourneyController.js';
 import adminAuth from '../middlewares/adminAuth.js';
 import { getAllData } from '../controllers/admin/dashController.js';
@@ -60,6 +60,7 @@ router.get("/drivers",adminJourneyController.fetchAllDrivers)
 //payment and dashboard - IMPORTANT: These routes must be in this order
 router.get('/dashboard/data', getAllData) // For dropdown data (cities, drivers, routes)
 router.get('/dashboard/paymentTable', getPaymentDashboardData) // For table data with filters
+router.post('/dashboard/payDriver', payDriver) // NEW: Mark driver as paid
 
 //Weekly Upload 
 router.post('/doubleStop/weekly-upload',upload.single('file'),weeklyExcelUpload);
@@ -78,7 +79,5 @@ router.get('/access-admin',adminController.getUser);
 router.post("/access-codes", uploadAccessCodeImages.array('images', 3), createAccessCode)
 router.get("/access-codes/list", getAccessCodes)
 router.put("/access-codes/:id", uploadAccessCodeImages.array('images', 3), updateAccessCode)
-
-
 
 export default router;

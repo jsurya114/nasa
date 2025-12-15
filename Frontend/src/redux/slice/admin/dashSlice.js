@@ -1,6 +1,7 @@
 import { createSlice, createAsyncThunk } from "@reduxjs/toolkit";
 import axios from "axios";
 import { API_BASE_URL } from "../../../config";
+import { toast } from "react-toastify";
 
 // Helper function to get auth headers
 const getAuthHeaders = () => {
@@ -26,7 +27,7 @@ export const fetchDashboardData = createAsyncThunk(
   }
 );
 
-// NEW: Async thunk to fetch filtered payment table data
+// Async thunk to fetch filtered payment table data
 export const fetchFilteredPaymentData = createAsyncThunk(
   "dashboard/fetchFilteredPaymentData",
   async (filters, { rejectWithValue }) => {
@@ -43,6 +44,27 @@ export const fetchFilteredPaymentData = createAsyncThunk(
   }
 );
 
+// Async thunk to mark driver as paid
+export const payDriver = createAsyncThunk(
+  "dashboard/payDriver",
+  async ({ driverName, startDate, endDate }, { rejectWithValue }) => {
+    try {
+      const res = await axios.post(
+        `${API_BASE_URL}/admin/dashboard/payDriver`,
+        { driverName, startDate, endDate },
+        { headers: getAuthHeaders() }
+      );
+      if (!res.data.success) throw new Error(res.data.message);
+      toast.success(res.data.message);
+      return res.data;
+    } catch (err) {
+      const errorMsg = err.response?.data?.message || err.message;
+      toast.error(errorMsg);
+      return rejectWithValue(errorMsg);
+    }
+  }
+);
+
 const dashboardSlice = createSlice({
   name: "dashboard",
   initialState: {
@@ -52,14 +74,15 @@ const dashboardSlice = createSlice({
     filteredPaymentData: [],
     loading: false,
     paymentLoading: false,
+    paymentProcessing: false,
     error: null,
     paymentError: null,
-    isFiltered: false, // NEW: Track if user has applied filters
+    isFiltered: false,
   },
   reducers: {
     clearFilteredData: (state) => {
       state.filteredPaymentData = [];
-      state.isFiltered = false; // Reset filter flag
+      state.isFiltered = false;
     },
   },
   extraReducers: (builder) => {
@@ -87,12 +110,24 @@ const dashboardSlice = createSlice({
       .addCase(fetchFilteredPaymentData.fulfilled, (state, action) => {
         state.paymentLoading = false;
         state.filteredPaymentData = action.payload;
-        state.isFiltered = true; // Mark that filtering has occurred
+        state.isFiltered = true;
       })
       .addCase(fetchFilteredPaymentData.rejected, (state, action) => {
         state.paymentLoading = false;
         state.paymentError = action.payload;
-        state.isFiltered = true; // Still mark as filtered even on error
+        state.isFiltered = true;
+      })
+      // Pay driver
+      .addCase(payDriver.pending, (state) => {
+        state.paymentProcessing = true;
+      })
+      .addCase(payDriver.fulfilled, (state) => {
+        state.paymentProcessing = false;
+        // Don't update the state here - let the refetch handle it
+        // The new fetch will have the correct paid status from the database
+      })
+      .addCase(payDriver.rejected, (state) => {
+        state.paymentProcessing = false;
       });
   },
 });

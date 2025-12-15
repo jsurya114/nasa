@@ -1,7 +1,8 @@
 import React, { useState, useMemo, useCallback, useEffect } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import { useNavigate } from "react-router-dom";
-import { fetchDashboardData, fetchFilteredPaymentData, clearFilteredData } from "../../redux/slice/admin/dashSlice.js";
+import { fetchDashboardData, fetchFilteredPaymentData, clearFilteredData, payDriver } from "../../redux/slice/admin/dashSlice.js";
+import { fetchPaymentDashboard } from "../../redux/slice/admin/paymentDashboardSlice";
 import Header from "../../reuse/Header.jsx";
 import Nav from "../../reuse/Nav.jsx";
 import PaymentDashboardTable from "./DashboardTable.jsx";
@@ -11,9 +12,16 @@ export default function Dashboard() {
   const navigate = useNavigate();
 
   // Get data from Redux store
-  const { cities, drivers, routes, loading, error, filteredPaymentData, isFiltered } = useSelector(
-    (state) => state.dash
-  );
+  const { 
+    cities, 
+    drivers, 
+    routes, 
+    loading, 
+    error, 
+    filteredPaymentData, 
+    isFiltered,
+    paymentProcessing 
+  } = useSelector((state) => state.dash);
 
   const [filters, setFilters] = useState({
     job: "All",
@@ -26,6 +34,18 @@ export default function Dashboard() {
   });
 
   const [showExtraFields, setShowExtraFields] = useState(false);
+  const [showConfirmModal, setShowConfirmModal] = useState(false);
+
+  // Check if we should show the "Pay Driver" button
+  const shouldShowPayButton = useMemo(() => {
+    return (
+      isFiltered &&
+      filters.driver !== "All" &&
+      filters.paymentStatus === "Pending" &&
+      filteredPaymentData.length > 0 &&
+      filteredPaymentData.some(row => !row.paid)
+    );
+  }, [isFiltered, filters.driver, filters.paymentStatus, filteredPaymentData]);
 
   // Calculate totals from filtered data
   const extraFieldsData = useMemo(() => {
@@ -105,6 +125,39 @@ export default function Dashboard() {
     
     // Clear filtered data and reset isFiltered flag
     dispatch(clearFilteredData());
+    
+    // Refetch the unfiltered data from database to get latest updates
+    dispatch(fetchPaymentDashboard());
+  };
+
+  const handlePayDriver = async () => {
+    setShowConfirmModal(false);
+    const result = await dispatch(payDriver({
+      driverName: filters.driver,
+      startDate: filters.startDate || null,
+      endDate: filters.endDate || null,
+    }));
+    
+    // Only proceed if payment was successful
+    if (result.type === 'dashboard/payDriver/fulfilled') {
+      // Switch to showing "All" records so user can see what was just paid
+      setFilters(prev => ({
+        ...prev,
+        paymentStatus: "All"
+      }));
+      
+      // Refresh the filtered data with updated payment status
+      const filterParams = {};
+      if (filters.job !== "All") filterParams.job = filters.job;
+      if (filters.driver !== "All") filterParams.driver = filters.driver;
+      if (filters.route !== "All") filterParams.route = filters.route;
+      if (filters.startDate) filterParams.startDate = filters.startDate;
+      if (filters.endDate) filterParams.endDate = filters.endDate;
+      // Don't filter by payment status - show all records
+      if (filters.companyEarnings) filterParams.companyEarnings = filters.companyEarnings;
+      
+      dispatch(fetchFilteredPaymentData(filterParams));
+    }
   };
 
   const handleAddDelivery = useCallback(() => {
@@ -147,6 +200,23 @@ export default function Dashboard() {
   if (error) return <div className="text-center text-red-600 py-10">{error}</div>;
 
   return (
+    <>
+      <style>{`
+        @keyframes fadeIn {
+          from {
+            opacity: 0;
+            transform: scale(0.95);
+          }
+          to {
+            opacity: 1;
+            transform: scale(1);
+          }
+        }
+        .animate-fadeIn {
+          animation: fadeIn 0.2s ease-out;
+        }
+      `}</style>
+      
     <div className="min-h-screen bg-gray-100 text-gray-900 font-poppins">
       <Header />
 
@@ -204,7 +274,7 @@ export default function Dashboard() {
             </div>
 
             {/* Filter Buttons */}
-            <div className="px-4 py-3 flex gap-3">
+            <div className="px-4 py-3 flex flex-wrap gap-3">
               <button
                 onClick={handleFilterClick}
                 className="bg-blue-600 text-white font-semibold px-4 py-2 rounded-lg shadow-md hover:bg-blue-700 transition-colors"
@@ -217,12 +287,23 @@ export default function Dashboard() {
               >
                 Clear Filters
               </button>
+              <button
+                onClick={handleAddDelivery}
+                className="bg-blue-600 text-white font-semibold px-4 py-2 rounded-lg shadow-md hover:bg-blue-700 transition-colors"
+              >
+                Add Delivery
+              </button>
+              
+              {/* Pay Driver Button - Only shows when conditions are met */}
+              {shouldShowPayButton && (
                 <button
-                  onClick={handleAddDelivery}
-                   className="bg-blue-600 text-white font-semibold px-4 py-2 rounded-lg shadow-md hover:bg-blue-700 transition-colors"
+                  onClick={() => setShowConfirmModal(true)}
+                  disabled={paymentProcessing}
+                  className="bg-green-600 text-white font-semibold px-4 py-2 rounded-lg shadow-md hover:bg-green-700 transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed"
                 >
-                  Add Delivery
+                  {paymentProcessing ? "Processing..." : `💰 Pay ${filters.driver}`}
                 </button>
+              )}
             </div>
 
             {/* Extra Fields */}
@@ -251,8 +332,6 @@ export default function Dashboard() {
                     />
                   </div>
                 ))}
-
-              
               </div>
             )}
           </div>
@@ -268,6 +347,40 @@ export default function Dashboard() {
       </main>
 
       <Nav />
+
+      {/* Minimal Confirmation Modal */}
+      {showConfirmModal && (
+        <div className="fixed inset-0 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg shadow-xl max-w-sm w-full animate-fadeIn border border-gray-200">
+            {/* Modal Content */}
+            <div className="p-6">
+              <h3 className="text-lg font-semibold text-gray-900 mb-3">
+                Confirm Payment
+              </h3>
+              <p className="text-gray-600 mb-4">
+                Mark all payments as paid for <span className="font-medium text-gray-900">{filters.driver}</span>?
+              </p>
+              
+              {/* Action Buttons */}
+              <div className="flex gap-3 justify-end">
+                <button
+                  onClick={() => setShowConfirmModal(false)}
+                  className="px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-md transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handlePayDriver}
+                  className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors"
+                >
+                  Confirm
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
+    </>
   );
 }
