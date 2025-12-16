@@ -7,6 +7,7 @@ import {
   fetchAdminRoutes,
   fetchAllDrivers,
   clearJourneyError,
+   deleteJourney
 } from "../../redux/slice/driver/journeySlice.js";
 import { toast } from "react-toastify";
 import Header from "../../reuse/Header.jsx";
@@ -32,6 +33,8 @@ const AdminJourney = () => {
     end_seq: "",
     journey_date: new Date().toISOString().split('T')[0],
   });
+    const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [deleteId, setDeleteId] = useState(null);
   
   const [validationErrors, setValidationErrors] = useState({});
   const [errorTimeout, setErrorTimeout] = useState(null);
@@ -41,6 +44,25 @@ const AdminJourney = () => {
     const date = new Date(dateString);
     return date.toLocaleDateString('en-CA'); // Returns YYYY-MM-DD
   };
+
+const handleDeleteClick = (id) => {
+    setDeleteId(id);
+    setShowDeleteModal(true);
+  };
+
+  const confirmDelete = async () => {
+    try {
+      await dispatch(deleteJourney(deleteId)).unwrap();
+      toast.success("Journey deleted successfully");
+    } catch (err) {
+      toast.error(err?.message || "Delete failed");
+    } finally {
+      setShowDeleteModal(false);
+      setDeleteId(null);
+    }
+  };
+
+
 
   // ✅ Fetch data only once on mount with proper checks
   useEffect(() => {
@@ -461,7 +483,17 @@ const AdminJourney = () => {
               >
                 Edit
               </button>
+
+              
+              
+              
             )}
+          <button
+                      onClick={() => handleDeleteClick(journey._id)}
+                      className="bg-red-500 text-white px-3 py-1 rounded hover:bg-red-600"
+                    >
+                      Delete
+                    </button>
           </td>
         </tr>
       );
@@ -760,6 +792,35 @@ const AdminJourney = () => {
               )}
             </tbody>
           </table>
+              {showDeleteModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-40">
+          <div className="bg-white rounded-lg p-6 w-full max-w-sm">
+            <h3 className="text-lg font-semibold mb-2">
+              Confirm Delete
+            </h3>
+
+            <p className="text-sm text-gray-600 mb-4">
+              This action cannot be undone. Are you sure?
+            </p>
+
+            <div className="flex justify-end gap-2">
+              <button
+                onClick={() => setShowDeleteModal(false)}
+                className="px-4 py-2 bg-gray-300 rounded hover:bg-gray-400"
+              >
+                Cancel
+              </button>
+
+              <button
+                onClick={confirmDelete}
+                className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700"
+              >
+                Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
         </div>
       </main>
 

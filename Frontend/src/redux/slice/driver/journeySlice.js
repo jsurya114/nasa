@@ -239,6 +239,34 @@ export const updateJourney = createAsyncThunk(
     }
   }
 );
+// ✅ Delete journey (admin) — FIXED
+export const deleteJourney = createAsyncThunk(
+  "journeys/deleteJourney",
+  async (journey_id, { rejectWithValue }) => {
+    try {
+      const res = await fetch(
+        `${API_BASE_URL}/admin/journey/${journey_id}`,
+        {
+          method: "DELETE",
+          headers: getAuthHeaders(),   // ✅ IMPORTANT
+          credentials: "include",
+        }
+      );
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        return rejectWithValue(data);
+      }
+
+      return journey_id;
+    } catch (error) {
+      console.error("deleteJourney error:", error);
+      return rejectWithValue({ message: error.message });
+    }
+  }
+);
+
 
 const journeySlice = createSlice({
   name: "journey",
@@ -432,6 +460,26 @@ const journeySlice = createSlice({
           state.driversError = action.payload || action.error.message;
         }
       });
+
+      // ============ DELETE JOURNEY ============
+builder
+  .addCase(deleteJourney.pending, (state) => {
+    state.adminStatus = "loading";
+    state.adminError = null;
+  })
+  .addCase(deleteJourney.fulfilled, (state, action) => {
+    state.adminStatus = "succeeded";
+    state.adminJourneys = state.adminJourneys.filter(
+      journey => journey.id !== action.payload
+    );
+    state.adminError = null;
+  })
+  .addCase(deleteJourney.rejected, (state, action) => {
+    state.adminStatus = "failed";
+    state.adminError =
+      action.payload?.message || "Failed to delete journey";
+  });
+
   },
 });
 

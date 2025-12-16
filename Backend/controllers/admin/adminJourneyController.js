@@ -140,6 +140,33 @@ const adminJourneyController = {
       });
     }
   },
+  deleteJourney: async (req, res) => {
+  try {
+    const { journey_id } = req.params;
+
+    const deleted = await AdminJourneyQuery.deleteJourneyById(journey_id);
+
+    if (!deleted) {
+      return res.status(404).json({
+        success: false,
+        message: "Journey not found"
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      message: "Journey and related data deleted successfully"
+    });
+
+  } catch (error) {
+    console.error("deleteJourney error:", error);
+    res.status(500).json({
+      success: false,
+      message: error.message
+    });
+  }
+},
+
 
   // addJourney: async (req, res) => {
   //   try {

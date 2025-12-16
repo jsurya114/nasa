@@ -55,6 +55,8 @@ router.post('/doubleStop/dailyFileUpload',upload.single('file'),DailyExcelUpload
 router.get("/journeys",adminJourneyController.fetchAllJourneys)
 router.post("/journey", adminJourneyController.addJourney);
 router.put("/journey/:journey_id",adminJourneyController.updateJourney)
+router.delete("/journey/:journey_id", adminJourneyController.deleteJourney);
+
 router.get("/drivers",adminJourneyController.fetchAllDrivers)
 
 //payment and dashboard - IMPORTANT: These routes must be in this order

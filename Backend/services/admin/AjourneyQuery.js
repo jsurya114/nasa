@@ -91,6 +91,16 @@ const values = [driver_id, route_id, start_seq, end_seq, journey_date, packages]
     return result.rows[0];
   },
 
+  deleteJourneyById: async (id) => {
+  const query = `
+    DELETE FROM dashboard_data
+    WHERE id = $1
+    RETURNING id
+  `;
+  const result = await pool.query(query, [id]);
+  return result.rowCount > 0;
+},
+
   getAllDrivers: async () => {
     const query = `
       SELECT id, name 
