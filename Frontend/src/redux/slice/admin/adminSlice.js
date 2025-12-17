@@ -57,7 +57,7 @@ export const accessAdminUser = createAsyncThunk(
 
             if (!res.ok) {
                 // If blocked or unauthorized, clear token
-                if (data.blocked) {
+                if (data.blocked || res.status === 401 || res.status === 403) {
                     localStorage.removeItem('adminToken');
                 }
                 return rejectWithValue(data.message || "Unable to get Users")
@@ -120,6 +120,7 @@ const adminSlice = createSlice({
                 state.loading = false;
                 state.isAuthenticated = true;
                 state.admin = action.payload.admin;
+                state.isSuperAdmin = action.payload.admin.role === 'superadmin';
             })
             .addCase(adminLogin.rejected, (state, action) => {
                 state.loading = false
@@ -154,11 +155,7 @@ const adminSlice = createSlice({
                 state.loading = false;
                 state.isAuthenticated = true;
                 state.admin = action.payload.admin;
-                if (action.payload.admin.role === 'superadmin') {
-                    state.isSuperAdmin = true;
-                } else {
-                    state.isSuperAdmin = false;
-                }
+                state.isSuperAdmin = action.payload.admin.role === 'superadmin';
             })
             .addCase(accessAdminUser.rejected, (state, action) => {
                 state.loading = false;

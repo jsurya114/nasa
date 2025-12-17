@@ -1,4 +1,4 @@
-import React,{useState,useEffect} from 'react';
+import React, {useState, useEffect} from 'react';
 import Header from '../../reuse/Header';
 import Nav from '../../reuse/Nav';
 import AddAdminForm from '../../reuse/AddAdminForm';
@@ -7,38 +7,44 @@ import AdminsList from '../../reuse/AdminsList';
 import DriversList from '../../reuse/DriversList';
 import { useDispatch, useSelector } from 'react-redux';
 import { toast } from "react-toastify";
-import { addDriver,addAdmin } from '../../redux/slice/admin/userLoadSlice';
-import { clearMessages,getCities } from '../../redux/slice/admin/userLoadSlice';
-import { accessAdminUser } from '../../redux/slice/admin/adminSlice';
-
+import { addDriver, addAdmin } from '../../redux/slice/admin/userLoadSlice';
+import { clearMessages, getCities } from '../../redux/slice/admin/userLoadSlice';
 
 const AddUsers = () => {
-    const dispatch= useDispatch();
-    const {error,success}= useSelector((state)=>state.users);
-    const {isSuperAdmin}= useSelector((state)=>state.admin);
+    const dispatch = useDispatch();
+    const {error, success} = useSelector((state) => state.users);
+    const {isSuperAdmin, admin} = useSelector((state) => state.admin);
     const [activeTab, setActiveTab] = useState("drivers");
     
-    useEffect(()=>{
+    useEffect(() => {
       dispatch(getCities())
-    },[dispatch]);
+    }, [dispatch]);
     
-    useEffect(()=>{      
+    useEffect(() => {      
+      if (error) {
+        toast.error(error);
+        dispatch(clearMessages());
+      }
+      if (success) {
+        toast.success(success);
+        dispatch(clearMessages());
+      }
+    }, [error, success, dispatch]);
 
-     if (error) {
-      toast.error(error);
-      dispatch(clearMessages()); // reset state after showing toast
-    }
-    if (success) {
-      toast.success(success);
-      dispatch(clearMessages());
-    }
-    },[error,success,dispatch]);
+    // Handle tab switching with access control
+    const handleTabSwitch = (tab) => {
+      if (tab === "admins" && !isSuperAdmin) {
+        toast.warning("Only superadmins can access admin management");
+        return;
+      }
+      setActiveTab(tab);
+    };
 
-  return (
-    <div className="min-h-screen bg-gray-100 text-gray-900 font-poppins">
+    return (
+      <div className="min-h-screen bg-gray-100 text-gray-900 font-poppins">
         <Header/>     
         
-        {/* Toggle Switch - Show both options but conditionally enable */}
+        {/* Toggle Switch */}
         <div className="flex items-center justify-center pt-6 pb-4">
           <div className="relative bg-white rounded-full p-1 shadow-md border border-gray-200">
             {/* Background slider */}
@@ -52,7 +58,7 @@ const AddUsers = () => {
             
             {/* Drivers Tab */}
             <button
-              onClick={() => setActiveTab("drivers")}
+              onClick={() => handleTabSwitch("drivers")}
               className={`relative z-10 px-6 py-2 rounded-full font-medium transition-colors duration-300 ${
                 activeTab === "drivers"
                   ? "text-white"
@@ -62,13 +68,9 @@ const AddUsers = () => {
               Drivers
             </button>
             
-            {/* Admins Tab - Always visible but conditionally functional */}
+            {/* Admins Tab - Conditionally styled based on access */}
             <button
-              onClick={() => {
-                // if (isSuperAdmin) {
-                  setActiveTab("admins");
-              // }
-              }}
+              onClick={() => handleTabSwitch("admins")}
               className={`relative z-10 px-6 py-2 rounded-full font-medium transition-colors duration-300 ${
                 activeTab === "admins"
                   ? "text-white"
@@ -76,25 +78,33 @@ const AddUsers = () => {
                     ? "text-gray-600 hover:text-gray-800"
                     : "text-gray-400 cursor-not-allowed"
               }`}
+              title={!isSuperAdmin ? "Superadmin access required" : ""}
             >
               Admins
+              {!isSuperAdmin && (
+                <svg className="w-3 h-3 inline-block ml-1" fill="currentColor" viewBox="0 0 20 20">
+                  <path fillRule="evenodd" d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z" clipRule="evenodd" />
+                </svg>
+              )}
             </button>
           </div>
         </div>
 
-        {/* Error/Success Messages */}
-        {/* <div className="text-center mt-4">
-          {error && (
-            <p className="bg-red-100 text-red-700 px-4 py-2 rounded-md inline-block shadow">
-              {error}
-            </p>
-          )}
-          {success && (
-            <p className="bg-green-100 text-green-700 px-4 py-2 rounded-md inline-block shadow">
-              {success}
-            </p>
-          )}
-        </div> */}
+        {/* Role indicator */}
+        {admin && (
+          <div className="text-center mb-4">
+            <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-medium ${
+              isSuperAdmin 
+                ? "bg-blue-100 text-blue-800" 
+                : "bg-green-100 text-green-800"
+            }`}>
+              <svg className="w-4 h-4 mr-1" fill="currentColor" viewBox="0 0 20 20">
+                <path fillRule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clipRule="evenodd" />
+              </svg>
+              {isSuperAdmin ? "Super Administrator" : "Administrator"}
+            </span>
+          </div>
+        )}
       
         {/* Content Area */}
         <div className="flex-1 p-6 pb-24">       
@@ -127,7 +137,7 @@ const AddUsers = () => {
               </div>
             </div>
           ) : (
-            // ORIGINAL CONDITION: Only show admin content if isSuperAdmin
+            // Admin Management Section - Only accessible by superadmin
             <>
               {isSuperAdmin ? (
                 <div className="space-y-6">
@@ -158,20 +168,28 @@ const AddUsers = () => {
                   </div>
                 </div>
               ) : (
-                // ORIGINAL FUNCTIONALITY: Show restriction message for non-superAdmin
+                // Access Denied Message
                 <div className="text-center py-12">
-                  <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-6 max-w-md mx-auto">
+                  <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-8 max-w-md mx-auto">
                     <div className="text-yellow-600 mb-4">
                       <svg className="w-16 h-16 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
                       </svg>
                     </div>
                     <h3 className="text-xl font-bold text-yellow-800 mb-3">Access Restricted</h3>
-                    <p className="text-yellow-700 leading-relaxed">
-                      You don't have permission to manage administrators. Only super administrators can access this section.
+                    <p className="text-yellow-700 leading-relaxed mb-2">
+                      You don't have permission to manage administrators.
                     </p>
-                    <div className="mt-4 text-sm text-yellow-600">
-                      Contact your system administrator for elevated access.
+                    <p className="text-yellow-600 text-sm">
+                      Only <strong>super administrators</strong> can access this section.
+                    </p>
+                    <div className="mt-6 pt-4 border-t border-yellow-200">
+                      <p className="text-sm text-yellow-600">
+                        Current Role: <span className="font-semibold">{admin?.role || 'Admin'}</span>
+                      </p>
+                      <p className="text-xs text-yellow-500 mt-2">
+                        Contact your system administrator for elevated access.
+                      </p>
                     </div>
                   </div>
                 </div>
@@ -180,8 +198,8 @@ const AddUsers = () => {
           )}
         </div>
         <Nav />
-    </div>    
-  );
+      </div>    
+    );
 }
 
 export default AddUsers;

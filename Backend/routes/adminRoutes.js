@@ -12,22 +12,23 @@ import { changeRoleAdmin, changeStatusAdmin, createAdmins, getAdmins } from '../
 import { getPaymentDashboardData, updatePaymentData, updateWeeklyTempDataToDashboard, payDriver } from '../controllers/admin/dashboardController.js';
 import adminJourneyController from '../controllers/admin/adminJourneyController.js';
 import adminAuth from '../middlewares/adminAuth.js';
+import superAdminAuth from '../middlewares/superAdminAuth.js'; // NEW IMPORT
 import { getAllData } from '../controllers/admin/dashController.js';
 import { getWeeklyTempData, weeklyExcelUpload } from '../controllers/admin/weeklyUploadsController.js';
 
 router.post('/login',adminController.Login);
 
-// Protect all routes below this line
+// Protect all routes below this line - Basic admin authentication
 router.use(adminAuth);
 
-//Job creation
+//Job creation - Both admin and superadmin
 router.post('/addjob', jobController.addJob);
 router.put('/updatejob/:id',jobController.updateJob)
 router.delete('/deletejob/:id',jobController.deleteJob)
 router.patch('/:id/status',jobController.jobStatus)
 router.get('/jobs', jobController.fetchPaginatedJobs)
 
-//Route creation
+//Route creation - Both admin and superadmin
 router.post("/routes", createRoute);
 router.get("/routes", fetchPaginatedRoutes);
 router.get("/routes-list",getRoutes)
@@ -36,22 +37,22 @@ router.put("/routes/:id", updateRoute);
 router.patch("/routes/:id/status", toggleRouteStatus);
 router.delete("/routes/:id", deleteRoute);
 
-//User creation 
+//User (Driver) creation - Both admin and superadmin can manage drivers
 router.post('/create-users',createUsers);
 router.get('/get-users',getUsers);
 router.patch('/toggle-user/:id',changeStatusUser);
 
-//Admin Creation
+//Admin Creation - SUPERADMIN ONLY
 router.get('/get-cities',jobController.getCities);
-router.post("/create-admin",createAdmins);
-router.get('/get-admins',getAdmins);
-router.patch('/toggle-admin/:id',changeStatusAdmin);
-router.patch('/toggle-admin-role/:id',changeRoleAdmin);
+router.post("/create-admin", superAdminAuth, createAdmins); // Protected
+router.get('/get-admins', superAdminAuth, getAdmins); // Protected
+router.patch('/toggle-admin/:id', superAdminAuth, changeStatusAdmin); // Protected
+router.patch('/toggle-admin-role/:id', superAdminAuth, changeRoleAdmin); // Protected
 
-//DoubleStop and file upload
+//DoubleStop and file upload - Both admin and superadmin
 router.post('/doubleStop/dailyFileUpload',upload.single('file'),DailyExcelUpload)
 
-//admin journey
+//admin journey - Both admin and superadmin
 router.get("/journeys",adminJourneyController.fetchAllJourneys)
 router.post("/journey", adminJourneyController.addJourney);
 router.put("/journey/:journey_id",adminJourneyController.updateJourney)
@@ -59,12 +60,12 @@ router.delete("/journey/:journey_id", adminJourneyController.deleteJourney);
 
 router.get("/drivers",adminJourneyController.fetchAllDrivers)
 
-//payment and dashboard - IMPORTANT: These routes must be in this order
-router.get('/dashboard/data', getAllData) // For dropdown data (cities, drivers, routes)
-router.get('/dashboard/paymentTable', getPaymentDashboardData) // For table data with filters
-router.post('/dashboard/payDriver', payDriver) // NEW: Mark driver as paid
+//payment and dashboard - Both admin and superadmin
+router.get('/dashboard/data', getAllData)
+router.get('/dashboard/paymentTable', getPaymentDashboardData)
+router.post('/dashboard/payDriver', payDriver)
 
-//Weekly Upload 
+//Weekly Upload - Both admin and superadmin
 router.post('/doubleStop/weekly-upload',upload.single('file'),weeklyExcelUpload);
 router.get('/doubleStop/fetchWeeklyTempData',getWeeklyTempData);
 router.post('/doubleStop/update-weekly-excel-to-dashboard',updateWeeklyTempDataToDashboard);
@@ -72,12 +73,13 @@ router.post('/doubleStop/update-weekly-excel-to-dashboard',updateWeeklyTempDataT
 router.get('/doubleStop/tempDashboardData',getUpdatedTempDashboardData);
 router.get('/doubleStop/calculatePayment',updatePaymentData);
 
-//logout from Admin
+//logout from Admin - Both admin and superadmin
 router.post('/logout',adminController.Logout);
 
-//Check for admin User
+//Check for admin User - Both admin and superadmin
 router.get('/access-admin',adminController.getUser);
 
+//Access codes - Both admin and superadmin
 router.post("/access-codes", uploadAccessCodeImages.array('images', 3), createAccessCode)
 router.get("/access-codes/list", getAccessCodes)
 router.put("/access-codes/:id", uploadAccessCodeImages.array('images', 3), updateAccessCode)
