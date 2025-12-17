@@ -154,6 +154,27 @@ export const addAdmin = createAsyncThunk(`/admin/create-admin`,
         }
     }
 )
+export const updateDriver = createAsyncThunk(
+  "/admin/update-user",
+  async ({ id, formData }, { rejectWithValue }) => {
+    try {
+      const res = await fetch(`${API_BASE_URL}/admin/update-user/${id}`, {
+        method: "PUT",
+        headers: getAuthHeaders(),
+        body: JSON.stringify(formData),
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        return rejectWithValue(data.message || "Update failed");
+      }
+      return data;
+    } catch (err) {
+      return rejectWithValue(err.message);
+    }
+  }
+);
+
 
 const userLoadSlice = createSlice({
     name: "usersCumAdmin",
@@ -302,6 +323,14 @@ const userLoadSlice = createSlice({
                 state.city = [];
                 state.loading = false;
             })
+            .addCase(updateDriver.fulfilled, (state, action) => {
+  const updated = action.payload.updatedUser;
+  state.drivers = state.drivers.map(d =>
+    d.id === updated.id ? updated : d
+  );
+  state.success = action.payload.message;
+})
+
     }
 })
 

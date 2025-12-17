@@ -192,6 +192,35 @@ export const dbService={
     )
     console.log('db dash query')
     return result.rows
-  }
+  },
+
+  updateDriver: async (id, data) => {
+  const city_id = await jobService.getCityByJob(data.city);
+
+  // Update driver
+  await pool.query(
+    `UPDATE drivers
+     SET name=$1, email=$2, city_id=$3, enabled=$4
+     WHERE id=$5`,
+    [data.name, data.email, city_id, data.enabled, id]
+  );
+
+  // Fetch updated driver WITH city name
+  const joined = await pool.query(
+    `SELECT d.id, d.driver_code, d.name, d.email, c.job, d.enabled
+     FROM drivers d
+     JOIN city c ON d.city_id = c.id
+     WHERE d.id = $1`,
+    [id]
+  );
+
+  return joined.rows[0];
+},
+
+
+
+
+
+
     
 }

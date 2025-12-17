@@ -4,7 +4,7 @@ const router = express.Router()
 import adminController from '../controllers/admin/adminController.js'
 import jobController from '../controllers/admin/jobController.js';
 import { createRoute,getRoutes,getRouteById, updateRoute, deleteRoute,toggleRouteStatus, fetchPaginatedRoutes} from "../controllers/admin/routeController.js"
-import { changeStatusUser, createUsers, getUsers } from '../controllers/admin/addUserController.js';
+import { changeStatusUser, createUsers, getUsers,updateUser} from '../controllers/admin/addUserController.js';
 import { createAccessCode } from '../controllers/admin/accessCodeControllers.js';
 import {DailyExcelUpload, getUpdatedTempDashboardData} from '../controllers/admin/fileUploadsController.js';
 import { getAccessCodes,updateAccessCode, } from '../controllers/admin/accessCodeControllers.js';
@@ -48,6 +48,9 @@ router.post("/create-admin", superAdminAuth, createAdmins); // Protected
 router.get('/get-admins', superAdminAuth, getAdmins); // Protected
 router.patch('/toggle-admin/:id', superAdminAuth, changeStatusAdmin); // Protected
 router.patch('/toggle-admin-role/:id', superAdminAuth, changeRoleAdmin); // Protected
+router.put('/update-user/:id', updateUser);
+
+
 
 //DoubleStop and file upload - Both admin and superadmin
 router.post('/doubleStop/dailyFileUpload',upload.single('file'),DailyExcelUpload)

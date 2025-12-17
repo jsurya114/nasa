@@ -75,3 +75,23 @@ export const changeStatusUser= async(req,res)=>{
 //         res.status(HttpStatus.INTERNAL_SERVER_ERROR).json({ message: "Server error" });
 //     }
 // }
+export const updateUser = async (req, res) => {
+  try {
+    const id = req.params.id;
+    const { name, email, city, enabled } = req.body;
+
+    const updatedUser = await dbService.updateDriver(id, {
+      name,
+      email,
+      city,
+      enabled,
+    });
+
+    return res.status(200).json({
+      message: "Driver updated successfully",
+      updatedUser,
+    });
+  } catch (err) {
+    res.status(500).json({ message: "Server error" });
+  }
+};

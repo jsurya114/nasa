@@ -5,7 +5,7 @@ import Pagination from './Pagination';
 import SearchBar from './Search';
 
 
-function DriversList() {
+function DriversList({onEdit}) {
   const dispatch = useDispatch();  
   const {drivers=[],loading:usersLoad,error:usersError,page,totalPages} = useSelector((state) => state.users);   
   const [searchTerm,setSearchTerm]=useState("");
@@ -89,7 +89,7 @@ function DriversList() {
                 </label>
 
                 <button
-                          onClick={()=>console.log("Hi")}
+                          onClick={()=>onEdit(d)}
                           className="group relative px-4 py-1.5 bg-gradient-to-r from-blue-500 to-blue-600 text-white text-xs font-medium rounded-md hover:from-blue-600 hover:to-blue-700 transition-all duration-200 shadow-sm hover:shadow-md flex items-center gap-1.5"
                           title="Edit City"
                         >
