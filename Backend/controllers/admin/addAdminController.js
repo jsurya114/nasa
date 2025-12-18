@@ -3,6 +3,8 @@ import HttpStatus from '../../utils/statusCodes.js';
 import { dbService } from '../../services/admin/dbQueries.js';
 import { jobService } from '../../services/admin/jobQueries.js';
 
+// Replace the createAdmins function in addAdminController.js
+
 export const createAdmins = async(req, res) => {
     try {
         // Verify superadmin access (double check even though middleware handles this)
@@ -14,6 +16,8 @@ export const createAdmins = async(req, res) => {
 
         const {email, password, name, role, cities} = req.body;
         const city = Array.isArray(cities) ? cities : [];
+        
+        console.log("Creating admin with data:", { name, email, role, cityCount: city.length });
         
         // Validate required fields
         if (!email || !password || !name) {
@@ -43,6 +47,8 @@ export const createAdmins = async(req, res) => {
         }
 
         const insertAdmin = await dbService.insertAdmin({name, email, password, role, city});    
+        
+        console.log("Admin created successfully:", insertAdmin);
 
         return res.status(HttpStatus.OK).json({
             message: "Admin Added Successfully!",

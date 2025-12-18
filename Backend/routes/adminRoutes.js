@@ -22,19 +22,19 @@ router.post('/login',adminController.Login);
 router.use(adminAuth);
 
 //Job creation - Both admin and superadmin
-router.post('/addjob', jobController.addJob);
-router.put('/updatejob/:id',jobController.updateJob)
-router.delete('/deletejob/:id',jobController.deleteJob)
-router.patch('/:id/status',jobController.jobStatus)
+router.post('/addjob', superAdminAuth, jobController.addJob);
+router.put('/updatejob/:id', superAdminAuth, jobController.updateJob);
+router.patch('/:id/status', superAdminAuth, jobController.jobStatus);
+
 router.get('/jobs', jobController.fetchPaginatedJobs)
 
 //Route creation - Both admin and superadmin
-router.post("/routes", createRoute);
+router.post("/routes",superAdminAuth, createRoute);
 router.get("/routes", fetchPaginatedRoutes);
 router.get("/routes-list",getRoutes)
 router.get("/routes/:id", getRouteById);
-router.put("/routes/:id", updateRoute);
-router.patch("/routes/:id/status", toggleRouteStatus);
+router.put("/routes/:id",superAdminAuth, updateRoute);
+router.patch("/routes/:id/status", superAdminAuth,toggleRouteStatus);
 router.delete("/routes/:id", deleteRoute);
 
 //User (Driver) creation - Both admin and superadmin can manage drivers

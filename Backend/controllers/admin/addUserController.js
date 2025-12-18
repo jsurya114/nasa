@@ -27,17 +27,31 @@ export const createUsers=async(req,res)=>{
        return  res.status(HttpStatus.INTERNAL_SERVER_ERROR).json({ message: "Server error" })
     }
 }
+// Update the getUsers function in addUserController.js
 
-export const getUsers= async(req,res)=>{
-    try{
+export const getUsers = async(req, res) => {
+    try {
         console.log("Entered by Get users route");
 
+        const adminId = req.user.id;
+        const adminRole = req.user.role;
         const page = parseInt(req.query.page) || 1;
         const limit = 10;
         const offset = (page - 1) * limit;
 
-        const drivers = await dbService.getAllDrivers(limit, offset);
-        const totalDrivers = await dbService.getCountOfDrivers();
+        let drivers;
+        let totalDrivers;
+
+        // If superadmin, get all drivers
+        if (adminRole === 'superadmin') {
+            drivers = await dbService.getAllDrivers(limit, offset);
+            totalDrivers = await dbService.getCountOfDrivers();
+        } else {
+            // If regular admin, get only drivers from their assigned cities
+            drivers = await dbService.getDriversByAdminCities(adminId, limit, offset);
+            totalDrivers = await dbService.getCountOfDriversByAdminCities(adminId);
+        }
+
         const totalPages = Math.ceil(totalDrivers / limit);
 
         return res.status(HttpStatus.OK).json({
@@ -45,12 +59,11 @@ export const getUsers= async(req,res)=>{
             page,
             totalPages
         });
-    }catch(err){
-        console.error(err.message);
-        res.status(HttpStatus.INTERNAL_SERVER_ERROR).json({ message: "Server error" })
+    } catch(err) {
+        console.error("Get users error:", err.message);
+        res.status(HttpStatus.INTERNAL_SERVER_ERROR).json({ message: "Server error" });
     }
 }
-
 export const changeStatusUser= async(req,res)=>{
     try{
         const id=req.params.id;
