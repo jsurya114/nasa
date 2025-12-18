@@ -5,12 +5,16 @@ import { useDispatch, useSelector } from 'react-redux'
 import { adminLogin, clearError } from "../../redux/slice/admin/adminSlice.js";
 import { useNavigate } from "react-router-dom";
 import { toast } from "react-toastify";
+import { AiOutlineEye, AiOutlineEyeInvisible } from "react-icons/ai";
+
 
 const Login = () => {
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("")
   const [fieldErrors, setFieldErrors] = useState({ email: "", password: "" })
+  const [showPassword, setShowPassword] = useState(false);
+
 
   const dispatch = useDispatch();
   const navigate = useNavigate();
@@ -145,22 +149,32 @@ navigate("/admin/dashboard");
               )}
             </div>
 
-            <div className="text-left mb-4">
-              <label htmlFor="password">Password</label>
-              <input
-                type="password"
-                id="password"
-                value={password}
-                onChange={(e) => {
-                  setPassword(e.target.value);
-                  setFieldErrors((prev) => ({ ...prev, password: "" })); // clear password error
-                }}
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-600"
-              />
-              {fieldErrors.password && (
-                <p className="text-red-600 text-sm">{fieldErrors.password}</p>
-              )}
-            </div>
+           <div className="text-left mb-4 relative">
+  <label htmlFor="password">Password</label>
+
+  <input
+    type={showPassword ? "text" : "password"}
+    id="password"
+    value={password}
+    onChange={(e) => {
+      setPassword(e.target.value);
+      setFieldErrors((prev) => ({ ...prev, password: "" }));
+    }}
+    className="w-full px-4 py-3 pr-12 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-600"
+  />
+
+  <span
+    onClick={() => setShowPassword(!showPassword)}
+    className="absolute right-4 top-10 cursor-pointer text-gray-600"
+  >
+    {showPassword ? <AiOutlineEyeInvisible size={22} /> : <AiOutlineEye size={22} />}
+  </span>
+
+  {fieldErrors.password && (
+    <p className="text-red-600 text-sm">{fieldErrors.password}</p>
+  )}
+</div>
+
 
             <button
               type="submit"

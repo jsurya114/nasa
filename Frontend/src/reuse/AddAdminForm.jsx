@@ -37,7 +37,7 @@ function AddAdminForm({ onSubmit, editData, isEdit, onCancel }) {
       setForm({
         name: editData.admin_name || "",
         email: editData.admin_email || "",
-        password: "",
+        password: "", // Leave empty - optional to change
         confirmPassword: "",
         role: editData.admin_role || "admin",
         cities: citiesArray,
@@ -61,13 +61,19 @@ function AddAdminForm({ onSubmit, editData, isEdit, onCancel }) {
     if (!form.name.trim()) newErrors.name = "Name is required";
     if (!form.email.trim()) newErrors.email = "Email is required";
     
-    // Password only required for new admins
     if (!isEdit) {
+      // For new admins, password is required
       if (!form.password.trim()) newErrors.password = "Password is required";
       if (!form.confirmPassword.trim())
         newErrors.confirmPassword = "Confirm Password is required";
       if (form.password !== form.confirmPassword)
         newErrors.confirmPassword = "Passwords do not match";
+    } else {
+      // For editing, only validate if user is trying to change password
+      if (form.password.trim() || form.confirmPassword.trim()) {
+        if (form.password !== form.confirmPassword)
+          newErrors.confirmPassword = "Passwords do not match";
+      }
     }
     
     if (form.role === 'admin') {
@@ -87,8 +93,8 @@ function AddAdminForm({ onSubmit, editData, isEdit, onCancel }) {
 
     const { confirmPassword, ...adminData } = form;
     
-    // Don't send password if editing and password is empty
-    if (isEdit && !adminData.password) {
+    // If editing and password is empty, don't send password field
+    if (isEdit && !adminData.password.trim()) {
       delete adminData.password;
     }
     
@@ -159,7 +165,7 @@ function AddAdminForm({ onSubmit, editData, isEdit, onCancel }) {
         value={form.name}
         onChange={handleChange}
         placeholder="Admin Name"
-        className="px-3 py-2 border rounded-lg"
+        className="px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
       />
       {errors.name && <p className="text-red-500 text-sm">{errors.name}</p>}
 
@@ -169,22 +175,29 @@ function AddAdminForm({ onSubmit, editData, isEdit, onCancel }) {
         value={form.email}
         onChange={handleChange}
         placeholder="Email"
-        className="px-3 py-2 border rounded-lg"
+        className="px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
       />
       {errors.email && <p className="text-red-500 text-sm">{errors.email}</p>}
 
-      <input
-        type="password"
-        name="password"
-        value={form.password}
-        onChange={handleChange}
-        placeholder={isEdit ? "Password (leave blank to keep current)" : "Password"}
-        disabled={isEdit}
-        className={`px-3 py-2 border rounded-lg ${
-          isEdit ? "bg-gray-100 cursor-not-allowed" : ""
-        }`}
-      />
-      {errors.password && <p className="text-red-500 text-sm">{errors.password}</p>}
+      <div className="flex flex-col gap-2">
+        <input
+          type="password"
+          name="password"
+          value={form.password}
+          onChange={handleChange}
+          placeholder={isEdit ? "New Password (leave blank to keep current)" : "Password"}
+          className="px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
+        />
+        {isEdit && (
+          <p className="text-xs text-gray-500 flex items-center gap-1">
+            <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+              <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
+            </svg>
+            Leave empty to keep the current password
+          </p>
+        )}
+        {errors.password && <p className="text-red-500 text-sm">{errors.password}</p>}
+      </div>
 
       <input
         type="password"
@@ -192,25 +205,29 @@ function AddAdminForm({ onSubmit, editData, isEdit, onCancel }) {
         value={form.confirmPassword}
         onChange={handleChange}
         placeholder="Confirm Password"
-        disabled={isEdit}
-        className={`px-3 py-2 border rounded-lg ${
-          isEdit ? "bg-gray-100 cursor-not-allowed" : ""
-        }`}
+        className="px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
       />
       {errors.confirmPassword && (
         <p className="text-red-500 text-sm">{errors.confirmPassword}</p>
       )}
 
-      <select
-        name="role"
-        value={form.role}
-        onChange={handleChange}
-        className="px-3 py-2 border rounded-lg"
-        disabled={isEdit}
-      >
-        <option value="admin">Admin</option>
-        <option value="superadmin">Super Admin</option>
-      </select>
+      <div className="flex flex-col gap-2">
+        <select
+          name="role"
+          value={form.role}
+          onChange={handleChange}
+          className="px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
+          disabled={isEdit}
+        >
+          <option value="admin">Admin</option>
+          <option value="superadmin">Super Admin</option>
+        </select>
+        {isEdit && (
+          <p className="text-xs text-gray-500">
+            ℹ️ Role cannot be changed during edit
+          </p>
+        )}
+      </div>
 
       {form.role === 'admin' && (
         <div className="flex flex-col gap-2">
@@ -241,7 +258,8 @@ function AddAdminForm({ onSubmit, editData, isEdit, onCancel }) {
       <div className="flex gap-3">
         <button
           type="submit"
-          className="px-6 py-2 bg-purple-700 text-white rounded-lg shadow hover:bg-purple-800"
+          disabled={loading}
+          className="px-6 py-2 bg-purple-700 text-white rounded-lg shadow hover:bg-purple-800 transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed"
         >
           {loading ? (isEdit ? 'Updating Admin' : 'Adding Admin') : (isEdit ? 'Update Admin' : 'Add Admin')}
         </button>
@@ -250,7 +268,7 @@ function AddAdminForm({ onSubmit, editData, isEdit, onCancel }) {
           <button
             type="button"
             onClick={handleCancel}
-            className="px-6 py-2 bg-gray-300 text-gray-800 rounded-lg hover:bg-gray-400"
+            className="px-6 py-2 bg-gray-300 text-gray-800 rounded-lg hover:bg-gray-400 transition-colors"
           >
             Cancel
           </button>

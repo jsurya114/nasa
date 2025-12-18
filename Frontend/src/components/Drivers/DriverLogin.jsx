@@ -6,11 +6,15 @@ import { driverLogin, clearError } from "../../redux/slice/driver/driverSlice.js
 import { useNavigate } from "react-router-dom";
 import { useEffect } from "react";
 import { toast } from "react-toastify";
+import { AiOutlineEye, AiOutlineEyeInvisible } from "react-icons/ai";
+
 
 const DriverLogin = () => {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [fieldErrors, setFieldErrors] = useState({ email: "", password: "" });
+  const [showPassword, setShowPassword] = useState(false);
+
 
   const dispatch = useDispatch();
   const navigate = useNavigate();
@@ -104,28 +108,32 @@ const DriverLogin = () => {
               )}
             </div>
 
-            <div className="text-left mb-4">
-              <label htmlFor="password" className="block text-gray-700 mb-1 font-medium">
-                Password
-              </label>
-              <input
-                type="password"
-                id="password"
-                name="password"
-                placeholder="Enter your password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                className={`w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 
-                  ${
-                    fieldErrors.password
-                      ? "border-red-500 focus:ring-red-500"
-                      : "border-gray-300 focus:ring-purple-600"
-                  }`}
-              />
-              {fieldErrors.password && (
-                <p className="text-red-600 text-sm mt-1">{fieldErrors.password}</p>
-              )}
-            </div>
+            <div className="text-left mb-4 relative">
+  <label htmlFor="password">Password</label>
+
+  <input
+    type={showPassword ? "text" : "password"}
+    id="password"
+    value={password}
+    onChange={(e) => {
+      setPassword(e.target.value);
+      setFieldErrors((prev) => ({ ...prev, password: "" }));
+    }}
+    className="w-full px-4 py-3 pr-12 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-600"
+  />
+
+  <span
+    onClick={() => setShowPassword(!showPassword)}
+    className="absolute right-4 top-10 cursor-pointer text-gray-600"
+  >
+    {showPassword ? <AiOutlineEyeInvisible size={22} /> : <AiOutlineEye size={22} />}
+  </span>
+
+  {fieldErrors.password && (
+    <p className="text-red-600 text-sm">{fieldErrors.password}</p>
+  )}
+</div>
+
 
             <button
               type="submit"
