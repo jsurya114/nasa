@@ -219,8 +219,91 @@ export const dbService={
 
 
 
+updateAdmin: async(id, data) => {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
 
+    // Update admin basic info
+    const result = await client.query(
+      `UPDATE admin 
+       SET name = $1, email = $2, role = $3
+       WHERE id = $4 
+       RETURNING id, name, email, role, is_active`,
+      [data.name, data.email, data.role, id]
+    );
+    
+    const admin = result.rows[0];
+    
+    if (!admin) {
+      throw new Error('Admin not found');
+    }
 
+    // Delete existing city mappings
+    await client.query(
+      `DELETE FROM admin_city_ref WHERE admin_id = $1`,
+      [id]
+    );
+
+    // Insert new city mappings if role is admin
+    const cities = Array.isArray(data.city) ? data.city : [];
+    if (data.role === 'admin' && cities.length > 0) {
+      const values = cities.map((c) => `(${admin.id},${c.value})`).join(',');
+      const query = `
+        INSERT INTO admin_city_ref(admin_id, city_id)
+        VALUES ${values}
+        ON CONFLICT (admin_id, city_id) DO NOTHING;
+      `;
+      await client.query(query);
+    }
+
+    await client.query('COMMIT');
+    
+    // Fetch updated admin with cities
+    const joined = await client.query(
+      `SELECT 
+        a.id AS id,
+        a.name AS admin_name,
+        a.email AS admin_email,
+        a.role AS admin_role,
+        a.is_active,
+        COALESCE(STRING_AGG(c.job, ', '), '') AS cities
+      FROM admin a
+      LEFT JOIN admin_city_ref acr ON a.id = acr.admin_id
+      LEFT JOIN city c ON acr.city_id = c.id
+      WHERE a.id = $1
+      GROUP BY a.id, a.name, a.email, a.role, a.is_active`,
+      [id]
+    );
+    
+    return joined.rows[0];
+  } catch (err) {
+    await client.query('ROLLBACK');
+    console.error("Error updating admin:", err.message);
+    throw err;
+  } finally {
+    client.release();
+  }
+},
+// Get cities assigned to an admin
+getAdminCities: async(adminId) => {
+  try {
+    const result = await pool.query(
+      `SELECT c.id, c.job, c.city_code, c.enabled
+       FROM city c
+       INNER JOIN admin_city_ref acr ON c.id = acr.city_id
+       WHERE acr.admin_id = $1 AND c.enabled = true
+       ORDER BY c.job ASC`,
+      [adminId]
+    );
+    
+    console.log(`Found ${result.rows.length} cities for admin ${adminId}`);
+    return result.rows;
+  } catch (error) {
+    console.error("Error in getAdminCities:", error.message);
+    throw error;
+  }
+}
 
     
 }

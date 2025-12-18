@@ -11,8 +11,10 @@ import {
   addDriver,
   addAdmin,
   updateDriver,
+  updateAdmin,
   clearMessages,
-  getCities
+  getCities,
+  getAdminCities
 } from '../../redux/slice/admin/userLoadSlice';
 
 const AddUsers = () => {
@@ -23,11 +25,19 @@ const AddUsers = () => {
 
   const [activeTab, setActiveTab] = useState("drivers");
   const [editDriver, setEditDriver] = useState(null);
+  const [editAdmin, setEditAdmin] = useState(null);
 
-  // Fetch cities
+  // Fetch cities on mount based on admin role
   useEffect(() => {
-    dispatch(getCities());
-  }, [dispatch]);
+    // Use getAdminCities for role-based filtering
+    // Superadmins get all cities, regular admins get only assigned cities
+    dispatch(getAdminCities());
+    
+    // If you need all cities for superadmin operations, also fetch:
+    if (isSuperAdmin) {
+      dispatch(getCities());
+    }
+  }, [dispatch, isSuperAdmin]);
 
   // Toast handling
   useEffect(() => {
@@ -47,7 +57,31 @@ const AddUsers = () => {
       toast.warning("Only superadmins can access admin management");
       return;
     }
+    
+    // Clear edit states when switching tabs
+    setEditDriver(null);
+    setEditAdmin(null);
     setActiveTab(tab);
+  };
+
+  // Handle driver form submission
+  const handleDriverSubmit = (form) => {
+    if (editDriver) {
+      dispatch(updateDriver({ id: editDriver.id, formData: form }));
+      setEditDriver(null);
+    } else {
+      dispatch(addDriver(form));
+    }
+  };
+
+  // Handle admin form submission
+  const handleAdminSubmit = (form) => {
+    if (editAdmin) {
+      dispatch(updateAdmin({ id: editAdmin.id, formData: form }));
+      setEditAdmin(null);
+    } else {
+      dispatch(addAdmin(form));
+    }
   };
 
   return (
@@ -120,14 +154,8 @@ const AddUsers = () => {
               <AddDriverForm
                 isEdit={!!editDriver}
                 editData={editDriver}
-                onSubmit={(form) => {
-                  if (editDriver) {
-                    dispatch(updateDriver({ id: editDriver.id, formData: form }));
-                    setEditDriver(null);
-                  } else {
-                    dispatch(addDriver(form));
-                  }
-                }}
+                onSubmit={handleDriverSubmit}
+                onCancel={() => setEditDriver(null)}
               />
             </div>
 
@@ -148,13 +176,18 @@ const AddUsers = () => {
           <>
             {isSuperAdmin ? (
               <div className="space-y-6">
-                {/* Add Admin */}
+                {/* Add / Edit Admin */}
                 <div className="bg-white border border-gray-200 rounded-xl shadow-sm p-6">
                   <h2 className="text-xl font-bold text-gray-800 mb-4">
-                    Add New Admin
+                    {editAdmin ? "Edit Admin" : "Add New Admin"}
                   </h2>
 
-                  <AddAdminForm onSubmit={(form) => dispatch(addAdmin(form))} />
+                  <AddAdminForm 
+                    isEdit={!!editAdmin}
+                    editData={editAdmin}
+                    onSubmit={handleAdminSubmit}
+                    onCancel={() => setEditAdmin(null)}
+                  />
                 </div>
 
                 {/* Admins List */}
@@ -166,7 +199,7 @@ const AddUsers = () => {
                   </div>
 
                   <div className="overflow-x-auto">
-                    <AdminsList />
+                    <AdminsList onEdit={(admin) => setEditAdmin(admin)} />
                   </div>
                 </div>
               </div>

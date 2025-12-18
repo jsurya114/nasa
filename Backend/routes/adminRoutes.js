@@ -8,11 +8,11 @@ import { changeStatusUser, createUsers, getUsers,updateUser} from '../controller
 import { createAccessCode } from '../controllers/admin/accessCodeControllers.js';
 import {DailyExcelUpload, getUpdatedTempDashboardData} from '../controllers/admin/fileUploadsController.js';
 import { getAccessCodes,updateAccessCode, } from '../controllers/admin/accessCodeControllers.js';
-import { changeRoleAdmin, changeStatusAdmin, createAdmins, getAdmins } from '../controllers/admin/addAdminController.js';
+import { changeRoleAdmin, changeStatusAdmin, createAdmins, getAdmins, updateAdmin, getAdminCities } from '../controllers/admin/addAdminController.js';
 import { getPaymentDashboardData, updatePaymentData, updateWeeklyTempDataToDashboard, payDriver } from '../controllers/admin/dashboardController.js';
 import adminJourneyController from '../controllers/admin/adminJourneyController.js';
 import adminAuth from '../middlewares/adminAuth.js';
-import superAdminAuth from '../middlewares/superAdminAuth.js'; // NEW IMPORT
+import superAdminAuth from '../middlewares/superAdminAuth.js';
 import { getAllData } from '../controllers/admin/dashController.js';
 import { getWeeklyTempData, weeklyExcelUpload } from '../controllers/admin/weeklyUploadsController.js';
 
@@ -41,16 +41,18 @@ router.delete("/routes/:id", deleteRoute);
 router.post('/create-users',createUsers);
 router.get('/get-users',getUsers);
 router.patch('/toggle-user/:id',changeStatusUser);
-
-//Admin Creation - SUPERADMIN ONLY
-router.get('/get-cities',jobController.getCities);
-router.post("/create-admin", superAdminAuth, createAdmins); // Protected
-router.get('/get-admins', superAdminAuth, getAdmins); // Protected
-router.patch('/toggle-admin/:id', superAdminAuth, changeStatusAdmin); // Protected
-router.patch('/toggle-admin-role/:id', superAdminAuth, changeRoleAdmin); // Protected
 router.put('/update-user/:id', updateUser);
 
+//Cities - Both admin and superadmin
+router.get('/get-cities',jobController.getCities); // All enabled cities
+router.get('/get-admin-cities', getAdminCities); // Role-based cities (NEW - ADDED THIS LINE)
 
+//Admin Creation - SUPERADMIN ONLY
+router.post("/create-admin", superAdminAuth, createAdmins);
+router.get('/get-admins', superAdminAuth, getAdmins);
+router.patch('/toggle-admin/:id', superAdminAuth, changeStatusAdmin);
+router.patch('/toggle-admin-role/:id', superAdminAuth, changeRoleAdmin);
+router.put('/update-admin/:id', superAdminAuth, updateAdmin);
 
 //DoubleStop and file upload - Both admin and superadmin
 router.post('/doubleStop/dailyFileUpload',upload.single('file'),DailyExcelUpload)

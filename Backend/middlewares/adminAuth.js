@@ -22,6 +22,7 @@ export default async function adminAuth(req, res, next) {
 
     const decoded = verifyToken(token);
     req.admin = decoded;
+      req.user = decoded; 
     next();
   } catch (err) {
     console.log(err.message, 'err in admin middleware')
