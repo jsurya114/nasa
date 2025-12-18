@@ -241,23 +241,31 @@ const userLoadSlice = createSlice({
     },
     extraReducers: (builder) => {
         builder
-            // Add Driver
-            .addCase(addDriver.pending, (state) => {
-                state.loading = true;
-                state.error = null;
-                state.success = null;
-            })
-            .addCase(addDriver.fulfilled, (state, action) => {
-                state.loading = false;
-                state.drivers.push(action.payload.insertUser);
-                state.success = action.payload.message;
-                state.error = null;
-            })
-            .addCase(addDriver.rejected, (state, action) => {
-                state.loading = false;
-                state.error = action.payload || "Failed to add driver";
-                state.success = null;
-            })
+           // Add Driver - FIXED VERSION  
+.addCase(addDriver.pending, (state) => {
+    state.loading = true;
+    state.error = null;
+    state.success = null;
+})
+.addCase(addDriver.fulfilled, (state, action) => {
+    console.log("Driver added successfully:", action.payload);
+    
+    // The insertUser should return driver with city name
+    const newDriver = action.payload.insertUser;
+    
+    // Add to the beginning of the array so it's visible
+    state.drivers = [newDriver, ...state.drivers];
+    
+    state.loading = false;
+    state.success = action.payload.message;
+    state.error = null;
+})
+.addCase(addDriver.rejected, (state, action) => {
+    console.error("Add driver failed:", action.payload);
+    state.loading = false;
+    state.error = action.payload || "Failed to add driver";
+    state.success = null;
+})
 
             // Get Users (Drivers)
             .addCase(getUsers.pending, (state) => {
@@ -349,24 +357,31 @@ const userLoadSlice = createSlice({
                 state.success = null;
             })
 
-            // Add Admin
-            .addCase(addAdmin.pending, (state) => {
-                state.loading = true;
-                state.error = null;
-                state.success = null;
-            })
-            .addCase(addAdmin.fulfilled, (state, action) => {
-                state.admins.push(action.payload.insertAdmin)
-                state.loading = false;
-                state.success = action.payload.message;
-                state.error = null;
-            })
-            .addCase(addAdmin.rejected, (state, action) => {
-                state.loading = false;
-                state.error = action.payload || "Failed to add admin"
-                state.success = null;
-            })
-
+         // Add Admin - FIXED VERSION
+.addCase(addAdmin.pending, (state) => {
+    state.loading = true;
+    state.error = null;
+    state.success = null;
+})
+.addCase(addAdmin.fulfilled, (state, action) => {
+    console.log("Admin added successfully:", action.payload);
+    
+    // The insertAdmin should return formatted admin with cities
+    const newAdmin = action.payload.insertAdmin;
+    
+    // Add to the beginning of the array so it's visible
+    state.admins = [newAdmin, ...state.admins];
+    
+    state.loading = false;
+    state.success = action.payload.message;
+    state.error = null;
+})
+.addCase(addAdmin.rejected, (state, action) => {
+    console.error("Add admin failed:", action.payload);
+    state.loading = false;
+    state.error = action.payload || "Failed to add admin";
+    state.success = null;
+})
             // Get Cities
             .addCase(getCities.pending, (state) => {
                 state.loading = true;
