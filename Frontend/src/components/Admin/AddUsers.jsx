@@ -23,6 +23,7 @@ const AddUsers = () => {
 
   const [activeTab, setActiveTab] = useState("drivers");
   const [editDriver, setEditDriver] = useState(null);
+  const [editAdmin, setEditAdmin] = useState(null);
 
   // Fetch cities
   useEffect(() => {
@@ -140,7 +141,7 @@ const AddUsers = () => {
               </div>
 
               <div className="overflow-x-auto">
-                <DriversList onEdit={(driver) => setEditDriver(driver)} />
+                <DriversList onEdit={(driver) => {setEditDriver(driver); window.scrollTo({ top: 0, behavior: 'smooth' });}} />
               </div>
             </div>
           </div>
@@ -154,7 +155,27 @@ const AddUsers = () => {
                     Add New Admin
                   </h2>
 
-                  <AddAdminForm onSubmit={(form) => dispatch(addAdmin(form))} />
+                  <AddAdminForm editMode={!!editAdmin}
+                initialData={editAdmin}
+                onSubmit={(form) => {
+                  if (editAdmin) {
+                    dispatch(updateAdmin({ id: editAdmin.id, formData: form }))
+                      .unwrap()
+                      .then(() => {
+                        setEditAdmin(null);
+                      });
+                  } else {
+                    dispatch(addAdmin(form));
+                  }
+                }}  />
+                    {editAdmin && (
+                      <button
+                        onClick={() => setEditAdmin(null)}
+                        className="mt-4 px-6 py-2 bg-gray-300 text-gray-700 rounded-lg shadow hover:bg-gray-400"
+                      >
+                        Cancel Edit
+                      </button>
+                    )}
                 </div>
 
                 {/* Admins List */}
@@ -166,7 +187,11 @@ const AddUsers = () => {
                   </div>
 
                   <div className="overflow-x-auto">
-                    <AdminsList />
+                    <AdminsList onEdit={(admin) => {
+                      setEditAdmin(admin);
+                      // Scroll to top to show the form
+                      window.scrollTo({ top: 0, behavior: 'smooth' });
+                    }} />
                   </div>
                 </div>
               </div>
@@ -185,7 +210,6 @@ const AddUsers = () => {
           </>
         )}
       </div>
-
       <Nav />
     </div>
   );

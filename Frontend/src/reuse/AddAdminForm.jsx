@@ -2,16 +2,27 @@
 import {useState} from 'react';
 import { useSelector } from 'react-redux';
 import Select from 'react-select';
-function AddAdminForm({ onSubmit }) {
-  const [form, setForm] = useState({
-    name: "",
-    email: "",
-    password: "",
-    confirmPassword: "",
-    role: "admin",
-    cities:[],
-  });
- const {loading,city,} = useSelector((state)=>state.users);
+function AddAdminForm({ onSubmit, editMode = false, initialData = null }) {
+  const [form, setForm] = useState(
+     editMode && initialData
+    ? {
+        name: initialData.name || "",
+        email: initialData.email || "",
+        password: "",
+        confirmPassword: "",
+        phone: initialData.phone || "",
+        city: initialData.city || "",
+      }
+    : {
+        name: "",
+        email: "",
+        password: "",
+        confirmPassword: "",
+        phone: "",
+        city: "",
+      }
+  );
+ const {loading,city} = useSelector((state)=>state.users);
   const [errors, setErrors] = useState({});
 
      // Transform city data into react-select format
@@ -158,9 +169,9 @@ function AddAdminForm({ onSubmit }) {
 
        {/* Multi-select Cities with react-select */}
         {form.role==='admin' &&(<div className="flex flex-col gap-2">
-       {/* <label className="text-sm font-medium text-gray-700">
+       <label className="text-sm font-medium text-gray-700">
           Select Cities *
-        </label> */}
+        </label>
         <Select
           isMulti
           name="cities"
