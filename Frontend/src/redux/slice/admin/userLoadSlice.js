@@ -84,6 +84,25 @@ export const getCities = createAsyncThunk('/admin/get-cities',
     }
 )
 
+// Get cities based on admin role (superadmin gets all, admin gets assigned only)
+export const getAdminCities = createAsyncThunk('/admin/get-admin-cities',
+    async (_, { rejectWithValue }) => {
+        try {
+            const res = await fetch(`${API_BASE_URL}/admin/get-admin-cities`, {
+                method: "GET",
+                headers: getAuthHeaders(),
+            });
+            const data = await res.json();
+            if (!res.ok) {
+                return rejectWithValue(data.message || "Error while getting admin cities")
+            }
+            return data;
+        } catch (err) {
+            return rejectWithValue(err.message)
+        }
+    }
+)
+
 export const getAdmins = createAsyncThunk('/admin/get-admins',
     async ({ page = 1 }, { rejectWithValue }) => {
         try {
@@ -154,11 +173,33 @@ export const addAdmin = createAsyncThunk(`/admin/create-admin`,
         }
     }
 )
+
 export const updateDriver = createAsyncThunk(
   "/admin/update-user",
   async ({ id, formData }, { rejectWithValue }) => {
     try {
       const res = await fetch(`${API_BASE_URL}/admin/update-user/${id}`, {
+        method: "PUT",
+        headers: getAuthHeaders(),
+        body: JSON.stringify(formData),
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        return rejectWithValue(data.message || "Update failed");
+      }
+      return data;
+    } catch (err) {
+      return rejectWithValue(err.message);
+    }
+  }
+);
+
+export const updateAdmin = createAsyncThunk(
+  "/admin/update-admin",
+  async ({ id, formData }, { rejectWithValue }) => {
+    try {
+      const res = await fetch(`${API_BASE_URL}/admin/update-admin/${id}`, {
         method: "PUT",
         headers: getAuthHeaders(),
         body: JSON.stringify(formData),
@@ -200,22 +241,33 @@ const userLoadSlice = createSlice({
     },
     extraReducers: (builder) => {
         builder
-            .addCase(addDriver.pending, (state) => {
-                state.loading = true;
-                state.error = null;
-                state.success = null;
-            })
-            .addCase(addDriver.fulfilled, (state, action) => {
-                state.loading = false;
-                state.drivers.push(action.payload.insertUser);
-                state.success = action.payload.message;
-                state.error = null;
-            })
-            .addCase(addDriver.rejected, (state, action) => {
-                state.loading = false;
-                state.error = action.payload || "Failed to add driver";
-                state.success = null;
-            })
+           // Add Driver - FIXED VERSION  
+.addCase(addDriver.pending, (state) => {
+    state.loading = true;
+    state.error = null;
+    state.success = null;
+})
+.addCase(addDriver.fulfilled, (state, action) => {
+    console.log("Driver added successfully:", action.payload);
+    
+    // The insertUser should return driver with city name
+    const newDriver = action.payload.insertUser;
+    
+    // Add to the beginning of the array so it's visible
+    state.drivers = [newDriver, ...state.drivers];
+    
+    state.loading = false;
+    state.success = action.payload.message;
+    state.error = null;
+})
+.addCase(addDriver.rejected, (state, action) => {
+    console.error("Add driver failed:", action.payload);
+    state.loading = false;
+    state.error = action.payload || "Failed to add driver";
+    state.success = null;
+})
+
+            // Get Users (Drivers)
             .addCase(getUsers.pending, (state) => {
                 state.loading = true;
             })
@@ -232,6 +284,8 @@ const userLoadSlice = createSlice({
                 state.error = action.payload;
                 state.loading = false;
             })
+
+            // Get Admins
             .addCase(getAdmins.pending, (state) => {
                 state.loading = true;
             })
@@ -248,6 +302,8 @@ const userLoadSlice = createSlice({
                 state.error = action.payload;
                 state.loading = false;
             })
+
+            // Toggle User (Driver) Status
             .addCase(toggleAvailUser.pending, (state) => {
                 state.loading = true;
             })
@@ -264,6 +320,8 @@ const userLoadSlice = createSlice({
                 state.error = action.payload || "Failed to update driver status"
                 state.success = null;
             })
+
+            // Toggle Admin Status
             .addCase(toggleAvailAdmin.pending, (state) => {
                 state.loading = true;
             })
@@ -280,6 +338,8 @@ const userLoadSlice = createSlice({
                 state.error = action.payload || "Failed to update admin status"
                 state.success = null;
             })
+
+            // Toggle Admin Role
             .addCase(toggleAdminRole.pending, (state) => {
                 state.loading = true;
             })
@@ -296,19 +356,33 @@ const userLoadSlice = createSlice({
                 state.error = action.payload || "Failed to update admin status"
                 state.success = null;
             })
-            .addCase(addAdmin.pending, (state) => {
-                state.loading = true;
-            })
-            .addCase(addAdmin.fulfilled, (state, action) => {
-                state.admins.push(action.payload.insertAdmin)
-                state.loading = false;
-                state.success = action.payload.message;
-            })
-            .addCase(addAdmin.rejected, (state, action) => {
-                state.loading = false;
-                state.error = action.payload || "Failed to add admin"
-                state.success = null;
-            })
+
+         // Add Admin - FIXED VERSION
+.addCase(addAdmin.pending, (state) => {
+    state.loading = true;
+    state.error = null;
+    state.success = null;
+})
+.addCase(addAdmin.fulfilled, (state, action) => {
+    console.log("Admin added successfully:", action.payload);
+    
+    // The insertAdmin should return formatted admin with cities
+    const newAdmin = action.payload.insertAdmin;
+    
+    // Add to the beginning of the array so it's visible
+    state.admins = [newAdmin, ...state.admins];
+    
+    state.loading = false;
+    state.success = action.payload.message;
+    state.error = null;
+})
+.addCase(addAdmin.rejected, (state, action) => {
+    console.error("Add admin failed:", action.payload);
+    state.loading = false;
+    state.error = action.payload || "Failed to add admin";
+    state.success = null;
+})
+            // Get Cities
             .addCase(getCities.pending, (state) => {
                 state.loading = true;
             })
@@ -323,14 +397,64 @@ const userLoadSlice = createSlice({
                 state.city = [];
                 state.loading = false;
             })
-            .addCase(updateDriver.fulfilled, (state, action) => {
-  const updated = action.payload.updatedUser;
-  state.drivers = state.drivers.map(d =>
-    d.id === updated.id ? updated : d
-  );
-  state.success = action.payload.message;
-})
 
+            // Get Admin Cities (role-based)
+            .addCase(getAdminCities.pending, (state) => {
+                state.loading = true;
+            })
+            .addCase(getAdminCities.fulfilled, (state, action) => {
+                console.log("From admin cities", action.payload.cities);
+                state.city = action.payload.cities;
+                state.loading = false;
+                state.success = true;
+            })
+            .addCase(getAdminCities.rejected, (state, action) => {
+                state.error = action.payload;
+                state.city = [];
+                state.loading = false;
+            })
+
+            // Update Driver
+            .addCase(updateDriver.pending, (state) => {
+                state.loading = true;
+                state.error = null;
+                state.success = null;
+            })
+            .addCase(updateDriver.fulfilled, (state, action) => {
+                const updated = action.payload.updatedUser;
+                state.drivers = state.drivers.map(d =>
+                    d.id === updated.id ? updated : d
+                );
+                state.loading = false;
+                state.success = action.payload.message;
+                state.error = null;
+            })
+            .addCase(updateDriver.rejected, (state, action) => {
+                state.loading = false;
+                state.error = action.payload || "Failed to update driver";
+                state.success = null;
+            })
+
+            // Update Admin
+            .addCase(updateAdmin.pending, (state) => {
+                state.loading = true;
+                state.error = null;
+                state.success = null;
+            })
+            .addCase(updateAdmin.fulfilled, (state, action) => {
+                const updated = action.payload.updatedAdmin;
+                state.admins = state.admins.map(a =>
+                    a.id === updated.id ? updated : a
+                );
+                state.loading = false;
+                state.success = action.payload.message;
+                state.error = null;
+            })
+            .addCase(updateAdmin.rejected, (state, action) => {
+                state.loading = false;
+                state.error = action.payload || "Failed to update admin";
+                state.success = null;
+            });
     }
 })
 
