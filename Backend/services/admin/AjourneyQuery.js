@@ -1,21 +1,59 @@
 import pool from "../../config/db.js";
 
 const AdminJourneyQuery = {
-  getAllJourneys: async () => {
-    const query = `
-      SELECT 
-        d.*, 
-        r.name AS route_name, 
-        dr.name AS driver_name,
-        TO_CHAR(d.journey_date, 'YYYY-MM-DD') as journey_date
-      FROM dashboard_data d
-      JOIN routes r ON d.route_id = r.id
-      JOIN drivers dr ON d.driver_id = dr.id
-      ORDER BY d.journey_date DESC, d.start_seq
+  // getAllJourneys: async (id,role) => {
+  //   const query = `
+  //     SELECT 
+  //       d.*, 
+  //       r.name AS route_name, 
+  //       dr.name AS driver_name,
+  //       TO_CHAR(d.journey_date, 'YYYY-MM-DD') as journey_date
+  //     FROM dashboard_data d
+  //     JOIN routes r ON d.route_id = r.id
+  //     JOIN drivers dr ON d.driver_id = dr.id
+  //     ORDER BY d.journey_date DESC, d.start_seq
+  //   `;
+  //   const result = await pool.query(query);
+  //   return result.rows;
+  // },
+
+  getAllJourneys: async (id, role) => {
+
+  let query = `
+    SELECT 
+      d.*, 
+      r.name AS route_name, 
+      dr.name AS driver_name,
+      TO_CHAR(d.journey_date, 'YYYY-MM-DD') AS journey_date
+    FROM dashboard_data d
+    JOIN routes r ON d.route_id = r.id
+    JOIN drivers dr ON d.driver_id = dr.id
+    WHERE 1 = 1
+  `;
+
+  const params = [];
+
+  // 🔐 Apply restriction ONLY for admin
+  if (role === "admin") {
+    query += `
+      AND EXISTS (
+        SELECT 1
+        FROM admin_city_ref acr
+        WHERE acr.city_id = dr.city_id
+          AND acr.admin_id = $1
+      )
     `;
-    const result = await pool.query(query);
-    return result.rows;
-  },
+    params.push(id);
+  }
+
+  query += `
+    ORDER BY d.journey_date DESC, d.start_seq
+  `;
+
+  const result = await pool.query(query, params);
+  return result.rows;
+},
+
 
   updateJourneyById: async (id, data) => {
     const { start_seq, end_seq, route_id, driver_id } = data;

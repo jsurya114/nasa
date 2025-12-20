@@ -8,7 +8,8 @@ import { getAllottedDrivers } from "../../services/admin/dashboardService.js";
 const adminJourneyController = {
   fetchAllJourneys: async (req, res) => {
     try {
-      const journeys = await AdminJourneyQuery.getAllJourneys();
+      const {id,role}=req.user;
+      const journeys = await AdminJourneyQuery.getAllJourneys(id,role);
       res.status(HttpStatus.OK).json({ success: true, data: journeys });
     } catch (error) {
       res.status(HttpStatus.INTERNAL_SERVER_ERROR).json({

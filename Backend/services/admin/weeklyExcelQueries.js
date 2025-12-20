@@ -396,7 +396,7 @@ createEntriesFromWeeklyCount: async () => {
         wc.ds AS ds,
         wc.total_deliveries AS delivered,
         ((wc.fs * r.driver_route_price) + (wc.ds * r.driver_doublestop_price)) AS driver_payment,
-        FALSE, FALSE, FALSE
+        TRUE, FALSE, FALSE
       FROM weeklycount wc
       INNER JOIN drivers d ON wc.driver_id = d.driver_code
       LEFT JOIN city c ON SUBSTRING(wc.del_route FROM '^[A-Za-z]+') = c.city_code
