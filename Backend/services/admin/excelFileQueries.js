@@ -214,36 +214,86 @@ export const ExcelFileQueries = {
       
 //     }
 //   },
+//Modified to implement role based data for admin and superadmin
+  // getTempDashboardData:async(client)=>{
+  //   try {
+  //      const res =  await client.query(`
+  //           select
+  //            d.name,dd.journey_date ,
+  //            r.name as route,
+  //             dd.start_seq||' - '||dd.end_seq as sequence,
+  //             dd.packages, 
+  //             dd.no_scanned, 
+  //             dd.failed_attempt,
+  //              dd.ds,
+  //              dd.delivered 
+  //           from
+  //               dashboard_data dd 
+  //           join 
+  //               routes r on dd.route_id = r.id
+  //           join 
+  //               drivers d on d.id = dd.driver_id
+  //           where
+  //               dd.journey_date between CURRENT_DATE - INTERVAL '1 day' and CURRENT_DATE;
 
-  getTempDashboardData:async(client)=>{
-    try {
-       const res =  await client.query(`
-            select
-             d.name,dd.journey_date ,
-             r.name as route,
-              dd.start_seq||' - '||dd.end_seq as sequence,
-              dd.packages, 
-              dd.no_scanned, 
-              dd.failed_attempt,
-               dd.ds,
-               dd.delivered 
-            from
-                dashboard_data dd 
-            join 
-                routes r on dd.route_id = r.id
-            join 
-                drivers d on d.id = dd.driver_id
-            where
-                dd.journey_date between CURRENT_DATE - INTERVAL '1 day' and CURRENT_DATE;
+  //           `)
+  //           return res.rows
+  //   } catch (error) {
+  //       console.error(error)
+  //     throw error
 
-            `)
-            return res.rows
-    } catch (error) {
-        console.error(error)
-      throw error
+  //   }
+  // },
 
+  getTempDashboardData: async (client, id, role) => {
+  try {
+
+    let query = `
+      SELECT
+        d.name,
+        dd.journey_date,
+        r.name AS route,
+        dd.start_seq || ' - ' || dd.end_seq AS sequence,
+        dd.packages, 
+        dd.no_scanned, 
+        dd.failed_attempt,
+        dd.ds,
+        dd.delivered 
+      FROM dashboard_data dd
+      JOIN routes r ON dd.route_id = r.id
+      JOIN drivers d ON d.id = dd.driver_id
+      WHERE dd.journey_date BETWEEN CURRENT_DATE - INTERVAL '1 day'
+                              AND CURRENT_DATE
+    `;
+
+    const params = [];
+
+    // 🔐 Apply city-based restriction ONLY for admin
+    if (role === 'admin') {
+      query += `
+        AND EXISTS (
+          SELECT 1
+          FROM admin_city_ref acr
+          WHERE acr.city_id = d.city_id
+            AND acr.admin_id = $1
+        )
+      `;
+      params.push(id);
     }
-  },
+
+    query += `
+      ORDER BY dd.journey_date DESC
+    `;
+
+    const res = await client.query(query, params);
+    return res.rows;
+
+  } catch (error) {
+    console.error(error);
+    throw error;
+  }
+},
+
   updateFirstStopAndDoubleStop:async(client)=>{
     try {
       const queryStr = `WITH ranked AS (

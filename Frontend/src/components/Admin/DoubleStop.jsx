@@ -453,7 +453,21 @@ const DoubleStop = () => {
           </button>
         </section> */}
         {activeView === "weekly" ? (
-        <DriverPaymentSection loadData={()=>dispatch(updateWeeklyExcelToDashboard())}/>
+        // <DriverPaymentSection loadData={()=>{
+        //   dispatch(updateWeeklyExcelToDashboard()).unwrap()
+        //   .then(res)=>toast.error(res.message)
+        // }}/>
+        <DriverPaymentSection
+  loadData={() => {
+    dispatch(updateWeeklyExcelToDashboard())
+      .unwrap()
+      .then(res => {
+        toast.error(res.message)
+      }) .catch(err => {
+        toast.error(err?.message || "Something went wrong")
+      })
+  }}
+/>
         ):(
           <DriverPaymentSection loadData={()=>dispatch(fetchDriverPayment())}/>
         )}

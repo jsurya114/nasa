@@ -22,22 +22,58 @@ import { buildInsertData} from "../../utils/matchFns.js";
 
 // const sheetName = "dup";
 const sheetName = "result";
-export const getUpdatedTempDashboardData = async(req,res)=>{
+
+//Modified to implement role based data for admin and superadmin
+// export const getUpdatedTempDashboardData = async(req,res)=>{
+//   const client = await pool.connect()
+//   try {
+//     client.query('BEGIN')
+//     const result = await ExcelFileQueries.getTempDashboardData(client)
+//     client.query('COMMIT')
+//     return res.status(statusCode.OK).json({success:true,data:result})
+//   } catch (error) {
+//     console.error(error)
+//     client.query('ROLLBACK')
+//     return res.status(statusCode.INTERNAL_SERVER_ERROR).json({message:'error in server',error})
+//   }
+//   finally{
+//     client.release()
+//   }
+// }
+
+export const getUpdatedTempDashboardData = async (req, res) => {
   const client = await pool.connect()
   try {
-    client.query('BEGIN')
-    const result = await ExcelFileQueries.getTempDashboardData(client)
-    client.query('COMMIT')
-    return res.status(statusCode.OK).json({success:true,data:result})
+    const { id, role } = req.user   // 👈 IMPORTANT
+
+    await client.query('BEGIN')
+
+    const result = await ExcelFileQueries.getTempDashboardData(
+      client,
+      id,
+      role
+    )
+
+    await client.query('COMMIT')
+
+    return res.status(statusCode.OK).json({
+      success: true,
+      data: result
+    })
   } catch (error) {
     console.error(error)
-    client.query('ROLLBACK')
-    return res.status(statusCode.INTERNAL_SERVER_ERROR).json({message:'error in server',error})
-  }
-  finally{
+    await client.query('ROLLBACK')
+    return res.status(statusCode.INTERNAL_SERVER_ERROR).json({
+      message: 'error in server',
+      error
+    })
+  } finally {
     client.release()
   }
 }
+
+
+
 
 export const DailyExcelUpload = async (req, res) => {
   const client = await pool.connect()

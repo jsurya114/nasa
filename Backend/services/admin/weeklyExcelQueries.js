@@ -382,12 +382,55 @@ createEntriesFromWeeklyCount: async () => {
     await client.query('BEGIN');
 
     // QUERY 1: Insert into dashboard_data (triggers the function)
+    //Previous query before string combination not provided in the routes table
+    // const insertQuery = `
+    //   INSERT INTO dashboard_data (
+    //     driver_id, journey_date, route_id, packages, first_stop, ds, delivered,
+    //     driver_payment, closed, paid, is_deliveries_count_added
+    //   )
+    //   SELECT 
+    //     d.id AS driver_id,
+    //     wc.del_date AS journey_date,
+    //     r.id AS route_id,
+    //     wc.total_deliveries AS packages,
+    //     wc.fs AS first_stop,
+    //     wc.ds AS ds,
+    //     wc.total_deliveries AS delivered,
+    //     ((wc.fs * r.driver_route_price) + (wc.ds * r.driver_doublestop_price)) AS driver_payment,
+    //     TRUE, FALSE, FALSE
+    //   FROM weeklycount wc
+    //   INNER JOIN drivers d ON wc.driver_id = d.driver_code
+    //   LEFT JOIN city c ON SUBSTRING(wc.del_route FROM '^[A-Za-z]+') = c.city_code
+    //   INNER JOIN routes r 
+    //     ON LTRIM(SUBSTRING(wc.del_route FROM '\\d+$'), '0') = r.name
+    //    AND r.job = c.job
+    //    AND r.enabled = TRUE
+    //   WHERE d.enabled = TRUE
+    //    AND NOT EXISTS (
+    //       SELECT 1 FROM dashboard_data dd
+    //       WHERE dd.driver_id = d.id
+    //         AND dd.journey_date = wc.del_date
+    //         AND dd.route_id = r.id
+    //     )
+    //   RETURNING id
+    // `;
+
+    //QUERY 1: Insert into dashboard_data (triggers the function)
     const insertQuery = `
-      INSERT INTO dashboard_data (
-        driver_id, journey_date, route_id, packages, first_stop, ds, delivered,
-        driver_payment, closed, paid, is_deliveries_count_added
+          INSERT INTO dashboard_data (
+        driver_id,
+        journey_date,
+        route_id,
+        packages,
+        first_stop,
+        ds,
+        delivered,
+        driver_payment,
+        closed,
+        paid,
+        is_deliveries_count_added
       )
-      SELECT 
+      SELECT
         d.id AS driver_id,
         wc.del_date AS journey_date,
         r.id AS route_id,
@@ -395,24 +438,27 @@ createEntriesFromWeeklyCount: async () => {
         wc.fs AS first_stop,
         wc.ds AS ds,
         wc.total_deliveries AS delivered,
-        ((wc.fs * r.driver_route_price) + (wc.ds * r.driver_doublestop_price)) AS driver_payment,
-        TRUE, FALSE, FALSE
+        ((wc.fs * r.driver_route_price) +
+        (wc.ds * r.driver_doublestop_price)) AS driver_payment,
+        TRUE,
+        FALSE,
+        FALSE
       FROM weeklycount wc
-      INNER JOIN drivers d ON wc.driver_id = d.driver_code
-      LEFT JOIN city c ON SUBSTRING(wc.del_route FROM '^[A-Za-z]+') = c.city_code
-      INNER JOIN routes r 
-        ON LTRIM(SUBSTRING(wc.del_route FROM '\\d+$'), '0') = r.name
-       AND r.job = c.job
-       AND r.enabled = TRUE
+      INNER JOIN drivers d
+        ON wc.driver_id = d.driver_code
+      INNER JOIN routes r
+        ON wc.del_route = r.route_code_in_string
+      AND r.enabled = TRUE
       WHERE d.enabled = TRUE
-       AND NOT EXISTS (
-          SELECT 1 FROM dashboard_data dd
-          WHERE dd.driver_id = d.id
-            AND dd.journey_date = wc.del_date
-            AND dd.route_id = r.id
-        )
-      RETURNING id
-    `;
+      AND NOT EXISTS (
+        SELECT 1
+        FROM dashboard_data dd
+        WHERE dd.driver_id = d.id
+          AND dd.journey_date = wc.del_date
+          AND dd.route_id = r.id
+      )
+      RETURNING id;
+`
 
     const insertResult = await client.query(insertQuery);
     const insertedIds = insertResult.rows.map(row => row.id);

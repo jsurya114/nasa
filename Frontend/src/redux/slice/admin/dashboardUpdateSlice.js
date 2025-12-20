@@ -78,7 +78,8 @@ const driverPaymentSlice = createSlice({
         state.loading = false;
         console.log(action.payload);
         state.error = action.payload;
-        toast.error(`Error: ${action.payload}`);
+        state.message=action.payload.message;
+        // toast.error(`Error: ${action.payload.message}`);
       });
   },
 });
