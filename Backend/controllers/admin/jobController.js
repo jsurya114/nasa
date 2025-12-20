@@ -80,13 +80,19 @@ const jobController={
             const limit = parseInt(req.query.limit)||3
             const search = req.query.search||""
             const statusFilter = req.query.status || "all"
-            const {jobs,total}=await jobService.jobPagination(page,limit,search,statusFilter)
+            
+            // Check if user is superadmin
+            const isSuperAdmin = req.user.role === 'superadmin';
+            const adminId = req.user.id;
+            
+            const {jobs,total}=await jobService.jobPagination(page,limit,search,statusFilter, isSuperAdmin, adminId)
             res.status(HttpStatus.OK).json({
                 success:true,
                 jobs,
                 total,
                 page,
-                totalPages:Math.ceil(total/limit)
+                totalPages:Math.ceil(total/limit),
+                isSuperAdmin
             })
         } catch (error) {
             res.status(HttpStatus.INTERNAL_SERVER_ERROR).json({

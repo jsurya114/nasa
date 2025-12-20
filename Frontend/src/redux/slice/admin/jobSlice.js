@@ -191,6 +191,7 @@ const jobSlice = createSlice({
     total: 0,
     totalPages: 0,
     page: 1,
+    isSuperAdmin: false,  // Track if user is superadmin
     status: "idle",       // idle | loading | succeeded | failed
     allCitiesStatus: "idle", // Separate status for all cities
     error: null,
@@ -207,6 +208,7 @@ const jobSlice = createSlice({
       state.total = 0;
       state.totalPages = 0;
       state.page = 1;
+      state.isSuperAdmin = false;
       state.status = "idle";
       state.allCitiesStatus = "idle";
       state.error = null;
@@ -225,6 +227,7 @@ const jobSlice = createSlice({
         state.total = action.payload.total || 0;
         state.totalPages = action.payload.totalPages || 0;
         state.page = action.payload.page || 1;
+        state.isSuperAdmin = action.payload.isSuperAdmin || false;
         state.error = null;
       })
       .addCase(fetchPaginatedJobs.rejected, (state, action) => {

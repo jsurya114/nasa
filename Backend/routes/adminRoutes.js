@@ -33,8 +33,8 @@ router.post("/routes",superAdminAuth, createRoute);
 router.get("/routes", fetchPaginatedRoutes);
 router.get("/routes-list",getAdminRoutes)
 router.get("/routes/:id", getRouteById);
-router.put("/routes/:id",superAdminAuth, updateRoute);
-router.patch("/routes/:id/status", superAdminAuth,toggleRouteStatus);
+router.put("/routes/:id", updateRoute);
+router.patch("/routes/:id/status",toggleRouteStatus);
 router.delete("/routes/:id", deleteRoute);
 
 //User (Driver) creation - Both admin and superadmin can manage drivers

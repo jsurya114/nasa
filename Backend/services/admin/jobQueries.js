@@ -44,7 +44,7 @@ cityStatus: async (id) => {
   );
   return result.rows[0];
 },
-jobPagination: async (page, limit, search = "", statusFilter = "all") => {
+jobPagination: async (page, limit, search = "", statusFilter = "all", isSuperAdmin = false, adminId = null) => {
   try {
     const offset = (page - 1) * limit;
 
@@ -57,6 +57,13 @@ jobPagination: async (page, limit, search = "", statusFilter = "all") => {
     let paramIndex = 1;
     let queryParams = [];
 
+    // For normal admins, filter by their assigned cities
+    if (!isSuperAdmin && adminId) {
+      whereConditions.push(`city.id IN (SELECT city_id FROM admin_city_ref WHERE admin_id = $${paramIndex})`);
+      queryParams.push(adminId);
+      paramIndex++;
+    }
+
     // Search filter
     if (search) {
       whereConditions.push(`(job ILIKE $${paramIndex} OR city_code ILIKE $${paramIndex})`);
@@ -64,11 +71,16 @@ jobPagination: async (page, limit, search = "", statusFilter = "all") => {
       paramIndex++;
     }
 
-    // Status filter
-    if (statusFilter === "enabled") {
+    // Status filter - only for superadmin
+    if (isSuperAdmin) {
+      if (statusFilter === "enabled") {
+        whereConditions.push(`enabled = true`);
+      } else if (statusFilter === "disabled") {
+        whereConditions.push(`enabled = false`);
+      }
+    } else {
+      // Normal admins only see enabled cities
       whereConditions.push(`enabled = true`);
-    } else if (statusFilter === "disabled") {
-      whereConditions.push(`enabled = false`);
     }
 
     const whereClause = whereConditions.length > 0 
@@ -113,5 +125,3 @@ jobPagination: async (page, limit, search = "", statusFilter = "all") => {
     },
 
 }
-
-

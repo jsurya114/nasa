@@ -7,14 +7,15 @@ import {
   deleteRouteQuery,
   toggleRouteStatusQuery,
   routePagination,
-  getAllRoutesOfDriver
+  getAllRoutesOfDriver,
+  getRoutesForAdmin
 } from "../../services/admin/routeQueries.js";
 import HttpStatus from "../../utils/statusCodes.js";
 
 
 const mapRoute = (r) => ({
   id: r.id,
-  route: r.name, // Map DB 'name' to frontend 'route'
+  route: r.name,
   job: r.job,
   companyRoutePrice: parseFloat(r.company_route_price),
   driverRoutePrice: parseFloat(r.driver_route_price),
@@ -28,18 +29,15 @@ const mapRoute = (r) => ({
 export const createRoute = async (req, res) => {
   try {
     const { route, job, companyRoutePrice, driverRoutePrice, companyDoubleStopPrice, driverDoubleStopPrice, enabled, routeCodeInString } = req.body;
-    console.log("Creating route with data:", req.body); // Debug log
+    console.log("Creating route with data:", req.body);
 
-
-if (!route || route.trim() === "") {
+    if (!route || route.trim() === "") {
       return res.status(HttpStatus.BAD_REQUEST).json({ error: "Route name is required" });
     }
     if (!job || job.trim() === "") {
       return res.status(HttpStatus.BAD_REQUEST).json({ error: "Job is required" });
     }
 
-
-    // Convert price fields to numbers
     const routeData = {
       name: route,
       job,
@@ -51,7 +49,6 @@ if (!route || route.trim() === "") {
       enabled: enabled || false,
     };
 
-    // Validate price fields
     for (const [key, value] of Object.entries({
       company_route_price: routeData.company_route_price,
       driver_route_price: routeData.driver_route_price,
@@ -73,81 +70,86 @@ if (!route || route.trim() === "") {
   }
 };
 
-
-export const fetchPaginatedRoutes=async(req,res)=>{
+// Fetch paginated routes with role-based filtering
+export const fetchPaginatedRoutes = async (req, res) => {
   try {
-    const page = parseInt(req.query.page)||1
-    const limit = parseInt(req.query.limit)||4
-    const search  = req.query.search||""
-    const {routes,total}=await routePagination(page,limit,search)
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 4;
+    const search = req.query.search || "";
+    
+    // Get user role and ID from middleware
+    const isSuperAdmin = req.user?.role === 'superadmin';
+    const adminId = req.user?.id;
+    
+    console.log('fetchPaginatedRoutes - User:', { isSuperAdmin, adminId });
+    
+    const { routes, total } = await routePagination(page, limit, search, isSuperAdmin, adminId);
 
     res.status(HttpStatus.OK).json({
-      success:true,
-      routes:routes.map(mapRoute),
+      success: true,
+      routes: routes.map(mapRoute),
       total,
       page,
-      totalPages:Math.ceil(total/limit)
-    })
+      totalPages: Math.ceil(total / limit),
+      isSuperAdmin // Send this to frontend
+    });
   } catch (error) {
-     console.error("❌ fetchPaginatedRoutes error:", error.message);
+    console.error("❌ fetchPaginatedRoutes error:", error.message);
     res.status(HttpStatus.INTERNAL_SERVER_ERROR).json({
       success: false,
       message: error.message,
     });
   }
-}
+};
 
-// Get all routes
+// Get all routes (for dropdown, etc.)
 export const getAdminRoutes = async (req, res) => {
   try {
-    // console.log("Fetching all routes..."); // Debug log
     let routesDb;
-    const {role,id}= req.user;
-    if(role==='superadmin')
-     routesDb = await getAllRoutes();
-    else
-      routesDb = await getAllottedRoutes(id);
-    // console.log("Routes",routesDb);
+    const { role, id } = req.user;
+    
+    console.log('getAdminRoutes - User:', { role, id });
+    
+    if (role === 'superadmin') {
+      routesDb = await getAllRoutes();
+    } else {
+      routesDb = await getRoutesForAdmin(id);
+    }
+    
     const routes = routesDb.map(mapRoute);
-    // console.log("Returning routes:", routes); // Debug log
-    res.json({routes});
+    console.log('Returning routes count:', routes.length);
+    res.json({ routes });
   } catch (err) {
-    console.error("❌ getAdminRoutes error:", err.message); // Debug log
-    res.status(HttpStatus.INTERNAL_SERVER_ERROR).json( {err:message});
+    console.error("❌ getAdminRoutes error:", err.message);
+    res.status(HttpStatus.INTERNAL_SERVER_ERROR).json({ error: err.message });
   }
 };
 
 export const getDriverRoutes = async (req, res) => {
   try {
-    // console.log("Fetching all routes..."); // Debug log    
-    const id= req.driver.id;    
-     const routesDb = await getAllRoutesOfDriver(id);
-    // console.log("Routes",routesDb);
+    const id = req.driver.id;
+    const routesDb = await getAllRoutesOfDriver(id);
     const routes = routesDb.map(mapRoute);
-    // console.log("Driver routes",routes);
-    // console.log("Returning routes:", routes); // Debug log
-    res.json({routes});
+    res.json({ routes });
   } catch (err) {
-    console.error("❌ getDriverRoutes error:", err.message); // Debug log
-    res.status(HttpStatus.INTERNAL_SERVER_ERROR).json( {err:message});
+    console.error("❌ getDriverRoutes error:", err.message);
+    res.status(HttpStatus.INTERNAL_SERVER_ERROR).json({ error: err.message });
   }
 };
 
 // Get route by ID
 export const getRouteById = async (req, res) => {
   try {
-    // console.log(`Fetching route with id: ${req.params.id}`); // Debug log
     const routeDb = await getRouteByIdQuery(req.params.id);
     if (!routeDb) {
-      console.log(`Route id: ${req.params.id} not found`); // Debug log
+      console.log(`Route id: ${req.params.id} not found`);
       return res.status(404).json({ error: "Route not found" });
     }
     const route = mapRoute(routeDb);
-    // console.log("Returning route:", route); // Debug log
     res.json(route);
   } catch (err) {
-    console.error("❌ getRouteById error:", err.message); // Debug log
-    res.status(HttpStatus.INTERNAL_SERVER_ERROR).json( {err:message});
+    console.error("❌ getRouteById error:", err.message);
+    res.status(HttpStatus.INTERNAL_SERVER_ERROR).json({ error: err.message });
   }
 };
 
@@ -155,9 +157,8 @@ export const getRouteById = async (req, res) => {
 export const updateRoute = async (req, res) => {
   try {
     const { route, job, companyRoutePrice, driverRoutePrice, companyDoubleStopPrice, driverDoubleStopPrice, enabled, routeCodeInString } = req.body;
-    console.log(`Updating route id: ${req.params.id} with data:`, req.body); // Debug log
+    console.log(`Updating route id: ${req.params.id} with data:`, req.body);
 
-    // Convert price fields to numbers
     const routeData = {
       name: route,
       job,
@@ -169,7 +170,6 @@ export const updateRoute = async (req, res) => {
       enabled: enabled || false,
     };
 
-    // Validate price fields
     for (const [key, value] of Object.entries({
       company_route_price: routeData.company_route_price,
       driver_route_price: routeData.driver_route_price,
@@ -183,14 +183,14 @@ export const updateRoute = async (req, res) => {
 
     const updatedDb = await updateRouteQuery(req.params.id, routeData);
     if (!updatedDb) {
-      console.log(`Route id: ${req.params.id} not found`); // Debug log
+      console.log(`Route id: ${req.params.id} not found`);
       return res.status(404).json({ error: "Route not found" });
     }
     const updated = mapRoute(updatedDb);
-    console.log("Updated route:", updated); // Debug log
+    console.log("Updated route:", updated);
     res.json(updated);
   } catch (err) {
-    console.error("❌ updateRoute error:", err.message); // Debug log
+    console.error("❌ updateRoute error:", err.message);
     res.status(400).json({ error: `Failed to update route: ${err.message}` });
   }
 };
@@ -198,17 +198,17 @@ export const updateRoute = async (req, res) => {
 // Toggle route status
 export const toggleRouteStatus = async (req, res) => {
   try {
-    console.log(`Toggling status for route id: ${req.params.id}`); // Debug log
+    console.log(`Toggling status for route id: ${req.params.id}`);
     const updatedDb = await toggleRouteStatusQuery(req.params.id);
     if (!updatedDb) {
-      console.log(`Route id: ${req.params.id} not found`); // Debug log
+      console.log(`Route id: ${req.params.id} not found`);
       return res.status(404).json({ error: "Route not found" });
     }
     const updated = mapRoute(updatedDb);
-    console.log("Toggled route:", updated); // Debug log
+    console.log("Toggled route:", updated);
     res.json(updated);
   } catch (err) {
-    console.error("❌ toggleRouteStatus error:", err.message); // Debug log
+    console.error("❌ toggleRouteStatus error:", err.message);
     res.status(500).json({ error: `Failed to toggle route status: ${err.message}` });
   }
 };
@@ -216,16 +216,16 @@ export const toggleRouteStatus = async (req, res) => {
 // Delete route
 export const deleteRoute = async (req, res) => {
   try {
-    console.log(`Deleting route id: ${req.params.id}`); // Debug log
+    console.log(`Deleting route id: ${req.params.id}`);
     const deletedDb = await deleteRouteQuery(req.params.id);
     if (!deletedDb) {
-      console.log(`Route id: ${req.params.id} not found`); // Debug log
+      console.log(`Route id: ${req.params.id} not found`);
       return res.status(404).json({ error: "Route not found" });
     }
-    console.log("Deleted route:", deletedDb); // Debug log
+    console.log("Deleted route:", deletedDb);
     res.json({ message: "Route deleted successfully" });
   } catch (err) {
-    console.error("❌ deleteRoute error:", err.message); // Debug log
+    console.error("❌ deleteRoute error:", err.message);
     res.status(500).json({ error: `Failed to delete route: ${err.message}` });
   }
 };

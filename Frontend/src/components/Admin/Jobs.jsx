@@ -36,37 +36,39 @@ const IconClear = () => (
   </svg>
 );
 
-// --- Row Component (Delete Removed)
-const CityRow = React.memo(function CityRow({ id, job, city_code, enabled, index, onToggle, onEdit }) {
+// --- Row Component
+const CityRow = React.memo(function CityRow({ serialNo,id, job, city_code, enabled, index, onToggle, onEdit, isSuperAdmin }) {
   return (
     <tr className={index % 2 === 0 ? 'bg-gray-50' : 'bg-white'}>
-      <td className="px-3 py-2 border-b border-gray-200">{id}</td>
+      <td className="px-3 py-2 border-b border-gray-200">{serialNo}</td>
       <td className="px-3 py-2 border-b border-gray-200">{job}</td>
       <td className="px-3 py-2 border-b border-gray-200">{city_code}</td>
-      <td className="px-3 py-2 border-b border-gray-200">
-        <span className={`px-2 py-1 rounded-full text-sm font-medium ${enabled ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
-          {enabled ? 'Enabled' : 'Disabled'}
-        </span>
-      </td>
-      <td className="px-3 py-2 border-b border-gray-200">
-        <div className="flex items-center gap-4">
+      {isSuperAdmin && (
+        <td className="px-3 py-2 border-b border-gray-200">
+          <span className={`px-2 py-1 rounded-full text-sm font-medium ${enabled ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+            {enabled ? 'Enabled' : 'Disabled'}
+          </span>
+        </td>
+      )}
+      {isSuperAdmin && (
+        <td className="px-3 py-2 border-b border-gray-200">
+          <div className="flex items-center gap-4">
+            <label className="relative inline-flex items-center cursor-pointer">
+              <input type="checkbox"  disabled={!isSuperAdmin} checked={enabled} onChange={() => onToggle(id)} className="sr-only" />
+              <div className={`w-11 h-6 rounded-full transition-colors duration-200 ${enabled ? 'bg-purple-600' : 'bg-gray-300'}`}>
+                <div className={`w-5 h-5 bg-white rounded-full shadow-lg transform transition-transform duration-200 ${enabled ? 'translate-x-5' : 'translate-x-0.5'} mt-0.5`} />
+              </div>
+            </label>
 
-          <label className="relative inline-flex items-center cursor-pointer">
-            <input type="checkbox" checked={enabled} onChange={() => onToggle(id)} className="sr-only" />
-            <div className={`w-11 h-6 rounded-full transition-colors duration-200 ${enabled ? 'bg-purple-600' : 'bg-gray-300'}`}>
-              <div className={`w-5 h-5 bg-white rounded-full shadow-lg transform transition-transform duration-200 ${enabled ? 'translate-x-5' : 'translate-x-0.5'} mt-0.5`} />
-            </div>
-          </label>
-
-          <button onClick={() => onEdit({ id, job, city_code, enabled })} className="group relative px-4 py-1.5 bg-gradient-to-r from-blue-500 to-blue-600 text-white text-xs font-medium rounded-md hover:from-blue-600 hover:to-blue-700 transition-all duration-200 shadow-sm hover:shadow-md flex items-center gap-1.5">
-         <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                          </svg>
-                          <span>Edit</span>
-          </button>
-
-        </div>
-      </td>
+            <button onClick={() => onEdit({ id, job, city_code, enabled })} className="group relative px-4 py-1.5 bg-gradient-to-r from-blue-500 to-blue-600 text-white text-xs font-medium rounded-md hover:from-blue-600 hover:to-blue-700 transition-all duration-200 shadow-sm hover:shadow-md flex items-center gap-1.5">
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+              </svg>
+              <span>Edit</span>
+            </button>
+          </div>
+        </td>
+      )}
     </tr>
   );
 });
@@ -91,7 +93,7 @@ const Empty = ({ hasFilters }) => (
         <p className="text-sm text-gray-500">Try adjusting your search or filters</p>
       </>
     ) : (
-      <p className="font-medium text-gray-500">No Cities added yet</p>
+      <p className="font-medium text-gray-500">No Cities assigned yet</p>
     )}
   </div>
 );
@@ -99,7 +101,7 @@ const Empty = ({ hasFilters }) => (
 // --- Main Component
 export default function Jobs() {
   const dispatch = useDispatch();
-  const { cities = [], page = 1, totalPages = 1, status = 'idle' } = useSelector(s => s.jobs || {});
+  const { cities = [], page = 1, totalPages = 1, status = 'idle', isSuperAdmin = false } = useSelector(s => s.jobs || {});
 
   // Form
   const [form, setForm] = useState({ job: '', city_code: '', enabled: true });
@@ -210,8 +212,7 @@ export default function Jobs() {
 
   const onCancelEdit = useCallback(() => resetForm(), [resetForm]);
 
-  const onSubmit = useCallback(async (e) => {
-    e.preventDefault();
+  const onSubmit = useCallback(async () => {
     const eObj = validate();
     if (Object.keys(eObj).length) return setErrors(eObj);
 
@@ -263,69 +264,79 @@ export default function Jobs() {
     setIsRefreshing(false);
   }, [fetchJobs, currentPage, search, filter]);
 
-  const headers = useMemo(() => ['ID', 'City', 'City Code', 'Status', 'Actions'], []);
+  const headers = useMemo(() => {
+    const baseHeaders = ['ID', 'City', 'City Code'];
+    if (isSuperAdmin) {
+      return [...baseHeaders, 'Status', 'Actions'];
+    }
+    return baseHeaders;
+  }, [isSuperAdmin]);
 
   const hasItems = Array.isArray(cities) && cities.length > 0;
-  const hasActiveFilters = search !== '' || filter !== FILTER.ALL;
+  const hasActiveFilters = search !== '' || (isSuperAdmin && filter !== FILTER.ALL);
 
   return (
     <div className="min-h-screen bg-gray-100 text-gray-900 font-poppins">
       <Header />
       <main className="max-w-[1450px] mx-auto p-4 pb-40">
 
-        {/* Form */}
-        <section className="bg-white border border-gray-200 rounded-xl shadow-sm mb-4 p-6">
-          <h2 className="font-bold text-gray-900 bg-gray-50 border-b border-gray-200 px-4 py-3 -mx-6 -mt-6 rounded-t-xl">
-            {isEditing ? 'Edit City' : 'Add City'}
-          </h2>
+        {/* Form - Only for Superadmin */}
+        {isSuperAdmin && (
+          <section className="bg-white border border-gray-200 rounded-xl shadow-sm mb-4 p-6">
+            <h2 className="font-bold text-gray-900 bg-gray-50 border-b border-gray-200 px-4 py-3 -mx-6 -mt-6 rounded-t-xl">
+              {isEditing ? 'Edit City' : 'Add City'}
+            </h2>
 
-          <form onSubmit={onSubmit} className="flex flex-col gap-4 mt-6">
-            <div>
-              <label className="block mb-1 font-medium">City</label>
-              <input
-                name="job"
-                value={form.job}
-                onChange={onChangeField}
-                placeholder="Enter City"
-                className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-purple-600 ${errors.job ? 'border-red-500' : 'border-gray-300'}`}
-              />
-              {errors.job && <p className="text-red-500 text-sm mt-1">{errors.job}</p>}
-            </div>
-
-            <div>
-              <label className="block mb-1 font-medium">City Code</label>
-              <input
-                name="city_code"
-                value={form.city_code}
-                onChange={onChangeField}
-                placeholder="Enter city code"
-                className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-purple-600 ${errors.city_code ? 'border-red-500' : 'border-gray-300'}`}
-              />
-              {errors.city_code && <p className="text-red-500 text-sm mt-1">{errors.city_code}</p>}
-            </div>
-
-            {!isEditing && (
-              <div className="flex items-center space-x-2">
-                <input type="checkbox" name="enabled" checked={form.enabled} onChange={onChangeField} className="w-4 h-4 text-purple-600" />
-                <label className="font-medium">Enabled</label>
+            <div className="flex flex-col gap-4 mt-6">
+              <div>
+                <label className="block mb-1 font-medium">City</label>
+                <input
+                  name="job"
+                  value={form.job}
+                  onChange={onChangeField}
+                  placeholder="Enter City"
+                  className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-purple-600 ${errors.job ? 'border-red-500' : 'border-gray-300'}`}
+                />
+                {errors.job && <p className="text-red-500 text-sm mt-1">{errors.job}</p>}
               </div>
-            )}
 
-            <div className="flex justify-end gap-2">
-              {isEditing && (
-                <button type="button" onClick={onCancelEdit} className="px-6 py-2 bg-gray-500 text-white rounded-lg">Cancel</button>
+              <div>
+                <label className="block mb-1 font-medium">City Code</label>
+                <input
+                  name="city_code"
+                  value={form.city_code}
+                  onChange={onChangeField}
+                  placeholder="Enter city code"
+                  className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-purple-600 ${errors.city_code ? 'border-red-500' : 'border-gray-300'}`}
+                />
+                {errors.city_code && <p className="text-red-500 text-sm mt-1">{errors.city_code}</p>}
+              </div>
+
+              {!isEditing && (
+                <div className="flex items-center space-x-2">
+                  <input type="checkbox" name="enabled" checked={form.enabled} onChange={onChangeField} className="w-4 h-4 text-purple-600" />
+                  <label className="font-medium">Enabled</label>
+                </div>
               )}
-              <button type="submit" className="px-6 py-2 bg-purple-700 text-white rounded-lg">
-                {isEditing ? 'Update City' : 'Add City'}
-              </button>
+
+              <div className="flex justify-end gap-2">
+                {isEditing && (
+                  <button onClick={onCancelEdit} className="px-6 py-2 bg-gray-500 text-white rounded-lg">Cancel</button>
+                )}
+                <button onClick={onSubmit} className="px-6 py-2 bg-purple-700 text-white rounded-lg">
+                  {isEditing ? 'Update City' : 'Add City'}
+                </button>
+              </div>
             </div>
-          </form>
-        </section>
+          </section>
+        )}
 
         {/* Table */}
         <section className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-x-auto">
           <div className="flex items-center justify-between bg-gray-50 border-b border-gray-200 px-4 py-3 rounded-t-xl">
-            <h2 className="font-bold text-gray-900">City List</h2>
+            <h2 className="font-bold text-gray-900">
+              {isSuperAdmin ? 'All Cities' : 'Assigned Cities'}
+            </h2>
 
             <button
               onClick={handleRefresh}
@@ -342,28 +353,30 @@ export default function Jobs() {
               <SearchBar value={search} onChange={e => setSearch(e.target.value)} placeholder="Search city..." />
             </div>
 
-            {/* Filter */}
-            <div className="relative" ref={dropdownRef}>
-              <button
-                onClick={() => setShowDropdown(s => !s)}
-                className={`flex items-center gap-2 px-4 py-2 border rounded-lg ${filter !== FILTER.ALL ? 'bg-purple-600 text-white' : 'bg-white text-gray-700'}`}
-              >
-                <span className="font-medium">
-                  {filter === FILTER.ENABLED ? 'Enabled' :
-                    filter === FILTER.DISABLED ? 'Disabled' : 'All Status'}
-                </span>
-              </button>
+            {/* Filter - Only for Superadmin */}
+            {isSuperAdmin && (
+              <div className="relative" ref={dropdownRef}>
+                <button
+                  onClick={() => setShowDropdown(s => !s)}
+                  className={`flex items-center gap-2 px-4 py-2 border rounded-lg ${filter !== FILTER.ALL ? 'bg-purple-600 text-white' : 'bg-white text-gray-700'}`}
+                >
+                  <span className="font-medium">
+                    {filter === FILTER.ENABLED ? 'Enabled' :
+                      filter === FILTER.DISABLED ? 'Disabled' : 'All Status'}
+                  </span>
+                </button>
 
-              {showDropdown && (
-                <div className="absolute right-0 mt-2 w-48 bg-white border border-gray-200 rounded-lg shadow-lg z-20">
-                  <button onClick={() => { setFilter(FILTER.ALL); setShowDropdown(false); }} className="w-full text-left px-4 py-2 hover:bg-gray-100">All Status</button>
-                  <button onClick={() => { setFilter(FILTER.ENABLED); setShowDropdown(false); }} className="w-full text-left px-4 py-2 hover:bg-gray-100">Enabled</button>
-                  <button onClick={() => { setFilter(FILTER.DISABLED); setShowDropdown(false); }} className="w-full text-left px-4 py-2 hover:bg-gray-100">Disabled</button>
-                </div>
-              )}
-            </div>
+                {showDropdown && (
+                  <div className="absolute right-0 mt-2 w-48 bg-white border border-gray-200 rounded-lg shadow-lg z-20">
+                    <button onClick={() => { setFilter(FILTER.ALL); setShowDropdown(false); }} className="w-full text-left px-4 py-2 hover:bg-gray-100">All Status</button>
+                    <button onClick={() => { setFilter(FILTER.ENABLED); setShowDropdown(false); }} className="w-full text-left px-4 py-2 hover:bg-gray-100">Enabled</button>
+                    <button onClick={() => { setFilter(FILTER.DISABLED); setShowDropdown(false); }} className="w-full text-left px-4 py-2 hover:bg-gray-100">Disabled</button>
+                  </div>
+                )}
+              </div>
+            )}
 
-            {(search !== '' || filter !== FILTER.ALL) && (
+            {(search !== '' || (isSuperAdmin && filter !== FILTER.ALL)) && (
               <button
                 onClick={() => { setSearch(''); setFilter(FILTER.ALL); }}
                 className="flex items-center gap-2 px-4 py-2 text-gray-600 border border-gray-300 rounded-lg hover:bg-gray-50"
@@ -395,6 +408,7 @@ export default function Jobs() {
                   cities.map((c, idx) => (
                     <CityRow
                       key={c.id}
+                       serialNo={(currentPage - 1) * ITEMS_PER_PAGE + idx + 1}
                       id={c.id}
                       job={c.job}
                       city_code={c.city_code}
@@ -402,11 +416,12 @@ export default function Jobs() {
                       index={idx}
                       onToggle={onToggleStatus}
                       onEdit={onEdit}
+                      isSuperAdmin={isSuperAdmin}
                     />
                   ))
                 ) : !loading ? (
                   <tr>
-                    <td colSpan={5} className="text-center">
+                    <td colSpan={headers.length} className="text-center">
                       <Empty hasFilters={hasActiveFilters} />
                     </td>
                   </tr>

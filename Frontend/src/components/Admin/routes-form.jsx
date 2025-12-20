@@ -5,14 +5,14 @@ import 'react-toastify/dist/ReactToastify.css';
 import Header from "../../reuse/Header";
 import Nav from "../../reuse/Nav";
 import { fetchRoutes, addRoute, toggleRouteStatus, deleteRoute, updateRoute } from "../../redux/slice/admin/routeSlice";
-import { fetchAllCities } from "../../redux/slice/admin/jobSlice"; // Import the new action
+import { fetchPaginatedJobs } from "../../redux/slice/admin/jobSlice";
 import Pagination from "../../reuse/Pagination.jsx";
 import SearchBar from "../../reuse/Search.jsx";
 
 export default function RoutesForm() {
   const dispatch = useDispatch();
   const { routes, status: routesStatus, error: routesError, page, totalPages, limit } = useSelector((state) => state.routes);
-  const { allCities, allCitiesStatus, error: jobsError } = useSelector((state) => state.jobs); // Use allCities
+  const { cities, status: jobsStatus, error: jobsError } = useSelector((state) => state.jobs);
 
   const [formData, setFormData] = useState({
     route: "",
@@ -29,9 +29,9 @@ export default function RoutesForm() {
   const [submitSuccess, setSubmitSuccess] = useState(null);
   const [searchTerm, setSearchTerm] = useState("");
 
-  // Fetch ALL cities (not paginated) only once on mount
+  // Fetch assigned cities (role-based) - using fetchPaginatedJobs with enabled filter
   useEffect(() => {
-    dispatch(fetchAllCities());
+    dispatch(fetchPaginatedJobs({ page: 1, limit: 1000, search: "", status: "enabled" }));
   }, [dispatch]);
 
   // Debounced search with cleanup
@@ -42,13 +42,13 @@ export default function RoutesForm() {
     return () => clearTimeout(timer);
   }, [searchTerm, dispatch]);
 
-  // Memoized enabled jobs - allCities already contains only enabled cities
+  // Memoized enabled jobs - cities already filtered by role from backend
   const enabledJobs = useMemo(() => {
-    if (Array.isArray(allCities) && allCities.length > 0) {
-      return allCities; // allCities already returns only enabled cities from backend
+    if (Array.isArray(cities) && cities.length > 0) {
+      return cities.filter(city => city.enabled);
     }
     return [];
-  }, [allCities]);
+  }, [cities]);
 
   // Memoized page change handler
   const handlePageChange = useCallback((newPage) => {
@@ -243,34 +243,34 @@ export default function RoutesForm() {
             </div>
 
             <div>
-              <label className="block mb-1 font-medium">Job</label>
+              <label className="block mb-1 font-medium">Job (City)</label>
               <select
                 value={formData.job}
                 onChange={(e) => handleInputChange("job", e.target.value)}
                 className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-purple-600 bg-white"
               >
-                <option value="">Select Job</option>
+                <option value="">Select City</option>
                 {enabledJobs.length > 0 ? (
-                  enabledJobs.map((job) => (
-                    <option key={job.id} value={job.job}>
-                      {job.job}
+                  enabledJobs.map((city) => (
+                    <option key={city.id} value={city.job}>
+                      {city.job}
                     </option>
                   ))
                 ) : (
-                  <option disabled>No jobs available</option>
+                  <option disabled>No cities available</option>
                 )}
               </select>
-              {allCitiesStatus === "loading" && (
+              {jobsStatus === "loading" && (
                 <div className="flex items-center mt-1">
                   <svg className="animate-spin h-6 w-6 mr-2 text-purple-600" viewBox="0 0 24 24">
                     <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
                     <path fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
                   </svg>
-                  <p className="text-purple-600 font-medium">Loading jobs...</p>
+                  <p className="text-purple-600 font-medium">Loading cities...</p>
                 </div>
               )}
-              {allCitiesStatus === "failed" && (
-                <p className="text-red-500 mt-1">Error loading jobs: {jobsError || "Unknown error"}</p>
+              {jobsStatus === "failed" && (
+                <p className="text-red-500 mt-1">Error loading cities: {jobsError || "Unknown error"}</p>
               )}
             </div>
 
@@ -321,103 +321,107 @@ export default function RoutesForm() {
             Route List
           </h2>
           
-          <SearchBar
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            placeholder="Search routes..."
-          />
+          <div className="px-4 py-3 border-b border-gray-200 bg-gray-50">
+            <SearchBar
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              placeholder="Search routes..."
+            />
+          </div>
           
-          <table className="w-full border-collapse text-sm">
-            <thead>
-              <tr className="bg-gray-50 text-left">
-                {tableHeaders.map((head, i) => (
-                  <th key={i} className="px-3 py-2 border-b border-gray-200 font-semibold text-gray-800">
-                    {head}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {routesStatus === "loading" && routes.length === 0 ? (
-                <tr>
-                  <td colSpan="6" className="text-center py-4 text-gray-500 font-medium">
-                    <div className="flex items-center justify-center">
-                      <svg className="animate-spin h-6 w-6 mr-2 text-purple-600" viewBox="0 0 24 24">
-                        <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
-                        <path fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
-                      </svg>
-                      Loading routes...
-                    </div>
-                  </td>
+          <div className="px-6 py-4">
+            <table className="w-full border-collapse text-sm">
+              <thead>
+                <tr className="bg-gray-50 text-left">
+                  {tableHeaders.map((head, i) => (
+                    <th key={i} className="px-3 py-2 border-b border-gray-200 font-semibold text-gray-800">
+                      {head}
+                    </th>
+                  ))}
                 </tr>
-              ) : routesStatus === "failed" ? (
-                <tr>
-                  <td colSpan="6" className="text-center py-4 text-red-500 font-medium">
-                    Error loading routes: {routesError || "Unknown error"}
-                  </td>
-                </tr>
-              ) : routesStatus === "succeeded" && (!Array.isArray(routes) || routes.length === 0) ? (
-                <tr>
-                  <td colSpan="6" className="text-center py-4 text-gray-500 font-medium">
-                    No routes found
-                  </td>
-                </tr>
-              ) : (
-                routes.map((route, index) => (
-                  <tr 
-                    key={route.id} 
-                    className={`${index % 2 === 0 ? "bg-gray-50" : "bg-white"} ${
-                      editingId === route.id ? "ring-2 ring-purple-500" : ""
-                    }`}
-                  >
-                    <td className="px-3 py-2 border-b border-gray-200">{route.route}</td>
-                    <td className="px-3 py-2 border-b border-gray-200">{route.job}</td>
-                    <td className="px-3 py-2 border-b border-gray-200">{route.companyRoutePrice}</td>
-                    <td className="px-3 py-2 border-b border-gray-200">{route.driverRoutePrice}</td>
-                    <td className="px-3 py-2 border-b border-gray-200">
-                      <span
-                        className={`px-2 py-1 rounded-full text-sm font-medium ${
-                          route.enabled ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700"
-                        }`}
-                      >
-                        {route.enabled ? "Enabled" : "Disabled"}
-                      </span>
-                    </td>
-                    <td className="px-3 py-2 border-b border-gray-200">
-                      <div className="flex items-center gap-10">
-                        <label className="relative inline-flex items-center cursor-pointer">
-                          <input
-                            type="checkbox"
-                            checked={route.enabled}
-                            onChange={() => handleToggle(route.id)}
-                            className="sr-only"
-                          />
-                          <div className={`w-11 h-6 rounded-full transition-colors duration-200 ease-in-out ${
-                            route.enabled ? 'bg-purple-600' : 'bg-gray-300'
-                          }`}>
-                            <div className={`w-5 h-5 bg-white rounded-full shadow-lg transform transition-transform duration-200 ease-in-out ${
-                              route.enabled ? 'translate-x-5' : 'translate-x-0.5'
-                            } mt-0.5`}></div>
-                          </div>
-                        </label>
-                        
-                        <button
-                          onClick={() => handleEdit(route)}
-                          className="group relative px-4 py-1.5 bg-gradient-to-r from-blue-500 to-blue-600 text-white text-xs font-medium rounded-md hover:from-blue-600 hover:to-blue-700 transition-all duration-200 shadow-sm hover:shadow-md flex items-center gap-1.5"
-                          title="Edit Route"
-                        >
-                          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                          </svg>
-                          <span>Edit</span>
-                        </button>
+              </thead>
+              <tbody>
+                {routesStatus === "loading" && routes.length === 0 ? (
+                  <tr>
+                    <td colSpan="6" className="text-center py-4 text-gray-500 font-medium">
+                      <div className="flex items-center justify-center">
+                        <svg className="animate-spin h-6 w-6 mr-2 text-purple-600" viewBox="0 0 24 24">
+                          <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                          <path fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
+                        </svg>
+                        Loading routes...
                       </div>
                     </td>
                   </tr>
-                ))
-              )}
-            </tbody>
-          </table>
+                ) : routesStatus === "failed" ? (
+                  <tr>
+                    <td colSpan="6" className="text-center py-4 text-red-500 font-medium">
+                      Error loading routes: {routesError || "Unknown error"}
+                    </td>
+                  </tr>
+                ) : routesStatus === "succeeded" && (!Array.isArray(routes) || routes.length === 0) ? (
+                  <tr>
+                    <td colSpan="6" className="text-center py-4 text-gray-500 font-medium">
+                      No routes found
+                    </td>
+                  </tr>
+                ) : (
+                  routes.map((route, index) => (
+                    <tr 
+                      key={route.id} 
+                      className={`${index % 2 === 0 ? "bg-gray-50" : "bg-white"} ${
+                        editingId === route.id ? "ring-2 ring-purple-500" : ""
+                      }`}
+                    >
+                      <td className="px-3 py-2 border-b border-gray-200">{route.route}</td>
+                      <td className="px-3 py-2 border-b border-gray-200">{route.job}</td>
+                      <td className="px-3 py-2 border-b border-gray-200">{route.companyRoutePrice}</td>
+                      <td className="px-3 py-2 border-b border-gray-200">{route.driverRoutePrice}</td>
+                      <td className="px-3 py-2 border-b border-gray-200">
+                        <span
+                          className={`px-2 py-1 rounded-full text-sm font-medium ${
+                            route.enabled ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700"
+                          }`}
+                        >
+                          {route.enabled ? "Enabled" : "Disabled"}
+                        </span>
+                      </td>
+                      <td className="px-3 py-2 border-b border-gray-200">
+                        <div className="flex items-center gap-10">
+                          <label className="relative inline-flex items-center cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={route.enabled}
+                              onChange={() => handleToggle(route.id)}
+                              className="sr-only"
+                            />
+                            <div className={`w-11 h-6 rounded-full transition-colors duration-200 ease-in-out ${
+                              route.enabled ? 'bg-purple-600' : 'bg-gray-300'
+                            }`}>
+                              <div className={`w-5 h-5 bg-white rounded-full shadow-lg transform transition-transform duration-200 ease-in-out ${
+                                route.enabled ? 'translate-x-5' : 'translate-x-0.5'
+                              } mt-0.5`}></div>
+                            </div>
+                          </label>
+                          
+                          <button
+                            onClick={() => handleEdit(route)}
+                            className="group relative px-4 py-1.5 bg-gradient-to-r from-blue-500 to-blue-600 text-white text-xs font-medium rounded-md hover:from-blue-600 hover:to-blue-700 transition-all duration-200 shadow-sm hover:shadow-md flex items-center gap-1.5"
+                            title="Edit Route"
+                          >
+                            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                            </svg>
+                            <span>Edit</span>
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
         </section>
         
         <Pagination page={page} totalPages={totalPages} onPageChange={handlePageChange} />
@@ -441,4 +445,3 @@ export default function RoutesForm() {
     </div>
   );
 }
-  
