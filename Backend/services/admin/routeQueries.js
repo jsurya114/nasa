@@ -61,6 +61,32 @@ export const getAllRoutes = async () => {
   return result.rows;
 };
 
+export const getAllRoutesOfDriver = async (id) => {
+  // console.log("Fetching all routes..."); // Debug log
+  const result = await pool.query(`
+          SELECT
+        r.id,
+        r.name,
+        r.job,
+        r.company_route_price,
+        r.driver_route_price,
+        r.company_doublestop_price,
+        r.driver_doublestop_price,
+        r.route_code_in_string,
+        r.enabled
+      FROM drivers d
+      JOIN city c
+        ON c.id = d.city_id
+      JOIN routes r
+        ON r.job = c.job
+      WHERE d.id = $1
+        AND d.enabled = true
+        AND r.enabled = true;
+    `,[id]);
+  // console.log("Fetched routes:", result.rows); // Debug log
+  return result.rows;
+};
+
 // Get route by ID
 export const getRouteByIdQuery = async (id) => {
   // console.log(`Fetching route with id: ${id}`); // Debug log

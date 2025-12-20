@@ -3,6 +3,7 @@ import { addRangeOfSqeunceToDeliveries, checkSequenceConflict,syncJourneyDeliver
 
 import HttpStatus from "../../utils/statusCodes.js";
 import pool from "../../config/db.js";
+import { getAllottedDrivers } from "../../services/admin/dashboardService.js";
 
 const adminJourneyController = {
   fetchAllJourneys: async (req, res) => {
@@ -456,7 +457,13 @@ const adminJourneyController = {
   // },
   fetchAllDrivers: async (req, res) => {
     try {
-      const drivers = await AdminJourneyQuery.getAllDrivers();
+      let drivers;
+      const {role,id}= req.user;      
+      if(role==='superadmin')
+       drivers = await AdminJourneyQuery.getAllDrivers();
+      else
+        drivers= await getAllottedDrivers(id);
+      
       res.status(HttpStatus.OK).json({
         success: true,
         data: drivers

@@ -8,7 +8,6 @@ function AdminsList({ onEdit }) {
   const dispatch = useDispatch();
   const { admins, loading: adminsLoad, error: adminsError, page, totalPages } = useSelector((state) => state.users);
   const { isSuperAdmin } = useSelector((state) => state.admin);
-
   const [currentPage, setCurrentPage] = useState(1);
 
   useEffect(() => {

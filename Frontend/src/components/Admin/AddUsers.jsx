@@ -188,7 +188,7 @@ const AddUsers = () => {
               </div>
 
               <div className="overflow-x-auto">
-                <DriversList onEdit={(driver) => setEditDriver(driver)} />
+                <DriversList onEdit={(driver) => {setEditDriver(driver); window.scrollTo({ top: 0, behavior: 'smooth' });}} />
               </div>
             </div>
           </div>
@@ -251,7 +251,6 @@ const AddUsers = () => {
           </>
         )}
       </div>
-
       <Nav />
     </div>
   );

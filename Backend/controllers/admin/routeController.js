@@ -1,3 +1,4 @@
+import { getAllottedRoutes } from "../../services/admin/dashboardService.js";
 import {
   insertRoute,
   getAllRoutes,
@@ -5,7 +6,8 @@ import {
   updateRouteQuery,
   deleteRouteQuery,
   toggleRouteStatusQuery,
-  routePagination
+  routePagination,
+  getAllRoutesOfDriver
 } from "../../services/admin/routeQueries.js";
 import HttpStatus from "../../utils/statusCodes.js";
 
@@ -96,15 +98,37 @@ export const fetchPaginatedRoutes=async(req,res)=>{
 }
 
 // Get all routes
-export const getRoutes = async (req, res) => {
+export const getAdminRoutes = async (req, res) => {
   try {
     // console.log("Fetching all routes..."); // Debug log
-    const routesDb = await getAllRoutes();
+    let routesDb;
+    const {role,id}= req.user;
+    if(role==='superadmin')
+     routesDb = await getAllRoutes();
+    else
+      routesDb = await getAllottedRoutes(id);
+    // console.log("Routes",routesDb);
     const routes = routesDb.map(mapRoute);
     // console.log("Returning routes:", routes); // Debug log
     res.json({routes});
   } catch (err) {
-    console.error("❌ getRoutes error:", err.message); // Debug log
+    console.error("❌ getAdminRoutes error:", err.message); // Debug log
+    res.status(HttpStatus.INTERNAL_SERVER_ERROR).json( {err:message});
+  }
+};
+
+export const getDriverRoutes = async (req, res) => {
+  try {
+    // console.log("Fetching all routes..."); // Debug log    
+    const id= req.driver.id;    
+     const routesDb = await getAllRoutesOfDriver(id);
+    // console.log("Routes",routesDb);
+    const routes = routesDb.map(mapRoute);
+    // console.log("Driver routes",routes);
+    // console.log("Returning routes:", routes); // Debug log
+    res.json({routes});
+  } catch (err) {
+    console.error("❌ getDriverRoutes error:", err.message); // Debug log
     res.status(HttpStatus.INTERNAL_SERVER_ERROR).json( {err:message});
   }
 };

@@ -9,7 +9,7 @@ export const getPaymentDashboardData = async (req, res) => {
 
     // Extract query parameters for filtering
     const { job, driver, route, startDate, endDate, paymentStatus, companyEarnings } = req.query;
-
+    const {id,role}=req.user;
     // Build filters object - only include non-null/non-"All" values
     const filters = {};
     
@@ -24,7 +24,7 @@ export const getPaymentDashboardData = async (req, res) => {
     console.log("Processed filters:", filters);
 
     // Fetch filtered data
-    const result = await AdminDashboardQueries.PaymentDashboardTable(filters);
+    const result = await AdminDashboardQueries.PaymentDashboardTable(filters,id,role);
     
     console.log("Query successful, returning", result.length, "rows");
     
