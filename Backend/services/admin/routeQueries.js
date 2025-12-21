@@ -55,7 +55,7 @@ export const insertRoute = async (data) => {
 
 // Get all routes - for superadmin
 export const getAllRoutes = async () => {
-  const result = await pool.query("SELECT * FROM routes ORDER BY id ASC");
+  const result = await pool.query("SELECT * FROM routes WHERE enabled = true ORDER BY id ASC");
   return result.rows;
 };
 
