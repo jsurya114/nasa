@@ -8,7 +8,6 @@ export const AdminDashboardQueries = {
         SET 
             no_scanned = dd.no_scanned,
             failed_attempt = dd.failed_attempt,
-            closed = true,
             ds = dd.ds,
             fs = dd.first_stop,
             delivered = dd.ds + dd.first_stop,
