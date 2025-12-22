@@ -11,7 +11,7 @@ export default function NotFound() {
           The page you are looking for doesn’t exist or has been moved.
         </p>
         
-            <NavLink to="/admin/login"
+            <NavLink to="/admin/dashboard"
                       className="mt-6 inline-block px-6 py-2 bg-purple-700 text-white rounded-lg shadow hover:bg-purple-800 transition"
 >
 
