@@ -183,7 +183,7 @@ export const markNoAddressAsNoScanned = async () => {
 
 
 // ✅ Sync Deliveries when Journey is Updated
-export const syncJourneyDeliveries = async (journey_id, driver_id, route_id, start_seq, end_seq, journey_date) => {
+export const  syncJourneyDeliveries = async (journey_id, driver_id, route_id, start_seq, end_seq, journey_date) => {
   const client = await pool.connect();
   
   try {
@@ -215,39 +215,39 @@ export const syncJourneyDeliveries = async (journey_id, driver_id, route_id, sta
     // 3. Insert: Add new deliveries for any "Missing" sequences in the new range
     // (e.g., if range changed from 10-20 to 10-25, insert 21-25)
     // We use generate_series and NOT EXISTS to only insert what is missing.
-    const insertQuery = `
-      INSERT INTO deliveries (
-          driver_id,
-          driver_set_date,
-          route_id,
-          sequence_number,
-          seq_route_code,
-          dashboard_data_id
-      )
-      SELECT
-          $1 AS driver_id,
-          $5::date AS driver_set_date,
-          r.id AS route_id,
-          seq AS sequence_number,
-          seq || '-' || r.route_code_in_string AS seq_route_code,
-          $6 AS dashboard_data_id
-      FROM generate_series($3::int, $4::int) AS seq
-      JOIN routes r ON r.id = $2
-      WHERE NOT EXISTS (
-          SELECT 1 FROM deliveries d 
-          WHERE d.dashboard_data_id = $6 
-          AND d.sequence_number = seq
-      );
-    `;
-    
-    await client.query(insertQuery, [
-      driver_id, 
-      route_id, 
-      start_seq, 
-      end_seq, 
-      journey_date, 
-      journey_id
-    ]);
+      const insertQuery = `
+        INSERT INTO deliveries (
+            driver_id,
+            driver_set_date,
+            route_id,
+            sequence_number,
+            seq_route_code,
+            dashboard_data_id
+        )
+        SELECT
+            $1 AS driver_id,
+            $5::date AS driver_set_date,
+            r.id AS route_id,
+            seq AS sequence_number,
+            seq || '-' || r.route_code_in_string AS seq_route_code,
+            $6 AS dashboard_data_id
+        FROM generate_series($3::int, $4::int) AS seq
+        JOIN routes r ON r.id = $2
+        WHERE NOT EXISTS (
+            SELECT 1 FROM deliveries d 
+            WHERE d.dashboard_data_id = $6 
+            AND d.sequence_number = seq
+        );
+      `;
+      
+      await client.query(insertQuery, [
+        driver_id, 
+        route_id, 
+        start_seq, 
+        end_seq, 
+        journey_date, 
+        journey_id
+      ]);
 
     await client.query('COMMIT');
     return { success: true };

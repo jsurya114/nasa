@@ -1,5 +1,3 @@
-import express from 'express'
-import statusCode from '../../utils/statusCodes.js'
 import { dbService } from '../../services/admin/dbQueries.js'
 import { generateToken, verifyToken } from '../../services/jwtservice.js'
 import HttpStatus from '../../utils/statusCodes.js'

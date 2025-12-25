@@ -1,4 +1,3 @@
-import express from 'express';
 import HttpStatus from '../../utils/statusCodes.js';
 import { dbService } from '../../services/admin/dbQueries.js';
 

@@ -169,27 +169,54 @@ export const ExcelFileQueries = {
         
         
       //   `
-      const queryStr = `UPDATE 	
-      	dashboard_data d
-      SET
-      	no_scanned = sub.no_scanned_count,
-      	failed_attempt = sub.failed_attempt_count,
-        ds = sub.double_stop_count,
-        first_stop = sub.first_stop_count,
-        delivered = sub.first_stop_count + sub.double_stop_count,
-        is_deliveries_count_added = true
+      // const queryStr = `UPDATE 	
+      // 	dashboard_data d
+      // SET
+      // 	no_scanned = sub.no_scanned_count,
+      // 	failed_attempt = sub.failed_attempt_count,
+      //   ds = sub.double_stop_count,
+      //   first_stop = sub.first_stop_count,
+      //   delivered = sub.first_stop_count + sub.double_stop_count,
+      //   is_deliveries_count_added = true
 
-      FROM (
-          SELECT driver_id,
-        	COUNT (*) FILTER (WHERE final_result = 'no_scanned') AS no_scanned_count,
-      		COUNT (*) FILTER (WHERE final_result = 'failed_attempt') AS failed_attempt_count,
-          COUNT (*) FILTER (WHERE final_result = 'first_stop') AS first_stop_count,
-          COUNT (*) FILTER (WHERE final_result = 'double_stop') AS double_stop_count
-              FROM deliveries
-          GROUP BY driver_id
-      ) AS sub
-      WHERE d.driver_id = sub.driver_id AND d.is_deliveries_count_added = false;`
-        await client.query(queryStr  )
+      // FROM (
+      //     SELECT driver_id,
+      //   	COUNT (*) FILTER (WHERE final_result = 'no_scanned') AS no_scanned_count,
+      // 		COUNT (*) FILTER (WHERE final_result = 'failed_attempt') AS failed_attempt_count,
+      //     COUNT (*) FILTER (WHERE final_result = 'first_stop') AS first_stop_count,
+      //     COUNT (*) FILTER (WHERE final_result = 'double_stop') AS double_stop_count
+      //         FROM deliveries
+      //     GROUP BY driver_id
+      // ) AS sub
+      // WHERE d.driver_id = sub.driver_id AND d.is_deliveries_count_added = false;`
+        
+      const queryStr = `
+      UPDATE dashboard_data d
+SET
+    no_scanned = sub.no_scanned_count,
+    failed_attempt = sub.failed_attempt_count,
+    ds = sub.double_stop_count,
+    first_stop = sub.first_stop_count,
+    delivered = sub.first_stop_count + sub.double_stop_count,
+    is_deliveries_count_added = true
+FROM (
+    SELECT
+        d2.driver_id,
+        d2.id AS dashboard_id,
+        COUNT(*) FILTER (WHERE del.final_result = 'no_scanned')      AS no_scanned_count,
+        COUNT(*) FILTER (WHERE del.final_result = 'failed_attempt') AS failed_attempt_count,
+        COUNT(*) FILTER (WHERE del.final_result = 'first_stop')     AS first_stop_count,
+        COUNT(*) FILTER (WHERE del.final_result = 'double_stop')    AS double_stop_count
+    FROM dashboard_data d2
+    JOIN deliveries del
+      ON del.driver_id = d2.driver_id
+     AND del.sequence_number BETWEEN d2.start_seq AND d2.end_seq
+    WHERE d2.is_deliveries_count_added = false
+    GROUP BY d2.id, d2.driver_id
+) sub
+WHERE d.id = sub.dashboard_id;
+`
+      await client.query(queryStr  )
     } catch (error) {
         console.error(error)
       throw error

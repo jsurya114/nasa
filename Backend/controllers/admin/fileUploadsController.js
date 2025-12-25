@@ -1,21 +1,13 @@
 import statusCode from "../../utils/statusCodes.js";
-import { dbService } from "../../services/admin/dbQueries.js";
-import { generateToken } from "../../services/jwtservice.js";
 import pool from "../../config/db.js";
 import HttpStatus from "../../utils/statusCodes.js";
 import XLSX from "xlsx";
 // import XlsxPopulate from 'xlsx-populate';
 import { ExcelFileQueries } from "../../services/admin/excelFileQueries.js";
-import { formatExcelDate,getLocalDateString } from "../../utils/helper.js";
-// import stringSimilarity from 'string-similarity'
-import { WeeklyExcelQueries } from "../../services/admin/weeklyExcelQueries.js";
-import { table } from "console";
 
 
-import { fsync,unlink } from "fs";
+import { unlink } from "fs";
 
-import { createDateBasedIndex, createDriverMap } from "../../utils/excelHelperFns.js";
-import { buildInsertData} from "../../utils/matchFns.js";
 // printMatchSummary 
 
 // import { AdminDashboardQueries } from "../../services/admin/dashboardQueries.js";
@@ -96,9 +88,9 @@ export const DailyExcelUpload = async (req, res) => {
 // export const updateDriverPayment = async (req,res)=>{
 //   try {
 //     await AdminDashboardQueries.updatePaymentTable()
-    
+
 //   } catch (error) {
-    
+
 //   }
 // }
 // export default fileUpload
