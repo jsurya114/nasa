@@ -5,8 +5,6 @@ export  function blackListToken(jti){
     client.set(jti,'revoked')
     client.expire(jti,3600)
     client.ttl(jti)
-
-
     
 }
 
