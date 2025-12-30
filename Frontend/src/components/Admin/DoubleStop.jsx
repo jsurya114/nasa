@@ -231,7 +231,7 @@
 
 // export default DoubleStop
 
-import React, { useState,useCallback, useRef,useEffect } from "react";
+import React, { useState,useCallback, useRef } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import {
   excelDailyFileUpload,
@@ -251,12 +251,7 @@ const DoubleStop = () => {
   
   const dispatch = useDispatch();
   const [activeView, setActiveView] = useState("weekly");
-const [selectedDate, setSelectedDate] = useState("");
 
-useEffect(() => {
-  const today = new Date().toISOString().split("T")[0];
-  setSelectedDate(today);
-}, []);
 
  const [file,setFile]=useState(null);
   const [weeklyErrors, setWeeklyErrors] = useState({});
@@ -313,7 +308,6 @@ useEffect(() => {
 
     const formData = new FormData();
     formData.append("file", dailyForm.file);
-      formData.append("journey_date", selectedDate); 
     dispatch(excelDailyFileUpload(formData))
       .unwrap()
       .then(() => {
@@ -332,15 +326,9 @@ useEffect(() => {
   const loadWeeklyData = useCallback(()=>{
     dispatch(fetchWeeklyTempData())
   },[dispatch])
- const loadDailyData = useCallback(() => {
-  if (!selectedDate) {
-    toast.error("Please select a date");
-    return;
-  }
-
-  dispatch(fetchDashboardData(selectedDate));
-}, [dispatch, selectedDate]);
-
+  const loadDailyData = useCallback(()=>{
+    dispatch(fetchDashboardData());
+  },[dispatch])
 
   return (
     <div className="min-h-screen bg-gray-100 text-gray-900 font-poppins">
@@ -412,58 +400,38 @@ useEffect(() => {
         )}
 
         {/* Daily Form */}
-       {activeView === "daily" && (
-  <section className="bg-white border border-gray-200 rounded-xl shadow-sm mb-4 p-6">
-    <h2 className="font-bold text-gray-900 bg-gray-50 border-b border-gray-200 px-4 py-3 -mx-6 -mt-6 rounded-t-xl">
-      Daily Upload
-    </h2>
-
-    {/* 🔹 DATE FILTER (ADD THIS PART) */}
-    <div className="mb-4 mt-4 flex gap-3 items-center">
-      <label className="font-medium">Select Date:</label>
-      <input
-        type="date"
-        value={selectedDate}
-        onChange={(e) => setSelectedDate(e.target.value)}
-        className="border px-2 py-1 rounded"
-      />
-      <button
-        type="button"
-        onClick={loadDailyData}
-        className="px-3 py-1 bg-blue-600 text-white rounded hover:bg-blue-700"
-      >
-        Load
-      </button>
-    </div>
-
-    {/* 🔹 DAILY UPLOAD FORM */}
-    <form
-      onSubmit={handleDailySubmit}
-      className="flex flex-col gap-4 mt-6"
-    >
-      <div>
-        <FileUpload
-          ref={dailyFileRef}
-          onFileSelect={(f) => setDailyForm({ ...dailyForm, file: f })}
-        />
-        {dailyErrors.file && (
-          <p className="text-red-500 text-sm mt-1">
-            {dailyErrors.file}
-          </p>
+        {activeView === "daily" && (
+          <section className="bg-white border border-gray-200 rounded-xl shadow-sm mb-4 p-6">
+            <h2 className="font-bold text-gray-900 bg-gray-50 border-b border-gray-200 px-4 py-3 -mx-6 -mt-6 rounded-t-xl">
+              Daily Upload
+            </h2>
+            <form
+              onSubmit={handleDailySubmit}
+              className="flex flex-col gap-4 mt-6"
+            >
+             
+              <div>
+                <FileUpload
+                  ref={dailyFileRef}
+                  onFileSelect={(f) => setDailyForm({ ...dailyForm, file: f })}
+                />
+                {dailyErrors.file && (
+                  <p className="text-red-500 text-sm mt-1">
+                    {dailyErrors.file}
+                  </p>
+                )}
+              </div>
+              <div className="flex justify-end">
+                <button
+                  type="submit"
+                  className="px-6 py-2 bg-purple-700 text-white rounded-lg shadow hover:bg-purple-800"
+                >
+                  Upload Daily Data
+                </button>
+              </div>
+            </form>
+          </section>
         )}
-      </div>
-
-      <div className="flex justify-end">
-        <button
-          type="submit"
-          className="px-6 py-2 bg-purple-700 text-white rounded-lg shadow hover:bg-purple-800"
-        >
-          Upload Daily Data
-        </button>
-      </div>
-    </form>
-  </section>
-)}
 
         {/* Uploaded Data */}
         <section className="bg-white border mb-3 border-gray-200 rounded-xl shadow-sm overflow-x-auto">
