@@ -20,25 +20,35 @@ const getAuthHeaders = (isFormData = false) => {
 
 // Async thunk for daily file upload
 export const excelDailyFileUpload = createAsyncThunk(
-  'admin/uploadExcel',
+  "excel/dailyUpload",
   async (formData, { rejectWithValue }) => {
     try {
-      const res = await fetch(`${API_BASE_URL}/admin/doubleStop/dailyFileUpload`, {
-        method: 'POST',
-        body: formData,
-        headers: getAuthHeaders(true), // true = FormData, don't set Content-Type
-      })
-      const data = await res.json()
-      console.log(data, 'excel file upload status')
+      const token = localStorage.getItem("adminToken");
+
+      const res = await fetch(
+        `${API_BASE_URL}/admin/doubleStop/dailyFileUpload`,
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${token}`, // ✅ ONLY auth header
+          },
+          body: formData, // ✅ FormData
+        }
+      );
+
+      const data = await res.json();
+
       if (!res.ok) {
-        return rejectWithValue(data.message || 'Excel file upload failed')
+        return rejectWithValue(data.message);
       }
-      return data
-    } catch (error) {
-      return rejectWithValue(error.message)
+
+      return data;
+    } catch (err) {
+      return rejectWithValue(err.message);
     }
   }
-)
+);
+
 
 // Async thunk for weekly file upload
 export const excelWeeklyFileUpload = createAsyncThunk(
