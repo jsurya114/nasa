@@ -1,59 +1,41 @@
 import pool from "../../config/db.js";
 
 const AdminJourneyQuery = {
-  // getAllJourneys: async (id,role) => {
-  //   const query = `
-  //     SELECT 
-  //       d.*, 
-  //       r.name AS route_name, 
-  //       dr.name AS driver_name,
-  //       TO_CHAR(d.journey_date, 'YYYY-MM-DD') as journey_date
-  //     FROM dashboard_data d
-  //     JOIN routes r ON d.route_id = r.id
-  //     JOIN drivers dr ON d.driver_id = dr.id
-  //     ORDER BY d.journey_date DESC, d.start_seq
-  //   `;
-  //   const result = await pool.query(query);
-  //   return result.rows;
-  // },
-
   getAllJourneys: async (id, role) => {
-
-  let query = `
-    SELECT 
-      d.*, 
-      r.name AS route_name, 
-      dr.name AS driver_name,
-      TO_CHAR(d.journey_date, 'YYYY-MM-DD') AS journey_date
-    FROM dashboard_data d
-    JOIN routes r ON d.route_id = r.id
-    JOIN drivers dr ON d.driver_id = dr.id
-    WHERE 1 = 1
-  `;
-
-  const params = [];
-
-  // 🔐 Apply restriction ONLY for admin
-  if (role === "admin") {
-    query += `
-      AND EXISTS (
-        SELECT 1
-        FROM admin_city_ref acr
-        WHERE acr.city_id = dr.city_id
-          AND acr.admin_id = $1
-      )
+    let query = `
+      SELECT 
+        d.*, 
+        r.name AS route_name, 
+        dr.name AS driver_name,
+        TO_CHAR(d.journey_date, 'YYYY-MM-DD') AS journey_date
+      FROM dashboard_data d
+      JOIN routes r ON d.route_id = r.id
+      JOIN drivers dr ON d.driver_id = dr.id
+      WHERE 1 = 1
     `;
-    params.push(id);
-  }
 
-  query += `
-    ORDER BY d.journey_date DESC, d.start_seq
-  `;
+    const params = [];
 
-  const result = await pool.query(query, params);
-  return result.rows;
-},
+    // 🔐 Apply restriction ONLY for admin
+    if (role === "admin") {
+      query += `
+        AND EXISTS (
+          SELECT 1
+          FROM admin_city_ref acr
+          WHERE acr.city_id = dr.city_id
+            AND acr.admin_id = $1
+        )
+      `;
+      params.push(id);
+    }
 
+    query += `
+      ORDER BY d.journey_date DESC, d.start_seq
+    `;
+
+    const result = await pool.query(query, params);
+    return result.rows;
+  },
 
   updateJourneyById: async (id, data) => {
     const { start_seq, end_seq, route_id, driver_id } = data;
@@ -117,27 +99,27 @@ const AdminJourneyQuery = {
     const { driver_id, route_id, start_seq, end_seq, journey_date } = data;
     const packages = (end_seq - start_seq) + 1;
 
-const query = `
-  INSERT INTO dashboard_data 
-    (driver_id, route_id, start_seq, end_seq, journey_date, packages)
-  VALUES ($1, $2, $3, $4, $5::date, $6)
-  RETURNING *, TO_CHAR(journey_date, 'YYYY-MM-DD') as journey_date;
-`;
+    const query = `
+      INSERT INTO dashboard_data 
+        (driver_id, route_id, start_seq, end_seq, journey_date, packages)
+      VALUES ($1, $2, $3, $4, $5::date, $6)
+      RETURNING *, TO_CHAR(journey_date, 'YYYY-MM-DD') as journey_date;
+    `;
 
-const values = [driver_id, route_id, start_seq, end_seq, journey_date, packages];
+    const values = [driver_id, route_id, start_seq, end_seq, journey_date, packages];
     const result = await pool.query(query, values);
     return result.rows[0];
   },
 
   deleteJourneyById: async (id) => {
-  const query = `
-    DELETE FROM dashboard_data
-    WHERE id = $1
-    RETURNING id
-  `;
-  const result = await pool.query(query, [id]);
-  return result.rowCount > 0;
-},
+    const query = `
+      DELETE FROM dashboard_data
+      WHERE id = $1
+      RETURNING id
+    `;
+    const result = await pool.query(query, [id]);
+    return result.rowCount > 0;
+  },
 
   getAllDrivers: async () => {
     const query = `
@@ -148,7 +130,73 @@ const values = [driver_id, route_id, start_seq, end_seq, journey_date, packages]
     `;
     const result = await pool.query(query);
     return result.rows;
-  }
+  },
+
+  // ✅ NEW: Get total count for pagination
+  getJourneysCount: async (id, role) => {
+    let query = `
+      SELECT COUNT(*) as total
+      FROM dashboard_data d
+      JOIN drivers dr ON d.driver_id = dr.id
+      WHERE 1 = 1
+    `;
+
+    const params = [];
+
+    if (role === "admin") {
+      query += `
+        AND EXISTS (
+          SELECT 1
+          FROM admin_city_ref acr
+          WHERE acr.city_id = dr.city_id
+            AND acr.admin_id = $1
+        )
+      `;
+      params.push(id);
+    }
+
+    const result = await pool.query(query, params);
+    return parseInt(result.rows[0].total);
+  },
+
+  // Get paginated journeys (ONLY for AdminJourney page)
+  getPaginatedJourneys: async (id, role, limit = 10, offset = 0) => {
+    let query = `
+      SELECT 
+        d.*, 
+        r.name AS route_name, 
+        dr.name AS driver_name,
+        TO_CHAR(d.journey_date, 'YYYY-MM-DD') AS journey_date
+      FROM dashboard_data d
+      JOIN routes r ON d.route_id = r.id
+      JOIN drivers dr ON d.driver_id = dr.id
+      WHERE 1 = 1
+    `;
+
+    const params = [];
+
+    if (role === "admin") {
+      query += `
+        AND EXISTS (
+          SELECT 1
+          FROM admin_city_ref acr
+          WHERE acr.city_id = dr.city_id
+            AND acr.admin_id = $1
+        )
+      `;
+      params.push(id);
+    }
+
+    query += `
+      ORDER BY d.journey_date DESC, d.start_seq
+      LIMIT $${params.length + 1} OFFSET $${params.length + 2}
+    `;
+    
+    params.push(limit, offset);
+
+    const result = await pool.query(query, params);
+    return result.rows;
+  },
 };
 
 export default AdminJourneyQuery;

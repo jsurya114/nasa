@@ -475,7 +475,35 @@ const adminJourneyController = {
         message: error.message
       });
     }
-  }
+  },
+   fetchPaginatedJourneys: async (req, res) => {
+    try {
+      const { id, role } = req.user;
+      const page = parseInt(req.query.page) || 1;
+      const limit = parseInt(req.query.limit) || 10;
+      const offset = (page - 1) * limit;
+      
+      const totalCount = await AdminJourneyQuery.getJourneysCount(id, role);
+      const journeys = await AdminJourneyQuery.getPaginatedJourneys(id, role, limit, offset);
+      
+      const totalPages = Math.ceil(totalCount / limit);
+      res.status(HttpStatus.OK).json({ 
+        success: true, 
+        data: journeys,
+        pagination: {
+          total: totalCount,
+          page: page,
+          limit: limit,
+          totalPages: totalPages
+        }
+      });
+    } catch (error) {
+      res.status(HttpStatus.INTERNAL_SERVER_ERROR).json({
+        success: false,
+        message: error.message
+      });
+    }
+  },
 };
 
 export default adminJourneyController;
