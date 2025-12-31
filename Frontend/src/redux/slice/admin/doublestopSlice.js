@@ -13,23 +13,25 @@ const getAuthHeaders = () => {
 // Async thunk to fetch dashboard data (daily)
 export const fetchDashboardData = createAsyncThunk(
   "dashboard/fetchDashboardData",
-  async (date, { rejectWithValue }) => {
-    if (!date) {
-      return rejectWithValue("Date is required");
-    }
-
-    const res = await fetch(
-      `${API_BASE_URL}/admin/doubleStop/tempDashboardData?date=${date}`,
-      {
+  async (_, { rejectWithValue }) => {
+    try {
+      const res = await fetch(`${API_BASE_URL}/admin/doubleStop/tempDashboardData`, {
+        method: "GET",
         headers: getAuthHeaders(),
-      }
-    );
+      });
 
-    const data = await res.json();
-    return data.data;
+      if (!res.ok) {
+        const error = await res.json();
+        return rejectWithValue(error.message || "Failed to fetch dashboard data");
+      }
+
+      const data = await res.json();
+      return data.data; // API returns { success: true, data: [...] }
+    } catch (err) {
+      return rejectWithValue(err.message);
+    }
   }
 );
-
 
 // Async thunk to fetch weekly temp data
 export const fetchWeeklyTempData = createAsyncThunk(

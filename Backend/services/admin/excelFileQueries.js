@@ -116,133 +116,107 @@ export const ExcelFileQueries = {
 
   // 🔴 FIXED: only update untouched rows
   setUntouchedRowsAsNoScannedAndUpdateFailedAttempt: async (client) => {
-  try {
-    const queryStr = `
-      UPDATE deliveries
-      SET final_result = CASE
-        WHEN status = 'FAILED_ATTEMPT' THEN 'failed_attempt'
-
-        WHEN status IN ('NEW', 'OUT_FOR_DELIVERY')
+    try {
+      const queryStr = `
+        UPDATE deliveries
+        SET final_result = CASE
+          WHEN status = 'FAILED_ATTEMPT' THEN 'failed_attempt'
+          WHEN status = 'Pending'
+            AND address = 'No_Address'
+            AND recp_name = 'Unknown Recipient'
           THEN 'no_scanned'
-
-        WHEN status = 'Pending'
-          AND address = 'No_Address'
-          AND recp_name = 'Unknown Recipient'
-          THEN 'no_scanned'
-
-        ELSE final_result
-      END
-      WHERE final_result = 'not_assigned';
-    `;
-
-    await client.query(queryStr);
-    console.log("✅ NEW / OUTFORDELIVERY counted as no_scanned");
-  } catch (error) {
-    throw error;
-  }
-},
-
+          WHEN status = 'NEW' THEN 'no_scanned'
+          ELSE final_result
+        END
+        WHERE final_result = 'not_assigned';
+      `;
+      await client.query(queryStr);
+      console.log("✅ Updated no_scanned and failed_attempt");
+    } catch (error) {
+      throw error;
+    }
+  },
 
   // 🔴 FIXED: COUNTS BASED ON dashboard_data (route + seq range)
-addEachDriversCount: async (client) => {
-  try {
-    const queryStr = `
-      UPDATE dashboard_data d
-      SET
-        no_scanned =
-          COALESCE(sub.no_scanned_count, 0)
-          + GREATEST(
-              d.packages - COALESCE(sub.total_scanned, 0),
-              0
-            ),
+  addEachDriversCount: async (client) => {
+    try {
+      const queryStr = `
+        UPDATE dashboard_data d
+        SET
+          no_scanned = sub.no_scanned_count,
+          failed_attempt = sub.failed_attempt_count,
+          ds = sub.double_stop_count,
+          first_stop = sub.first_stop_count,
+          delivered = sub.first_stop_count + sub.double_stop_count,
+          is_deliveries_count_added = true
+        FROM (
+          SELECT
+            d2.id AS dashboard_id,
+            COUNT(*) FILTER (WHERE del.final_result = 'no_scanned')      AS no_scanned_count,
+            COUNT(*) FILTER (WHERE del.final_result = 'failed_attempt') AS failed_attempt_count,
+            COUNT(*) FILTER (WHERE del.final_result = 'first_stop')     AS first_stop_count,
+            COUNT(*) FILTER (WHERE del.final_result = 'double_stop')    AS double_stop_count
+          FROM dashboard_data d2
+          JOIN deliveries del
+            ON del.driver_id = d2.driver_id
+           AND del.route_id = d2.route_id
+           AND del.sequence_number BETWEEN d2.start_seq AND d2.end_seq
+           AND DATE(del.driver_set_date) = DATE(d2.journey_date)
+          WHERE d2.is_deliveries_count_added = false
+          GROUP BY d2.id
+        ) sub
+        WHERE d.id = sub.dashboard_id;
+      `;
+      await client.query(queryStr);
+    } catch (error) {
+      console.error(error);
+      throw error;
+    }
+  },
 
-        failed_attempt = COALESCE(sub.failed_attempt_count, 0),
-        ds = COALESCE(sub.double_stop_count, 0),
-        first_stop = COALESCE(sub.first_stop_count, 0),
-
-        delivered =
-          COALESCE(sub.first_stop_count, 0)
-          + COALESCE(sub.double_stop_count, 0),
-
-        is_deliveries_count_added = true
-      FROM (
+  getTempDashboardData: async (client, id, role) => {
+    try {
+      let query = `
         SELECT
-          d2.id AS dashboard_id,
+          d.name,
+          dd.journey_date,
+          r.name AS route,
+          dd.start_seq || ' - ' || dd.end_seq AS sequence,
+          dd.packages,
+          dd.no_scanned,
+          dd.failed_attempt,
+          dd.ds,
+          dd.delivered
+        FROM dashboard_data dd
+        JOIN routes r ON dd.route_id = r.id
+        JOIN drivers d ON d.id = dd.driver_id
+        WHERE dd.journey_date BETWEEN CURRENT_DATE - INTERVAL '1 day'
+                                AND CURRENT_DATE
+      `;
 
-          COUNT(*) FILTER (WHERE del.final_result = 'no_scanned')
-            AS no_scanned_count,
+      const params = [];
 
-          COUNT(*) FILTER (WHERE del.final_result = 'failed_attempt')
-            AS failed_attempt_count,
+      if (role === "admin") {
+        query += `
+          AND EXISTS (
+            SELECT 1
+            FROM admin_city_ref acr
+            WHERE acr.city_id = d.city_id
+              AND acr.admin_id = $1
+          )
+        `;
+        params.push(id);
+      }
 
-          COUNT(*) FILTER (WHERE del.final_result = 'first_stop')
-            AS first_stop_count,
+      query += ` ORDER BY dd.journey_date DESC`;
 
-          COUNT(*) FILTER (WHERE del.final_result = 'double_stop')
-            AS double_stop_count,
-
-          COUNT(del.unique_id) AS total_scanned
-
-        FROM dashboard_data d2
-        LEFT JOIN deliveries del
-          ON del.driver_id = d2.driver_id
-         AND del.route_id = d2.route_id
-         AND del.sequence_number BETWEEN d2.start_seq AND d2.end_seq
-         AND DATE(del.driver_set_date) = DATE(d2.journey_date)
-
-        WHERE d2.is_deliveries_count_added = false
-        GROUP BY d2.id
-      ) sub
-      WHERE d.id = sub.dashboard_id;
-    `;
-
-    await client.query(queryStr);
-    console.log("✅ Missing sequences + NEW/OUTFORDELIVERY counted correctly");
-  } catch (error) {
-    console.error(error);
-    throw error;
-  }
-},
-
-
-getTempDashboardData: async (client, journeyDate, id, role) => {
-  let query = `
-    SELECT
-      d.name,
-      dd.journey_date,
-      r.name AS route,
-      dd.start_seq || ' - ' || dd.end_seq AS sequence,
-      dd.packages,
-      dd.no_scanned,
-      dd.failed_attempt,
-      dd.ds,
-      dd.delivered
-    FROM dashboard_data dd
-    JOIN routes r ON dd.route_id = r.id
-    JOIN drivers d ON d.id = dd.driver_id
-    WHERE dd.journey_date = $1
-  `;
-
-  const params = [journeyDate];
-
-  if (role === "admin") {
-    query += `
-      AND EXISTS (
-        SELECT 1
-        FROM admin_city_ref acr
-        WHERE acr.city_id = d.city_id
-          AND acr.admin_id = $2
-      )
-    `;
-    params.push(id);
-  }
-
-  query += ` ORDER BY dd.journey_date DESC`;
-
-  const res = await client.query(query, params);
-  return res.rows;
-},
-
+      const res = await client.query(query, params);
+      return res.rows;
+    } catch (error) {
+      console.error(error);
+      throw error;
+    }
+  },
 
   // 🔴 FIXED: Double stop logic must include route & date
   updateFirstStopAndDoubleStop: async (client) => {
