@@ -231,14 +231,14 @@
 
 // export default DoubleStop
 
-import React, { useState,useCallback, useRef } from "react";
+import React, { useState, useCallback, useRef } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import {
   excelDailyFileUpload,
   excelWeeklyFileUpload,
 } from "../../redux/slice/admin/excelSlice";
 import { fetchDashboardData, fetchWeeklyTempData } from "../../redux/slice/admin/doublestopSlice";
-import { fetchDriverPayment,updateWeeklyExcelToDashboard } from "../../redux/slice/admin/dashboardUpdateSlice";
+import { fetchDriverPayment, updateWeeklyExcelToDashboard } from "../../redux/slice/admin/dashboardUpdateSlice";
 import FileUpload from "../../../src/components/Excel-InputTag";
 import UploadedData from "../../reuse/UploadedData";
 import Header from "../../reuse/Header";
@@ -248,15 +248,13 @@ import TempUploadedData from "../../reuse/TempUploadedData";
 import { toast } from "react-toastify";
 
 const DoubleStop = () => {
-  
   const dispatch = useDispatch();
   const [activeView, setActiveView] = useState("weekly");
-const [selectedDate, setSelectedDate] = useState(
-  new Date().toISOString().split("T")[0]
-);
+  const [selectedDate, setSelectedDate] = useState(
+    new Date().toISOString().split("T")[0]
+  );
 
-
- const [file,setFile]=useState(null);
+  const [file, setFile] = useState(null);
   const [weeklyErrors, setWeeklyErrors] = useState({});
 
   // Daily form state
@@ -288,18 +286,17 @@ const [selectedDate, setSelectedDate] = useState(
     const formData = new FormData();
     formData.append("file", file);
     
-    dispatch(excelWeeklyFileUpload(formData)).unwrap()
-    .then(()=>{
-      toast.success("Weekly Excel upload completed!!");
-      setFile(null);
-    })
-    .catch((err)=>{
-      toast.error("Error while processing weekly upload")
-    });
+    dispatch(excelWeeklyFileUpload(formData))
+      .unwrap()
+      .then(() => {
+        toast.success("Weekly Excel upload completed!!");
+        setFile(null);
+      })
+      .catch((err) => {
+        toast.error("Error while processing weekly upload");
+      });
   };
 
-
-  
   // Daily submit
   const handleDailySubmit = (e) => {
     e.preventDefault();
@@ -312,32 +309,34 @@ const [selectedDate, setSelectedDate] = useState(
     const formData = new FormData();
     formData.append("file", dailyForm.file);
     formData.append("uploadDate", selectedDate);
+    
     dispatch(excelDailyFileUpload(formData))
       .unwrap()
-    .then(() => {
-  toast.success("Daily file uploaded successfully");
+      .then(() => {
+        toast.success("Daily file uploaded successfully");
 
-  // ✅ Refresh dashboard for selected date
-  dispatch(fetchDashboardData(selectedDate));
+        // Refresh dashboard for selected date
+        dispatch(fetchDashboardData(selectedDate));
 
-  if (dailyFileRef.current?.clear) {
-    dailyFileRef.current.clear();
-  }
+        if (dailyFileRef.current?.clear) {
+          dailyFileRef.current.clear();
+        }
 
-  setDailyForm((prev) => ({ ...prev, file: null }));
-})
-
+        setDailyForm((prev) => ({ ...prev, file: null }));
+      })
       .catch((err) => {
         const msg = typeof err === "string" ? err : err?.message || "Upload failed";
         toast.error(msg);
       });
   };
-  const loadWeeklyData = useCallback(()=>{
-    dispatch(fetchWeeklyTempData())
-  },[dispatch])
- const loadDailyData = useCallback(() => {
-  dispatch(fetchDashboardData(selectedDate));
-}, [dispatch, selectedDate]);
+
+  const loadWeeklyData = useCallback(() => {
+    dispatch(fetchWeeklyTempData());
+  }, [dispatch]);
+
+  const loadDailyData = useCallback(() => {
+    dispatch(fetchDashboardData(selectedDate));
+  }, [dispatch, selectedDate]);
 
   return (
     <div className="min-h-screen bg-gray-100 text-gray-900 font-poppins">
@@ -385,11 +384,8 @@ const [selectedDate, setSelectedDate] = useState(
               onSubmit={handleWeeklySubmit}
               className="flex flex-col gap-4 mt-6"
             >
-              {/* <div>
-                
-              </div> */}
               <div>
-                 <FileUpload onFileSelect={setFile} />
+                <FileUpload onFileSelect={setFile} />
                 {weeklyErrors.file && (
                   <p className="text-red-500 text-sm mt-1">
                     {weeklyErrors.file}
@@ -419,16 +415,15 @@ const [selectedDate, setSelectedDate] = useState(
               className="flex flex-col gap-4 mt-6"
             >
               <div>
-  <label className="block mb-1 font-medium">Date</label>
-  <input
-    type="date"
-    value={selectedDate}
-    onChange={(e) => setSelectedDate(e.target.value)}
-    className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-purple-600"
-  />
-</div>
+                <label className="block mb-1 font-medium">Date</label>
+                <input
+                  type="date"
+                  value={selectedDate}
+                  onChange={(e) => setSelectedDate(e.target.value)}
+                  className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-purple-600"
+                />
+              </div>
 
-             
               <div>
                 <FileUpload
                   ref={dailyFileRef}
@@ -459,42 +454,37 @@ const [selectedDate, setSelectedDate] = useState(
           </h2>
           <div className="p-4">
             {activeView === "weekly" ? (
-              <TempUploadedData viewType="weekly" loadData={loadWeeklyData}/>
+              <TempUploadedData viewType="weekly" loadData={loadWeeklyData} />
             ) : (
-              <UploadedData viewType="daily" loadData={loadDailyData}/>
+              <UploadedData viewType="daily" loadData={loadDailyData} />
             )}
           </div>
         </section>
-        {/* driver payment calculate button section
-        <section className="bg-white border mb-4 p-6 border-gray-200 rounded-xl shadow-sm overflow-x-auto flex justify-center">
-          <button className="px-3 py-1 bg-blue-800 text-white rounded hover:bg-blue-600">
-            Calculate Driver Payment
-          </button>
-        </section> */}
+
+        {/* Driver Payment Section */}
         {activeView === "weekly" ? (
-        // <DriverPaymentSection loadData={()=>{
-        //   dispatch(updateWeeklyExcelToDashboard()).unwrap()
-        //   .then(res)=>toast.error(res.message)
-        // }}/>
-        <DriverPaymentSection
-  loadData={() => {
-    dispatch(updateWeeklyExcelToDashboard())
-      .unwrap()
-      .then(res => {
-        toast.error(res.message)
-      }) .catch(err => {
-        toast.error(err?.message || "Something went wrong")
-      })
-  }}
-/>
-        ):(
-          <DriverPaymentSection loadData={()=>dispatch(fetchDriverPayment())}/>
+          <DriverPaymentSection
+            loadData={() => {
+              dispatch(updateWeeklyExcelToDashboard())
+                .unwrap()
+                .then((res) => {
+                  toast.success(res.message);
+                })
+                .catch((err) => {
+                  toast.error(err?.message || "Something went wrong");
+                });
+            }}
+          />
+        ) : (
+          <DriverPaymentSection 
+            loadData={() => dispatch(fetchDriverPayment(selectedDate))}
+          />
         )}
       </main>
 
       <Nav />
     </div>
   );
-}
+};
 
 export default DoubleStop;

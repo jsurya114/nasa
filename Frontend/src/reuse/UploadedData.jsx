@@ -51,7 +51,7 @@ const UploadedData = ({ viewType, loadData }) => {
                 <td className="px-3 py-2 border-b">{idx + 1}</td>
                 <td className="px-3 py-2 border-b">{item.name}</td>
                 <td className="px-3 py-2 border-b">
-                  {new Date(item.journey_date).toLocaleDateString()}
+                  {new Date(item.journey_date+'T00:00:00').toLocaleDateString('en-CA')}
                 </td>
                 <td className="px-3 py-2 border-b">{item.route}</td>
                 <td className="px-3 py-2 border-b">{item.sequence}</td>

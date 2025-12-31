@@ -59,7 +59,7 @@ console.log(data,'data in dailyyy')
             data.weeklyData.map((item, idx) => (
               <tr key={idx}>
                 <td className="px-3 py-2 border-b">{idx + 1}</td>
-                <td className="px-3 py-2 border-b">{new Date(item.del_date).toLocaleDateString()}</td>
+                <td className="px-3 py-2 border-b">{new Date(item.del_date+'T00:00:00').toLocaleDateString('en-CA')}</td>
                 <td className="px-3 py-2 border-b">
                   {item.courier_name}
                 </td>
