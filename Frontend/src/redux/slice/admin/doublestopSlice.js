@@ -13,9 +13,10 @@ const getAuthHeaders = () => {
 // Async thunk to fetch dashboard data (daily)
 export const fetchDashboardData = createAsyncThunk(
   "dashboard/fetchDashboardData",
-  async (_, { rejectWithValue }) => {
+  async (selectedDate, { rejectWithValue }) => {
+
     try {
-      const res = await fetch(`${API_BASE_URL}/admin/doubleStop/tempDashboardData`, {
+      const res = await fetch(  `${API_BASE_URL}/admin/doubleStop/tempDashboardData?date=${selectedDate}`, {
         method: "GET",
         headers: getAuthHeaders(),
       });

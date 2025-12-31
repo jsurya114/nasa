@@ -27,7 +27,8 @@ export const ExcelFileQueries = {
     }
   },
 
-  insertDataIntoDailyTable: async (tableName, data, client) => {
+  insertDataIntoDailyTable: async (tableName, data, uploadDate, client) => {
+
     try {
       if (!data || data.length === 0) {
         console.log("⚠️ No data to insert");
@@ -47,7 +48,7 @@ export const ExcelFileQueries = {
         );
 
         const routeModified = row.Route ? row.Route.substring(4) : null;
-        const dateFromRoute = `${new Date().getFullYear()}-${row.Route[0]}${row.Route[1]}-${row.Route[2]}${row.Route[3]}`;
+        // const dateFromRoute = `${new Date().getFullYear()}-${row.Route[0]}${row.Route[1]}-${row.Route[2]}${row.Route[3]}`;
 
         values.push(
           row.Route,
@@ -61,7 +62,7 @@ export const ExcelFileQueries = {
           row.Status,
           row.CompleteTime ? new Date(row.CompleteTime) : null,
           `${row.Sequence}${routeModified}`,
-          new Date(dateFromRoute)
+          new Date(uploadDate)
         );
       });
 
@@ -117,19 +118,24 @@ export const ExcelFileQueries = {
   // 🔴 FIXED: only update untouched rows
   setUntouchedRowsAsNoScannedAndUpdateFailedAttempt: async (client) => {
     try {
-      const queryStr = `
-        UPDATE deliveries
-        SET final_result = CASE
-          WHEN status = 'FAILED_ATTEMPT' THEN 'failed_attempt'
-          WHEN status = 'Pending'
-            AND address = 'No_Address'
-            AND recp_name = 'Unknown Recipient'
-          THEN 'no_scanned'
-          WHEN status = 'NEW' THEN 'no_scanned'
-          ELSE final_result
-        END
-        WHERE final_result = 'not_assigned';
-      `;
+        const queryStr = `
+      UPDATE deliveries
+      SET final_result = CASE
+        WHEN status = 'FAILED_ATTEMPT' THEN 'failed_attempt'
+
+        WHEN status IN ('NEW', 'OUT_FOR_DELIVERY') THEN 'no_scanned'
+
+        WHEN status = 'Pending'
+          AND address = 'No_Address'
+          AND recp_name = 'Unknown Recipient'
+        THEN 'no_scanned'
+
+        WHEN status IS NULL THEN 'no_scanned'
+
+        ELSE final_result
+      END
+      WHERE final_result = 'not_assigned';
+    `;
       await client.query(queryStr);
       console.log("✅ Updated no_scanned and failed_attempt");
     } catch (error) {
@@ -174,7 +180,8 @@ export const ExcelFileQueries = {
     }
   },
 
-  getTempDashboardData: async (client, id, role) => {
+  getTempDashboardData: async (client, id, role, selectedDate) => {
+
     try {
       let query = `
         SELECT
@@ -190,11 +197,11 @@ export const ExcelFileQueries = {
         FROM dashboard_data dd
         JOIN routes r ON dd.route_id = r.id
         JOIN drivers d ON d.id = dd.driver_id
-        WHERE dd.journey_date BETWEEN CURRENT_DATE - INTERVAL '1 day'
-                                AND CURRENT_DATE
+       WHERE dd.journey_date = $1
+
       `;
 
-      const params = [];
+      const params = [selectedDate];
 
       if (role === "admin") {
         query += `
@@ -202,7 +209,8 @@ export const ExcelFileQueries = {
             SELECT 1
             FROM admin_city_ref acr
             WHERE acr.city_id = d.city_id
-              AND acr.admin_id = $1
+              AND acr.admin_id = $2
+
           )
         `;
         params.push(id);
@@ -259,15 +267,17 @@ export const ExcelFileQueries = {
     throw error;
   }
 },
-resetDeliveryResults: async (client) => {
-  await client.query(`
+resetDeliveryResults: async (client, uploadDate) => {
+  await client.query(
+    `
     UPDATE deliveries
     SET final_result = 'not_assigned'
-    WHERE DATE(driver_set_date) IN (
-      SELECT journey_date FROM dashboard_data
-    )
-  `);
+    WHERE DATE(driver_set_date) = $1
+    `,
+    [uploadDate]
+  );
 },
+
 
 
 };

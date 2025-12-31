@@ -251,6 +251,9 @@ const DoubleStop = () => {
   
   const dispatch = useDispatch();
   const [activeView, setActiveView] = useState("weekly");
+const [selectedDate, setSelectedDate] = useState(
+  new Date().toISOString().split("T")[0]
+);
 
 
  const [file,setFile]=useState(null);
@@ -308,16 +311,22 @@ const DoubleStop = () => {
 
     const formData = new FormData();
     formData.append("file", dailyForm.file);
+    formData.append("uploadDate", selectedDate);
     dispatch(excelDailyFileUpload(formData))
       .unwrap()
-      .then(() => {
-        toast.success("Daily file uploaded successfully");
-        // Clear only on success
-        if (dailyFileRef.current && typeof dailyFileRef.current.clear === "function") {
-          dailyFileRef.current.clear();
-        }
-        setDailyForm((prev) => ({ ...prev, file: null }));
-      })
+    .then(() => {
+  toast.success("Daily file uploaded successfully");
+
+  // ✅ Refresh dashboard for selected date
+  dispatch(fetchDashboardData(selectedDate));
+
+  if (dailyFileRef.current?.clear) {
+    dailyFileRef.current.clear();
+  }
+
+  setDailyForm((prev) => ({ ...prev, file: null }));
+})
+
       .catch((err) => {
         const msg = typeof err === "string" ? err : err?.message || "Upload failed";
         toast.error(msg);
@@ -326,9 +335,9 @@ const DoubleStop = () => {
   const loadWeeklyData = useCallback(()=>{
     dispatch(fetchWeeklyTempData())
   },[dispatch])
-  const loadDailyData = useCallback(()=>{
-    dispatch(fetchDashboardData());
-  },[dispatch])
+ const loadDailyData = useCallback(() => {
+  dispatch(fetchDashboardData(selectedDate));
+}, [dispatch, selectedDate]);
 
   return (
     <div className="min-h-screen bg-gray-100 text-gray-900 font-poppins">
@@ -409,6 +418,16 @@ const DoubleStop = () => {
               onSubmit={handleDailySubmit}
               className="flex flex-col gap-4 mt-6"
             >
+              <div>
+  <label className="block mb-1 font-medium">Date</label>
+  <input
+    type="date"
+    value={selectedDate}
+    onChange={(e) => setSelectedDate(e.target.value)}
+    className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-purple-600"
+  />
+</div>
+
              
               <div>
                 <FileUpload

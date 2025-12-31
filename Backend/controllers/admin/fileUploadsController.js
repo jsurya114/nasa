@@ -38,13 +38,22 @@ export const getUpdatedTempDashboardData = async (req, res) => {
   try {
     const { id, role } = req.user   // 👈 IMPORTANT
 
+    const { date } = req.query;
+     if (!date) {
+      return res.status(HttpStatus.BAD_REQUEST).json({
+        success: false,
+        message: "date query param is required",
+      });
+    }
     await client.query('BEGIN')
 
-    const result = await ExcelFileQueries.getTempDashboardData(
-      client,
-      id,
-      role
-    )
+
+const result = await ExcelFileQueries.getTempDashboardData(
+  client,
+  id,
+  role,
+  date
+);
 
     await client.query('COMMIT')
 
@@ -76,6 +85,15 @@ export const DailyExcelUpload = async (req, res) => {
         .json({ success: false, message: "NO file uploaded" });
     }
 
+    const { uploadDate } = req.body;
+    if (!uploadDate) {
+  return res.status(HttpStatus.BAD_REQUEST).json({
+    success: false,
+    message: "uploadDate is required"
+  });
+}
+
+
     const fileName = req.file;
     const workbook = XLSX.readFile(fileName.path);
     const sheet = workbook.Sheets[sheetName];
@@ -91,16 +109,18 @@ export const DailyExcelUpload = async (req, res) => {
 
     await ExcelFileQueries.deleteIfTableAlreadyExists(tableName, client);
     await ExcelFileQueries.createDailyTable(tableName, client);
-    await ExcelFileQueries.insertDataIntoDailyTable(
-      tableName,
-      rows,
-      client
-    );
+   await ExcelFileQueries.insertDataIntoDailyTable(
+  tableName,
+  rows,
+  uploadDate,
+  client
+);
+
 
     await ExcelFileQueries.mergeDeliveriesAndExcelData(client);
 
     // 🔥 RESET old delivery results so recalculation works
-    await ExcelFileQueries.resetDeliveryResults(client);
+    await ExcelFileQueries.resetDeliveryResults(client,uploadDate);
 
     await ExcelFileQueries.setUntouchedRowsAsNoScannedAndUpdateFailedAttempt(
       client
@@ -118,10 +138,8 @@ export const DailyExcelUpload = async (req, res) => {
         first_stop = 0,
         delivered = 0,
         is_deliveries_count_added = false
-      WHERE journey_date IN (
-        SELECT upload_date FROM todays_excel_data
-      );
-    `);
+       WHERE journey_date = $1
+    `, [uploadDate]);
 
     await ExcelFileQueries.addEachDriversCount(client);
 

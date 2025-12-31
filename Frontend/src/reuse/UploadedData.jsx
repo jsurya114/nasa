@@ -1,24 +1,15 @@
-import React,{useEffect} from 'react';
-import { useDispatch,useSelector } from 'react-redux';
-import { clearData, fetchDashboardData } from '../redux/slice/admin/doublestopSlice';
+import React, { useEffect } from "react";
+import { useSelector } from "react-redux";
 
-const UploadedData = ({viewType,loadData}) => {
-
-  console.log(viewType)
-const dispatch = useDispatch();
-const {data,loading,error} = useSelector((state) => state.ds);
+const UploadedData = ({ viewType, loadData }) => {
+  const { data, loading, error } = useSelector((state) => state.ds);
 
   useEffect(() => {
-    if(!data||data?.weeklyData?.length===0){
-      loadData()
-    }
-    // dispatch(clearData());
-    // if(loadData)
-    // loadData();
+    loadData();
   }, [loadData]);
 
   return (
-      <section className="bg-white rounded-xl shadow p-4">
+    <section className="bg-white rounded-xl shadow p-4">
       <div className="flex justify-between items-center mb-4">
         <h2 className="font-bold text-lg">Dashboard Data</h2>
         <button
@@ -60,7 +51,7 @@ const {data,loading,error} = useSelector((state) => state.ds);
                 <td className="px-3 py-2 border-b">{idx + 1}</td>
                 <td className="px-3 py-2 border-b">{item.name}</td>
                 <td className="px-3 py-2 border-b">
-                   {new Date(item.journey_date).toLocaleDateString()}
+                  {new Date(item.journey_date).toLocaleDateString()}
                 </td>
                 <td className="px-3 py-2 border-b">{item.route}</td>
                 <td className="px-3 py-2 border-b">{item.sequence}</td>
@@ -73,10 +64,7 @@ const {data,loading,error} = useSelector((state) => state.ds);
             ))
           ) : (
             <tr>
-              <td
-                colSpan="9"
-                className="text-center py-4 text-gray-500 align-middle"
-              >
+              <td colSpan="10" className="text-center py-4 text-gray-500">
                 No data found
               </td>
             </tr>
@@ -85,6 +73,6 @@ const {data,loading,error} = useSelector((state) => state.ds);
       </table>
     </section>
   );
-}
+};
 
-export default UploadedData
+export default UploadedData;

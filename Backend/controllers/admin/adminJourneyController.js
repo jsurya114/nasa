@@ -1,5 +1,5 @@
 import AdminJourneyQuery from "../../services/admin/AjourneyQuery.js";
-import { addRangeOfSqeunceToDeliveries, checkSequenceConflict,syncJourneyDeliveries } from "../../services/driver/journeyQueries.js";
+import { addRangeOfSqeunceToDeliveries,addRangeOfSequenceToDeliveriesForAdmin, checkSequenceConflict,syncJourneyDeliveries } from "../../services/driver/journeyQueries.js";
 
 import HttpStatus from "../../utils/statusCodes.js";
 import pool from "../../config/db.js";
@@ -61,7 +61,7 @@ const adminJourneyController = {
         journey_date
       });
             
-      const sequence = await addRangeOfSqeunceToDeliveries(driver_id, route_id, start_seq, end_seq, newJourney.id);
+     await addRangeOfSequenceToDeliveriesForAdmin(driver_id, route_id, start_seq, end_seq, newJourney.id,journey_date);
       res.status(HttpStatus.CREATED).json({ success: true, data: newJourney });
 
     } catch (error) {

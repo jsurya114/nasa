@@ -178,6 +178,46 @@ export const markNoAddressAsNoScanned = async () => {
   }
 };
 
+export const addRangeOfSequenceToDeliveriesForAdmin = async (
+  driver_id,
+  route_id,
+  start_seq,
+  end_seq,
+  dashboard_data_id,
+  journey_date
+) => {
+  const query = `
+    INSERT INTO deliveries (
+      driver_id,
+      driver_set_date,
+      route_id,
+      sequence_number,
+      seq_route_code,
+      dashboard_data_id
+    )
+    SELECT
+      $1,
+      $6::date,
+      r.id,
+      seq,
+      seq || '-' || r.route_code_in_string,
+      $5
+    FROM generate_series($3::int, $4::int) seq
+    JOIN routes r ON r.id = $2;
+  `;
+
+  const values = [
+    Number(driver_id),
+    Number(route_id),
+    Number(start_seq),
+    Number(end_seq),
+    Number(dashboard_data_id),
+    journey_date
+  ];
+
+  await pool.query(query, values);
+};
+
 
 
 
