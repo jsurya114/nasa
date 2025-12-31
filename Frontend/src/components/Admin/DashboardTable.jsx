@@ -92,7 +92,7 @@ export default function PaymentDashboardTable() {
                     {row.driver_name}
                   </td>
                   <td className="px-3 py-2 border-b border-gray-200">
-                    {new Date(row.journey_date).toLocaleDateString()}
+                    {new Date(row.journey_date + 'T00:00:00').toLocaleDateString('en-CA')}
                   </td>
                  <td className="px-3 py-2 border-b border-gray-200">{row.route_name || row.route_id}</td>
                   <td className="px-3 py-2 border-b border-gray-200">
