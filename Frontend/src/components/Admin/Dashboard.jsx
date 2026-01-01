@@ -4,7 +4,8 @@ import { useNavigate } from "react-router-dom";
 import { fetchDashboardData, fetchFilteredPaymentData, clearFilteredData, payDriver } from "../../redux/slice/admin/dashSlice.js";
 import Header from "../../reuse/Header.jsx";
 import Nav from "../../reuse/Nav.jsx";
-import PaymentDashboardTable from "./DashboardTable.jsx";
+import PaymentDashboardTable from "./DashboardTable.jsx"; 
+import Loader from "../Loader.jsx"
 
 export default function Dashboard() {
   const dispatch = useDispatch();
@@ -19,7 +20,8 @@ export default function Dashboard() {
     filteredPaymentData, 
     isFiltered,
     paymentProcessing,
-    pagination
+    pagination,
+    filters: reduxFilters // Get filters from Redux
   } = useSelector((state) => state.dash);
 
   const { isSuperAdmin } = useSelector((state) => state.admin);
@@ -29,7 +31,8 @@ export default function Dashboard() {
     return today.toISOString().split('T')[0];
   };
 
-  const [filters, setFilters] = useState({
+  // Local state for form inputs only
+  const [localFilters, setLocalFilters] = useState({
     job: "All",
     driver: "All",
     route: "All",
@@ -44,15 +47,25 @@ export default function Dashboard() {
   const [showExtraFields, setShowExtraFields] = useState(false);
   const [showConfirmModal, setShowConfirmModal] = useState(false);
 
+  // Use Redux filters for business logic
   const shouldShowPayButton = useMemo(() => {
+    console.log("Checking shouldShowPayButton:", {
+      isFiltered,
+      driver: reduxFilters.driver,
+      paymentStatus: reduxFilters.paymentStatus,
+      dataLength: filteredPaymentData.length,
+      hasUnpaid: filteredPaymentData.some(row => !row.paid)
+    });
+
     return (
       isFiltered &&
-      filters.driver !== "All" &&
-      filters.paymentStatus === "Pending" &&
+      reduxFilters.driver && 
+      reduxFilters.driver !== "All" &&
+      reduxFilters.paymentStatus === "Pending" &&
       filteredPaymentData.length > 0 &&
       filteredPaymentData.some(row => !row.paid)
     );
-  }, [isFiltered, filters.driver, filters.paymentStatus, filteredPaymentData]);
+  }, [isFiltered, reduxFilters.driver, reduxFilters.paymentStatus, filteredPaymentData]);
 
   const extraFieldsData = useMemo(() => {
     if (!isFiltered || filteredPaymentData.length === 0) {
@@ -63,8 +76,7 @@ export default function Dashboard() {
         doubleStop: 0,
         delivered: 0,
         driversPayment: 0,
-        riversPayment: 0,
-      companyEarnings: 0, // ✅ Added
+        companyEarnings: 0,
       };
     }
 
@@ -76,7 +88,7 @@ export default function Dashboard() {
         doubleStop: totals.doubleStop + (Number(row.ds) || 0),
         delivered: totals.delivered + (Number(row.delivered) || 0),
         driversPayment: totals.driversPayment + (Number(row.driver_payment) || 0),
-       companyEarnings: totals.companyEarnings + (Number(row.company_earnings) || 0), // ✅ Added
+        companyEarnings: totals.companyEarnings + (Number(row.company_earnings) || 0),
       };
     }, {
       packages: 0,
@@ -85,7 +97,7 @@ export default function Dashboard() {
       doubleStop: 0,
       delivered: 0,
       driversPayment: 0,
-       companyEarnings: 0, // ✅ Added
+      companyEarnings: 0,
     });
   }, [filteredPaymentData, isFiltered]);
 
@@ -103,34 +115,37 @@ export default function Dashboard() {
 
   const handleFilterChange = useCallback((e) => {
     const { name, value, type, checked } = e.target;
-    setFilters((prev) => ({
+    setLocalFilters((prev) => ({
       ...prev,
       [name]: type === "checkbox" ? checked : value,
     }));
   }, []);
 
   const handleFilterClick = () => {
-    setShowExtraFields(isSuperAdmin && filters.companyEarnings);
+    setShowExtraFields(isSuperAdmin && localFilters.companyEarnings);
     
     const filterParams = {
       page: 1,
       limit: itemsPerPage
     };
     
-    if (filters.job !== "All") filterParams.job = filters.job;
-    if (filters.driver !== "All") filterParams.driver = filters.driver;
-    if (filters.route !== "All") filterParams.route = filters.route;
-    if (filters.startDate) filterParams.startDate = filters.startDate;
-    if (filters.endDate) filterParams.endDate = filters.endDate;
-    if (filters.paymentStatus !== "All") filterParams.paymentStatus = filters.paymentStatus;
-    if (isSuperAdmin && filters.companyEarnings) filterParams.companyEarnings = filters.companyEarnings;
+    // Only add non-default filter values
+    if (localFilters.job !== "All") filterParams.job = localFilters.job;
+    if (localFilters.driver !== "All") filterParams.driver = localFilters.driver;
+    if (localFilters.route !== "All") filterParams.route = localFilters.route;
+    if (localFilters.startDate) filterParams.startDate = localFilters.startDate;
+    if (localFilters.endDate) filterParams.endDate = localFilters.endDate;
+    if (localFilters.paymentStatus !== "All") filterParams.paymentStatus = localFilters.paymentStatus;
+    if (isSuperAdmin && localFilters.companyEarnings) filterParams.companyEarnings = localFilters.companyEarnings;
 
+    console.log("Filtering with params:", filterParams);
+    
     setCurrentPage(1);
     dispatch(fetchFilteredPaymentData(filterParams));
   };
 
   const handleClearFilters = () => {
-    setFilters({
+    setLocalFilters({
       job: "All",
       driver: "All",
       route: "All",
@@ -155,29 +170,38 @@ export default function Dashboard() {
 
   const handlePayDriver = async () => {
     setShowConfirmModal(false);
+    
+    console.log("Paying driver with:", {
+      driverName: reduxFilters.driver,
+      startDate: reduxFilters.startDate,
+      endDate: reduxFilters.endDate
+    });
+    
     const result = await dispatch(payDriver({
-      driverName: filters.driver,
-      startDate: filters.startDate || null,
-      endDate: filters.endDate || null,
+      driverName: reduxFilters.driver,
+      startDate: reduxFilters.startDate || null,
+      endDate: reduxFilters.endDate || null,
     }));
     
     if (result.type === 'dashboard/payDriver/fulfilled') {
-      setFilters(prev => ({
+      // Update local filters to show all payments
+      setLocalFilters(prev => ({
         ...prev,
         paymentStatus: "All"
       }));
       
+      // Refresh with current filters but payment status All
       const filterParams = {
         page: currentPage,
         limit: itemsPerPage
       };
       
-      if (filters.job !== "All") filterParams.job = filters.job;
-      if (filters.driver !== "All") filterParams.driver = filters.driver;
-      if (filters.route !== "All") filterParams.route = filters.route;
-      if (filters.startDate) filterParams.startDate = filters.startDate;
-      if (filters.endDate) filterParams.endDate = filters.endDate;
-      if (isSuperAdmin && filters.companyEarnings) filterParams.companyEarnings = filters.companyEarnings;
+      if (reduxFilters.job && reduxFilters.job !== "All") filterParams.job = reduxFilters.job;
+      if (reduxFilters.driver && reduxFilters.driver !== "All") filterParams.driver = reduxFilters.driver;
+      if (reduxFilters.route && reduxFilters.route !== "All") filterParams.route = reduxFilters.route;
+      if (reduxFilters.startDate) filterParams.startDate = reduxFilters.startDate;
+      if (reduxFilters.endDate) filterParams.endDate = reduxFilters.endDate;
+      if (isSuperAdmin && reduxFilters.companyEarnings) filterParams.companyEarnings = reduxFilters.companyEarnings;
       
       dispatch(fetchFilteredPaymentData(filterParams));
     }
@@ -219,7 +243,7 @@ export default function Dashboard() {
     [cities, drivers, routes]
   );
 
-  if (loading) return <div className="text-center py-10">Loading data...</div>;
+  if (loading) return <div className="text-center py-10"><Loader/></div>;
   if (error) return <div className="text-center text-red-600 py-10">{error}</div>;
 
   return (
@@ -248,7 +272,7 @@ export default function Dashboard() {
           <div className="font-bold text-gray-900 bg-gray-50 border-b border-gray-200 px-4 py-3 flex items-center justify-between">
             <span>Data Filters</span>
             <span className="text-sm font-normal text-gray-600">
-              📅 Showing: {isFiltered && !filters.startDate && !filters.endDate ? "Today's data" : "Filtered data"}
+              📅 Showing: {isFiltered && !reduxFilters.startDate && !reduxFilters.endDate ? "Today's data" : "Filtered data"}
             </span>
           </div>
           <div className="divide-y">
@@ -262,7 +286,7 @@ export default function Dashboard() {
                   <select
                     className="w-full border border-gray-200 rounded-lg px-3 py-2"
                     name={item.name}
-                    value={filters[item.name]}
+                    value={localFilters[item.name]}
                     onChange={handleFilterChange}
                   >
                     {item.options.map((opt, j) => (
@@ -275,7 +299,7 @@ export default function Dashboard() {
                   <input
                     type={item.type}
                     name={item.name}
-                    value={filters[item.name]}
+                    value={localFilters[item.name]}
                     onChange={handleFilterChange}
                     className="w-full border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-400"
                   />
@@ -291,7 +315,7 @@ export default function Dashboard() {
                 <input
                   type="checkbox"
                   name="companyEarnings"
-                  checked={filters.companyEarnings}
+                  checked={localFilters.companyEarnings}
                   onChange={handleFilterChange}
                   className="w-4 h-4"
                 />
@@ -327,7 +351,7 @@ export default function Dashboard() {
                   disabled={paymentProcessing}
                   className="bg-green-600 text-white font-semibold px-4 py-2 rounded-lg shadow-md hover:bg-green-700 transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed"
                 >
-                  {paymentProcessing ? "Processing..." : `💰 Pay ${filters.driver}`}
+                  {paymentProcessing ? "Processing..." : `💰 Pay ${reduxFilters.driver}`}
                 </button>
               )}
             </div>
@@ -348,7 +372,7 @@ export default function Dashboard() {
                   { field: "doubleStop", label: "Total Double Stop (DS)" },
                   { field: "delivered", label: "Total Delivered" },
                   { field: "driversPayment", label: "Total Drivers Payment" },
-                  { field: "companyEarnings", label: "Total Company Earnings", highlight: true }, // ✅ Added with highlight
+                  { field: "companyEarnings", label: "Total Company Earnings", highlight: true },
                 ].map((item, i) => (
                   <div key={i} className="flex items-center gap-3">
                     <label className="w-48 text-gray-600">{item.label}:</label>
@@ -384,7 +408,7 @@ export default function Dashboard() {
                 Confirm Payment
               </h3>
               <p className="text-gray-600 mb-4">
-                Mark all payments as paid for <span className="font-medium text-gray-900">{filters.driver}</span>?
+                Mark all payments as paid for <span className="font-medium text-gray-900">{reduxFilters.driver}</span>?
               </p>
               
               <div className="flex gap-3 justify-end">

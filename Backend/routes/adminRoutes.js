@@ -15,6 +15,7 @@ import adminAuth from '../middlewares/adminAuth.js';
 import superAdminAuth from '../middlewares/superAdminAuth.js';
 import { getAllData } from '../controllers/admin/dashController.js';
 import { getWeeklyTempData, weeklyExcelUpload } from '../controllers/admin/weeklyUploadsController.js';
+import { getAnalyticsData } from '../controllers/admin/analyticsController.js';
 
 router.post('/login',adminController.Login);
 
@@ -69,6 +70,7 @@ router.post('/doubleStop/update-weekly-excel-to-dashboard',updateWeeklyTempDataT
 
 router.get('/doubleStop/tempDashboardData',getUpdatedTempDashboardData);
 router.get('/doubleStop/calculatePayment',updatePaymentData);
+router.get('/analytics',getAnalyticsData)
 
 router.post('/logout',adminController.Logout);
 
