@@ -7,10 +7,20 @@ export const getPaymentDashboardData = async (req, res) => {
     console.log("getPaymentDashboardData called");
     console.log("Query params:", req.query);
 
-    // Extract query parameters for filtering
-    const { job, driver, route, startDate, endDate, paymentStatus, companyEarnings } = req.query;
-    const {id,role}=req.user;
-    // Build filters object - only include non-null/non-"All" values
+    const { 
+      job, 
+      driver, 
+      route, 
+      startDate, 
+      endDate, 
+      paymentStatus, 
+      companyEarnings,
+      page = 1,
+      limit = 10
+    } = req.query;
+    
+    const { id, role } = req.user;
+    
     const filters = {};
     
     if (job && job !== "All") filters.job = job;
@@ -23,12 +33,35 @@ export const getPaymentDashboardData = async (req, res) => {
 
     console.log("Processed filters:", filters);
 
-    // Fetch filtered data
-    const result = await AdminDashboardQueries.PaymentDashboardTable(filters,id,role);
+    const pageNum = parseInt(page);
+    const limitNum = parseInt(limit);
+    const offset = (pageNum - 1) * limitNum;
+
+    const totalCount = await AdminDashboardQueries.getPaymentDashboardCount(filters, id, role);
+    console.log("totalcount", totalCount);
+    
+    const result = await AdminDashboardQueries.getPaymentDashboardPaginated(
+      filters, 
+      id, 
+      role, 
+      limitNum, 
+      offset
+    );
+    
+    const totalPages = Math.ceil(totalCount / limitNum);
     
     console.log("Query successful, returning", result.length, "rows");
     
-    return res.status(HttpStatus.OK).json({ success: true, data: result });
+    return res.status(HttpStatus.OK).json({ 
+      success: true, 
+      data: result,
+      pagination: {
+        total: totalCount,
+        page: pageNum,
+        limit: limitNum,
+        totalPages: totalPages
+      }
+    });
   } catch (error) {
     console.error("Error in getPaymentDashboardData:", error);
     console.error("Error message:", error.message);
@@ -41,17 +74,71 @@ export const getPaymentDashboardData = async (req, res) => {
   }
 };
 
-export const updatePaymentData = async (req, res) => {
+export const getAllPaymentDashboardData = async (req, res) => {
   try {
-    await AdminDashboardQueries.updatePaymentTable();
-    res.status(HttpStatus.OK).json({ success: true });
+    console.log("getAllPaymentDashboardData called");
+    console.log("Query params:", req.query);
+
+    const { job, driver, route, startDate, endDate, paymentStatus, companyEarnings } = req.query;
+    const { id, role } = req.user;
+    
+    const filters = {};
+    
+    if (job && job !== "All") filters.job = job;
+    if (driver && driver !== "All") filters.driver = driver;
+    if (route && route !== "All") filters.route = route;
+    if (startDate) filters.startDate = startDate;
+    if (endDate) filters.endDate = endDate;
+    if (paymentStatus && paymentStatus !== "All") filters.paymentStatus = paymentStatus;
+    if (companyEarnings === "true") filters.companyEarnings = true;
+
+    console.log("Processed filters:", filters);
+
+    const result = await AdminDashboardQueries.PaymentDashboardTable(filters, id, role);
+    
+    console.log("Query successful, returning", result.length, "rows");
+    
+    return res.status(HttpStatus.OK).json({ success: true, data: result });
   } catch (error) {
-    console.error("Error in updatePaymentData:", error);
-    return res.status(HttpStatus.INTERNAL_SERVER_ERROR).json({ success: false });
+    console.error("Error in getAllPaymentDashboardData:", error);
+    console.error("Error message:", error.message);
+    console.error("Error stack:", error.stack);
+    
+    return res.status(HttpStatus.INTERNAL_SERVER_ERROR).json({ 
+      success: false, 
+      message: error.message || "Failed to fetch payment dashboard data" 
+    });
   }
 };
 
-// NEW: Update driver payment status
+export const updatePaymentData = async (req, res) => {
+  try {
+    const { date } = req.query;
+    
+    if (date) {
+      // Calculate payment for specific date
+      await AdminDashboardQueries.updatePaymentTableForDate(date);
+      res.status(HttpStatus.OK).json({ 
+        success: true,
+        message: `Payment calculated for ${date}`
+      });
+    } else {
+      // Calculate payment for all dates
+      await AdminDashboardQueries.updatePaymentTable();
+      res.status(HttpStatus.OK).json({ 
+        success: true,
+        message: "Payment calculated for all dates"
+      });
+    }
+  } catch (error) {
+    console.error("Error in updatePaymentData:", error);
+    return res.status(HttpStatus.INTERNAL_SERVER_ERROR).json({ 
+      success: false,
+      message: error.message || "Failed to calculate payment"
+    });
+  }
+};
+
 export const payDriver = async (req, res) => {
   try {
     const { driverName, startDate, endDate } = req.body;
@@ -84,31 +171,29 @@ export const payDriver = async (req, res) => {
 };
 
 export const updateWeeklyTempDataToDashboard = async (req, res) => {
-    try {
-        
-      const isExists = await WeeklyExcelQueries.getWeeklyData();
+  try {
+    const isExists = await WeeklyExcelQueries.getWeeklyData();
 
-      if (!isExists.exists) {
-          return res.status(404).json({ 
-              success: false, 
-              error: "Weekly count table does not exist or is empty",
-              message: "Please upload weekly data first"
-          });
-      }
-
-      // If data exists, proceed with insertion
-      console.log(`✅ Weekly data found with ${isExists.rowCount} rows. Starting insertion...`);
-
-      const rowsInserted = await WeeklyExcelQueries.createEntriesFromWeeklyCount();
-      await WeeklyExcelQueries.deleteWeeklyTableIfExists('weeklycount');
-
-      return res.status(200).json({ 
-          success: true, 
-          rowsInserted, 
-          message: "Data inserted successfully!!" 
+    if (!isExists.exists) {
+      return res.status(404).json({ 
+        success: false, 
+        error: "Weekly count table does not exist or is empty",
+        message: "Please upload weekly data first"
       });
-    } catch (err) {
-        console.error('Route handler error:', err);
-        return res.status(500).json({ success: false, error: err.message });
     }
+
+    console.log(`✅ Weekly data found with ${isExists.rowCount} rows. Starting insertion...`);
+
+    const rowsInserted = await WeeklyExcelQueries.createEntriesFromWeeklyCount();
+    await WeeklyExcelQueries.deleteWeeklyTableIfExists('weeklycount');
+
+    return res.status(200).json({ 
+      success: true, 
+      rowsInserted, 
+      message: "Data inserted successfully!!" 
+    });
+  } catch (err) {
+    console.error('Route handler error:', err);
+    return res.status(500).json({ success: false, error: err.message });
+  }
 };

@@ -2,7 +2,6 @@ import React, { useState, useMemo, useCallback, useEffect } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import { useNavigate } from "react-router-dom";
 import { fetchDashboardData, fetchFilteredPaymentData, clearFilteredData, payDriver } from "../../redux/slice/admin/dashSlice.js";
-import { fetchPaymentDashboard } from "../../redux/slice/admin/paymentDashboardSlice";
 import Header from "../../reuse/Header.jsx";
 import Nav from "../../reuse/Nav.jsx";
 import PaymentDashboardTable from "./DashboardTable.jsx";
@@ -11,7 +10,6 @@ export default function Dashboard() {
   const dispatch = useDispatch();
   const navigate = useNavigate();
 
-  // Get data from Redux store
   const { 
     cities, 
     drivers, 
@@ -20,11 +18,16 @@ export default function Dashboard() {
     error, 
     filteredPaymentData, 
     isFiltered,
-    paymentProcessing 
+    paymentProcessing,
+    pagination
   } = useSelector((state) => state.dash);
 
-  // Get admin role information
   const { isSuperAdmin } = useSelector((state) => state.admin);
+
+  const getTodayDate = () => {
+    const today = new Date();
+    return today.toISOString().split('T')[0];
+  };
 
   const [filters, setFilters] = useState({
     job: "All",
@@ -36,10 +39,11 @@ export default function Dashboard() {
     companyEarnings: false,
   });
 
+  const [currentPage, setCurrentPage] = useState(1);
+  const [itemsPerPage, setItemsPerPage] = useState(10);
   const [showExtraFields, setShowExtraFields] = useState(false);
   const [showConfirmModal, setShowConfirmModal] = useState(false);
 
-  // Check if we should show the "Pay Driver" button
   const shouldShowPayButton = useMemo(() => {
     return (
       isFiltered &&
@@ -50,7 +54,6 @@ export default function Dashboard() {
     );
   }, [isFiltered, filters.driver, filters.paymentStatus, filteredPaymentData]);
 
-  // Calculate totals from filtered data
   const extraFieldsData = useMemo(() => {
     if (!isFiltered || filteredPaymentData.length === 0) {
       return {
@@ -60,6 +63,8 @@ export default function Dashboard() {
         doubleStop: 0,
         delivered: 0,
         driversPayment: 0,
+        riversPayment: 0,
+      companyEarnings: 0, // ✅ Added
       };
     }
 
@@ -71,6 +76,7 @@ export default function Dashboard() {
         doubleStop: totals.doubleStop + (Number(row.ds) || 0),
         delivered: totals.delivered + (Number(row.delivered) || 0),
         driversPayment: totals.driversPayment + (Number(row.driver_payment) || 0),
+       companyEarnings: totals.companyEarnings + (Number(row.company_earnings) || 0), // ✅ Added
       };
     }, {
       packages: 0,
@@ -79,12 +85,20 @@ export default function Dashboard() {
       doubleStop: 0,
       delivered: 0,
       driversPayment: 0,
+       companyEarnings: 0, // ✅ Added
     });
   }, [filteredPaymentData, isFiltered]);
 
-  // Fetch dropdown data once on mount
   useEffect(() => {
     dispatch(fetchDashboardData());
+    
+    const today = getTodayDate();
+    dispatch(fetchFilteredPaymentData({
+      startDate: today,
+      endDate: today,
+      page: 1,
+      limit: 10
+    }));
   }, [dispatch]);
 
   const handleFilterChange = useCallback((e) => {
@@ -96,11 +110,12 @@ export default function Dashboard() {
   }, []);
 
   const handleFilterClick = () => {
-    // Only show extra fields if superadmin AND checkbox is checked
     setShowExtraFields(isSuperAdmin && filters.companyEarnings);
     
-    // Prepare filter params (only send non-"All" values)
-    const filterParams = {};
+    const filterParams = {
+      page: 1,
+      limit: itemsPerPage
+    };
     
     if (filters.job !== "All") filterParams.job = filters.job;
     if (filters.driver !== "All") filterParams.driver = filters.driver;
@@ -108,15 +123,13 @@ export default function Dashboard() {
     if (filters.startDate) filterParams.startDate = filters.startDate;
     if (filters.endDate) filterParams.endDate = filters.endDate;
     if (filters.paymentStatus !== "All") filterParams.paymentStatus = filters.paymentStatus;
-    // Only send companyEarnings if superadmin
     if (isSuperAdmin && filters.companyEarnings) filterParams.companyEarnings = filters.companyEarnings;
 
-    // Dispatch filtered data fetch
+    setCurrentPage(1);
     dispatch(fetchFilteredPaymentData(filterParams));
   };
 
   const handleClearFilters = () => {
-    // Reset all filters to default
     setFilters({
       job: "All",
       driver: "All",
@@ -127,12 +140,17 @@ export default function Dashboard() {
       companyEarnings: false,
     });
     setShowExtraFields(false);
+    setCurrentPage(1);
     
-    // Clear filtered data and reset isFiltered flag
     dispatch(clearFilteredData());
     
-    // Refetch the unfiltered data from database to get latest updates
-    dispatch(fetchPaymentDashboard());
+    const today = getTodayDate();
+    dispatch(fetchFilteredPaymentData({
+      startDate: today,
+      endDate: today,
+      page: 1,
+      limit: itemsPerPage
+    }));
   };
 
   const handlePayDriver = async () => {
@@ -143,22 +161,22 @@ export default function Dashboard() {
       endDate: filters.endDate || null,
     }));
     
-    // Only proceed if payment was successful
     if (result.type === 'dashboard/payDriver/fulfilled') {
-      // Switch to showing "All" records so user can see what was just paid
       setFilters(prev => ({
         ...prev,
         paymentStatus: "All"
       }));
       
-      // Refresh the filtered data with updated payment status
-      const filterParams = {};
+      const filterParams = {
+        page: currentPage,
+        limit: itemsPerPage
+      };
+      
       if (filters.job !== "All") filterParams.job = filters.job;
       if (filters.driver !== "All") filterParams.driver = filters.driver;
       if (filters.route !== "All") filterParams.route = filters.route;
       if (filters.startDate) filterParams.startDate = filters.startDate;
       if (filters.endDate) filterParams.endDate = filters.endDate;
-      // Don't filter by payment status - show all records
       if (isSuperAdmin && filters.companyEarnings) filterParams.companyEarnings = filters.companyEarnings;
       
       dispatch(fetchFilteredPaymentData(filterParams));
@@ -226,10 +244,12 @@ export default function Dashboard() {
       <Header />
 
       <main className="max-w-[1450px] mx-auto p-2 sm:p-4 pb-20 sm:pb-40">
-        {/* Filters Card */}
         <section className="bg-white border border-gray-200 rounded-xl shadow-sm mb-4">
-          <div className="font-bold text-gray-900 bg-gray-50 border-b border-gray-200 px-4 py-3">
-            Data Filters
+          <div className="font-bold text-gray-900 bg-gray-50 border-b border-gray-200 px-4 py-3 flex items-center justify-between">
+            <span>Data Filters</span>
+            <span className="text-sm font-normal text-gray-600">
+              📅 Showing: {isFiltered && !filters.startDate && !filters.endDate ? "Today's data" : "Filtered data"}
+            </span>
           </div>
           <div className="divide-y">
             {filterOptions.map((item, i) => (
@@ -266,7 +286,6 @@ export default function Dashboard() {
               </div>
             ))}
 
-            {/* Company Earnings Checkbox - SUPERADMIN ONLY */}
             {isSuperAdmin && (
               <div className="flex items-center gap-3 px-4 py-3 bg-blue-50 border-l-4 border-blue-500">
                 <input
@@ -279,11 +298,9 @@ export default function Dashboard() {
                 <span className="font-medium text-gray-700">
                   Company Earnings
                 </span>
-               
               </div>
             )}
 
-            {/* Filter Buttons */}
             <div className="px-4 py-3 flex flex-wrap gap-3">
               <button
                 onClick={handleFilterClick}
@@ -295,7 +312,7 @@ export default function Dashboard() {
                 onClick={handleClearFilters}
                 className="bg-gray-500 text-white font-semibold px-4 py-2 rounded-lg shadow-md hover:bg-gray-600 transition-colors"
               >
-                Clear Filters
+                Clear Filters (Show Today)
               </button>
               <button
                 onClick={handleAddDelivery}
@@ -304,7 +321,6 @@ export default function Dashboard() {
                 Add Delivery
               </button>
               
-              {/* Pay Driver Button - Only shows when conditions are met */}
               {shouldShowPayButton && (
                 <button
                   onClick={() => setShowConfirmModal(true)}
@@ -316,7 +332,6 @@ export default function Dashboard() {
               )}
             </div>
 
-            {/* Extra Fields - Only visible to superadmin */}
             {showExtraFields && isSuperAdmin && (
               <div className="px-4 py-3 grid grid-cols-1 gap-3 bg-blue-50">
                 <div className="mb-2 font-semibold text-gray-700 flex items-center gap-2">
@@ -333,6 +348,7 @@ export default function Dashboard() {
                   { field: "doubleStop", label: "Total Double Stop (DS)" },
                   { field: "delivered", label: "Total Delivered" },
                   { field: "driversPayment", label: "Total Drivers Payment" },
+                  { field: "companyEarnings", label: "Total Company Earnings", highlight: true }, // ✅ Added with highlight
                 ].map((item, i) => (
                   <div key={i} className="flex items-center gap-3">
                     <label className="w-48 text-gray-600">{item.label}:</label>
@@ -350,7 +366,6 @@ export default function Dashboard() {
           </div>
         </section>
 
-        {/* Table */}
         <section className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-x-auto">
           <div className="font-bold text-gray-900 bg-gray-50 border-b border-gray-200 px-4 py-3">
             Driver Jobs
@@ -361,11 +376,9 @@ export default function Dashboard() {
 
       <Nav />
 
-      {/* Minimal Confirmation Modal */}
       {showConfirmModal && (
         <div className="fixed inset-0 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-lg shadow-xl max-w-sm w-full animate-fadeIn border border-gray-200">
-            {/* Modal Content */}
             <div className="p-6">
               <h3 className="text-lg font-semibold text-gray-900 mb-3">
                 Confirm Payment
@@ -374,7 +387,6 @@ export default function Dashboard() {
                 Mark all payments as paid for <span className="font-medium text-gray-900">{filters.driver}</span>?
               </p>
               
-              {/* Action Buttons */}
               <div className="flex gap-3 justify-end">
                 <button
                   onClick={() => setShowConfirmModal(false)}

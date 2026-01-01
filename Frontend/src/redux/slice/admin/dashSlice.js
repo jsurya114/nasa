@@ -3,7 +3,6 @@ import axios from "axios";
 import { API_BASE_URL } from "../../../config";
 import { toast } from "react-toastify";
 
-// Helper function to get auth headers
 const getAuthHeaders = () => {
   const token = localStorage.getItem('adminToken');
   return {
@@ -11,7 +10,6 @@ const getAuthHeaders = () => {
   };
 };
 
-// Async thunk to fetch dashboard data (cities, drivers, routes)
 export const fetchDashboardData = createAsyncThunk(
   "dashboard/fetchDashboardData",
   async (_, { rejectWithValue }) => {
@@ -27,12 +25,31 @@ export const fetchDashboardData = createAsyncThunk(
   }
 );
 
-// Async thunk to fetch filtered payment table data
 export const fetchFilteredPaymentData = createAsyncThunk(
   "dashboard/fetchFilteredPaymentData",
   async (filters, { rejectWithValue }) => {
     try {
       const res = await axios.get(`${API_BASE_URL}/admin/dashboard/paymentTable`, {
+        params: filters,
+        headers: getAuthHeaders()
+      });
+      if (!res.data.success) throw new Error(res.data.message);
+      return { 
+        data: res.data.data, 
+        pagination: res.data.pagination,
+        filters 
+      };
+    } catch (err) {
+      return rejectWithValue(err.response?.data?.message || err.message);
+    }
+  }
+);
+
+export const fetchAllPaymentData = createAsyncThunk(
+  "dashboard/fetchAllPaymentData",
+  async (filters, { rejectWithValue }) => {
+    try {
+      const res = await axios.get(`${API_BASE_URL}/admin/dashboard/paymentTableAll`, {
         params: filters,
         headers: getAuthHeaders()
       });
@@ -44,7 +61,6 @@ export const fetchFilteredPaymentData = createAsyncThunk(
   }
 );
 
-// Async thunk to mark driver as paid
 export const payDriver = createAsyncThunk(
   "dashboard/payDriver",
   async ({ driverName, startDate, endDate }, { rejectWithValue }) => {
@@ -72,8 +88,17 @@ const dashboardSlice = createSlice({
     drivers: [],
     routes: [],
     filteredPaymentData: [],
+    allPaymentData: [],
+    filters: {},
+    pagination: {
+      total: 0,
+      page: 1,
+      limit: 10,
+      totalPages: 1
+    },
     loading: false,
     paymentLoading: false,
+    allPaymentLoading: false,
     paymentProcessing: false,
     error: null,
     paymentError: null,
@@ -83,11 +108,17 @@ const dashboardSlice = createSlice({
     clearFilteredData: (state) => {
       state.filteredPaymentData = [];
       state.isFiltered = false;
+      state.filters = {};
+      state.pagination = {
+        total: 0,
+        page: 1,
+        limit: 10,
+        totalPages: 1
+      };
     },
   },
   extraReducers: (builder) => {
     builder
-      // Fetch dashboard data (cities, drivers, routes)
       .addCase(fetchDashboardData.pending, (state) => {
         state.loading = true;
         state.error = null;
@@ -102,14 +133,15 @@ const dashboardSlice = createSlice({
         state.loading = false;
         state.error = action.payload;
       })
-      // Fetch filtered payment data
       .addCase(fetchFilteredPaymentData.pending, (state) => {
         state.paymentLoading = true;
         state.paymentError = null;
       })
       .addCase(fetchFilteredPaymentData.fulfilled, (state, action) => {
         state.paymentLoading = false;
-        state.filteredPaymentData = action.payload;
+        state.filteredPaymentData = action.payload.data;
+        state.pagination = action.payload.pagination;
+        state.filters = action.payload.filters;
         state.isFiltered = true;
       })
       .addCase(fetchFilteredPaymentData.rejected, (state, action) => {
@@ -117,14 +149,23 @@ const dashboardSlice = createSlice({
         state.paymentError = action.payload;
         state.isFiltered = true;
       })
-      // Pay driver
+      .addCase(fetchAllPaymentData.pending, (state) => {
+        state.allPaymentLoading = true;
+        state.paymentError = null;
+      })
+      .addCase(fetchAllPaymentData.fulfilled, (state, action) => {
+        state.allPaymentLoading = false;
+        state.allPaymentData = action.payload;
+      })
+      .addCase(fetchAllPaymentData.rejected, (state, action) => {
+        state.allPaymentLoading = false;
+        state.paymentError = action.payload;
+      })
       .addCase(payDriver.pending, (state) => {
         state.paymentProcessing = true;
       })
       .addCase(payDriver.fulfilled, (state) => {
         state.paymentProcessing = false;
-        // Don't update the state here - let the refetch handle it
-        // The new fetch will have the correct paid status from the database
       })
       .addCase(payDriver.rejected, (state) => {
         state.paymentProcessing = false;

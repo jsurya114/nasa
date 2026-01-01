@@ -1,5 +1,5 @@
 import AdminJourneyQuery from "../../services/admin/AjourneyQuery.js";
-import { addRangeOfSqeunceToDeliveries, checkSequenceConflict,syncJourneyDeliveries } from "../../services/driver/journeyQueries.js";
+import { addRangeOfSqeunceToDeliveries,addRangeOfSequenceToDeliveriesForAdmin, checkSequenceConflict,syncJourneyDeliveries } from "../../services/driver/journeyQueries.js";
 
 import HttpStatus from "../../utils/statusCodes.js";
 import pool from "../../config/db.js";
@@ -61,7 +61,7 @@ const adminJourneyController = {
         journey_date
       });
             
-      const sequence = await addRangeOfSqeunceToDeliveries(driver_id, route_id, start_seq, end_seq, newJourney.id);
+     await addRangeOfSequenceToDeliveriesForAdmin(driver_id, route_id, start_seq, end_seq, newJourney.id,journey_date);
       res.status(HttpStatus.CREATED).json({ success: true, data: newJourney });
 
     } catch (error) {
@@ -475,7 +475,35 @@ const adminJourneyController = {
         message: error.message
       });
     }
-  }
+  },
+   fetchPaginatedJourneys: async (req, res) => {
+    try {
+      const { id, role } = req.user;
+      const page = parseInt(req.query.page) || 1;
+      const limit = parseInt(req.query.limit) || 10;
+      const offset = (page - 1) * limit;
+      
+      const totalCount = await AdminJourneyQuery.getJourneysCount(id, role);
+      const journeys = await AdminJourneyQuery.getPaginatedJourneys(id, role, limit, offset);
+      
+      const totalPages = Math.ceil(totalCount / limit);
+      res.status(HttpStatus.OK).json({ 
+        success: true, 
+        data: journeys,
+        pagination: {
+          total: totalCount,
+          page: page,
+          limit: limit,
+          totalPages: totalPages
+        }
+      });
+    } catch (error) {
+      res.status(HttpStatus.INTERNAL_SERVER_ERROR).json({
+        success: false,
+        message: error.message
+      });
+    }
+  },
 };
 
 export default adminJourneyController;

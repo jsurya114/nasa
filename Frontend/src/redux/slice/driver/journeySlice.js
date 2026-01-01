@@ -158,6 +158,38 @@ export const fetchAllJourneys = createAsyncThunk(
   }
 );
 
+// Fetch paginated journeys (admin)
+export const fetchPaginatedJourneys = createAsyncThunk(
+  "journeys/fetchPaginatedJourneys",
+  async ({ page = 1, limit = 10 } = {}, { signal, rejectWithValue }) => {
+    try {
+      const res = await fetch(
+        `${API_BASE_URL}/admin/journeys/paginated?page=${page}&limit=${limit}`, 
+        { 
+          signal, 
+          headers: getAuthHeaders() 
+        }
+      );
+      
+      if (!res.ok) {
+        return rejectWithValue("Failed to fetch paginated journeys");
+      }
+      
+      const data = await res.json();
+      return {
+        journeys: data.data || [],
+        pagination: data.pagination || { total: 0, page: 1, limit: 10, totalPages: 1 }
+      };
+    } catch (error) {
+      if (error.name === 'AbortError') {
+        return rejectWithValue('Request cancelled');
+      }
+      console.error("fetchPaginatedJourneys error:", error);
+      return rejectWithValue(error.message);
+    }
+  }
+);
+
 // Add journey (admin)
 export const addJourney = createAsyncThunk(
   "journeys/addJourney",
@@ -239,7 +271,8 @@ export const updateJourney = createAsyncThunk(
     }
   }
 );
-// ✅ Delete journey (admin) — FIXED
+
+// Delete journey (admin)
 export const deleteJourney = createAsyncThunk(
   "journeys/deleteJourney",
   async (journey_id, { rejectWithValue }) => {
@@ -248,7 +281,7 @@ export const deleteJourney = createAsyncThunk(
         `${API_BASE_URL}/admin/journey/${journey_id}`,
         {
           method: "DELETE",
-          headers: getAuthHeaders(),   // ✅ IMPORTANT
+          headers: getAuthHeaders(),
           credentials: "include",
         }
       );
@@ -267,7 +300,6 @@ export const deleteJourney = createAsyncThunk(
   }
 );
 
-
 const journeySlice = createSlice({
   name: "journey",
   initialState: {
@@ -280,9 +312,18 @@ const journeySlice = createSlice({
     adminJourneys: [],
     adminStatus: "idle",
     adminError: null,
+    paginatedJourneys: [],
+    paginatedStatus: "idle",
+    paginatedError: null,
     drivers: [],
     driversStatus: "idle",
     driversError: null,
+    pagination: {
+      total: 0,
+      page: 1,
+      limit: 10,
+      totalPages: 1
+    }
   },
   reducers: {
     clearRoutesError(state) {
@@ -291,6 +332,7 @@ const journeySlice = createSlice({
     clearJourneyError(state) {
       state.journeyError = null;
       state.adminError = null;
+      state.paginatedError = null;
     },
     resetRoutesStatus(state) {
       state.routesStatus = "idle";
@@ -302,21 +344,26 @@ const journeySlice = createSlice({
       state.routesStatus = "idle";
       state.journeyStatus = "idle";
       state.adminStatus = "idle";
+      state.paginatedStatus = "idle";
       state.driversStatus = "idle";
     },
     clearAllData(state) {
       state.routes = [];
       state.journeys = [];
       state.adminJourneys = [];
+      state.paginatedJourneys = [];
       state.drivers = [];
       state.routesStatus = "idle";
       state.journeyStatus = "idle";
       state.adminStatus = "idle";
+      state.paginatedStatus = "idle";
       state.driversStatus = "idle";
       state.routesError = null;
       state.journeyError = null;
       state.adminError = null;
+      state.paginatedError = null;
       state.driversError = null;
+      state.pagination = { total: 0, page: 1, limit: 10, totalPages: 1 };
     },
   },
   extraReducers: (builder) => {
@@ -358,7 +405,7 @@ const journeySlice = createSlice({
         }
       });
 
-    // ============ JOURNEYS ============
+    // ============ TODAY'S JOURNEY ============
     builder
       .addCase(fetchTodayJourney.pending, (state) => {
         state.journeyStatus = "loading";
@@ -374,7 +421,10 @@ const journeySlice = createSlice({
           state.journeyStatus = "failed";
           state.journeyError = action.payload || action.error.message;
         }
-      })
+      });
+
+    // ============ SAVE JOURNEY ============
+    builder
       .addCase(saveJourney.pending, (state) => {
         state.journeyStatus = "loading";
         state.journeyError = null;
@@ -392,7 +442,7 @@ const journeySlice = createSlice({
         state.journeyError = action.payload?.message || action.error.message;
       });
 
-    // ============ ADMIN JOURNEYS ============
+    // ============ ALL JOURNEYS (Non-paginated) ============
     builder
       .addCase(fetchAllJourneys.pending, (state) => {
         state.adminStatus = "loading";
@@ -408,39 +458,86 @@ const journeySlice = createSlice({
           state.adminStatus = "failed";
           state.adminError = action.payload || action.error.message;
         }
+      });
+
+    // ============ PAGINATED JOURNEYS ============
+    builder
+      .addCase(fetchPaginatedJourneys.pending, (state) => {
+        state.paginatedStatus = "loading";
+        state.paginatedError = null;
       })
+      .addCase(fetchPaginatedJourneys.fulfilled, (state, action) => {
+        state.paginatedStatus = "succeeded";
+        state.paginatedJourneys = action.payload.journeys;
+        state.pagination = action.payload.pagination;
+        state.paginatedError = null;
+      })
+      .addCase(fetchPaginatedJourneys.rejected, (state, action) => {
+        if (action.payload !== 'Request cancelled') {
+          state.paginatedStatus = "failed";
+          state.paginatedError = action.payload || action.error.message;
+        }
+      });
+
+    // ============ ADD JOURNEY ============
+    builder
       .addCase(addJourney.pending, (state) => {
-        state.adminStatus = "loading";
-        state.adminError = null;
+        state.paginatedStatus = "loading";
+        state.paginatedError = null;
       })
       .addCase(addJourney.fulfilled, (state, action) => {
-        state.adminStatus = "succeeded";
-        state.adminJourneys.unshift(action.payload);
-        state.adminError = null;
+        state.paginatedStatus = "succeeded";
+        // Don't modify paginatedJourneys here
+        // Component will refetch to get accurate paginated data
+        state.paginatedError = null;
       })
       .addCase(addJourney.rejected, (state, action) => {
         const isValidationError = action.payload?.errors && Object.keys(action.payload.errors).length > 0;
-        state.adminStatus = isValidationError ? "succeeded" : "failed"; 
-        state.adminError = action.payload?.message || "Failed to add journey";
-      })
+        state.paginatedStatus = isValidationError ? "succeeded" : "failed"; 
+        state.paginatedError = action.payload?.message || "Failed to add journey";
+      });
+
+    // ============ UPDATE JOURNEY ============
+    builder
       .addCase(updateJourney.pending, (state) => {
-        state.adminStatus = "loading";
-        state.adminError = null;
+        state.paginatedStatus = "loading";
+        state.paginatedError = null;
       })
       .addCase(updateJourney.fulfilled, (state, action) => {
-        state.adminStatus = "succeeded";
-        const index = state.adminJourneys.findIndex(j => j.id === action.payload.id);
+        state.paginatedStatus = "succeeded";
+        // Optimistic update for immediate UI feedback
+        const index = state.paginatedJourneys.findIndex(j => j.id === action.payload.id);
         if (index !== -1) {
-          state.adminJourneys[index] = action.payload;
+          state.paginatedJourneys[index] = action.payload;
         }
-        state.adminError = null;
+        state.paginatedError = null;
       })
       .addCase(updateJourney.rejected, (state, action) => {
         const isValidationError = action.payload?.errors && Object.keys(action.payload.errors).length > 0;
-        state.adminStatus = isValidationError ? "succeeded" : "failed";
-        state.adminError = isValidationError
+        state.paginatedStatus = isValidationError ? "succeeded" : "failed";
+        state.paginatedError = isValidationError
           ? null
           : (action.payload?.message || "Failed to update journey");
+      });
+
+    // ============ DELETE JOURNEY ============
+    builder
+      .addCase(deleteJourney.pending, (state) => {
+        state.paginatedStatus = "loading";
+        state.paginatedError = null;
+      })
+      .addCase(deleteJourney.fulfilled, (state, action) => {
+        state.paginatedStatus = "succeeded";
+        // Optimistic delete for immediate UI feedback
+        state.paginatedJourneys = state.paginatedJourneys.filter(
+          journey => journey.id !== action.payload
+        );
+        state.pagination.total = Math.max(0, state.pagination.total - 1);
+        state.paginatedError = null;
+      })
+      .addCase(deleteJourney.rejected, (state, action) => {
+        state.paginatedStatus = "failed";
+        state.paginatedError = action.payload?.message || "Failed to delete journey";
       });
 
     // ============ DRIVERS ============
@@ -460,26 +557,6 @@ const journeySlice = createSlice({
           state.driversError = action.payload || action.error.message;
         }
       });
-
-      // ============ DELETE JOURNEY ============
-builder
-  .addCase(deleteJourney.pending, (state) => {
-    state.adminStatus = "loading";
-    state.adminError = null;
-  })
-  .addCase(deleteJourney.fulfilled, (state, action) => {
-    state.adminStatus = "succeeded";
-    state.adminJourneys = state.adminJourneys.filter(
-      journey => journey.id !== action.payload
-    );
-    state.adminError = null;
-  })
-  .addCase(deleteJourney.rejected, (state, action) => {
-    state.adminStatus = "failed";
-    state.adminError =
-      action.payload?.message || "Failed to delete journey";
-  });
-
   },
 });
 

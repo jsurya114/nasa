@@ -1,7 +1,6 @@
 import { createSlice, createAsyncThunk } from "@reduxjs/toolkit";
 import { API_BASE_URL } from "../../../config";
 
-// Helper function to get auth headers
 const getAuthHeaders = () => {
   const token = localStorage.getItem('adminToken');
   return {
@@ -49,9 +48,15 @@ export const addDriver = createAsyncThunk("/admin/create-users",
 )
 
 export const getUsers = createAsyncThunk('/admin/get-users',
-    async ({ page = 1 }, { rejectWithValue }) => {
+    async ({ page = 1, search = "", city = "" }, { rejectWithValue }) => {
         try {
-            const res = await fetch(`${API_BASE_URL}/admin/get-users?&page=${page}`, {
+            const params = new URLSearchParams({
+                page: page.toString(),
+                ...(search && { search }),
+                ...(city && city !== "All" && { city })
+            });
+            
+            const res = await fetch(`${API_BASE_URL}/admin/get-users?${params}`, {
                 method: "GET",
                 headers: getAuthHeaders(),
             });
@@ -84,7 +89,6 @@ export const getCities = createAsyncThunk('/admin/get-cities',
     }
 )
 
-// Get cities based on admin role (superadmin gets all, admin gets assigned only)
 export const getAdminCities = createAsyncThunk('/admin/get-admin-cities',
     async (_, { rejectWithValue }) => {
         try {
@@ -228,6 +232,8 @@ const userLoadSlice = createSlice({
         page: 1,
         city: [],
         totalPages: 0,
+        searchTerm: "",
+        selectedCity: "All"
     },
     reducers: {
         clearMessages: (state) => {
@@ -237,37 +243,41 @@ const userLoadSlice = createSlice({
         clearPaginateTerms: (state) => {
             state.page = 1;
             state.totalPages = 0;
+        },
+        setSearchTerm: (state, action) => {
+            state.searchTerm = action.payload;
+            state.page = 1;
+        },
+        setSelectedCity: (state, action) => {
+            state.selectedCity = action.payload;
+            state.page = 1;
         }
     },
     extraReducers: (builder) => {
         builder
-           // Add Driver - FIXED VERSION  
-.addCase(addDriver.pending, (state) => {
-    state.loading = true;
-    state.error = null;
-    state.success = null;
-})
-.addCase(addDriver.fulfilled, (state, action) => {
-    console.log("Driver added successfully:", action.payload);
-    
-    // The insertUser should return driver with city name
-    const newDriver = action.payload.insertUser;
-    
-    // Add to the beginning of the array so it's visible
-    state.drivers = [newDriver, ...state.drivers];
-    
-    state.loading = false;
-    state.success = action.payload.message;
-    state.error = null;
-})
-.addCase(addDriver.rejected, (state, action) => {
-    console.error("Add driver failed:", action.payload);
-    state.loading = false;
-    state.error = action.payload || "Failed to add driver";
-    state.success = null;
-})
+            .addCase(addDriver.pending, (state) => {
+                state.loading = true;
+                state.error = null;
+                state.success = null;
+            })
+            .addCase(addDriver.fulfilled, (state, action) => {
+                console.log("Driver added successfully:", action.payload);
+                
+                const newDriver = action.payload.insertUser;
+                
+                state.drivers = [newDriver, ...state.drivers];
+                
+                state.loading = false;
+                state.success = action.payload.message;
+                state.error = null;
+            })
+            .addCase(addDriver.rejected, (state, action) => {
+                console.error("Add driver failed:", action.payload);
+                state.loading = false;
+                state.error = action.payload || "Failed to add driver";
+                state.success = null;
+            })
 
-            // Get Users (Drivers)
             .addCase(getUsers.pending, (state) => {
                 state.loading = true;
             })
@@ -285,7 +295,6 @@ const userLoadSlice = createSlice({
                 state.loading = false;
             })
 
-            // Get Admins
             .addCase(getAdmins.pending, (state) => {
                 state.loading = true;
             })
@@ -303,7 +312,6 @@ const userLoadSlice = createSlice({
                 state.loading = false;
             })
 
-            // Toggle User (Driver) Status
             .addCase(toggleAvailUser.pending, (state) => {
                 state.loading = true;
             })
@@ -321,7 +329,6 @@ const userLoadSlice = createSlice({
                 state.success = null;
             })
 
-            // Toggle Admin Status
             .addCase(toggleAvailAdmin.pending, (state) => {
                 state.loading = true;
             })
@@ -339,7 +346,6 @@ const userLoadSlice = createSlice({
                 state.success = null;
             })
 
-            // Toggle Admin Role
             .addCase(toggleAdminRole.pending, (state) => {
                 state.loading = true;
             })
@@ -357,32 +363,28 @@ const userLoadSlice = createSlice({
                 state.success = null;
             })
 
-         // Add Admin - FIXED VERSION
-.addCase(addAdmin.pending, (state) => {
-    state.loading = true;
-    state.error = null;
-    state.success = null;
-})
-.addCase(addAdmin.fulfilled, (state, action) => {
-    console.log("Admin added successfully:", action.payload);
-    
-    // The insertAdmin should return formatted admin with cities
-    const newAdmin = action.payload.insertAdmin;
-    
-    // Add to the beginning of the array so it's visible
-    state.admins = [newAdmin, ...state.admins];
-    
-    state.loading = false;
-    state.success = action.payload.message;
-    state.error = null;
-})
-.addCase(addAdmin.rejected, (state, action) => {
-    console.error("Add admin failed:", action.payload);
-    state.loading = false;
-    state.error = action.payload || "Failed to add admin";
-    state.success = null;
-})
-            // Get Cities
+            .addCase(addAdmin.pending, (state) => {
+                state.loading = true;
+                state.error = null;
+                state.success = null;
+            })
+            .addCase(addAdmin.fulfilled, (state, action) => {
+                console.log("Admin added successfully:", action.payload);
+                
+                const newAdmin = action.payload.insertAdmin;
+                
+                state.admins = [newAdmin, ...state.admins];
+                
+                state.loading = false;
+                state.success = action.payload.message;
+                state.error = null;
+            })
+            .addCase(addAdmin.rejected, (state, action) => {
+                console.error("Add admin failed:", action.payload);
+                state.loading = false;
+                state.error = action.payload || "Failed to add admin";
+                state.success = null;
+            })
             .addCase(getCities.pending, (state) => {
                 state.loading = true;
             })
@@ -398,7 +400,6 @@ const userLoadSlice = createSlice({
                 state.loading = false;
             })
 
-            // Get Admin Cities (role-based)
             .addCase(getAdminCities.pending, (state) => {
                 state.loading = true;
             })
@@ -414,7 +415,6 @@ const userLoadSlice = createSlice({
                 state.loading = false;
             })
 
-            // Update Driver
             .addCase(updateDriver.pending, (state) => {
                 state.loading = true;
                 state.error = null;
@@ -435,7 +435,6 @@ const userLoadSlice = createSlice({
                 state.success = null;
             })
 
-            // Update Admin
             .addCase(updateAdmin.pending, (state) => {
                 state.loading = true;
                 state.error = null;
@@ -458,5 +457,5 @@ const userLoadSlice = createSlice({
     }
 })
 
-export const { clearMessages, clearPaginateTerms } = userLoadSlice.actions
+export const { clearMessages, clearPaginateTerms, setSearchTerm, setSelectedCity } = userLoadSlice.actions
 export default userLoadSlice.reducer;

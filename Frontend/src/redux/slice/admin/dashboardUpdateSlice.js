@@ -11,12 +11,16 @@ const getAuthHeaders = () => {
   };
 };
 
-// Async thunk to fetch driver payment data
+// Async thunk to fetch driver payment data for specific date
 export const fetchDriverPayment = createAsyncThunk(
   "driverPayment/fetchDriverPayment",
-  async (_, { rejectWithValue }) => {
+  async (date = null, { rejectWithValue }) => {
     try {
-      const res = await axios.get(`${API_BASE_URL}/admin/doubleStop/calculatePayment`, {
+      const url = date 
+        ? `${API_BASE_URL}/admin/doubleStop/calculatePayment?date=${date}`
+        : `${API_BASE_URL}/admin/doubleStop/calculatePayment`;
+        
+      const res = await axios.get(url, {
         headers: getAuthHeaders()
       });
       return res.data;
@@ -59,7 +63,7 @@ const driverPaymentSlice = createSlice({
       .addCase(fetchDriverPayment.fulfilled, (state, action) => {
         state.loading = false;
         state.data = action.payload;
-        toast.success("Driver payment calculated successfully!");
+        toast.success(action.payload.message || "Driver payment calculated successfully!");
       })
       .addCase(fetchDriverPayment.rejected, (state, action) => {
         state.loading = false;
@@ -78,8 +82,7 @@ const driverPaymentSlice = createSlice({
         state.loading = false;
         console.log(action.payload);
         state.error = action.payload;
-        state.message=action.payload.message;
-        // toast.error(`Error: ${action.payload.message}`);
+        state.message = action.payload.message;
       });
   },
 });
