@@ -211,8 +211,10 @@ export const AdminDashboardQueries = {
         finalQuery += " AND " + whereClauses.join(" AND ");
       }
 
-      finalQuery += " ORDER BY pd.journey_date DESC";
-      finalQuery += ` LIMIT $${queryParams.length + 1} OFFSET $${queryParams.length + 2}`;
+     
+    // ✅ CHANGED: Order by route first, then date, then start sequence
+    finalQuery += " ORDER BY r.name, pd.journey_date DESC, pd.start_seq";
+    finalQuery += ` LIMIT $${queryParams.length + 1} OFFSET $${queryParams.length + 2}`;
       
       queryParams.push(limit, offset);
 
@@ -314,7 +316,9 @@ export const AdminDashboardQueries = {
         finalQuery += " AND " + whereClauses.join(" AND ");
       }
 
-      finalQuery += " ORDER BY pd.journey_date DESC;";
+    // ✅ CHANGED: Order by route first, then date, then start sequence
+    finalQuery += " ORDER BY r.name, pd.journey_date DESC, pd.start_seq;";
+
 
       console.log("Executing query:", finalQuery);
       console.log("With params:", queryParams);

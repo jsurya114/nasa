@@ -63,6 +63,8 @@ export default function Dashboard() {
         doubleStop: 0,
         delivered: 0,
         driversPayment: 0,
+        riversPayment: 0,
+      companyEarnings: 0, // ✅ Added
       };
     }
 
@@ -74,7 +76,7 @@ export default function Dashboard() {
         doubleStop: totals.doubleStop + (Number(row.ds) || 0),
         delivered: totals.delivered + (Number(row.delivered) || 0),
         driversPayment: totals.driversPayment + (Number(row.driver_payment) || 0),
-      
+       companyEarnings: totals.companyEarnings + (Number(row.company_earnings) || 0), // ✅ Added
       };
     }, {
       packages: 0,
@@ -83,6 +85,7 @@ export default function Dashboard() {
       doubleStop: 0,
       delivered: 0,
       driversPayment: 0,
+       companyEarnings: 0, // ✅ Added
     });
   }, [filteredPaymentData, isFiltered]);
 
@@ -345,6 +348,7 @@ export default function Dashboard() {
                   { field: "doubleStop", label: "Total Double Stop (DS)" },
                   { field: "delivered", label: "Total Delivered" },
                   { field: "driversPayment", label: "Total Drivers Payment" },
+                  { field: "companyEarnings", label: "Total Company Earnings", highlight: true }, // ✅ Added with highlight
                 ].map((item, i) => (
                   <div key={i} className="flex items-center gap-3">
                     <label className="w-48 text-gray-600">{item.label}:</label>

@@ -28,10 +28,10 @@ const AdminJourneyQuery = {
       `;
       params.push(id);
     }
-
-    query += `
-      ORDER BY d.journey_date DESC, d.start_seq
-    `;
+// ✅ CHANGED: Order by route first, then date, then sequence
+  query += `
+    ORDER BY r.name, d.journey_date DESC, d.start_seq
+  `;
 
     const result = await pool.query(query, params);
     return result.rows;
@@ -187,10 +187,11 @@ const AdminJourneyQuery = {
       params.push(id);
     }
 
-    query += `
-      ORDER BY d.journey_date DESC, d.start_seq
-      LIMIT $${params.length + 1} OFFSET $${params.length + 2}
-    `;
+    // ✅ CHANGED: Order by route first, then date, then sequence
+  query += `
+    ORDER BY r.name, d.journey_date DESC, d.start_seq
+    LIMIT $${params.length + 1} OFFSET $${params.length + 2}
+  `;
     
     params.push(limit, offset);
 

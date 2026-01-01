@@ -43,6 +43,7 @@ export default function PaymentDashboardTable() {
         ds: acc.ds + (Number(row.ds) || 0),
         delivered: acc.delivered + (Number(row.delivered) || 0),
         driverPayment: acc.driverPayment + (Number(row.driver_payment) || 0),
+        companyEarnings: acc.companyEarnings + (Number(row.company_earnings) || 0),
       };
     }, {
       packages: 0,
@@ -52,6 +53,7 @@ export default function PaymentDashboardTable() {
       ds: 0,
       delivered: 0,
       driverPayment: 0,
+       companyEarnings: 0, // ✅ Added
     });
   }, [filteredPaymentData, shouldShowTotals]);
 
@@ -192,6 +194,7 @@ export default function PaymentDashboardTable() {
                     "Delivered",
                     "Closed",
                     "Driver Payment",
+                     "Company Earnings",
                     "Paid",
                   ].map((head, i) => (
                     <th
@@ -245,6 +248,21 @@ export default function PaymentDashboardTable() {
                         "-"
                       )}
                     </td>
+                    {/* ✅ Added Company Earnings Column */}
+      <td className="px-3 py-2 border-b border-gray-200 relative group font-semibold text-green-700">
+        {row.company_earnings ? (
+          <span className="cursor-pointer">
+            ${Number(row.company_earnings).toFixed(2)}
+            <span className="absolute left-1/2 -translate-x-1/2 bottom-full mb-2 z-50
+                           w-max max-w-xs rounded-md bg-gray-800 text-white text-xs px-2 py-1
+                           opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+              <p>Company Earnings: ${Number(row.company_earnings).toFixed(2)}</p>
+            </span>
+          </span>
+        ) : (
+          "-"
+        )}
+      </td>
                     <td
                       className={`px-3 py-2 border-b border-gray-200 font-semibold ${
                         row.paid ? "text-green-600" : "text-red-600"
@@ -287,6 +305,10 @@ export default function PaymentDashboardTable() {
                     <td className="px-3 py-3 border-b border-gray-200 text-green-700 text-lg">
                       💰 {totals.driverPayment.toFixed(2)}
                     </td>
+                     {/* ✅ Added Company Earnings Total */}
+    <td className="px-3 py-3 border-b border-gray-200 text-green-700 text-lg">
+      🏢 ${totals.companyEarnings.toFixed(2)}
+    </td>
                     <td className="px-3 py-3 border-b border-gray-200">
                       -
                     </td>
