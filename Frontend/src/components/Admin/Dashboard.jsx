@@ -4,6 +4,7 @@ import { useNavigate } from "react-router-dom";
 import { fetchDashboardData, fetchFilteredPaymentData, clearFilteredData, payDriver } from "../../redux/slice/admin/dashSlice.js";
 import Header from "../../reuse/Header.jsx";
 import Nav from "../../reuse/Nav.jsx";
+import Loader from "../../components/Loader.jsx"
 import PaymentDashboardTable from "./DashboardTable.jsx";
 
 export default function Dashboard() {
@@ -219,7 +220,7 @@ export default function Dashboard() {
     [cities, drivers, routes]
   );
 
-  if (loading) return <div className="text-center py-10">Loading data...</div>;
+  if (loading) return <div className="text-center py-10"><Loader/></div>;
   if (error) return <div className="text-center text-red-600 py-10">{error}</div>;
 
   return (

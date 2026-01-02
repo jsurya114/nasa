@@ -53,7 +53,7 @@ export const ExcelFileQueries = {
         values.push(
           row.Route,
           row.Sequence,
-          row.Address,
+          row.Address.toLowerCase(),
           row.Unit || null,
           Number(row.ZipCode),
           row.TrackingNo,
