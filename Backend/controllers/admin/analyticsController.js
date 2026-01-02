@@ -20,6 +20,7 @@ export const getAnalyticsData = async (req, res) => {
     let analyticsData;
 
     if (viewType === "daily") {
+      // Shows individual sequences with issues
       analyticsData = await AnalyticsQueries.getDailyAnalytics(
         client,
         id,

@@ -9,9 +9,68 @@ const Analystic = ({ viewType, selectedDate }) => {
   useEffect(() => {
     // Fetch analytics data whenever viewType or selectedDate changes
     if (selectedDate) {
-      dispatch(fetchAnalyticsData({ viewType, date: selectedDate }));
+      dispatch(fetchAnalyticsData({ 
+        viewType, 
+        date: selectedDate
+      }));
     }
   }, [dispatch, viewType, selectedDate]);
+
+  // Group data by driver, route, and issue combination
+  const groupedData = React.useMemo(() => {
+    if (!data || data.length === 0) return [];
+
+    const grouped = {};
+
+    data.forEach((item) => {
+      // Determine which issues this sequence has
+      const issues = [];
+      if (item.no_scanned > 0) issues.push('no_scanned');
+      if (item.double_stop > 0) issues.push('double_stop');
+      if (item.failed_attempt > 0) issues.push('failed_attempt');
+
+      // Create a unique key for driver + route + issue combination
+      const issueKey = issues.sort().join('_');
+      const key = `${item.driver_name}|${item.route}|${issueKey}`;
+      
+      if (!grouped[key]) {
+        grouped[key] = {
+          driver_name: item.driver_name,
+          route: item.route,
+          sequences: [],
+          issues: issues
+        };
+      }
+
+      grouped[key].sequences.push(item.sequence);
+    });
+
+    // Convert to array and sort sequences
+    return Object.values(grouped).map(group => ({
+      ...group,
+      sequences: group.sequences.sort((a, b) => a - b)
+    }));
+  }, [data]);
+
+  // Format issue name for display
+  const formatIssue = (issue) => {
+    const issueMap = {
+      'no_scanned': 'No Scanned',
+      'double_stop': 'Double Stop',
+      'failed_attempt': 'Failed Attempt'
+    };
+    return issueMap[issue] || issue;
+  };
+
+  // Get badge color based on issue type
+  const getIssueBadgeClass = (issue) => {
+    const classMap = {
+      'no_scanned': 'bg-orange-100 text-orange-700',
+      'double_stop': 'bg-green-100 text-green-700',
+      'failed_attempt': 'bg-red-100 text-red-700'
+    };
+    return classMap[issue] || 'bg-gray-100 text-gray-700';
+  };
 
   // Don't render if no data has been uploaded
   if (!data || data.length === 0) {
@@ -38,7 +97,7 @@ const Analystic = ({ viewType, selectedDate }) => {
           Driver Analytics
         </h2>
         <p className="text-sm text-gray-500 mt-1">
-          {viewType === 'daily' ? 'Daily' : 'Weekly'} breakdown by delivery status
+          {viewType === 'daily' ? 'Daily' : 'Weekly'} breakdown - showing sequences with issues
         </p>
       </div>
 
@@ -50,7 +109,7 @@ const Analystic = ({ viewType, selectedDate }) => {
         <div className="bg-red-50 border border-red-200 rounded-lg p-4 text-red-700">
           {error}
         </div>
-      ) : data.length === 0 ? (
+      ) : groupedData.length === 0 ? (
         <div className="text-center py-8 text-gray-500">
           <p>No analytics data to display</p>
         </div>
@@ -68,78 +127,41 @@ const Analystic = ({ viewType, selectedDate }) => {
                 <th className="px-4 py-3 text-left font-semibold text-gray-700 border-b-2 border-purple-200">
                   Sequence
                 </th>
-                <th className="px-4 py-3 text-center font-semibold text-orange-700 border-b-2 border-purple-200 bg-orange-50">
-                  No Scanned
-                </th>
-                <th className="px-4 py-3 text-center font-semibold text-green-700 border-b-2 border-purple-200 bg-green-50">
-                  Double Stop
-                </th>
-                <th className="px-4 py-3 text-center font-semibold text-red-700 border-b-2 border-purple-200 bg-red-50">
-                  Failed Attempt
+                <th className="px-4 py-3 text-left font-semibold text-gray-700 border-b-2 border-purple-200">
+                  Issues
                 </th>
               </tr>
             </thead>
             <tbody>
-              {data.map((driver, idx) => (
+              {groupedData.map((group, idx) => (
                 <tr 
                   key={idx} 
                   className="hover:bg-gray-50 transition-colors border-b border-gray-200"
                 >
                   <td className="px-4 py-3 font-medium text-gray-800">
-                    {driver.driver_name}
+                    {group.driver_name}
                   </td>
                   <td className="px-4 py-3 text-gray-600">
-                    {driver.route}
+                    {group.route}
                   </td>
-                  <td className="px-4 py-3 text-gray-600">
-                    {driver.sequence}
+                  <td className="px-4 py-3 text-gray-600 font-semibold">
+                    {group.sequences.join(', ')}
                   </td>
-                  <td className="px-4 py-3 text-center">
-                    {driver.no_scanned > 0 ? (
-                      <span className="inline-flex items-center justify-center w-12 h-8 bg-orange-100 text-orange-700 rounded-md font-semibold">
-                        {driver.no_scanned}
-                      </span>
-                    ) : (
-                      <span className="text-gray-300">N/A</span>
-                    )}
-                  </td>
-                  <td className="px-4 py-3 text-center">
-                    {driver.double_stop > 0 ? (
-                      <span className="inline-flex items-center justify-center w-12 h-8 bg-green-100 text-green-700 rounded-md font-semibold">
-                        {driver.double_stop}
-                      </span>
-                    ) : (
-                      <span className="text-gray-300">N/A</span>
-                    )}
-                  </td>
-                  <td className="px-4 py-3 text-center">
-                    {driver.failed_attempt > 0 ? (
-                      <span className="inline-flex items-center justify-center w-12 h-8 bg-red-100 text-red-700 rounded-md font-semibold">
-                        {driver.failed_attempt}
-                      </span>
-                    ) : (
-                      <span className="text-gray-300">N/A</span>
-                    )}
+                  <td className="px-4 py-3">
+                    <div className="flex flex-wrap gap-2">
+                      {group.issues.map((issue, issueIdx) => (
+                        <span
+                          key={issueIdx}
+                          className={`px-3 py-1 rounded-full text-xs font-semibold ${getIssueBadgeClass(issue)}`}
+                        >
+                          {formatIssue(issue)}
+                        </span>
+                      ))}
+                    </div>
                   </td>
                 </tr>
               ))}
             </tbody>
-            <tfoot>
-              <tr className="bg-gray-100 font-semibold">
-                <td colSpan="3" className="px-4 py-3 text-right text-gray-700">
-                  Total:
-                </td>
-                <td className="px-4 py-3 text-center text-orange-700">
-                  {data.reduce((sum, d) => sum + d.no_scanned, 0)}
-                </td>
-                <td className="px-4 py-3 text-center text-green-700">
-                  {data.reduce((sum, d) => sum + d.double_stop, 0)}
-                </td>
-                <td className="px-4 py-3 text-center text-red-700">
-                  {data.reduce((sum, d) => sum + d.failed_attempt, 0)}
-                </td>
-              </tr>
-            </tfoot>
           </table>
         </div>
       )}

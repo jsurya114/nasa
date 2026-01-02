@@ -6,6 +6,7 @@ import { getAccessCodes,createAccessCode } from '../controllers/driver/accessCod
 import { getDriverRoutes } from "../controllers/admin/routeController.js";
 import getDeliverySummary from "../controllers/driver/deliveryController.js";
 import driverAuth from '../middlewares/driverAuth.js';
+import driverAvailabilityController from "../controllers/driver/driveravailabilityController.js";
 const router = express.Router()
 
 router.post('/login', driverController.Login)
@@ -22,5 +23,10 @@ router.get("/deliveries/:driverId", getDeliverySummary)
 // AccessCode Management 
 router.post("/access-codes", uploadAccessCodeImages.array('images', 3), createAccessCode)
 router.get("/access-codes/list", getAccessCodes)
+
+// Availability Management
+router.get("/availability", driverAvailabilityController.getAvailability)
+router.post("/availability", driverAvailabilityController.updateAvailability)
+
 
 export default router;

@@ -9,7 +9,7 @@ function Nav() {
     { to: "/admin/jobs", icon: "📦", label: "Cities" },
     { to: "/admin/double-stop", icon: "🔁", label: "Double Stop" },
     { to: "/admin/manage-access-codes", icon: "🔑", label: "Access Codes" },
-
+    // { to: "/admin/driver-availability", icon: "📅", label: "Availability" },
   ];
 
   return (

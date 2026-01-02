@@ -3,19 +3,20 @@ import pool from "../../config/db.js";
 export const AnalyticsQueries = {
   getDailyAnalytics: async (client, userId, role, selectedDate) => {
     try {
+      // 🔥 UPDATED: Now shows individual sequences instead of ranges
       let query = `
         SELECT
           d.name AS driver_name,
           r.name AS route,
-          dd.start_seq || ' - ' || dd.end_seq AS sequence,
-          COALESCE(dd.no_scanned, 0) AS no_scanned,
-          COALESCE(dd.ds, 0) AS double_stop,
-          COALESCE(dd.failed_attempt, 0) AS failed_attempt
-        FROM dashboard_data dd
-        JOIN routes r ON dd.route_id = r.id
-        JOIN drivers d ON d.id = dd.driver_id
-        WHERE dd.journey_date = $1
-          AND (dd.no_scanned > 0 OR dd.ds > 0 OR dd.failed_attempt > 0)
+          del.sequence_number AS sequence,
+          COUNT(*) FILTER (WHERE del.final_result = 'no_scanned') AS no_scanned,
+          COUNT(*) FILTER (WHERE del.final_result = 'double_stop') AS double_stop,
+          COUNT(*) FILTER (WHERE del.final_result = 'failed_attempt') AS failed_attempt
+        FROM deliveries del
+        JOIN drivers d ON del.driver_id = d.id
+        JOIN routes r ON del.route_id = r.id
+        WHERE DATE(del.driver_set_date) = $1
+          AND del.final_result IN ('no_scanned', 'double_stop', 'failed_attempt')
       `;
 
       const params = [selectedDate];
@@ -33,7 +34,11 @@ export const AnalyticsQueries = {
         params.push(userId);
       }
 
-      query += ` ORDER BY d.name, r.name`;
+      query += `
+        GROUP BY d.name, r.name, del.sequence_number
+        HAVING COUNT(*) FILTER (WHERE del.final_result IN ('no_scanned', 'double_stop', 'failed_attempt')) > 0
+        ORDER BY d.name, r.name, del.sequence_number
+      `;
 
       const result = await client.query(query, params);
       return result.rows;
