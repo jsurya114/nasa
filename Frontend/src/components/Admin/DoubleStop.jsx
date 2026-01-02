@@ -246,6 +246,7 @@ import Nav from "../../reuse/Nav";
 import DriverPaymentSection from "./DriverPaymentUpdate";
 import TempUploadedData from "../../reuse/TempUploadedData";
 import { toast } from "react-toastify";
+import Analystic from "./Analystic";
 
 const DoubleStop = () => {
   const dispatch = useDispatch();
@@ -460,6 +461,14 @@ const DoubleStop = () => {
             )}
           </div>
         </section>
+
+        {/* Analytics Section
+        <div className="mb-3">
+          <Analystic 
+            viewType={activeView} 
+            selectedDate={selectedDate} 
+          />
+        </div> */}
 
         {/* Driver Payment Section */}
         {activeView === "weekly" ? (

@@ -2,21 +2,19 @@ import React from "react";
 
 export default function Loader() {
   return (
-    <div style={{ display: 'grid', placeItems: 'center', minHeight: '60vh' }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-        <span
-          style={{
-            width: 28,
-            height: 28,
-            border: '3px solid #e5e7eb',
-            borderTopColor: '#111827',
-            borderRadius: '50%',
-            animation: 'spin 0.9s linear infinite'
-          }}
-        />
-        <span style={{ fontWeight: 600, color: '#111827' }}>Loading...</span>
+    <div className="min-h-[60vh] flex items-center justify-center">
+      <div className="flex flex-col items-center gap-4">
+        {/* Spinner */}
+        <div className="relative w-14 h-14">
+          <div className="absolute inset-0 rounded-full border-4 border-gray-200" />
+          <div className="absolute inset-0 rounded-full border-4 border-purple-600 border-t-transparent animate-spin" />
+        </div>
+
+        {/* Text */}
+        <p className="text-sm font-semibold text-gray-700 tracking-wide">
+          Loading, please wait...
+        </p>
       </div>
-      <style>{`@keyframes spin {from {transform: rotate(0deg)} to {transform: rotate(360deg)}}`}</style>
     </div>
   );
 }

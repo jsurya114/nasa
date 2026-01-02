@@ -181,50 +181,52 @@ export const ExcelFileQueries = {
   },
 
   getTempDashboardData: async (client, id, role, selectedDate) => {
+  try {
+    let query = `
+      SELECT
+        d.name,
+        dd.journey_date,
+        r.name AS route,
+        dd.start_seq || ' - ' || dd.end_seq AS sequence,
+        dd.packages,
+        dd.no_scanned,
+        dd.failed_attempt,
+        dd.ds,
+        dd.delivered
+      FROM dashboard_data dd
+      JOIN routes r ON dd.route_id = r.id
+      JOIN drivers d ON d.id = dd.driver_id
+      WHERE dd.journey_date = $1
+    `;
 
-    try {
-      let query = `
-        SELECT
-          d.name,
-          dd.journey_date,
-          r.name AS route,
-          dd.start_seq || ' - ' || dd.end_seq AS sequence,
-          dd.packages,
-          dd.no_scanned,
-          dd.failed_attempt,
-          dd.ds,
-          dd.delivered
-        FROM dashboard_data dd
-        JOIN routes r ON dd.route_id = r.id
-        JOIN drivers d ON d.id = dd.driver_id
-       WHERE dd.journey_date = $1
+    const params = [selectedDate];
 
+    if (role === "admin") {
+      query += `
+        AND EXISTS (
+          SELECT 1
+          FROM admin_city_ref acr
+          WHERE acr.city_id = d.city_id
+            AND acr.admin_id = $2
+        )
       `;
-
-      const params = [selectedDate];
-
-      if (role === "admin") {
-        query += `
-          AND EXISTS (
-            SELECT 1
-            FROM admin_city_ref acr
-            WHERE acr.city_id = d.city_id
-              AND acr.admin_id = $2
-
-          )
-        `;
-        params.push(id);
-      }
-
-      query += ` ORDER BY dd.journey_date DESC`;
-
-      const res = await client.query(query, params);
-      return res.rows;
-    } catch (error) {
-      console.error(error);
-      throw error;
+      params.push(id);
     }
-  },
+
+    query += `
+      ORDER BY
+        r.name ASC,
+        dd.start_seq ASC,
+        dd.end_seq ASC
+    `;
+
+    const res = await client.query(query, params);
+    return res.rows;
+  } catch (error) {
+    console.error(error);
+    throw error;
+  }
+},
 
   // 🔴 FIXED: Double stop logic must include route & date
   updateFirstStopAndDoubleStop: async (client) => {
