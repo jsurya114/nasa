@@ -46,7 +46,7 @@ function Nav() {
             to="/driver/dashboard"
             className={({ isActive }) =>
               `bg-white text-[#1f2633] rounded-xl px-4 py-2 min-w-[105px] flex flex-col items-center gap-2 shadow-md ${
-                isActive ? "bg-opacity-90" : ""
+                isActive ? "ring-2 ring-blue-500" : ""
               }`
             }
           >
@@ -55,11 +55,12 @@ function Nav() {
             </div>
             <small className="text-[13px] font-semibold">Dashboard</small>
           </NavLink>
+          
           <NavLink
             to="/driver/access-codes"
             className={({ isActive }) =>
               `bg-white text-[#1f2633] rounded-xl px-4 py-2 min-w-[105px] flex flex-col items-center gap-2 shadow-md ${
-                isActive ? "bg-opacity-90" : ""
+                isActive ? "ring-2 ring-blue-500" : ""
               }`
             }
           >
@@ -68,19 +69,34 @@ function Nav() {
             </div>
             <small className="text-[13px] font-semibold">Access Codes</small>
           </NavLink>
+          
           <NavLink
             to="/driver/delivery"
             className={({ isActive }) =>
               `bg-white text-[#1f2633] rounded-xl px-4 py-2 min-w-[105px] flex flex-col items-center gap-2 shadow-md ${
-                isActive ? "bg-opacity-90" : ""
+                isActive ? "ring-2 ring-blue-500" : ""
               }`
             }
           >
             <div className="w-10 h-10 rounded-lg bg-[#eef2f7] flex items-center justify-center text-2xl">
-             🚛
+              🚛
             </div>
             <small className="text-[13px] font-semibold">Deliveries</small>
           </NavLink>
+          
+          {/* <NavLink
+            to="/driver/availability"
+            className={({ isActive }) =>
+              `bg-white text-[#1f2633] rounded-xl px-4 py-2 min-w-[105px] flex flex-col items-center gap-2 shadow-md ${
+                isActive ? "ring-2 ring-blue-500" : ""
+              }`
+            }
+          >
+            <div className="w-10 h-10 rounded-lg bg-[#eef2f7] flex items-center justify-center text-2xl">
+              📅
+            </div>
+            <small className="text-[13px] font-semibold">Availability</small>
+          </NavLink> */}
         </div>
       </nav>
     </>
