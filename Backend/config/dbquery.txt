@@ -1,10 +1,11 @@
+
 nasalogisticsdb=> \d access_codes;
                                        Table "public.access_codes"
    Column    |           Type           | Collation | Nullable |                 Default
 -------------+--------------------------+-----------+----------+------------------------------------------
  id          | integer                  |           | not null | nextval('access_codes_id_seq'::regclass)
  address     | character varying(255)   |           | not null |
- access_code | character varying(50)    |           | not null |
+ access_code | character varying(255)   |           | not null |
  created_at  | timestamp with time zone |           |          | CURRENT_TIMESTAMP
  zip_code    | character varying(10)    |           | not null |
  image_url1  | character varying(500)   |           |          |
@@ -12,7 +13,7 @@ nasalogisticsdb=> \d access_codes;
  image_url3  | character varying(500)   |           |          |
 Indexes:
     "access_codes_pkey" PRIMARY KEY, btree (id)
-    "access_codes_access_code_key" UNIQUE CONSTRAINT, btree (access_code)
+
 
 
 nasalogisticsdb=> \d admin;
@@ -36,16 +37,25 @@ Referenced by:
 
 
 nasalogisticsdb=> \d drivers;
-                                       Table "public.drivers"
-   Column    |          Type          | Collation | Nullable |               Default
--------------+------------------------+-----------+----------+--------------------------------------
- id          | integer                |           | not null | nextval('drivers_id_seq'::regclass)
- password    | character varying(255) |           | not null |
- name        | character varying(100) |           | not null |
- email       | character varying(150) |           | not null |
- driver_code | integer                |           | not null | nextval('driver_code_seq'::regclass)
- city_id     | integer                |           |          |
- enabled     | boolean                |           | not null | false
+                                               Table "public.drivers"
+         Column          |            Type             | Collation | Nullable |               Default
+-------------------------+-----------------------------+-----------+----------+-------------------------------------
+ id                      | integer                     |           | not null | nextval('drivers_id_seq'::regclass)
+ password                | character varying(255)      |           | not null |
+ name                    | character varying(100)      |           | not null |
+ email                   | character varying(150)      |           | not null |
+ driver_code             | integer                     |           | not null |
+ city_id                 | integer                     |           |          |
+ enabled                 | boolean                     |           | not null | false
+ monday                  | boolean                     |           |          | false
+ tuesday                 | boolean                     |           |          | false
+ wednesday               | boolean                     |           |          | false
+ thursday                | boolean                     |           |          | false
+ friday                  | boolean                     |           |          | false
+ saturday                | boolean                     |           |          | false
+ sunday                  | boolean                     |           |          | false
+ availability_updated_at | timestamp without time zone |           |          |
+ phone_number            | character varying(20)       |           |          |
 Indexes:
     "drivers_pkey" PRIMARY KEY, btree (id)
     "drivers_driver_code_key" UNIQUE CONSTRAINT, btree (driver_code)
@@ -60,35 +70,34 @@ Referenced by:
     TABLE "payment_dashboard" CONSTRAINT "fk_driver" FOREIGN KEY (driver_id) REFERENCES drivers(id)
     TABLE "excel_data" CONSTRAINT "fk_excel_driver" FOREIGN KEY (driver_name) REFERENCES drivers(name) ON UPDATE CASCADE ON DELETE RESTRICT
 
-
-nasalogisticsdb=> \d deliveries;
-                                     Table "public.deliveries"
-     Column      |         Type          | Collation | Nullable |              Default
------------------+-----------------------+-----------+----------+-----------------------------------
- unique_id       | integer               |           | not null | generated always as identity
- driver_id       | integer               |           | not null |
- driver_set_date | date                  |           | not null |
- route_id        | integer               |           | not null |
- sequence_number | integer               |           | not null |
- address         | text                  |           | not null | 'No_Address'::text
- zip_code        | integer               |           | not null | 0
- recp_name       | text                  |           | not null | 'Unknown Recipient'::text
- recipient_phone | text                  |           | not null | '0000000000'::text
- status          | text                  |           | not null | 'Pending'::text
- courier_code    | text                  |           | not null | 'NA'::text
- address_unit    | text                  |           |          | 'No_Address_Unit'::text
- seq_route_code  | character varying(20) |           | not null |
- final_result    | final_result_enum     |           |          | 'not_assigned'::final_result_enum
+nasalogisticsdb=>  \d deliveries;
+                                      Table "public.deliveries"
+      Column       |         Type          | Collation | Nullable |              Default
+-------------------+-----------------------+-----------+----------+-----------------------------------
+ unique_id         | integer               |           | not null | generated always as identity
+ driver_id         | integer               |           | not null |
+ driver_set_date   | date                  |           | not null |
+ route_id          | integer               |           | not null |
+ sequence_number   | integer               |           | not null |
+ address           | text                  |           | not null | 'No_Address'::text
+ zip_code          | integer               |           | not null | 0
+ recp_name         | text                  |           | not null | 'Unknown Recipient'::text
+ recipient_phone   | text                  |           | not null | '0000000000'::text
+ status            | text                  |           | not null | 'Pending'::text
+ courier_code      | text                  |           | not null | 'NA'::text
+ address_unit      | text                  |           |          | 'No_Address_Unit'::text
+ seq_route_code    | character varying(20) |           | not null |
+ final_result      | final_result_enum     |           |          | 'not_assigned'::final_result_enum
+ dashboard_data_id | integer               |           |          |
 Indexes:
     "deliveries_pkey" PRIMARY KEY, btree (unique_id)
     "unique_seq_route_code_per_date" UNIQUE, btree (driver_set_date, seq_route_code)
 Foreign-key constraints:
+    "deliveries_dashboard_data_id_fkey" FOREIGN KEY (dashboard_data_id) REFERENCES dashboard_data(id)
     "fk_driver" FOREIGN KEY (driver_id) REFERENCES drivers(id)
     "fk_route" FOREIGN KEY (route_id) REFERENCES routes(id)
 
-
-
-    nasalogisticsdb=> \d dashboard_data;
+nasalogisticsdb=> \d dashboard_data;
                                      Table "public.dashboard_data"
           Column           |     Type      | Collation | Nullable |               Default
 ---------------------------+---------------+-----------+----------+-------------------------------------
@@ -114,12 +123,18 @@ Foreign-key constraints:
     "fk_driver" FOREIGN KEY (driver_id) REFERENCES drivers(id) ON DELETE CASCADE
     "fk_route" FOREIGN KEY (route_id) REFERENCES routes(id) ON DELETE CASCADE
 Referenced by:
+    TABLE "deliveries" CONSTRAINT "deliveries_dashboard_data_id_fkey" FOREIGN KEY (dashboard_data_id) REFERENCES dashboard_data(id)
     TABLE "payment_dashboard" CONSTRAINT "fk_dashboard_data" FOREIGN KEY (dashboard_data_id) REFERENCES dashboard_data(id)
 Triggers:
     after_dashboard_insert AFTER INSERT ON dashboard_data FOR EACH ROW EXECUTE FUNCTION insert_payment_dashboard()
+    after_dashboard_update AFTER UPDATE ON dashboard_data FOR EACH ROW EXECUTE FUNCTION update_payment_dashboard()
+    trg_delete_dashboard_data_cleanup BEFORE DELETE ON dashboard_data FOR EACH ROW EXECUTE FUNCTION delete_dashboard_data_related_rows()
+    trg_sync_deliveries_sequence AFTER UPDATE OF start_seq, end_seq ON dashboard_data FOR EACH ROW WHEN (old.start_seq IS DISTINCT FROM new.start_seq OR old.end_seq IS DISTINCT FROM new.end_seq) EXECUTE FUNCTION sync_deliveries_with_sequence()
 
 
-    nasalogisticsdb=> \d payment_dashboard;
+
+
+ nasalogisticsdb=> \d payment_dashboard;
                                      Table "public.payment_dashboard"
       Column       |     Type      | Collation | Nullable |                    Default
 -------------------+---------------+-----------+----------+-----------------------------------------------
@@ -141,6 +156,7 @@ Triggers:
  start_seq         | integer       |           | not null | 0
  end_seq           | integer       |           | not null | 0
  first_stop        | integer       |           |          | 0
+ company_earnings  | numeric(10,2) |           |          |
 Indexes:
     "payment_dashboard_pkey" PRIMARY KEY, btree (id)
 Foreign-key constraints:
@@ -149,7 +165,8 @@ Foreign-key constraints:
     "fk_route" FOREIGN KEY (route_id) REFERENCES routes(id)
 
 
-    nasalogisticsdb=> \d admin_city_ref;
+
+   nasalogisticsdb=> \d admin_city_ref;
                              Table "public.admin_city_ref"
   Column  |  Type   | Collation | Nullable |                  Default
 ----------+---------+-----------+----------+--------------------------------------------
@@ -199,7 +216,7 @@ Indexes:
     "weeklycount_unique" UNIQUE CONSTRAINT, btree (driver_id, del_date, del_route)
 
 
-    nasalogisticsdb=> \d weekly_excel_data;
+  nasalogisticsdb=> \d weekly_excel_data
                                           Table "public.weekly_excel_data"
     Column     |            Type             | Collation | Nullable |                    Default
 ---------------+-----------------------------+-----------+----------+-----------------------------------------------
@@ -219,6 +236,7 @@ Indexes:
  upload_date   | timestamp without time zone |           |          | now()
 Indexes:
     "weekly_excel_data_pkey" PRIMARY KEY, btree (id)
+
 
 
     nasalogisticsdb=> \d  todays_excel_data;
@@ -261,7 +279,7 @@ nasalogisticsdb=> \d staging_excel_upload;
 
 
 
-nasalogisticsdb=> \d route_taken_by_driver;
+nasalogisticsdb=> \d route_taken_by_driver
                                        Table "public.route_taken_by_driver"
      Column     |         Type          | Collation | Nullable |                      Default
 ----------------+-----------------------+-----------+----------+---------------------------------------------------
@@ -279,8 +297,7 @@ Foreign-key constraints:
     "fk_route" FOREIGN KEY (route_id) REFERENCES routes(id) ON UPDATE CASCADE ON DELETE RESTRICT
 
 
-
-nasalogisticsdb=> \d routes;
+nasalogisticsdb=> \d routes
                                              Table "public.routes"
           Column          |          Type          | Collation | Nullable |              Default
 --------------------------+------------------------+-----------+----------+------------------------------------
@@ -295,6 +312,7 @@ nasalogisticsdb=> \d routes;
  route_code_in_string     | text                   |           |          |
 Indexes:
     "routes_pkey" PRIMARY KEY, btree (id)
+    "unique_route_code" UNIQUE CONSTRAINT, btree (route_code_in_string)
     "unique_route_name_per_job" UNIQUE CONSTRAINT, btree (name, job)
 Foreign-key constraints:
     "fk_route_city" FOREIGN KEY (job) REFERENCES city(job) ON UPDATE CASCADE ON DELETE RESTRICT

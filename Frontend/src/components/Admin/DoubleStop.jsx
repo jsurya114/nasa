@@ -316,8 +316,12 @@ const DoubleStop = () => {
       .then(() => {
         toast.success("Daily file uploaded successfully");
 
-        // Refresh dashboard for selected date
-        dispatch(fetchDashboardData(selectedDate));
+        // Refresh dashboard for selected date with default pagination
+        dispatch(fetchDashboardData({ 
+          selectedDate: selectedDate, 
+          page: 1, 
+          limit: 10 
+        }));
 
         if (dailyFileRef.current?.clear) {
           dailyFileRef.current.clear();
@@ -335,9 +339,34 @@ const DoubleStop = () => {
     dispatch(fetchWeeklyTempData());
   }, [dispatch]);
 
-  const loadDailyData = useCallback(() => {
-    dispatch(fetchDashboardData(selectedDate));
+  // Fixed: Properly pass all three parameters
+  const loadDailyData = useCallback((date, page = 1, limit = 10) => {
+    // Ensure we have a valid date
+    const dateToUse = date || selectedDate;
+    
+    if (!dateToUse) {
+      console.error("No date provided to loadDailyData");
+      toast.error("Please select a date first");
+      return;
+    }
+
+    dispatch(fetchDashboardData({ 
+      selectedDate: dateToUse, 
+      page, 
+      limit 
+    }));
   }, [dispatch, selectedDate]);
+
+  // Handle date change
+  const handleDateChange = (e) => {
+    const newDate = e.target.value;
+    setSelectedDate(newDate);
+    
+    // Only load data if we're in daily view and have a valid date
+    if (activeView === "daily" && newDate) {
+      loadDailyData(newDate, 1, 10);
+    }
+  };
 
   return (
     <div className="min-h-screen bg-gray-100 text-gray-900 font-poppins">
@@ -420,7 +449,7 @@ const DoubleStop = () => {
                 <input
                   type="date"
                   value={selectedDate}
-                  onChange={(e) => setSelectedDate(e.target.value)}
+                  onChange={handleDateChange}
                   className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-purple-600"
                 />
               </div>
@@ -457,13 +486,17 @@ const DoubleStop = () => {
             {activeView === "weekly" ? (
               <TempUploadedData viewType="weekly" loadData={loadWeeklyData} />
             ) : (
-              <UploadedData viewType="daily" loadData={loadDailyData} />
+              <UploadedData 
+                viewType="daily" 
+                loadData={loadDailyData}
+                selectedDate={selectedDate}
+              />
             )}
           </div>
         </section>
 
-        {/* Analytics Section
-        <div className="mb-3">
+        {/* Analytics Section */}
+        {/* <div className="mb-3">
           <Analystic 
             viewType={activeView} 
             selectedDate={selectedDate} 

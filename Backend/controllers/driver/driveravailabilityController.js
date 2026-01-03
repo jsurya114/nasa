@@ -1,7 +1,5 @@
 import { availabilityService } from "../../services/driver/availabilityQuery.js";
 
-
-
 const driverAvailabilityController = {
     // Get logged-in driver's availability
     getAvailability: async (req, res) => {
@@ -29,6 +27,20 @@ const driverAvailabilityController = {
         try {
             const driverId = req.driver.id;
             const { availability } = req.body;
+
+            // Check if current time is after 7:30 PM
+            const now = new Date();
+            const hours = now.getHours();
+            const minutes = now.getMinutes();
+            const currentTimeInMinutes = hours * 60 + minutes;
+            const cutoffTimeInMinutes = 19 * 60 + 30; // 7:30 PM = 19:30
+
+            if (currentTimeInMinutes >= cutoffTimeInMinutes) {
+                return res.status(403).json({
+                    success: false,
+                    message: "Availability cannot be updated after 7:30 PM. Please try again tomorrow."
+                });
+            }
 
             // Validate availability object
             const validDays = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];

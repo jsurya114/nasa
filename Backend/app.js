@@ -8,6 +8,7 @@ import cookieParser from 'cookie-parser';
 import sanitizeMiddleware from './middlewares/sanitize.js';
 import { notFound, errorHandler } from './middlewares/errorHandler.js';
 import rateLimit from './middlewares/rateLimit.js';
+import { initializeAvailabilityResetCron } from './utils/availabilityCronJob.js';
 
 dotenv.config()
 
@@ -28,6 +29,8 @@ app.use('/uploads', express.static('uploads'));
 app.use(sanitizeMiddleware);
 // Global rate limit (per IP per base path)
 app.use(rateLimit({ windowMs: 15 * 60 * 1000, max: 1000 }));
+
+initializeAvailabilityResetCron()
 
 app.use('/admin', (req, _, next) => {
   // Updated logging to show Authorization header instead of cookie

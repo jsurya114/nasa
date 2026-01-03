@@ -8,6 +8,9 @@ export default function PaymentDashboardTable() {
   const { filteredPaymentData, paymentLoading, paymentError, isFiltered, pagination, filters } = useSelector(
     (state) => state.dash
   );
+  
+  // ✅ Get isSuperAdmin from Redux
+  const { isSuperAdmin } = useSelector((state) => state.admin);
 
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(10);
@@ -24,7 +27,6 @@ export default function PaymentDashboardTable() {
   };
 
   const shouldShowTotals = useMemo(() => {
-    // Only show totals if a specific driver is filtered (not "All")
     const hasDriverFilter = filters.driver && filters.driver !== "All";
     return hasDriverFilter && 
            filteredPaymentData.length > 0 && 
@@ -53,7 +55,7 @@ export default function PaymentDashboardTable() {
       ds: 0,
       delivered: 0,
       driverPayment: 0,
-       companyEarnings: 0, // ✅ Added
+      companyEarnings: 0,
     });
   }, [filteredPaymentData, shouldShowTotals]);
 
@@ -120,6 +122,32 @@ export default function PaymentDashboardTable() {
     return pages;
   };
 
+  // ✅ Define table headers based on role
+  const tableHeaders = useMemo(() => {
+    const baseHeaders = [
+      "Driver",
+      "Job Date",
+      "Route",
+      "Sequence",
+      "Packages",
+      "No Scanned",
+      "Failed Attempt",
+      "FS",
+      "DS",
+      "Delivered",
+      "Closed",
+      "Driver Payment",
+    ];
+    
+    if (isSuperAdmin) {
+      baseHeaders.push("Company Earnings");
+    }
+    
+    baseHeaders.push("Paid");
+    
+    return baseHeaders;
+  }, [isSuperAdmin]);
+
   const displayData = filteredPaymentData;
   const isLoading = paymentLoading;
   const displayError = paymentError;
@@ -181,25 +209,10 @@ export default function PaymentDashboardTable() {
             <table className="w-full border-collapse text-sm">
               <thead>
                 <tr className="bg-gradient-to-r from-gray-50 to-gray-100 text-left">
-                  {[
-                    "Driver",
-                    "Job Date",
-                    "Route",
-                    "Sequence",
-                    "Packages",
-                    "No Scanned",
-                    "Failed Attempt",
-                    "FS",
-                    "DS",
-                    "Delivered",
-                    "Closed",
-                    "Driver Payment",
-                     "Company Earnings",
-                    "Paid",
-                  ].map((head, i) => (
+                  {tableHeaders.map((head, i) => (
                     <th
                       key={i}
-                      className="px-3 py-2 border-b-2 border-gray-200 font-semibold text-gray-700"
+                      className="px-3 py-2 border-b-2 border-gray-200 font-semibold text-gray-700 whitespace-nowrap"
                     >
                       {head}
                     </th>
@@ -209,32 +222,32 @@ export default function PaymentDashboardTable() {
               <tbody>
                 {displayData.map((row, i) => (
                   <tr key={i} className="hover:bg-gray-50 transition-colors">
-                    <td className="px-3 py-2 border-b border-gray-200">
+                    <td className="px-3 py-2 border-b border-gray-200 whitespace-nowrap">
                       {row.driver_name}
                     </td>
-                    <td className="px-3 py-2 border-b border-gray-200">
+                    <td className="px-3 py-2 border-b border-gray-200 whitespace-nowrap">
                       {new Date(row.journey_date + 'T00:00:00').toLocaleDateString('en-CA')}
                     </td>
-                    <td className="px-3 py-2 border-b border-gray-200">{row.route_name || row.route_id}</td>
-                    <td className="px-3 py-2 border-b border-gray-200">
+                    <td className="px-3 py-2 border-b border-gray-200 whitespace-nowrap">{row.route_name || row.route_id}</td>
+                    <td className="px-3 py-2 border-b border-gray-200 whitespace-nowrap">
                       {row.start_seq}-{row.end_seq}
                     </td>
-                    <td className="px-3 py-2 border-b border-gray-200">{row.packages}</td>
-                    <td className="px-3 py-2 border-b border-gray-200">{row.no_scanned}</td>
-                    <td className="px-3 py-2 border-b border-gray-200">
+                    <td className="px-3 py-2 border-b border-gray-200 whitespace-nowrap">{row.packages}</td>
+                    <td className="px-3 py-2 border-b border-gray-200 whitespace-nowrap">{row.no_scanned}</td>
+                    <td className="px-3 py-2 border-b border-gray-200 whitespace-nowrap">
                       {row.failed_attempt}
                     </td>
-                    <td className="px-3 py-2 border-b border-gray-200">{row.fs}</td>
-                    <td className="px-3 py-2 border-b border-gray-200">{row.ds}</td>
-                    <td className="px-3 py-2 border-b border-gray-200">{row.delivered}</td>
+                    <td className="px-3 py-2 border-b border-gray-200 whitespace-nowrap">{row.fs}</td>
+                    <td className="px-3 py-2 border-b border-gray-200 whitespace-nowrap">{row.ds}</td>
+                    <td className="px-3 py-2 border-b border-gray-200 whitespace-nowrap">{row.delivered}</td>
                     <td
-                      className={`px-3 py-2 border-b border-gray-200 font-semibold ${
+                      className={`px-3 py-2 border-b border-gray-200 font-semibold whitespace-nowrap ${
                         row.closed ? "text-green-600" : "text-red-600"
                       }`}
                     >
                       {row.closed ? "Yes" : "No"}
                     </td>
-                    <td className="px-3 py-2 border-b border-gray-200 relative group">
+                    <td className="px-3 py-2 border-b border-gray-200 relative group whitespace-nowrap">
                       {row.driver_payment ? (
                         <span className="cursor-pointer">
                           {row.driver_payment}
@@ -248,23 +261,25 @@ export default function PaymentDashboardTable() {
                         "-"
                       )}
                     </td>
-                    {/* ✅ Added Company Earnings Column */}
-      <td className="px-3 py-2 border-b border-gray-200 relative group font-semibold text-green-700">
-        {row.company_earnings ? (
-          <span className="cursor-pointer">
-            ${Number(row.company_earnings).toFixed(2)}
-            <span className="absolute left-1/2 -translate-x-1/2 bottom-full mb-2 z-50
-                           w-max max-w-xs rounded-md bg-gray-800 text-white text-xs px-2 py-1
-                           opacity-0 group-hover:opacity-100 transition-opacity duration-200">
-              <p>Company Earnings: ${Number(row.company_earnings).toFixed(2)}</p>
-            </span>
-          </span>
-        ) : (
-          "-"
-        )}
-      </td>
+                    {/* ✅ Conditionally render Company Earnings column */}
+                    {isSuperAdmin && (
+                      <td className="px-3 py-2 border-b border-gray-200 relative group font-semibold text-green-700 whitespace-nowrap">
+                        {row.company_earnings ? (
+                          <span className="cursor-pointer">
+                            ${Number(row.company_earnings).toFixed(2)}
+                            <span className="absolute left-1/2 -translate-x-1/2 bottom-full mb-2 z-50
+                                           w-max max-w-xs rounded-md bg-gray-800 text-white text-xs px-2 py-1
+                                           opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+                              <p>Company Earnings: ${Number(row.company_earnings).toFixed(2)}</p>
+                            </span>
+                          </span>
+                        ) : (
+                          "-"
+                        )}
+                      </td>
+                    )}
                     <td
-                      className={`px-3 py-2 border-b border-gray-200 font-semibold ${
+                      className={`px-3 py-2 border-b border-gray-200 font-semibold whitespace-nowrap ${
                         row.paid ? "text-green-600" : "text-red-600"
                       }`}
                     >
@@ -275,41 +290,43 @@ export default function PaymentDashboardTable() {
                 
                 {shouldShowTotals && totals && (
                   <tr className="bg-blue-50 font-bold border-t-2 border-blue-600">
-                    <td className="px-3 py-3 border-b border-gray-200">
+                    <td className="px-3 py-3 border-b border-gray-200 whitespace-nowrap">
                       TOTAL
                     </td>
-                    <td className="px-3 py-3 border-b border-gray-200" colSpan="3">
+                    <td className="px-3 py-3 border-b border-gray-200 whitespace-nowrap" colSpan="3">
                       {displayData[0].driver_name}
                     </td>
-                    <td className="px-3 py-3 border-b border-gray-200 text-blue-900">
+                    <td className="px-3 py-3 border-b border-gray-200 text-blue-900 whitespace-nowrap">
                       {totals.packages}
                     </td>
-                    <td className="px-3 py-3 border-b border-gray-200 text-blue-900">
+                    <td className="px-3 py-3 border-b border-gray-200 text-blue-900 whitespace-nowrap">
                       {totals.noScanned}
                     </td>
-                    <td className="px-3 py-3 border-b border-gray-200 text-blue-900">
+                    <td className="px-3 py-3 border-b border-gray-200 text-blue-900 whitespace-nowrap">
                       {totals.failedAttempt}
                     </td>
-                    <td className="px-3 py-3 border-b border-gray-200 text-blue-900">
+                    <td className="px-3 py-3 border-b border-gray-200 text-blue-900 whitespace-nowrap">
                       {totals.fs}
                     </td>
-                    <td className="px-3 py-3 border-b border-gray-200 text-blue-900">
+                    <td className="px-3 py-3 border-b border-gray-200 text-blue-900 whitespace-nowrap">
                       {totals.ds}
                     </td>
-                    <td className="px-3 py-3 border-b border-gray-200 text-blue-900">
+                    <td className="px-3 py-3 border-b border-gray-200 text-blue-900 whitespace-nowrap">
                       {totals.delivered}
                     </td>
-                    <td className="px-3 py-3 border-b border-gray-200">
+                    <td className="px-3 py-3 border-b border-gray-200 whitespace-nowrap">
                       -
                     </td>
-                    <td className="px-3 py-3 border-b border-gray-200 text-green-700 text-lg">
+                    <td className="px-3 py-3 border-b border-gray-200 text-green-700 text-lg whitespace-nowrap">
                       💰 {totals.driverPayment.toFixed(2)}
                     </td>
-                     {/* ✅ Added Company Earnings Total */}
-    <td className="px-3 py-3 border-b border-gray-200 text-green-700 text-lg">
-      🏢 ${totals.companyEarnings.toFixed(2)}
-    </td>
-                    <td className="px-3 py-3 border-b border-gray-200">
+                    {/* ✅ Conditionally render Company Earnings total */}
+                    {isSuperAdmin && (
+                      <td className="px-3 py-3 border-b border-gray-200 text-green-700 text-lg whitespace-nowrap">
+                        🏢 ${totals.companyEarnings.toFixed(2)}
+                      </td>
+                    )}
+                    <td className="px-3 py-3 border-b border-gray-200 whitespace-nowrap">
                       -
                     </td>
                   </tr>
@@ -346,7 +363,7 @@ export default function PaymentDashboardTable() {
                 </div>
               </div>
 
-              <div className="flex justify-center items-center gap-1">
+              <div className="flex flex-wrap justify-center items-center gap-1">
                 <button
                   onClick={() => handlePageChange(1)}
                   disabled={currentPage === 1}

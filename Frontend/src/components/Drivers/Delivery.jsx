@@ -24,6 +24,13 @@ const Deliveries = () => {
   const lastErrorToast = useRef(0);
   const initialLoadDone = useRef(false);
 
+  // ✅ Determine if data is weekly or daily
+  const dataType = useMemo(() => {
+    if (!deliveries || deliveries.length === 0) return null;
+    // Check the first item to determine data type
+    return deliveries[0]?.data_type || 'daily';
+  }, [deliveries]);
+
   // ✅ Memoized summary calculation
   const summary = useMemo(() => {
     if (!deliveries || deliveries.length === 0) return null;
@@ -32,11 +39,12 @@ const Deliveries = () => {
         packages: acc.packages + (parseInt(d.packages) || 0),
         no_scanned: acc.no_scanned + (parseInt(d.no_scanned) || 0),
         failed_attempt: acc.failed_attempt + (parseInt(d.failed_attempt) || 0),
+        first_stop: acc.first_stop + (parseInt(d.first_stop) || 0),
         double_stop: acc.double_stop + (parseInt(d.double_stop) || 0),
         delivered: acc.delivered + (parseInt(d.delivered) || 0),
         earning: acc.earning + (parseFloat(d.earning) || 0),
       }),
-      { packages: 0, no_scanned: 0, failed_attempt: 0, double_stop: 0, delivered: 0, earning: 0 }
+      { packages: 0, no_scanned: 0, failed_attempt: 0, first_stop: 0, double_stop: 0, delivered: 0, earning: 0 }
     );
   }, [deliveries]);
 
@@ -61,7 +69,6 @@ const Deliveries = () => {
           if (parsedDeliveries.length > 0) {
             setFilters(parsedFilters);
             setHasFiltered(true);
-            // Use new action instead of direct dispatch
             dispatch(setDeliveriesFromCache(parsedDeliveries));
           }
         } catch (err) {
@@ -138,32 +145,29 @@ const Deliveries = () => {
     setValidationError("");
   }, []);
 
-  const handleFilter = useCallback(
-    (e) => {
-      e.preventDefault();
+  const handleFilter = useCallback((e) => {
+    e.preventDefault();
 
-      // Validation
-      if (!filters.from_date || !filters.to_date) {
-        setValidationError("Please select both From and To dates");
-        return;
-      }
+    // Validation
+    if (!filters.from_date || !filters.to_date) {
+      setValidationError("Please select both From and To dates");
+      return;
+    }
 
-      if (new Date(filters.from_date) > new Date(filters.to_date)) {
-        setValidationError("From Date cannot be after To Date");
-        return;
-      }
+    if (new Date(filters.from_date) > new Date(filters.to_date)) {
+      setValidationError("From Date cannot be after To Date");
+      return;
+    }
 
-      if (!driver?.id) {
-        setValidationError("Driver ID missing. Please log in again.");
-        return;
-      }
+    if (!driver?.id) {
+      setValidationError("Driver ID missing. Please log in again.");
+      return;
+    }
 
-      setValidationError("");
-      setHasFiltered(true);
-      dispatch(fetchDeliverySummary({ driverId: driver.id, ...filters }));
-    },
-    [dispatch, filters, driver]
-  );
+    setValidationError("");
+    setHasFiltered(true);
+    dispatch(fetchDeliverySummary({ driverId: driver.id, ...filters }));
+  }, [dispatch, filters, driver]);
 
   const handleReset = useCallback(() => {
     setFilters({ from_date: "", to_date: "" });
@@ -180,26 +184,41 @@ const Deliveries = () => {
 
   const formatDate = useCallback((dateString) => {
     if (!dateString) return "-";
-    // const date = new Date(dateString);
-    // return date.toLocaleDateString("en-IN", { year: "numeric", month: "short", day: "numeric" });
-    return new Date(dateString+ 'T00:00:00').toLocaleDateString('en-CA')
+    return new Date(dateString + 'T00:00:00').toLocaleDateString('en-CA');
   }, []);
 
-  // ✅ Memoized table headers
-  const tableHeaders = useMemo(() => [
-    "Date", "Route", "Start Seq", "End Seq", "Packages", 
-    "Not Scanned", "Failed", "Double Stop", "Delivered", "Earning"
-  ], []);
+  // ✅ Dynamic table headers based on data type
+  const tableHeaders = useMemo(() => {
+    if (dataType === 'weekly') {
+      return ["Date", "Route", "First Stop", "Double Stop", "Delivered", "Earning"];
+    } else {
+      return [
+        "Date", "Route", "Start Seq", "End Seq", "Packages", 
+        "Not Scanned", "Failed", "Double Stop", "Delivered", "Earning"
+      ];
+    }
+  }, [dataType]);
 
-  // ✅ Memoized summary labels
-  const summaryLabels = useMemo(() => ({
-    "Total Packages": summary?.packages,
-    Delivered: summary?.delivered,
-    Failed: summary?.failed_attempt,
-    "Not Scanned": summary?.no_scanned,
-    "Double Stop": summary?.double_stop,
-    "Total Earning": summary ? `$${summary.earning.toFixed(2)}` : "₹0.00",
-  }), [summary]);
+  // ✅ Dynamic summary labels based on data type
+  const summaryLabels = useMemo(() => {
+    if (dataType === 'weekly') {
+      return {
+        "First Stop": summary?.first_stop,
+        "Double Stop": summary?.double_stop,
+        "Delivered": summary?.delivered,
+        "Total Earning": summary ? `$${summary.earning.toFixed(2)}` : "$0.00",
+      };
+    } else {
+      return {
+        "Total Packages": summary?.packages,
+        "Delivered": summary?.delivered,
+        "Failed": summary?.failed_attempt,
+        "Not Scanned": summary?.no_scanned,
+        "Double Stop": summary?.double_stop,
+        "Total Earning": summary ? `$${summary.earning.toFixed(2)}` : "$0.00",
+      };
+    }
+  }, [summary, dataType]);
 
   return (
     <div className="min-h-screen bg-gray-50 text-gray-900 font-poppins">
@@ -208,11 +227,25 @@ const Deliveries = () => {
       <main className="max-w-6xl mx-auto mt-6 mb-24 px-6 pb-36">
         <div className="bg-white border border-gray-200 rounded-lg shadow-sm mb-8">
           <div className="p-6 border-b border-gray-200">
-            <h2 className="text-xl font-semibold text-gray-800">Delivery Summary</h2>
-            <p className="text-sm text-gray-500 mt-1">Filter deliveries by date range</p>
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="text-xl font-semibold text-gray-800">Delivery Summary</h2>
+                <p className="text-sm text-gray-500 mt-1">Filter deliveries by date range</p>
+              </div>
+              {/* Data Type Badge */}
+              {dataType && (
+                <div className={`px-4 py-2 rounded-full font-semibold text-sm ${
+                  dataType === 'weekly' 
+                    ? 'bg-purple-100 text-purple-700 border border-purple-300' 
+                    : 'bg-blue-100 text-blue-700 border border-blue-300'
+                }`}>
+                  {dataType === 'weekly' ? '📅 Weekly Data' : '📊 Daily Data'}
+                </div>
+              )}
+            </div>
           </div>
 
-          <form onSubmit={handleFilter} className="p-6 grid grid-cols-1 sm:grid-cols-4 gap-4">
+          <div className="p-6 grid grid-cols-1 sm:grid-cols-4 gap-4">
             <div>
               <label className="block text-sm font-medium mb-2 text-gray-700">From Date</label>
               <input
@@ -239,7 +272,7 @@ const Deliveries = () => {
 
             <div className="flex items-end">
               <button
-                type="submit"
+                onClick={handleFilter}
                 className="w-full px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition disabled:bg-gray-400"
                 disabled={status === "loading"}
               >
@@ -249,7 +282,6 @@ const Deliveries = () => {
 
             <div className="flex items-end">
               <button
-                type="button"
                 onClick={handleReset}
                 className="w-full px-4 py-2 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300 transition"
                 disabled={status === "loading"}
@@ -261,14 +293,14 @@ const Deliveries = () => {
             {validationError && (
               <div className="sm:col-span-4 mt-2 text-red-600 text-sm font-medium">{validationError}</div>
             )}
-          </form>
+          </div>
 
           {/* Summary */}
           {summary && (
             <div className="px-6 pb-6">
               <div className="bg-gradient-to-r from-blue-50 to-indigo-50 p-4 rounded-lg mb-4">
                 <h3 className="text-sm font-semibold text-gray-700 mb-3">Summary Statistics</h3>
-                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-3">
+                <div className={`grid gap-3 ${dataType === 'weekly' ? 'grid-cols-2 sm:grid-cols-4' : 'grid-cols-2 sm:grid-cols-3 md:grid-cols-6'}`}>
                   {Object.entries(summaryLabels).map(([label, value]) => (
                     <div key={label}>
                       <label className="block text-xs text-gray-600 mb-1">{label}</label>
@@ -323,17 +355,68 @@ const Deliveries = () => {
                   {deliveries.map((d, i) => (
                     <tr key={d.id || i} className="hover:bg-gray-50 border-b border-gray-100">
                       <td className="px-4 py-3 text-sm text-gray-900">{formatDate(d.journey_date)}</td>
-                      <td className="px-4 py-3 text-sm">{d.route_name}</td>
-                      <td className="px-4 py-3 text-sm text-center">{d.start_seq}</td>
-                      <td className="px-4 py-3 text-sm text-center">{d.end_seq}</td>
-                      <td className="px-4 py-3 text-sm text-blue-600 text-center">{d.packages}</td>
-                      <td className="px-4 py-3 text-sm text-yellow-600 text-center">{d.no_scanned}</td>
-                      <td className="px-4 py-3 text-sm text-red-600 text-center">{d.failed_attempt}</td>
-                      <td className="px-4 py-3 text-sm text-purple-600 text-center">{d.double_stop}</td>
-                      <td className="px-4 py-3 text-sm text-green-600 text-center">{d.delivered}</td>
-                      <td className="px-4 py-3 text-sm text-indigo-600 font-semibold">
-                        ${parseFloat(d.earning || 0).toFixed(2)}
+                      <td className="px-4 py-3 text-sm relative group">
+                        <span className="cursor-help border-b border-dotted border-gray-400">
+                          {d.route_name}
+                        </span>
+                        {/* Tooltip */}
+                        <div className="absolute left-0 bottom-full mb-2 hidden group-hover:block z-50 w-72 p-3 bg-gray-800 text-white text-xs rounded-lg shadow-lg">
+                          <div className="font-semibold mb-2 text-blue-300 flex items-center justify-between">
+                            <span>{d.route_name}</span>
+                            {d.route_code && (
+                              <span className="text-gray-400 text-[10px] bg-gray-700 px-2 py-0.5 rounded">
+                                {d.route_code}
+                              </span>
+                            )}
+                          </div>
+                          <div className="space-y-1.5 border-t border-gray-600 pt-2">
+                            <div className="flex justify-between items-center">
+                              <span className="text-gray-300">Route Price (First Stop):</span>
+                              <span className="font-bold text-green-400">
+                                {d.driver_route_price != null && d.driver_route_price > 0 
+                                  ? `${parseFloat(d.driver_route_price).toFixed(2)}`
+                                  : <span className="text-red-400">Not Set</span>
+                                }
+                              </span>
+                            </div>
+                            <div className="flex justify-between items-center">
+                              <span className="text-gray-300">Double Stop Price:</span>
+                              <span className="font-bold text-yellow-400">
+                                {d.driver_doublestop_price != null && d.driver_doublestop_price > 0
+                                  ? `${parseFloat(d.driver_doublestop_price).toFixed(2)}`
+                                  : <span className="text-red-400">Not Set</span>
+                                }
+                              </span>
+                            </div>
+                          </div>
+                          {/* Arrow */}
+                          <div className="absolute top-full left-4 -mt-1 border-4 border-transparent border-t-gray-800"></div>
+                        </div>
                       </td>
+                      
+                      {dataType === 'weekly' ? (
+                        <>
+                          <td className="px-4 py-3 text-sm text-purple-600 text-center">{d.first_stop}</td>
+                          <td className="px-4 py-3 text-sm text-purple-600 text-center">{d.double_stop}</td>
+                          <td className="px-4 py-3 text-sm text-green-600 text-center">{d.delivered}</td>
+                          <td className="px-4 py-3 text-sm text-indigo-600 font-semibold">
+                            ${parseFloat(d.earning || 0).toFixed(2)}
+                          </td>
+                        </>
+                      ) : (
+                        <>
+                          <td className="px-4 py-3 text-sm text-center">{d.start_seq}</td>
+                          <td className="px-4 py-3 text-sm text-center">{d.end_seq}</td>
+                          <td className="px-4 py-3 text-sm text-blue-600 text-center">{d.packages}</td>
+                          <td className="px-4 py-3 text-sm text-yellow-600 text-center">{d.no_scanned}</td>
+                          <td className="px-4 py-3 text-sm text-red-600 text-center">{d.failed_attempt}</td>
+                          <td className="px-4 py-3 text-sm text-purple-600 text-center">{d.double_stop}</td>
+                          <td className="px-4 py-3 text-sm text-green-600 text-center">{d.delivered}</td>
+                          <td className="px-4 py-3 text-sm text-indigo-600 font-semibold">
+                            ${parseFloat(d.earning || 0).toFixed(2)}
+                          </td>
+                        </>
+                      )}
                     </tr>
                   ))}
                 </tbody>

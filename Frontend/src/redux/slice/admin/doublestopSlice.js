@@ -10,16 +10,18 @@ const getAuthHeaders = () => {
   };
 };
 
-// Async thunk to fetch dashboard data (daily)
+// Async thunk to fetch dashboard data (daily) with pagination
 export const fetchDashboardData = createAsyncThunk(
   "dashboard/fetchDashboardData",
-  async (selectedDate, { rejectWithValue }) => {
-
+  async ({ selectedDate, page = 1, limit = 10 }, { rejectWithValue }) => {
     try {
-      const res = await fetch(  `${API_BASE_URL}/admin/doubleStop/tempDashboardData?date=${selectedDate}`, {
-        method: "GET",
-        headers: getAuthHeaders(),
-      });
+      const res = await fetch(
+        `${API_BASE_URL}/admin/doubleStop/tempDashboardData?date=${selectedDate}&page=${page}&limit=${limit}`,
+        {
+          method: "GET",
+          headers: getAuthHeaders(),
+        }
+      );
 
       if (!res.ok) {
         const error = await res.json();
@@ -27,14 +29,14 @@ export const fetchDashboardData = createAsyncThunk(
       }
 
       const data = await res.json();
-      return data.data; // API returns { success: true, data: [...] }
+      return data; // API returns { success: true, data: [...], pagination: {...} }
     } catch (err) {
       return rejectWithValue(err.message);
     }
   }
 );
 
-// Async thunk to fetch weekly temp data
+// Async thunk to fetch weekly temp data (role-based filtering on backend)
 export const fetchWeeklyTempData = createAsyncThunk(
   "dashboard/fetchWeeklyTempData",
   async (_, { rejectWithValue }) => {
@@ -61,12 +63,24 @@ const dashboardSlice = createSlice({
   name: "dashboard",
   initialState: {
     data: { weeklyData: [], dailyData: [] },
+    pagination: {
+      currentPage: 1,
+      totalPages: 1,
+      totalItems: 0,
+      itemsPerPage: 10
+    },
     loading: false,
     error: null,
   },
   reducers: {
     clearData: (state) => {
       state.data = { weeklyData: [], dailyData: [] };
+      state.pagination = {
+        currentPage: 1,
+        totalPages: 1,
+        totalItems: 0,
+        itemsPerPage: 10
+      };
     }
   },
   extraReducers: (builder) => {
@@ -77,7 +91,8 @@ const dashboardSlice = createSlice({
       })
       .addCase(fetchDashboardData.fulfilled, (state, action) => {
         state.loading = false;
-        state.data.dailyData = action.payload;
+        state.data.dailyData = action.payload.data;
+        state.pagination = action.payload.pagination;
       })
       .addCase(fetchDashboardData.rejected, (state, action) => {
         state.loading = false;

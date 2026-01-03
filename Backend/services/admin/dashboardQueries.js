@@ -128,6 +128,9 @@ export const AdminDashboardQueries = {
     try {
       console.log("getPaymentDashboardPaginated called with filters:", filters);
 
+      // ✅ Conditionally include company_earnings based on role
+      const companyEarningsField = role === "superadmin" ? "pd.company_earnings," : "";
+
       const baseQuery = `
         SELECT 
           pd.id, 
@@ -147,7 +150,7 @@ export const AdminDashboardQueries = {
           pd.closed, 
           pd.payment_date,
           pd.driver_payment, 
-          pd.company_earnings,
+          ${companyEarningsField}
           pd.paid,
           pd.start_seq,
           pd.end_seq, 
@@ -211,10 +214,8 @@ export const AdminDashboardQueries = {
         finalQuery += " AND " + whereClauses.join(" AND ");
       }
 
-     
-    // ✅ CHANGED: Order by route first, then date, then start sequence
-    finalQuery += " ORDER BY r.name, pd.journey_date DESC, pd.start_seq";
-    finalQuery += ` LIMIT $${queryParams.length + 1} OFFSET $${queryParams.length + 2}`;
+      finalQuery += " ORDER BY r.name, pd.journey_date DESC, pd.start_seq";
+      finalQuery += ` LIMIT $${queryParams.length + 1} OFFSET $${queryParams.length + 2}`;
       
       queryParams.push(limit, offset);
 
@@ -232,6 +233,9 @@ export const AdminDashboardQueries = {
   PaymentDashboardTable: async (filters = {}, id, role) => {
     try {
       console.log("PaymentDashboardTable called with filters:", filters);
+
+      // ✅ Conditionally include company_earnings based on role
+      const companyEarningsField = role === "superadmin" ? "pd.company_earnings," : "";
 
       const baseQuery = `
         SELECT 
@@ -252,7 +256,7 @@ export const AdminDashboardQueries = {
           pd.closed, 
           pd.payment_date,
           pd.driver_payment,
-          pd.company_earnings,
+          ${companyEarningsField}
           pd.paid,
           pd.start_seq,
           pd.end_seq, 
@@ -316,9 +320,7 @@ export const AdminDashboardQueries = {
         finalQuery += " AND " + whereClauses.join(" AND ");
       }
 
-    // ✅ CHANGED: Order by route first, then date, then start sequence
-    finalQuery += " ORDER BY r.name, pd.journey_date DESC, pd.start_seq;";
-
+      finalQuery += " ORDER BY r.name, pd.journey_date DESC, pd.start_seq;";
 
       console.log("Executing query:", finalQuery);
       console.log("With params:", queryParams);

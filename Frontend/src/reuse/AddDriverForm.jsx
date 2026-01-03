@@ -11,6 +11,7 @@ function AddDriverForm({ onSubmit, editData, isEdit, onCancel }) {
   const [form, setForm] = useState({
     name: "",
     email: "",
+    phoneNumber: "",
     driverCode: "",
     password: "",
     confirmPassword: "",
@@ -26,6 +27,7 @@ function AddDriverForm({ onSubmit, editData, isEdit, onCancel }) {
       setForm({
         name: editData.name || "",
         email: editData.email || "",
+        phoneNumber: editData.phone_number || "",
         driverCode: editData.driver_code || "",
         password: "", // Leave empty - optional to change
         confirmPassword: "",
@@ -50,6 +52,12 @@ function AddDriverForm({ onSubmit, editData, isEdit, onCancel }) {
 
     if (!form.name.trim()) newErrors.name = "Name is required";
     if (!form.email.trim()) newErrors.email = "Email is required";
+    
+    // Validate phone number (basic validation - adjust regex as needed)
+    if (form.phoneNumber && !/^\+?[\d\s\-()]+$/.test(form.phoneNumber)) {
+      newErrors.phoneNumber = "Invalid phone number format";
+    }
+    
     if (!form.driverCode || !form.driverCode.toString().trim()) newErrors.driverCode = "Driver Code is required";
     if (!form.city.trim()) newErrors.city = "City is required";
 
@@ -93,6 +101,7 @@ function AddDriverForm({ onSubmit, editData, isEdit, onCancel }) {
       setForm({
         name: "",
         email: "",
+        phoneNumber: "",
         driverCode: "",
         password: "",
         confirmPassword: "",
@@ -108,6 +117,7 @@ function AddDriverForm({ onSubmit, editData, isEdit, onCancel }) {
     setForm({
       name: "",
       email: "",
+      phoneNumber: "",
       driverCode: "",
       password: "",
       confirmPassword: "",
@@ -139,6 +149,16 @@ function AddDriverForm({ onSubmit, editData, isEdit, onCancel }) {
         className="px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
       />
       {errors.email && <p className="text-red-500 text-sm">{errors.email}</p>}
+
+      <input
+        type="tel"
+        name="phoneNumber"
+        value={form.phoneNumber}
+        onChange={handleChange}
+        placeholder="Phone Number (optional)"
+        className="px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
+      />
+      {errors.phoneNumber && <p className="text-red-500 text-sm">{errors.phoneNumber}</p>}
 
       <input
         type="number"

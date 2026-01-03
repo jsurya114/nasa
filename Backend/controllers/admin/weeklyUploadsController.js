@@ -10,11 +10,15 @@ import { unlink } from "fs";
 
 export const getWeeklyTempData=async(req,res)=>{
   try{
-    let data=await WeeklyExcelQueries.getWeeklyData();
-      return res.status(HttpStatus.OK).json({data});
+    // Get admin info from request (set by auth middleware)
+    const adminRole = req.admin?.role;
+    const adminCities = req.admin?.cities || [];
+    
+    let data = await WeeklyExcelQueries.getWeeklyData(adminRole, adminCities);
+    return res.status(HttpStatus.OK).json({data});
   }catch(err){
     console.error("Upload Error:", err);
-        res.status(500).json({ success: false, message: "Internal server error" });
+    res.status(500).json({ success: false, message: "Internal server error" });
   }
 }
 
@@ -107,6 +111,10 @@ const file = req.file;
 if (!file) {
   return res.status(400).json({ success: false, message: 'No file uploaded' });
 }
+
+// Get admin info from request (set by auth middleware)
+const adminRole = req.admin?.role;
+const adminCities = req.admin?.cities || [];
 
 // Function to process Excel in batches
 async function processExcelInBatches(filePath, batchSize = 500) {
@@ -232,8 +240,30 @@ async function processExcelInBatches(filePath, batchSize = 500) {
   try {
     await client.query('BEGIN');
     let insertCount = 0;
+    let filteredCount = 0;
+    
     for (const [key, data] of aggregatedData) {
       const { courier_name, driver_id, del_route, del_date, total_deliveries, fs, ds } = data;
+      
+      // Role-based filtering: Check if admin has access to this route
+      if (adminRole !== 'superadmin') {
+        // For normal admin, verify route belongs to their cities
+        const routeCheckQuery = `
+          SELECT r.id 
+          FROM routes r
+          JOIN city c ON r.job = c.job
+          WHERE r.route_code_in_string = $1 
+          AND c.id = ANY($2)
+          AND r.enabled = true
+        `;
+        const routeCheck = await client.query(routeCheckQuery, [del_route, adminCities]);
+        
+        if (routeCheck.rows.length === 0) {
+          filteredCount++;
+          continue; // Skip this entry if route not in admin's cities
+        }
+      }
+      
       await client.query(
         `INSERT INTO weeklycount (courier_name, driver_id, del_route, total_deliveries, fs, ds, del_date)
          VALUES ($1, $2, $3, $4, $5, $6, $7)
@@ -253,6 +283,9 @@ async function processExcelInBatches(filePath, batchSize = 500) {
     console.log('excel file deleted')
  });
     console.log(`DB: ${insertCount} records inserted/updated successfully.`);
+    if (filteredCount > 0) {
+      console.log(`Filtered out ${filteredCount} records not in admin's assigned cities.`);
+    }
 
 
   } catch (error) {
@@ -271,6 +304,3 @@ console.error('Upload Error:', err);
 res.status(500).json({ success: false, message: 'Internal server error' });
 }
 };
-
-
-
