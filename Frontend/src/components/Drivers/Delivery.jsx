@@ -180,8 +180,9 @@ const Deliveries = () => {
 
   const formatDate = useCallback((dateString) => {
     if (!dateString) return "-";
-    const date = new Date(dateString);
-    return date.toLocaleDateString("en-IN", { year: "numeric", month: "short", day: "numeric" });
+    // const date = new Date(dateString);
+    // return date.toLocaleDateString("en-IN", { year: "numeric", month: "short", day: "numeric" });
+    return new Date(dateString+ 'T00:00:00').toLocaleDateString('en-CA')
   }, []);
 
   // ✅ Memoized table headers
