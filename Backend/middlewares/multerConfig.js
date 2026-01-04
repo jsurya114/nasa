@@ -22,8 +22,12 @@ const excelFileFilter = (req, file, cb) => {
 
 export const upload = multer({
   storage: multer.memoryStorage(),
+  limits: {
+    fileSize: 50 * 1024 * 1024, // 50 MB
+  },
   fileFilter: excelFileFilter,
 });
+
 
 /* =========================================================
    ACCESS CODE IMAGE UPLOAD (CLOUDINARY ONLY)

@@ -69,7 +69,7 @@ export const weeklyExcelUpload = async (req, res) => {
         }
       });
       
-      // console.log(`Total data rows found: ${jsonData.length}`);
+      console.log(`Total data rows found: ${jsonData.length}`);
       
       if (jsonData.length === 0) {
         throw new Error('No data rows found in the Excel file');
@@ -186,16 +186,16 @@ export const weeklyExcelUpload = async (req, res) => {
           }
         }
         
-        // console.log(
-        //   `Batch ${batchCount} completed. Processed: ${totalProcessed}, Skipped: ${totalSkipped}`
-        // );
+        console.log(
+          `Batch ${batchCount} completed. Processed: ${totalProcessed}, Skipped: ${totalSkipped}`
+        );
       }
 
-      // console.log(
-      //   `\nFinal Summary - Total rows: ${jsonData.length}, ` +
-      //   `Processed: ${totalProcessed}, Skipped: ${totalSkipped}, ` +
-      //   `Aggregated groups: ${aggregatedData.size}`
-      // );
+      console.log(
+        `\nFinal Summary - Total rows: ${jsonData.length}, ` +
+        `Processed: ${totalProcessed}, Skipped: ${totalSkipped}, ` +
+        `Aggregated groups: ${aggregatedData.size}`
+      );
 
       // Prepare and insert into database
       let tableName = "weeklycount";
