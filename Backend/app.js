@@ -49,4 +49,7 @@ app.use(notFound);
 // Centralized error handler (must be last)
 app.use(errorHandler);
 
-app.listen(PORT, () => console.log(`Server running on http://localhost:${PORT}`))
+app.listen(PORT, async() =>{ const { rows } = await pool.query('SELECT NOW()')
+    console.log('✅ Database connected')
+    console.log('🕒 DB Time:', rows[0].now) 
+  console.log(`Server running on http://localhost:${PORT}`)})

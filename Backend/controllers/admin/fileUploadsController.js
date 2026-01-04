@@ -116,6 +116,9 @@ export const DailyExcelUpload = async (req, res) => {
     }
 
     const { uploadDate } = req.body;
+    console.log("uploaddate",uploadDate,new Date(uploadDate))
+    
+        
     if (!uploadDate) {
   return res.status(HttpStatus.BAD_REQUEST).json({
     success: false,

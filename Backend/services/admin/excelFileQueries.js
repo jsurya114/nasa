@@ -60,7 +60,8 @@ export const ExcelFileQueries = {
           row.Status,
           row.CompleteTime ? new Date(row.CompleteTime) : null,
           `${row.Sequence}${routeModified}`,
-          new Date(uploadDate)
+          new Date(uploadDate + "T12:00:00Z")
+
         );
       });
 
