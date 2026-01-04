@@ -102,6 +102,8 @@ export const DailyExcelUpload = async (req, res) => {
       return res.status(400).json({ error: "Sheet named result not found" });
     }
 
+    console.log("uploaded date",uploadDate, new Date(uploadDate));
+
     const rows = XLSX.utils.sheet_to_json(sheet);
     const tableName = `todays_excel_data`;
 
