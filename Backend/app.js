@@ -8,6 +8,7 @@ import cookieParser from 'cookie-parser';
 import sanitizeMiddleware from './middlewares/sanitize.js';
 import { notFound, errorHandler } from './middlewares/errorHandler.js';
 import rateLimit from './middlewares/rateLimit.js';
+import { initializeAvailabilityResetCron } from './utils/availabilityCronJob.js';
 
 dotenv.config()
 
@@ -20,7 +21,9 @@ app.use(cors({
   credentials: true // Keep this if you still use cookies for driver auth, otherwise set to false
 }))
 
-app.use(express.json())
+app.use(express.json({ limit: "50mb" }));
+app.use(express.urlencoded({ limit: "50mb", extended: true }));
+
 app.use(cookieParser()); // Can be removed if driver auth also moves to localStorage
 // Serve static uploads (e.g., access code images)
 app.use('/uploads', express.static('uploads'));
@@ -28,6 +31,8 @@ app.use('/uploads', express.static('uploads'));
 app.use(sanitizeMiddleware);
 // Global rate limit (per IP per base path)
 app.use(rateLimit({ windowMs: 15 * 60 * 1000, max: 1000 }));
+
+initializeAvailabilityResetCron()
 
 app.use('/admin', (req, _, next) => {
   // Updated logging to show Authorization header instead of cookie
@@ -46,4 +51,7 @@ app.use(notFound);
 // Centralized error handler (must be last)
 app.use(errorHandler);
 
-app.listen(PORT, () => console.log(`Server running on http://localhost:${PORT}`))
+app.listen(PORT, async() =>{ const { rows } = await pool.query('SELECT NOW()')
+    console.log('✅ Database connected')
+    console.log('🕒 DB Time:', rows[0].now) 
+  console.log(`Server running on http://localhost:${PORT}`)})

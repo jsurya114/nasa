@@ -36,44 +36,74 @@ const sheetName = "result";
 export const getUpdatedTempDashboardData = async (req, res) => {
   const client = await pool.connect()
   try {
-    const { id, role } = req.user   // 👈 IMPORTANT
+    const { id, role } = req.user;
 
-    const { date } = req.query;
-     if (!date) {
+    const { date, page = 1, limit = 10 } = req.query;
+    
+    if (!date || date === 'undefined' || date === 'null') {
       return res.status(HttpStatus.BAD_REQUEST).json({
         success: false,
-        message: "date query param is required",
+        message: "Valid date query param is required",
       });
     }
-    await client.query('BEGIN')
 
+    // Validate date format
+    const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+    if (!dateRegex.test(date)) {
+      return res.status(HttpStatus.BAD_REQUEST).json({
+        success: false,
+        message: "Date must be in YYYY-MM-DD format",
+      });
+    }
+    
+    await client.query('BEGIN');
 
-const result = await ExcelFileQueries.getTempDashboardData(
-  client,
-  id,
-  role,
-  date
-);
+    const pageNum = parseInt(page);
+    const limitNum = parseInt(limit);
+    const offset = (pageNum - 1) * limitNum;
 
-    await client.query('COMMIT')
+    const result = await ExcelFileQueries.getTempDashboardData(
+      client,
+      id,
+      role,
+      date,
+      limitNum,
+      offset
+    );
+
+    const countResult = await ExcelFileQueries.getTempDashboardDataCount(
+      client,
+      id,
+      role,
+      date
+    );
+
+    await client.query('COMMIT');
+
+    const total = parseInt(countResult);
+    const totalPages = Math.ceil(total / limitNum);
 
     return res.status(statusCode.OK).json({
       success: true,
-      data: result
-    })
+      data: result,
+      pagination: {
+        currentPage: pageNum,
+        totalPages,
+        totalItems: total,
+        itemsPerPage: limitNum
+      }
+    });
   } catch (error) {
-    console.error(error)
-    await client.query('ROLLBACK')
+    console.error(error);
+    await client.query('ROLLBACK');
     return res.status(statusCode.INTERNAL_SERVER_ERROR).json({
       message: 'error in server',
       error
-    })
+    });
   } finally {
-    client.release()
+    client.release();
   }
 }
-
-
 
 
 export const DailyExcelUpload = async (req, res) => {
@@ -86,6 +116,9 @@ export const DailyExcelUpload = async (req, res) => {
     }
 
     const { uploadDate } = req.body;
+    console.log("uploaddate",uploadDate,new Date(uploadDate))
+    
+        
     if (!uploadDate) {
   return res.status(HttpStatus.BAD_REQUEST).json({
     success: false,
@@ -95,7 +128,7 @@ export const DailyExcelUpload = async (req, res) => {
 
 
     const fileName = req.file;
-    const workbook = XLSX.readFile(fileName.path);
+      const workbook = XLSX.read(req.file.buffer, { type: "buffer" });
     const sheet = workbook.Sheets[sheetName];
 
     if (!sheet) {
@@ -147,9 +180,9 @@ export const DailyExcelUpload = async (req, res) => {
 
     await client.query("COMMIT");
 
-    unlink(fileName.path, (e) => {
-      if (e) throw new Error(e);
-    });
+    // unlink(fileName.path, (e) => {
+    //   if (e) throw new Error(e);
+    // });
 
     return res
       .status(statusCode.OK)

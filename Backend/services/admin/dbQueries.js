@@ -48,7 +48,7 @@ export const dbService = {
         let paramIndex = 1;
 
         if (search) {
-            query += ` AND (d.name ILIKE $${paramIndex} OR d.email ILIKE $${paramIndex} OR d.driver_code::text ILIKE $${paramIndex})`;
+            query += ` AND (d.name ILIKE $${paramIndex} OR d.email ILIKE $${paramIndex} OR d.driver_code::text ILIKE $${paramIndex} OR d.phone_number ILIKE $${paramIndex})`;
             params.push(`%${search}%`);
             paramIndex++;
         }
@@ -65,7 +65,7 @@ export const dbService = {
     
     getAllDrivers: async (lim, offset, search = "", city = "") => {
         let query = `
-            SELECT d.id, d.driver_code, d.name, d.email, c.job, d.enabled 
+            SELECT d.id, d.driver_code, d.name, d.email, d.phone_number, c.job, d.enabled 
             FROM drivers d
             JOIN city c ON d.city_id = c.id 
             WHERE 1=1`;
@@ -74,7 +74,7 @@ export const dbService = {
         let paramIndex = 1;
 
         if (search) {
-            query += ` AND (d.name ILIKE $${paramIndex} OR d.email ILIKE $${paramIndex} OR d.driver_code::text ILIKE $${paramIndex})`;
+            query += ` AND (d.name ILIKE $${paramIndex} OR d.email ILIKE $${paramIndex} OR d.driver_code::text ILIKE $${paramIndex} OR d.phone_number ILIKE $${paramIndex})`;
             params.push(`%${search}%`);
             paramIndex++;
         }
@@ -119,16 +119,16 @@ export const dbService = {
             const hashedPwd = await dbService.hashedPassword(data.password);
 
             const result = await pool.query(
-                `INSERT INTO drivers (name, email, driver_code, password, city_id, enabled) 
-                 VALUES ($1, $2, $3, $4, $5, $6)
-                 RETURNING id, name, email, enabled, city_id, driver_code`,
-                [data.name, data.email, data.driverCode, hashedPwd, city_id, data.enabled]
+                `INSERT INTO drivers (name, email, driver_code, password, city_id, enabled, phone_number) 
+                 VALUES ($1, $2, $3, $4, $5, $6, $7)
+                 RETURNING id, name, email, enabled, city_id, driver_code, phone_number`,
+                [data.name, data.email, data.driverCode, hashedPwd, city_id, data.enabled, data.phoneNumber || null]
             );
             
             const driver = result.rows[0];
             
             const driverWithCity = await pool.query(
-                `SELECT d.id, d.driver_code, d.name, d.email, c.job, d.enabled
+                `SELECT d.id, d.driver_code, d.name, d.email, d.phone_number, c.job, d.enabled
                  FROM drivers d
                  JOIN city c ON d.city_id = c.id
                  WHERE d.id = $1`,
@@ -200,7 +200,7 @@ export const dbService = {
             `UPDATE drivers 
              SET enabled = NOT enabled 
              WHERE id = $1 
-             RETURNING id, driver_code, name, email, city_id, enabled`,
+             RETURNING id, driver_code, name, email, city_id, enabled, phone_number`,
             [id]
         );
 
@@ -208,7 +208,7 @@ export const dbService = {
         if (!updated) return null;
 
         const joined = await pool.query(
-            `SELECT d.id, d.driver_code, d.name, d.email, c.job, d.enabled
+            `SELECT d.id, d.driver_code, d.name, d.email, d.phone_number, c.job, d.enabled
              FROM drivers d
              JOIN city c ON d.city_id = c.id
              WHERE d.id = $1`,
@@ -252,15 +252,34 @@ export const dbService = {
     updateDriver: async (id, data) => {
         const city_id = await jobService.getCityByJob(data.city);
 
-        await pool.query(
-            `UPDATE drivers
-             SET name=$1, email=$2, city_id=$3, enabled=$4
-             WHERE id=$5`,
-            [data.name, data.email, city_id, data.enabled, id]
-        );
+        // Build the update query dynamically based on whether password is provided
+        let updateQuery;
+        let updateParams;
+
+        if (data.password && data.password.trim()) {
+            // Hash the new password
+            const hashedPwd = await dbService.hashedPassword(data.password);
+            
+            updateQuery = `
+                UPDATE drivers
+                SET name=$1, email=$2, city_id=$3, enabled=$4, phone_number=$5, password=$6
+                WHERE id=$7
+            `;
+            updateParams = [data.name, data.email, city_id, data.enabled, data.phoneNumber || null, hashedPwd, id];
+        } else {
+            // Update without changing password
+            updateQuery = `
+                UPDATE drivers
+                SET name=$1, email=$2, city_id=$3, enabled=$4, phone_number=$5
+                WHERE id=$6
+            `;
+            updateParams = [data.name, data.email, city_id, data.enabled, data.phoneNumber || null, id];
+        }
+
+        await pool.query(updateQuery, updateParams);
 
         const joined = await pool.query(
-            `SELECT d.id, d.driver_code, d.name, d.email, c.job, d.enabled
+            `SELECT d.id, d.driver_code, d.name, d.email, d.phone_number, c.job, d.enabled
              FROM drivers d
              JOIN city c ON d.city_id = c.id
              WHERE d.id = $1`,
@@ -355,7 +374,7 @@ export const dbService = {
     getDriversByAdminCities: async (adminId, limit, offset, search = "", city = "") => {
         try {
             let query = `
-                SELECT d.id, d.driver_code, d.name, d.email, c.job, d.enabled 
+                SELECT d.id, d.driver_code, d.name, d.email, d.phone_number, c.job, d.enabled 
                 FROM drivers d
                 JOIN city c ON d.city_id = c.id
                 JOIN admin_city_ref acr ON c.id = acr.city_id
@@ -365,7 +384,7 @@ export const dbService = {
             let paramIndex = 2;
 
             if (search) {
-                query += ` AND (d.name ILIKE $${paramIndex} OR d.email ILIKE $${paramIndex} OR d.driver_code::text ILIKE $${paramIndex})`;
+                query += ` AND (d.name ILIKE $${paramIndex} OR d.email ILIKE $${paramIndex} OR d.driver_code::text ILIKE $${paramIndex} OR d.phone_number ILIKE $${paramIndex})`;
                 params.push(`%${search}%`);
                 paramIndex++;
             }
@@ -400,7 +419,7 @@ export const dbService = {
             let paramIndex = 2;
 
             if (search) {
-                query += ` AND (d.name ILIKE $${paramIndex} OR d.email ILIKE $${paramIndex} OR d.driver_code::text ILIKE $${paramIndex})`;
+                query += ` AND (d.name ILIKE $${paramIndex} OR d.email ILIKE $${paramIndex} OR d.driver_code::text ILIKE $${paramIndex} OR d.phone_number ILIKE $${paramIndex})`;
                 params.push(`%${search}%`);
                 paramIndex++;
             }

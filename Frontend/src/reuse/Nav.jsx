@@ -13,25 +13,44 @@ function Nav() {
   ];
 
   return (
-    <nav className="fixed bottom-0 left-0 right-0 bg-[#462976] border-t border-white/10">
-      <div className="flex justify-between sm:justify-center gap-1 xs:gap-2 sm:gap-3 md:gap-4 p-1 xs:p-2 sm:p-3 max-w-full sm:max-w-5xl mx-auto px-2 sm:px-4">
-        {links.map((item, i) => (
-          <NavLink
-            key={i}
-            to={item.to}
-            className={({ isActive }) =>
-              `bg-white text-gray-800 rounded-lg sm:rounded-xl shadow-md px-1 xs:px-2 sm:px-3 md:px-4 py-1 xs:py-2 flex flex-col items-center gap-0.5 xs:gap-1 hover:scale-105 transition flex-1 sm:flex-initial max-w-none sm:max-w-none ${
-                isActive ? "ring-1 sm:ring-2 ring-blue-500" : ""
-              }`
-            }
-          >
-            <div className="w-6 h-6 xs:w-7 xs:h-7 sm:w-9 sm:h-9 md:w-10 md:h-10 bg-gray-100 grid place-items-center rounded sm:rounded-md text-sm xs:text-base sm:text-xl md:text-2xl">
-              {item.icon}
-            </div>
-            <small className="font-semibold text-xs xs:text-xs sm:text-sm leading-tight text-center">{item.label}</small>
-          </NavLink>
-        ))}
+    <nav className="fixed bottom-0 left-0 right-0 bg-[#462976] border-t border-white/10 z-50">
+      {/* Mobile: Horizontally Scrollable */}
+      <div className="overflow-x-auto scrollbar-hide sm:overflow-x-visible">
+        <div className="flex sm:grid sm:grid-cols-7 gap-1.5 xs:gap-2 sm:gap-3 md:gap-4 p-2 sm:p-3 min-w-max sm:min-w-0 px-2 sm:px-4 max-w-full sm:max-w-screen-xl mx-auto">
+          {links.map((item, index) => (
+            <NavLink
+              key={index}
+              to={item.to}
+              className={({ isActive }) =>
+                `bg-white text-gray-800 rounded-lg sm:rounded-xl shadow-md 
+                px-2.5 xs:px-3 sm:px-3 md:px-4 py-2 
+                flex flex-col items-center justify-center gap-1 sm:gap-1.5
+                hover:scale-105 active:scale-95 transition-transform
+                min-w-[70px] xs:min-w-[80px] sm:min-w-0
+                ${isActive ? "ring-2 ring-blue-500 ring-offset-1" : ""}`
+              }
+            >
+              <div className="w-7 h-7 xs:w-8 xs:h-8 sm:w-9 sm:h-9 md:w-10 md:h-10 bg-gray-100 grid place-items-center rounded-md text-base xs:text-lg sm:text-xl md:text-2xl">
+                {item.icon}
+              </div>
+              <small className="font-semibold text-[9px] xs:text-[10px] sm:text-[11px] md:text-[13px] leading-tight text-center whitespace-nowrap">
+                {item.label}
+              </small>
+            </NavLink>
+          ))}
+        </div>
       </div>
+
+      {/* Scroll Indicator for Mobile (optional) */}
+      <style jsx>{`
+        .scrollbar-hide::-webkit-scrollbar {
+          display: none;
+        }
+        .scrollbar-hide {
+          -ms-overflow-style: none;
+          scrollbar-width: none;
+        }
+      `}</style>
     </nav>
   );
 }

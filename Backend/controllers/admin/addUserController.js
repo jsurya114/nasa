@@ -3,7 +3,7 @@ import { dbService } from '../../services/admin/dbQueries.js';
 
 export const createUsers = async (req, res) => {
     try {
-        const { email, password, name, driverCode, city, enabled } = req.body;
+        const { email, password, name, driverCode, city, enabled, phoneNumber } = req.body;
 
         if (!email || !password || !city || !driverCode) {
             return res.status(HttpStatus.UNAUTHORIZED).json({ message: "Email, password, city & driver code is required" })
@@ -17,7 +17,7 @@ export const createUsers = async (req, res) => {
         if (driverCodeExists)
             return res.status(HttpStatus.CONFLICT).json({ message: "Driver Code already used" });
 
-        const insertUser = await dbService.insertUser({ name, email, driverCode, password, city, enabled });
+        const insertUser = await dbService.insertUser({ name, email, driverCode, password, city, enabled, phoneNumber });
 
         return res.status(HttpStatus.OK).json({ message: "User Added Successfully!!", insertUser });
     } catch (err) {
@@ -80,20 +80,29 @@ export const changeStatusUser = async (req, res) => {
 export const updateUser = async (req, res) => {
     try {
         const id = req.params.id;
-        const { name, email, city, enabled } = req.body;
+        const { name, email, city, enabled, phoneNumber, password } = req.body;
 
-        const updatedUser = await dbService.updateDriver(id, {
+        const updateData = {
             name,
             email,
             city,
             enabled,
-        });
+            phoneNumber
+        };
+
+        // Only include password if it's provided (not empty)
+        if (password && password.trim()) {
+            updateData.password = password;
+        }
+
+        const updatedUser = await dbService.updateDriver(id, updateData);
 
         return res.status(200).json({
             message: "Driver updated successfully",
             updatedUser,
         });
     } catch (err) {
+        console.error("Update user error:", err.message);
         res.status(500).json({ message: "Server error" });
     }
 };

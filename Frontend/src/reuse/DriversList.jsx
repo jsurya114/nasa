@@ -85,7 +85,7 @@ function DriversList({ onEdit }) {
                 type="text"
                 value={localSearchTerm}
                 onChange={(e) => setLocalSearchTerm(e.target.value)}
-                placeholder="Search by name, email, or driver code..."
+                placeholder="Search by name, email, phone, or driver code..."
                 className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
               />
               <svg
@@ -176,7 +176,7 @@ function DriversList({ onEdit }) {
         <table className="w-full border-collapse text-sm">
           <thead>
             <tr className="bg-gray-50 text-left">
-              {["Sl No", "Driver Code", "Name", "Email", "City", "Status", "Actions"].map(
+              {["Sl No", "Driver Code", "Name", "Email", "Phone", "City", "Status", "Actions"].map(
                 (head, i) => (
                   <th key={i} className="px-3 py-2 border-b border-gray-200">
                     {head}
@@ -188,7 +188,7 @@ function DriversList({ onEdit }) {
           <tbody>
             {usersLoad && drivers.length === 0 ? (
               <tr>
-                <td colSpan="7" className="text-center py-4 text-gray-500 font-medium">
+                <td colSpan="8" className="text-center py-4 text-gray-500 font-medium">
                   <div className="flex items-center justify-center">
                     <svg className="animate-spin h-6 w-6 mr-2 text-purple-600" viewBox="0 0 24 24">
                       <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
@@ -217,6 +217,11 @@ function DriversList({ onEdit }) {
                   <td className="px-3 py-2 border-b">
                     <span className={!d.enabled ? "text-gray-400" : ""}>
                       {d.email}
+                    </span>
+                  </td>
+                  <td className="px-3 py-2 border-b">
+                    <span className={!d.enabled ? "text-gray-400" : ""}>
+                      {d.phone_number || "-"}
                     </span>
                   </td>
                   <td className="px-3 py-2 border-b">
@@ -289,7 +294,7 @@ function DriversList({ onEdit }) {
               ))
             ) : (
               <tr>
-                <td colSpan="7" className="text-center py-8 text-gray-500">
+                <td colSpan="8" className="text-center py-8 text-gray-500">
                   <div className="flex flex-col items-center gap-2">
                     <svg className="w-12 h-12 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />

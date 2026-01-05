@@ -163,7 +163,7 @@ const accessCodeSlice = createSlice({
     status: "idle",
     error: null,
     currentPage: 1,
-    pageLimit: 10,
+    pageLimit: 40,
     totalPages: 0,
     totalItems: 0,
     hasMore: false,

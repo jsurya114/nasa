@@ -28,7 +28,6 @@ export const ExcelFileQueries = {
   },
 
   insertDataIntoDailyTable: async (tableName, data, uploadDate, client) => {
-
     try {
       if (!data || data.length === 0) {
         console.log("⚠️ No data to insert");
@@ -48,7 +47,6 @@ export const ExcelFileQueries = {
         );
 
         const routeModified = row.Route ? row.Route.substring(4) : null;
-        // const dateFromRoute = `${new Date().getFullYear()}-${row.Route[0]}${row.Route[1]}-${row.Route[2]}${row.Route[3]}`;
 
         values.push(
           row.Route,
@@ -62,7 +60,8 @@ export const ExcelFileQueries = {
           row.Status,
           row.CompleteTime ? new Date(row.CompleteTime) : null,
           `${row.Sequence}${routeModified}`,
-          new Date(uploadDate)
+          new Date(uploadDate + "T12:00:00Z")
+
         );
       });
 
@@ -92,7 +91,6 @@ export const ExcelFileQueries = {
     }
   },
 
-  // 🔴 FIXED: MERGE MUST BE SCOPED BY upload_date == driver_set_date
   mergeDeliveriesAndExcelData: async (client) => {
     try {
       await client.query(`
@@ -115,27 +113,26 @@ export const ExcelFileQueries = {
     }
   },
 
-  // 🔴 FIXED: only update untouched rows
   setUntouchedRowsAsNoScannedAndUpdateFailedAttempt: async (client) => {
     try {
-        const queryStr = `
-      UPDATE deliveries
-      SET final_result = CASE
-        WHEN status = 'FAILED_ATTEMPT' THEN 'failed_attempt'
+      const queryStr = `
+        UPDATE deliveries
+        SET final_result = CASE
+          WHEN status = 'FAILED_ATTEMPT' THEN 'failed_attempt'
 
-        WHEN status IN ('NEW', 'OUT_FOR_DELIVERY') THEN 'no_scanned'
+          WHEN status IN ('NEW', 'OUT_FOR_DELIVERY') THEN 'no_scanned'
 
-        WHEN status = 'Pending'
-          AND address = 'No_Address'
-          AND recp_name = 'Unknown Recipient'
-        THEN 'no_scanned'
+          WHEN status = 'Pending'
+            AND address = 'No_Address'
+            AND recp_name = 'Unknown Recipient'
+          THEN 'no_scanned'
 
-        WHEN status IS NULL THEN 'no_scanned'
+          WHEN status IS NULL THEN 'no_scanned'
 
-        ELSE final_result
-      END
-      WHERE final_result = 'not_assigned';
-    `;
+          ELSE final_result
+        END
+        WHERE final_result = 'not_assigned';
+      `;
       await client.query(queryStr);
       console.log("✅ Updated no_scanned and failed_attempt");
     } catch (error) {
@@ -143,7 +140,6 @@ export const ExcelFileQueries = {
     }
   },
 
-  // 🔴 FIXED: COUNTS BASED ON dashboard_data (route + seq range)
   addEachDriversCount: async (client) => {
     try {
       const queryStr = `
@@ -180,106 +176,141 @@ export const ExcelFileQueries = {
     }
   },
 
-  getTempDashboardData: async (client, id, role, selectedDate) => {
-  try {
-    let query = `
-      SELECT
-        d.name,
-        dd.journey_date,
-        r.name AS route,
-        dd.start_seq || ' - ' || dd.end_seq AS sequence,
-        dd.packages,
-        dd.no_scanned,
-        dd.failed_attempt,
-        dd.ds,
-        dd.delivered
-      FROM dashboard_data dd
-      JOIN routes r ON dd.route_id = r.id
-      JOIN drivers d ON d.id = dd.driver_id
-      WHERE dd.journey_date = $1
-    `;
-
-    const params = [selectedDate];
-
-    if (role === "admin") {
-      query += `
-        AND EXISTS (
-          SELECT 1
-          FROM admin_city_ref acr
-          WHERE acr.city_id = d.city_id
-            AND acr.admin_id = $2
-        )
-      `;
-      params.push(id);
-    }
-
-    query += `
-      ORDER BY
-        r.name ASC,
-        dd.start_seq ASC,
-        dd.end_seq ASC
-    `;
-
-    const res = await client.query(query, params);
-    return res.rows;
-  } catch (error) {
-    console.error(error);
-    throw error;
-  }
-},
-
-  // 🔴 FIXED: Double stop logic must include route & date
-  updateFirstStopAndDoubleStop: async (client) => {
-  try {
-    const queryStr = `
-      WITH ranked AS (
+  getTempDashboardData: async (client, id, role, selectedDate, limit, offset) => {
+    try {
+      let query = `
         SELECT
-          unique_id,
-          driver_id,
-          route_id,
-          driver_set_date,
-          address,
-          address_unit,
-          ROW_NUMBER() OVER (
-            PARTITION BY driver_id, route_id, driver_set_date,
-                         address, COALESCE(address_unit, '##NO_UNIT##')
-            ORDER BY sequence_number
-          ) AS rn,
-          COUNT(*) OVER (
-            PARTITION BY driver_id, route_id, driver_set_date,
-                         address, COALESCE(address_unit, '##NO_UNIT##')
-          ) AS cnt
-        FROM deliveries
-        WHERE final_result = 'not_assigned'::final_result_enum
-      )
-      UPDATE deliveries d
-      SET final_result = CASE
-        WHEN r.cnt = 1 THEN 'first_stop'::final_result_enum
-        WHEN r.rn = 1 THEN 'first_stop'::final_result_enum
-        ELSE 'double_stop'::final_result_enum
-      END
-      FROM ranked r
-      WHERE d.unique_id = r.unique_id;
-    `;
+          d.name,
+          dd.journey_date,
+          r.name AS route,
+          dd.start_seq || ' - ' || dd.end_seq AS sequence,
+          dd.packages,
+          dd.no_scanned,
+          dd.failed_attempt,
+          dd.ds,
+          dd.delivered
+        FROM dashboard_data dd
+        JOIN routes r ON dd.route_id = r.id
+        JOIN drivers d ON d.id = dd.driver_id
+        WHERE dd.journey_date = $1
+      `;
 
-    await client.query(queryStr);
-    console.log("✅ First stop & double stop updated");
-  } catch (error) {
-    console.error(error);
-    throw error;
-  }
-},
-resetDeliveryResults: async (client, uploadDate) => {
-  await client.query(
-    `
-    UPDATE deliveries
-    SET final_result = 'not_assigned'
-    WHERE DATE(driver_set_date) = $1
-    `,
-    [uploadDate]
-  );
-},
+      const params = [selectedDate];
 
+      if (role === "admin") {
+        query += `
+          AND EXISTS (
+            SELECT 1
+            FROM admin_city_ref acr
+            WHERE acr.city_id = d.city_id
+              AND acr.admin_id = $2
+          )
+        `;
+        params.push(id);
+      }
 
+      query += `
+        ORDER BY
+          r.name ASC,
+          dd.start_seq ASC,
+          dd.end_seq ASC
+      `;
 
+      // Add pagination
+      const limitIndex = params.length + 1;
+      const offsetIndex = params.length + 2;
+      query += ` LIMIT $${limitIndex} OFFSET $${offsetIndex}`;
+      params.push(limit, offset);
+
+      const res = await client.query(query, params);
+      return res.rows;
+    } catch (error) {
+      console.error(error);
+      throw error;
+    }
+  },
+
+  getTempDashboardDataCount: async (client, id, role, selectedDate) => {
+    try {
+      let query = `
+        SELECT COUNT(*) as total
+        FROM dashboard_data dd
+        JOIN routes r ON dd.route_id = r.id
+        JOIN drivers d ON d.id = dd.driver_id
+        WHERE dd.journey_date = $1
+      `;
+
+      const params = [selectedDate];
+
+      if (role === "admin") {
+        query += `
+          AND EXISTS (
+            SELECT 1
+            FROM admin_city_ref acr
+            WHERE acr.city_id = d.city_id
+              AND acr.admin_id = $2
+          )
+        `;
+        params.push(id);
+      }
+
+      const res = await client.query(query, params);
+      return res.rows[0].total;
+    } catch (error) {
+      console.error(error);
+      throw error;
+    }
+  },
+
+  updateFirstStopAndDoubleStop: async (client) => {
+    try {
+      const queryStr = `
+        WITH ranked AS (
+          SELECT
+            unique_id,
+            driver_id,
+            route_id,
+            driver_set_date,
+            address,
+            address_unit,
+            ROW_NUMBER() OVER (
+              PARTITION BY driver_id, route_id, driver_set_date,
+                           address, COALESCE(address_unit, '##NO_UNIT##')
+              ORDER BY sequence_number
+            ) AS rn,
+            COUNT(*) OVER (
+              PARTITION BY driver_id, route_id, driver_set_date,
+                           address, COALESCE(address_unit, '##NO_UNIT##')
+            ) AS cnt
+          FROM deliveries
+          WHERE final_result = 'not_assigned'::final_result_enum
+        )
+        UPDATE deliveries d
+        SET final_result = CASE
+          WHEN r.cnt = 1 THEN 'first_stop'::final_result_enum
+          WHEN r.rn = 1 THEN 'first_stop'::final_result_enum
+          ELSE 'double_stop'::final_result_enum
+        END
+        FROM ranked r
+        WHERE d.unique_id = r.unique_id;
+      `;
+
+      await client.query(queryStr);
+      console.log("✅ First stop & double stop updated");
+    } catch (error) {
+      console.error(error);
+      throw error;
+    }
+  },
+
+  resetDeliveryResults: async (client, uploadDate) => {
+    await client.query(
+      `
+      UPDATE deliveries
+      SET final_result = 'not_assigned'
+      WHERE DATE(driver_set_date) = $1
+      `,
+      [uploadDate]
+    );
+  },
 };
