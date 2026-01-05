@@ -139,7 +139,7 @@ export default function AccessCodeEditDialog({ open, onClose, accessCode, onSave
                         const marked = deleted.has(u);
                         return (
                           <div key={idx} className={`relative rounded-lg overflow-hidden border ${marked? 'opacity-50': ''}`}>
-                            <img src={`${API_BASE_URL}${u}`} alt={`Existing ${idx+1}`} className="w-full h-36 object-cover" />
+                            <img src={`${u}`} alt={`Existing ${idx+1}`} className="w-full h-36 object-cover" />
                             <button
                               type="button"
                               onClick={() => toggleDelete(u)}

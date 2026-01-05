@@ -49,7 +49,7 @@ export default function AccessCodeDetailsDialog({ open, onClose, accessCode }) {
                               .map((u, idx) => (
                                 <div key={idx} className="rounded-lg overflow-hidden border">
                                   <img
-                                    src={`${API_BASE_URL}${u}`}
+                                    src={`${u}`}
                                     alt={`Access code image ${idx + 1}`}
                                     className="w-full h-40 object-cover"
                                   />
