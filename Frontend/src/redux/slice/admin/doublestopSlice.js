@@ -29,7 +29,7 @@ export const fetchDashboardData = createAsyncThunk(
       }
 
       const data = await res.json();
-      return data; // API returns { success: true, data: [...], pagination: {...} }
+      return data.data; // API returns { success: true, data: [...], pagination: {...} }
     } catch (err) {
       return rejectWithValue(err.message);
     }
@@ -39,9 +39,9 @@ export const fetchDashboardData = createAsyncThunk(
 // Async thunk to fetch weekly temp data (role-based filtering on backend)
 export const fetchWeeklyTempData = createAsyncThunk(
   "dashboard/fetchWeeklyTempData",
-  async (_, { rejectWithValue }) => {
+  async ({page=1,limit=10}, { rejectWithValue }) => {
     try {
-      const res = await fetch(`${API_BASE_URL}/admin/doubleStop/fetchWeeklyTempData`, {
+      const res = await fetch(`${API_BASE_URL}/admin/doubleStop/fetchWeeklyTempData?page=${page}&limit=${limit}`, {
         method: "GET",
         headers: getAuthHeaders(),
       });
@@ -52,7 +52,7 @@ export const fetchWeeklyTempData = createAsyncThunk(
       }
 
       const data = await res.json();
-      return data.data; // API returns { success: true, data: [...] }
+      return data; // API returns { success: true, data: [...] }
     } catch (err) {
       return rejectWithValue(err.message);
     }
@@ -104,7 +104,8 @@ const dashboardSlice = createSlice({
       })
       .addCase(fetchWeeklyTempData.fulfilled, (state, action) => {
         state.loading = false;
-        state.data.weeklyData = action.payload.data;
+        state.data.weeklyData = action.payload.data.data;
+        state.pagination = action.payload.pagination;
       })
       .addCase(fetchWeeklyTempData.rejected, (state, action) => {
         state.loading = false;
