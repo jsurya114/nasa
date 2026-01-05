@@ -426,6 +426,7 @@ createEntriesFromWeeklyCount: async () => {
         ds,
         delivered,
         driver_payment,
+        company_earnings,
         closed,
         paid,
         is_deliveries_count_added
@@ -440,6 +441,8 @@ createEntriesFromWeeklyCount: async () => {
         wc.total_deliveries AS delivered,
         ((wc.fs * r.driver_route_price) +
         (wc.ds * r.driver_doublestop_price)) AS driver_payment,
+        ((wc.fs * r.company_route_price) +
+        (wc.ds * r.company_doublestop_price)) AS company_earnings,
         TRUE,
         FALSE,
         FALSE
@@ -476,6 +479,7 @@ createEntriesFromWeeklyCount: async () => {
         ds = dd.ds,
         delivered = dd.delivered,
         driver_payment = dd.driver_payment,
+        company_earnings=dd.company_earnings,
         closed = dd.closed,
         paid = dd.paid
       FROM dashboard_data dd

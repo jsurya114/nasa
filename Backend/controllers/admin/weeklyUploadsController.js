@@ -14,7 +14,7 @@ export const getWeeklyTempData=async(req,res)=>{
     const adminRole = req.admin?.role;
     const adminCities = req.admin?.cities || [];
     
-    let data = await WeeklyExcelQueries.getWeeklyData(adminRole, adminCities);
+    let data = await WeeklyExcelQueries.getWeeklyData();
     return res.status(HttpStatus.OK).json({data});
   }catch(err){
     console.error("Upload Error:", err);
