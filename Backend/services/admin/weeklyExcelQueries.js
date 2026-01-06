@@ -79,7 +79,7 @@ import pool from "../../config/db.js";
    return res.rows;
   },
 
-  getWeeklyData: async () => {
+  getWeeklyData: async (id,role,limit,offset) => {
   try {
     // Check if table exists
     const tableExists = await pool.query(`
@@ -93,14 +93,76 @@ import pool from "../../config/db.js";
     if (!tableExists.rows[0].exists) {
       return { exists: false, data: [] };
     }
+
+
     
-    // Table exists, fetch data
-    const res = await pool.query(`
-      SELECT * FROM weeklycount 
-      ORDER BY del_date DESC
-    `);
+    let query = `SELECT wc.* FROM weeklycount wc`;
+const values = [];
+
+if (role === 'admin') {
+  query += `
+    WHERE EXISTS (
+      SELECT 1
+      FROM routes r
+      JOIN city c ON c.job = r.job
+      JOIN admin_city_ref acr ON acr.city_id = c.id
+      WHERE r.route_code_in_string = wc.del_route
+        AND acr.admin_id = $1)`;
+  values.push(id);
+}
+
+query += `
+  ORDER BY del_date DESC
+  LIMIT $${values.length + 1}
+  OFFSET $${values.length + 2}
+`;
+
+values.push(limit, offset);
+
+const res = await pool.query(query, values);  
     
     return { exists: true, data: res.rows };
+    
+  } catch (error) {
+    console.error('Error fetching weekly data:', error);
+    throw error;
+  }
+},
+
+getCountOfWeeklyData: async (id,role) => {
+  try {
+    // Check if table exists
+    const tableExists = await pool.query(`
+      SELECT EXISTS (
+        SELECT FROM information_schema.tables 
+        WHERE table_schema = 'public'
+        AND table_name = 'weeklycount'
+      )
+    `);
+    
+    if (!tableExists.rows[0].exists) {
+      return 0;
+    }
+    
+    let query=` SELECT COUNT(*)::int AS total
+      FROM weeklycount wc`
+
+    let values=[];
+    
+    if(role==='admin'){
+      query+=`
+      WHERE EXISTS (
+        SELECT 1
+        FROM routes r
+        JOIN city c ON c.job = r.job
+        JOIN admin_city_ref acr ON acr.city_id = c.id
+        WHERE r.route_code_in_string = wc.del_route
+          AND acr.admin_id = $1) `
+      values.push(id);
+    }    
+    const res = await pool.query(query,values);   
+    
+    return Number(res.rows[0].total);
     
   } catch (error) {
     console.error('Error fetching weekly data:', error);
@@ -426,6 +488,7 @@ createEntriesFromWeeklyCount: async () => {
         ds,
         delivered,
         driver_payment,
+        company_earnings,
         closed,
         paid,
         is_deliveries_count_added
@@ -440,6 +503,8 @@ createEntriesFromWeeklyCount: async () => {
         wc.total_deliveries AS delivered,
         ((wc.fs * r.driver_route_price) +
         (wc.ds * r.driver_doublestop_price)) AS driver_payment,
+        ((wc.fs * r.company_route_price) +
+        (wc.ds * r.company_doublestop_price)) AS company_earnings,
         TRUE,
         FALSE,
         FALSE
@@ -476,6 +541,7 @@ createEntriesFromWeeklyCount: async () => {
         ds = dd.ds,
         delivered = dd.delivered,
         driver_payment = dd.driver_payment,
+        company_earnings=dd.company_earnings,
         closed = dd.closed,
         paid = dd.paid
       FROM dashboard_data dd
