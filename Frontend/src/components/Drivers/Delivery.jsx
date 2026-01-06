@@ -18,23 +18,42 @@ const Deliveries = () => {
   const [filters, setFilters] = useState({ from_date: "", to_date: "" });
   const [hasFiltered, setHasFiltered] = useState(false);
   const [validationError, setValidationError] = useState("");
+  const [selectedDataType, setSelectedDataType] = useState("all"); // "all", "daily", "weekly"
   
   // Use refs to prevent toast spam
   const lastSuccessToast = useRef(0);
   const lastErrorToast = useRef(0);
   const initialLoadDone = useRef(false);
 
-  // ✅ Determine if data is weekly or daily
-  const dataType = useMemo(() => {
-    if (!deliveries || deliveries.length === 0) return null;
-    // Check the first item to determine data type
-    return deliveries[0]?.data_type || 'daily';
+  // ✅ Check if both data types exist in the deliveries
+  const availableDataTypes = useMemo(() => {
+    if (!deliveries || deliveries.length === 0) return { daily: false, weekly: false };
+    
+    const hasDaily = deliveries.some(d => d.data_type === 'daily');
+    const hasWeekly = deliveries.some(d => d.data_type === 'weekly');
+    
+    return { daily: hasDaily, weekly: hasWeekly };
   }, [deliveries]);
 
-  // ✅ Memoized summary calculation
+  // ✅ Filter deliveries based on selected data type
+  const filteredDeliveries = useMemo(() => {
+    if (!deliveries || deliveries.length === 0) return [];
+    
+    if (selectedDataType === "all") return deliveries;
+    
+    return deliveries.filter(d => d.data_type === selectedDataType);
+  }, [deliveries, selectedDataType]);
+
+  // ✅ Determine current data type being displayed
+  const currentDataType = useMemo(() => {
+    if (!filteredDeliveries || filteredDeliveries.length === 0) return null;
+    return filteredDeliveries[0]?.data_type || 'daily';
+  }, [filteredDeliveries]);
+
+  // ✅ Memoized summary calculation based on filtered deliveries
   const summary = useMemo(() => {
-    if (!deliveries || deliveries.length === 0) return null;
-    return deliveries.reduce(
+    if (!filteredDeliveries || filteredDeliveries.length === 0) return null;
+    return filteredDeliveries.reduce(
       (acc, d) => ({
         packages: acc.packages + (parseInt(d.packages) || 0),
         no_scanned: acc.no_scanned + (parseInt(d.no_scanned) || 0),
@@ -46,7 +65,7 @@ const Deliveries = () => {
       }),
       { packages: 0, no_scanned: 0, failed_attempt: 0, first_stop: 0, double_stop: 0, delivered: 0, earning: 0 }
     );
-  }, [deliveries]);
+  }, [filteredDeliveries]);
 
   // ✅ Load from localStorage ONCE with cache validation
   useEffect(() => {
@@ -56,11 +75,11 @@ const Deliveries = () => {
     const savedFilters = localStorage.getItem("deliveryFilters");
     const savedDeliveries = localStorage.getItem("deliveryData");
     const savedTimestamp = localStorage.getItem("deliveryTimestamp");
+    const savedDataType = localStorage.getItem("deliveryDataType");
 
     if (savedFilters && savedDeliveries && savedTimestamp) {
       const cacheAge = Date.now() - parseInt(savedTimestamp);
       
-      // Only use cache if it's less than 5 minutes old
       if (cacheAge < CACHE_DURATION) {
         try {
           const parsedFilters = JSON.parse(savedFilters);
@@ -69,6 +88,7 @@ const Deliveries = () => {
           if (parsedDeliveries.length > 0) {
             setFilters(parsedFilters);
             setHasFiltered(true);
+            setSelectedDataType(savedDataType || "all");
             dispatch(setDeliveriesFromCache(parsedDeliveries));
           }
         } catch (err) {
@@ -76,12 +96,13 @@ const Deliveries = () => {
           localStorage.removeItem("deliveryData");
           localStorage.removeItem("deliveryFilters");
           localStorage.removeItem("deliveryTimestamp");
+          localStorage.removeItem("deliveryDataType");
         }
       } else {
-        // Clear stale cache
         localStorage.removeItem("deliveryData");
         localStorage.removeItem("deliveryFilters");
         localStorage.removeItem("deliveryTimestamp");
+        localStorage.removeItem("deliveryDataType");
       }
     }
   }, [dispatch]);
@@ -105,12 +126,11 @@ const Deliveries = () => {
     if (status === "succeeded" && hasFiltered && deliveries?.length > 0) {
       const now = Date.now();
       
-      // Only show toast if 3 seconds have passed since last one
       if (now - lastSuccessToast.current > 3000) {
-        // Save to localStorage with timestamp
         localStorage.setItem("deliveryData", JSON.stringify(deliveries));
         localStorage.setItem("deliveryFilters", JSON.stringify(filters));
         localStorage.setItem("deliveryTimestamp", Date.now().toString());
+        localStorage.setItem("deliveryDataType", selectedDataType);
 
         toast.success(
           `Successfully fetched ${deliveries.length} delivery record${deliveries.length === 1 ? "" : "s"}!`,
@@ -119,14 +139,13 @@ const Deliveries = () => {
         lastSuccessToast.current = now;
       }
     }
-  }, [status, hasFiltered, deliveries, filters]);
+  }, [status, hasFiltered, deliveries, filters, selectedDataType]);
 
   // ✅ Error toast with debouncing
   useEffect(() => {
     if (status === "failed" && error) {
       const now = Date.now();
       
-      // Only show toast if 3 seconds have passed since last one
       if (now - lastErrorToast.current > 3000) {
         toast.error(error, { 
           position: "top-right", 
@@ -148,7 +167,6 @@ const Deliveries = () => {
   const handleFilter = useCallback((e) => {
     e.preventDefault();
 
-    // Validation
     if (!filters.from_date || !filters.to_date) {
       setValidationError("Please select both From and To dates");
       return;
@@ -166,6 +184,7 @@ const Deliveries = () => {
 
     setValidationError("");
     setHasFiltered(true);
+    setSelectedDataType("all"); // Reset to show all data types
     dispatch(fetchDeliverySummary({ driverId: driver.id, ...filters }));
   }, [dispatch, filters, driver]);
 
@@ -173,11 +192,12 @@ const Deliveries = () => {
     setFilters({ from_date: "", to_date: "" });
     setHasFiltered(false);
     setValidationError("");
+    setSelectedDataType("all");
     dispatch(resetDeliveries());
     localStorage.removeItem("deliveryData");
     localStorage.removeItem("deliveryFilters");
     localStorage.removeItem("deliveryTimestamp");
-    // Reset toast timers
+    localStorage.removeItem("deliveryDataType");
     lastSuccessToast.current = 0;
     lastErrorToast.current = 0;
   }, [dispatch]);
@@ -187,9 +207,9 @@ const Deliveries = () => {
     return new Date(dateString + 'T00:00:00').toLocaleDateString('en-CA');
   }, []);
 
-  // ✅ Dynamic table headers based on data type
+  // ✅ Dynamic table headers based on current data type
   const tableHeaders = useMemo(() => {
-    if (dataType === 'weekly') {
+    if (currentDataType === 'weekly') {
       return ["Date", "Route", "First Stop", "Double Stop", "Delivered", "Earning"];
     } else {
       return [
@@ -197,11 +217,11 @@ const Deliveries = () => {
         "Not Scanned", "Failed", "Double Stop", "Delivered", "Earning"
       ];
     }
-  }, [dataType]);
+  }, [currentDataType]);
 
-  // ✅ Dynamic summary labels based on data type
+  // ✅ Dynamic summary labels based on current data type
   const summaryLabels = useMemo(() => {
-    if (dataType === 'weekly') {
+    if (currentDataType === 'weekly') {
       return {
         "First Stop": summary?.first_stop,
         "Double Stop": summary?.double_stop,
@@ -218,7 +238,7 @@ const Deliveries = () => {
         "Total Earning": summary ? `$${summary.earning.toFixed(2)}` : "$0.00",
       };
     }
-  }, [summary, dataType]);
+  }, [summary, currentDataType]);
 
   return (
     <div className="min-h-screen bg-gray-50 text-gray-900 font-poppins">
@@ -232,16 +252,6 @@ const Deliveries = () => {
                 <h2 className="text-xl font-semibold text-gray-800">Delivery Summary</h2>
                 <p className="text-sm text-gray-500 mt-1">Filter deliveries by date range</p>
               </div>
-              {/* Data Type Badge */}
-              {dataType && (
-                <div className={`px-4 py-2 rounded-full font-semibold text-sm ${
-                  dataType === 'weekly' 
-                    ? 'bg-purple-100 text-purple-700 border border-purple-300' 
-                    : 'bg-blue-100 text-blue-700 border border-blue-300'
-                }`}>
-                  {dataType === 'weekly' ? '📅 Weekly Data' : '📊 Daily Data'}
-                </div>
-              )}
             </div>
           </div>
 
@@ -295,12 +305,67 @@ const Deliveries = () => {
             )}
           </div>
 
+          {/* ✅ Data Type Filter Buttons - Show only when both types exist */}
+          {hasFiltered && deliveries && deliveries.length > 0 && 
+           availableDataTypes.daily && availableDataTypes.weekly && (
+            <div className="px-6 pb-4">
+              <div className="flex items-center gap-3">
+                <span className="text-sm font-medium text-gray-700">View:</span>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => setSelectedDataType("all")}
+                    className={`px-4 py-2 rounded-md text-sm font-semibold transition ${
+                      selectedDataType === "all"
+                        ? "bg-blue-600 text-white shadow-md"
+                        : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                    }`}
+                  >
+                    All ({deliveries.length})
+                  </button>
+                  <button
+                    onClick={() => setSelectedDataType("daily")}
+                    className={`px-4 py-2 rounded-md text-sm font-semibold transition ${
+                      selectedDataType === "daily"
+                        ? "bg-blue-600 text-white shadow-md"
+                        : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                    }`}
+                  >
+                    📊 Daily ({deliveries.filter(d => d.data_type === 'daily').length})
+                  </button>
+                  <button
+                    onClick={() => setSelectedDataType("weekly")}
+                    className={`px-4 py-2 rounded-md text-sm font-semibold transition ${
+                      selectedDataType === "weekly"
+                        ? "bg-purple-600 text-white shadow-md"
+                        : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                    }`}
+                  >
+                    📅 Weekly ({deliveries.filter(d => d.data_type === 'weekly').length})
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ✅ Current Data Type Badge */}
+          {currentDataType && filteredDeliveries.length > 0 && (
+            <div className="px-6 pb-4">
+              <div className={`inline-flex px-4 py-2 rounded-full font-semibold text-sm ${
+                currentDataType === 'weekly' 
+                  ? 'bg-purple-100 text-purple-700 border border-purple-300' 
+                  : 'bg-blue-100 text-blue-700 border border-blue-300'
+              }`}>
+                {currentDataType === 'weekly' ? '📅 Showing Weekly Data' : '📊 Showing Daily Data'}
+              </div>
+            </div>
+          )}
+
           {/* Summary */}
           {summary && (
             <div className="px-6 pb-6">
               <div className="bg-gradient-to-r from-blue-50 to-indigo-50 p-4 rounded-lg mb-4">
                 <h3 className="text-sm font-semibold text-gray-700 mb-3">Summary Statistics</h3>
-                <div className={`grid gap-3 ${dataType === 'weekly' ? 'grid-cols-2 sm:grid-cols-4' : 'grid-cols-2 sm:grid-cols-3 md:grid-cols-6'}`}>
+                <div className={`grid gap-3 ${currentDataType === 'weekly' ? 'grid-cols-2 sm:grid-cols-4' : 'grid-cols-2 sm:grid-cols-3 md:grid-cols-6'}`}>
                   {Object.entries(summaryLabels).map(([label, value]) => (
                     <div key={label}>
                       <label className="block text-xs text-gray-600 mb-1">{label}</label>
@@ -318,9 +383,9 @@ const Deliveries = () => {
           )}
 
           {/* Messages */}
-          {hasFiltered && status === "succeeded" && (!deliveries || deliveries.length === 0) && (
+          {hasFiltered && status === "succeeded" && (!filteredDeliveries || filteredDeliveries.length === 0) && (
             <div className="px-6 pb-6 text-center text-yellow-700 bg-yellow-50 border border-yellow-200 rounded-md p-4">
-              <p>No deliveries found for {formatDate(filters.from_date)} to {formatDate(filters.to_date)}</p>
+              <p>No {selectedDataType !== "all" ? selectedDataType : ""} deliveries found for {formatDate(filters.from_date)} to {formatDate(filters.to_date)}</p>
             </div>
           )}
 
@@ -338,7 +403,7 @@ const Deliveries = () => {
         </div>
 
         {/* Table */}
-        {deliveries && deliveries.length > 0 && (
+        {filteredDeliveries && filteredDeliveries.length > 0 && (
           <div className="bg-white border rounded-lg shadow-sm overflow-hidden">
             <div className="overflow-x-auto">
               <table className="w-full">
@@ -352,7 +417,7 @@ const Deliveries = () => {
                   </tr>
                 </thead>
                 <tbody>
-                  {deliveries.map((d, i) => (
+                  {filteredDeliveries.map((d, i) => (
                     <tr key={d.id || i} className="hover:bg-gray-50 border-b border-gray-100">
                       <td className="px-4 py-3 text-sm text-gray-900">{formatDate(d.journey_date)}</td>
                       <td className="px-4 py-3 text-sm relative group">
@@ -389,12 +454,11 @@ const Deliveries = () => {
                               </span>
                             </div>
                           </div>
-                          {/* Arrow */}
                           <div className="absolute top-full left-4 -mt-1 border-4 border-transparent border-t-gray-800"></div>
                         </div>
                       </td>
                       
-                      {dataType === 'weekly' ? (
+                      {currentDataType === 'weekly' ? (
                         <>
                           <td className="px-4 py-3 text-sm text-purple-600 text-center">{d.first_stop}</td>
                           <td className="px-4 py-3 text-sm text-purple-600 text-center">{d.double_stop}</td>
