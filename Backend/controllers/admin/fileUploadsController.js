@@ -8,30 +8,10 @@ import { ExcelFileQueries } from "../../services/admin/excelFileQueries.js";
 
 import { unlink } from "fs";
 
-// printMatchSummary 
 
-// import { AdminDashboardQueries } from "../../services/admin/dashboardQueries.js";
-
-// const sheetName = "dup";
 const sheetName = "result";
 
-//Modified to implement role based data for admin and superadmin
-// export const getUpdatedTempDashboardData = async(req,res)=>{
-//   const client = await pool.connect()
-//   try {
-//     client.query('BEGIN')
-//     const result = await ExcelFileQueries.getTempDashboardData(client)
-//     client.query('COMMIT')
-//     return res.status(statusCode.OK).json({success:true,data:result})
-//   } catch (error) {
-//     console.error(error)
-//     client.query('ROLLBACK')
-//     return res.status(statusCode.INTERNAL_SERVER_ERROR).json({message:'error in server',error})
-//   }
-//   finally{
-//     client.release()
-//   }
-// }
+
 
 export const getUpdatedTempDashboardData = async (req, res) => {
   const client = await pool.connect()
@@ -197,16 +177,6 @@ export const DailyExcelUpload = async (req, res) => {
   }
 };
 
-
-// export const updateDriverPayment = async (req,res)=>{
-//   try {
-//     await AdminDashboardQueries.updatePaymentTable()
-
-//   } catch (error) {
-
-//   }
-// }
-// export default fileUpload
 
 
 

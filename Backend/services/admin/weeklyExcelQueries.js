@@ -79,7 +79,7 @@ import pool from "../../config/db.js";
    return res.rows;
   },
 
-  getWeeklyData: async () => {
+getWeeklyData: async (id,role,limit,offset) => {
   try {
     // Check if table exists
     const tableExists = await pool.query(`
@@ -93,14 +93,76 @@ import pool from "../../config/db.js";
     if (!tableExists.rows[0].exists) {
       return { exists: false, data: [] };
     }
+
+
     
-    // Table exists, fetch data
-    const res = await pool.query(`
-      SELECT * FROM weeklycount 
-      ORDER BY del_date DESC
-    `);
+    let query = `SELECT wc.* FROM weeklycount wc`;
+const values = [];
+
+if (role === 'admin') {
+  query += `
+    WHERE EXISTS (
+      SELECT 1
+      FROM routes r
+      JOIN city c ON c.job = r.job
+      JOIN admin_city_ref acr ON acr.city_id = c.id
+      WHERE r.route_code_in_string = wc.del_route
+        AND acr.admin_id = $1)`;
+  values.push(id);
+}
+
+query += `
+  ORDER BY del_date DESC
+  LIMIT $${values.length + 1}
+  OFFSET $${values.length + 2}
+`;
+
+values.push(limit, offset);
+
+const res = await pool.query(query, values);  
     
     return { exists: true, data: res.rows };
+    
+  } catch (error) {
+    console.error('Error fetching weekly data:', error);
+    throw error;
+  }
+},
+
+getCountOfWeeklyData: async (id,role) => {
+  try {
+    // Check if table exists
+    const tableExists = await pool.query(`
+      SELECT EXISTS (
+        SELECT FROM information_schema.tables 
+        WHERE table_schema = 'public'
+        AND table_name = 'weeklycount'
+      )
+    `);
+    
+    if (!tableExists.rows[0].exists) {
+      return 0;
+    }
+    
+    let query=` SELECT COUNT(*)::int AS total
+      FROM weeklycount wc`
+
+    let values=[];
+    
+    if(role==='admin'){
+      query+=`
+      WHERE EXISTS (
+        SELECT 1
+        FROM routes r
+        JOIN city c ON c.job = r.job
+        JOIN admin_city_ref acr ON acr.city_id = c.id
+        WHERE r.route_code_in_string = wc.del_route
+          AND acr.admin_id = $1) `
+      values.push(id);
+    }    
+    const res = await pool.query(query,values);   
+    
+    return Number(res.rows[0].total);
     
   } catch (error) {
     console.error('Error fetching weekly data:', error);
@@ -261,118 +323,7 @@ deleteWeeklyData: async () => {
 
 
 
-  // createEntriesFromWeeklyCount:async()=>{
-  //   try{
-  //        let res=await pool.query(`
-  //         INSERT INTO dashboard_data (
-  //                         driver_id,
-  //                         journey_date,
-  //                         route_id,
-  //                         packages,
-  //                         first_stop,
-  //                         ds,
-  //                         delivered,
-  //                         driver_payment,
-  //                         closed,
-  //                         paid
-  //                     )
-  //       SELECT 
-  //           d.id AS driver_id,
-  //           wc.del_date AS journey_date,
-  //           r.id AS route_id,
-  //           wc.total_deliveries AS packages,
-  //           wc.fs AS first_stop,
-  //           wc.ds AS ds,
-  //           wc.total_deliveries AS delivered,  -- Assuming all packages are delivered
-  //           ((wc.fs * r.driver_route_price) + (wc.ds * r.driver_doublestop_price)) AS driver_payment,
-  //           false AS closed,
-  //           false AS paid
-  //           FROM 
-  //               weeklycount wc
-  //           INNER JOIN 
-  //               drivers d ON wc.driver_id = d.driver_code
-  //           LEFT JOIN 
-  //               city c ON SUBSTRING(wc.del_route FROM '^[A-Za-z]+') = c.city_code
-  //           INNER JOIN 
-  //               routes r ON LTRIM(SUBSTRING(wc.del_route FROM '\d+$'), '0') = r.name
-  //                       AND r.job = c.job
-  //                       AND r.enabled = true
-  //           WHERE 
-  //               d.enabled = true
-  //               AND r.id IS NOT NULL  -- Only insert where route is found
-  //           ON CONFLICT DO NOTHING;  -- Prevents duplicates if you run it multiple times`);
-  //           console.log("Query completed and data inserted");
-  //           return res.rows;
-  //   }catch(err){
-  //       console.error('Error inserting dashboard from weekly data:', err);
-  //   throw err;
-  //   }
-  // }
-
-
-//   createEntriesFromWeeklyCount: async () => {
-
-//     console.log("⏳ Starting dashboard_data insertion...");
-//   const client = await pool.connect();
-
-//   try {
-//     await client.query('BEGIN');
-
-//     const insertQuery = `
-//       WITH inserted AS (
-//         INSERT INTO dashboard_data (
-//           driver_id, journey_date, route_id, packages, first_stop, ds, delivered,
-//           driver_payment, closed, paid, is_deliveries_count_added
-//         )
-//         SELECT 
-//           d.id AS driver_id,
-//           wc.del_date AS journey_date,
-//           r.id AS route_id,
-//           wc.total_deliveries AS packages,
-//           wc.fs AS first_stop,
-//           wc.ds AS ds,
-//           wc.total_deliveries AS delivered,
-//           ((wc.fs * r.driver_route_price) + (wc.ds * r.driver_doublestop_price)) AS driver_payment,
-//           FALSE, FALSE, FALSE
-//         FROM weeklycount wc
-//         INNER JOIN drivers d ON wc.driver_id = d.driver_code
-//         LEFT JOIN city c ON SUBSTRING(wc.del_route FROM '^[A-Za-z]+') = c.city_code
-//         INNER JOIN routes r 
-//           ON LTRIM(SUBSTRING(wc.del_route FROM '\\d+$'), '0') = r.name
-//          AND r.job = c.job
-//          AND r.enabled = TRUE
-//         WHERE d.enabled = TRUE
-//         ON CONFLICT DO NOTHING
-//         RETURNING id, packages, first_stop, ds, delivered, driver_payment, closed, paid
-//       )
-//       UPDATE payment_dashboard pd
-//       SET 
-//         packages = i.packages,
-//         fs = i.first_stop,
-//         ds = i.ds,
-//         delivered = i.delivered,
-//         driver_payment = i.driver_payment,
-//         closed = i.closed,
-//         paid = i.paid
-//       FROM inserted i
-//       WHERE pd.dashboard_data_id = i.id
-//       RETURNING i.id;
-//     `;
-
-//     const result = await client.query(insertQuery);
-
-//     console.log(`✅ Inserted or updated ${result.rowCount} rows in dashboard_data/payment_dashboard`);
-
-//     await client.query('COMMIT');
-//     return result.rowCount;
-//   } catch (err) {
-//     await client.query('ROLLBACK');
-//     console.error("❌ Error in createEntriesFromWeeklyCount:", err);
-//     throw err;
-//   } finally {
-//     client.release();
-//   }
-// },
+  
 
 createEntriesFromWeeklyCount: async () => {
   console.log("⏳ Starting dashboard_data insertion...");
@@ -381,39 +332,7 @@ createEntriesFromWeeklyCount: async () => {
   try {
     await client.query('BEGIN');
 
-    // QUERY 1: Insert into dashboard_data (triggers the function)
-    //Previous query before string combination not provided in the routes table
-    // const insertQuery = `
-    //   INSERT INTO dashboard_data (
-    //     driver_id, journey_date, route_id, packages, first_stop, ds, delivered,
-    //     driver_payment, closed, paid, is_deliveries_count_added
-    //   )
-    //   SELECT 
-    //     d.id AS driver_id,
-    //     wc.del_date AS journey_date,
-    //     r.id AS route_id,
-    //     wc.total_deliveries AS packages,
-    //     wc.fs AS first_stop,
-    //     wc.ds AS ds,
-    //     wc.total_deliveries AS delivered,
-    //     ((wc.fs * r.driver_route_price) + (wc.ds * r.driver_doublestop_price)) AS driver_payment,
-    //     TRUE, FALSE, FALSE
-    //   FROM weeklycount wc
-    //   INNER JOIN drivers d ON wc.driver_id = d.driver_code
-    //   LEFT JOIN city c ON SUBSTRING(wc.del_route FROM '^[A-Za-z]+') = c.city_code
-    //   INNER JOIN routes r 
-    //     ON LTRIM(SUBSTRING(wc.del_route FROM '\\d+$'), '0') = r.name
-    //    AND r.job = c.job
-    //    AND r.enabled = TRUE
-    //   WHERE d.enabled = TRUE
-    //    AND NOT EXISTS (
-    //       SELECT 1 FROM dashboard_data dd
-    //       WHERE dd.driver_id = d.id
-    //         AND dd.journey_date = wc.del_date
-    //         AND dd.route_id = r.id
-    //     )
-    //   RETURNING id
-    // `;
+    
 
     //QUERY 1: Insert into dashboard_data (triggers the function)
     const insertQuery = `
@@ -426,6 +345,7 @@ createEntriesFromWeeklyCount: async () => {
         ds,
         delivered,
         driver_payment,
+        company_earnings,
         closed,
         paid,
         is_deliveries_count_added
@@ -440,6 +360,8 @@ createEntriesFromWeeklyCount: async () => {
         wc.total_deliveries AS delivered,
         ((wc.fs * r.driver_route_price) +
         (wc.ds * r.driver_doublestop_price)) AS driver_payment,
+        ((wc.fs * r.company_route_price) +
+        (wc.ds * r.company_doublestop_price)) AS company_earnings,
         TRUE,
         FALSE,
         FALSE
@@ -476,6 +398,7 @@ createEntriesFromWeeklyCount: async () => {
         ds = dd.ds,
         delivered = dd.delivered,
         driver_payment = dd.driver_payment,
+        company_earnings=dd.company_earnings,
         closed = dd.closed,
         paid = dd.paid
       FROM dashboard_data dd
