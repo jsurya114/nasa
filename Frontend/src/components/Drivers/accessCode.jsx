@@ -202,12 +202,12 @@ export default function DriverAccessCodePage() {
 
   return (
     <div
-      className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50"
+      className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50 w-full overflow-x-hidden"
       style={{ fontFamily: "Poppins, sans-serif" }}
     >
       <Header />
 
-      <main className="max-w-7xl mx-auto p-3 sm:p-6 py-6 sm:py-12 pb-32">
+      <main className="w-full max-w-7xl mx-auto p-3 sm:p-6 py-6 sm:py-12 pb-32 overflow-x-hidden">
         {/* Add New Access Code Card */}
         <div className="bg-white/80 backdrop-blur-sm border border-white/20 rounded-2xl shadow-xl p-4 sm:p-8 mb-6 sm:mb-8">
           <div className="flex flex-col sm:flex-row sm:items-center mb-6 sm:mb-8">
@@ -365,7 +365,7 @@ export default function DriverAccessCodePage() {
         </div>
 
         {/* Saved Access Codes Table */}
-        <div className="bg-white/80 backdrop-blur-sm border border-white/20 rounded-2xl shadow-xl overflow-hidden mb-20">
+        <div className="bg-white/80 backdrop-blur-sm border border-white/20 rounded-2xl shadow-xl overflow-hidden mb-20 w-full">
           <div className="px-4 sm:px-8 py-6 border-b border-gray-100">
             <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
               <div className="flex flex-col sm:flex-row sm:items-center">
@@ -443,7 +443,7 @@ export default function DriverAccessCodePage() {
             </div>
           </div>
 
-          <div className="p-2 sm:p-4 lg:p-8">
+          <div className="p-2 sm:p-4 lg:p-8 w-full overflow-x-hidden">
             {status === "loading" ? (
               <div className="text-center py-16">
                 <svg className="animate-spin h-12 w-12 text-[#8200db] mx-auto mb-4" viewBox="0 0 24 24">
@@ -484,145 +484,201 @@ export default function DriverAccessCodePage() {
                 </p>
               </div>
             ) : (
-              <div className="overflow-x-auto -mx-2 sm:mx-0">
-                <div className="inline-block min-w-full align-middle">
-                  <div className="overflow-hidden shadow ring-1 ring-black ring-opacity-5 md:rounded-lg">
-                    <table className="min-w-full divide-y divide-gray-200">
-                      <thead className="bg-gradient-to-r from-gray-50 to-gray-100">
-                        <tr>
-                          <th className="px-2 sm:px-4 lg:px-6 py-3 sm:py-4 text-left text-xs font-bold text-gray-600 uppercase tracking-wider">
-                            Zip Code
-                          </th>
-                          <th className="px-2 sm:px-4 lg:px-6 py-3 sm:py-4 text-left text-xs font-bold text-gray-600 uppercase tracking-wider">
-                            Address
-                          </th>
-                          <th className="px-2 sm:px-4 lg:px-6 py-3 sm:py-4 text-left text-xs font-bold text-gray-600 uppercase tracking-wider">
-                            Access Code
-                          </th>
-                          <th className="px-2 sm:px-4 lg:px-6 py-3 sm:py-4 text-left text-xs font-bold text-gray-600 uppercase tracking-wider">
-                            Images
-                          </th>
-                          <th className="px-2 sm:px-4 lg:px-6 py-3 sm:py-4 text-left text-xs font-bold text-gray-600 uppercase tracking-wider hidden lg:table-cell">
-                            Created At
-                          </th>
-                        </tr>
-                      </thead>
-                      <tbody className="bg-white divide-y divide-gray-100">
-                        {accessCodes.map((ac, index) => (
-                          <tr
-                            key={ac.id}
-                            onClick={() => openDetails(ac)}
-                            className={`hover:bg-gray-50 transition-colors cursor-pointer ${index % 2 === 0 ? "bg-white" : "bg-gray-50/50"}`}
-                          >
-                            <td className="px-2 sm:px-4 lg:px-6 py-3 sm:py-5 whitespace-nowrap">
-                              <span className="text-xs sm:text-sm font-semibold text-gray-900">
-                                {ac.zip_code}
-                              </span>
-                            </td>
-                            <td className="px-2 sm:px-4 lg:px-6 py-3 sm:py-5">
-                              <div className="text-xs sm:text-sm text-gray-900 break-words max-w-xs lg:max-w-none">
-                                {ac.address}
-                              </div>
-                            </td>
-                            <td className="px-2 sm:px-4 lg:px-6 py-3 sm:py-5 whitespace-nowrap">
-                              <span className="inline-flex items-center px-2 sm:px-3 py-1 rounded-full text-xs font-medium bg-indigo-100 text-indigo-800 border border-indigo-200">
-                                {ac.access_code}
-                              </span>
-                            </td>
-                            <td className="px-2 sm:px-4 lg:px-6 py-3 sm:py-5 whitespace-nowrap">
-                              <span className="inline-flex items-center px-2 sm:px-3 py-1 rounded-full text-xs font-medium bg-indigo-100 text-indigo-800 border border-indigo-200">
-                                {ac.imageCount}
-                              </span>
-                            </td>
-                            <td className="px-2 sm:px-4 lg:px-6 py-3 sm:py-5 whitespace-nowrap hidden lg:table-cell">
-                              <span className="text-sm text-gray-600">
-                                {new Date(ac.created_at).toLocaleString()}
-                              </span>
-                            </td>
+              <div className="w-full overflow-hidden">
+                {/* Desktop Table View */}
+                <div className="hidden md:block overflow-x-auto">
+                  <div className="inline-block min-w-full align-middle">
+                    <div className="overflow-hidden shadow ring-1 ring-black ring-opacity-5 rounded-lg">
+                      <table className="w-full divide-y divide-gray-200">
+                        <thead className="bg-gradient-to-r from-gray-50 to-gray-100">
+                          <tr>
+                            <th className="px-3 lg:px-4 xl:px-6 py-3 text-left text-xs font-bold text-gray-600 uppercase tracking-wider w-[12%]">
+                              Zip Code
+                            </th>
+                            <th className="px-3 lg:px-4 xl:px-6 py-3 text-left text-xs font-bold text-gray-600 uppercase tracking-wider w-[30%]">
+                              Address
+                            </th>
+                            <th className="px-3 lg:px-4 xl:px-6 py-3 text-left text-xs font-bold text-gray-600 uppercase tracking-wider w-[30%]">
+                              Access Code
+                            </th>
+                            <th className="px-3 lg:px-4 xl:px-6 py-3 text-left text-xs font-bold text-gray-600 uppercase tracking-wider w-[10%]">
+                              Images
+                            </th>
+                            <th className="px-3 lg:px-4 xl:px-6 py-3 text-left text-xs font-bold text-gray-600 uppercase tracking-wider w-[18%]">
+                              Created At
+                            </th>
                           </tr>
-                        ))}
-                      </tbody>
-                    </table>
-
-                    {/* Pagination */}
-                    {totalPages > 1 && (
-                      <div className="flex justify-center items-center gap-2 mt-8 mb-4">
-                        {/* Previous Button */}
-                        <button
-                          onClick={() => handlePageChange(currentPage - 1)}
-                          disabled={currentPage === 1}
-                          className={`
-                            group relative inline-flex items-center px-5 py-2.5 text-sm font-semibold 
-                            rounded-lg border transition-all duration-200 ease-out transform
-                            ${currentPage === 1
-                              ? "bg-gray-50 text-gray-400 cursor-not-allowed border-gray-200"
-                              : "bg-white text-gray-700 border-gray-300 hover:bg-gray-50 hover:text-gray-900 hover:border-gray-400 hover:shadow-md hover:scale-[1.02]"
-                            }
-                          `}
-                        >
-                          <svg className="w-4 h-4 mr-2 transition-transform duration-200 group-hover:-translate-x-0.5" fill="currentColor" viewBox="0 0 20 20">
-                            <path
-                              fillRule="evenodd"
-                              d="M12.707 5.293a1 1 0 010 1.414L9.414 10l3.293 3.293a1 1 0 01-1.414 1.414l-4-4a1 1 0 010-1.414l4-4a1 1 0 011.414 0z"
-                              clipRule="evenodd"
-                            />
-                          </svg>
-                          <span>Previous</span>
-                        </button>
-
-                        {/* Page Numbers */}
-                        <div className="flex gap-1">
-                          {[...Array(totalPages)].map((_, index) => {
-                            const pg = index + 1;
-                            return (
-                              <button
-                                key={pg}
-                                onClick={() => handlePageChange(pg)}
-                                className={`
-                                  group relative inline-flex items-center justify-center w-10 h-10 text-sm font-semibold 
-                                  rounded-lg border transition-all duration-200 ease-out transform
-                                  ${pg === currentPage
-                                    ? "bg-blue-600 text-white border-blue-600 shadow-lg shadow-blue-600/25 scale-105"
-                                    : "bg-white text-gray-700 border-gray-300 hover:bg-gray-50 hover:text-gray-900 hover:border-gray-400 hover:shadow-md hover:scale-[1.02]"
-                                  }
-                                `}
-                              >
-                                <span className="relative">{pg}</span>
-                                {pg === currentPage && (
-                                  <div className="absolute inset-0 bg-white opacity-10 rounded-lg animate-pulse"></div>
-                                )}
-                              </button>
-                            );
-                          })}
-                        </div>
-
-                        {/* Next Button */}
-                        <button
-                          onClick={() => handlePageChange(currentPage + 1)}
-                          disabled={currentPage === totalPages}
-                          className={`
-                            group relative inline-flex items-center px-5 py-2.5 text-sm font-semibold 
-                            rounded-lg border transition-all duration-200 ease-out transform
-                            ${currentPage === totalPages
-                              ? "bg-gray-50 text-gray-400 cursor-not-allowed border-gray-200"
-                              : "bg-white text-gray-700 border-gray-300 hover:bg-gray-50 hover:text-gray-900 hover:border-gray-400 hover:shadow-md hover:scale-[1.02]"
-                            }
-                          `}
-                        >
-                          <span>Next</span>
-                          <svg className="w-4 h-4 ml-2 transition-transform duration-200 group-hover:translate-x-0.5" fill="currentColor" viewBox="0 0 20 20">
-                            <path
-                              fillRule="evenodd"
-                              d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z"
-                              clipRule="evenodd"
-                            />
-                          </svg>
-                        </button>
-                      </div>
-                    )}
+                        </thead>
+                        <tbody className="bg-white divide-y divide-gray-100">
+                          {accessCodes.map((ac, index) => (
+                            <tr
+                              key={ac.id}
+                              onClick={() => openDetails(ac)}
+                              className={`hover:bg-gray-50 transition-colors cursor-pointer ${index % 2 === 0 ? "bg-white" : "bg-gray-50/50"}`}
+                            >
+                              <td className="px-3 lg:px-4 xl:px-6 py-3">
+                                <span className="text-xs sm:text-sm font-semibold text-gray-900">
+                                  {ac.zip_code}
+                                </span>
+                              </td>
+                              <td className="px-3 lg:px-4 xl:px-6 py-3">
+                                <div className="text-xs sm:text-sm text-gray-900 break-words">
+                                  {ac.address}
+                                </div>
+                              </td>
+                              <td className="px-3 lg:px-4 xl:px-6 py-3">
+                                <div className="text-xs sm:text-sm text-gray-900 break-words">
+                                  <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-indigo-100 text-indigo-800 border border-indigo-200 break-all">
+                                    {ac.access_code}
+                                  </span>
+                                </div>
+                              </td>
+                              <td className="px-3 lg:px-4 xl:px-6 py-3">
+                                <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-indigo-100 text-indigo-800 border border-indigo-200">
+                                  {ac.imageCount}
+                                </span>
+                              </td>
+                              <td className="px-3 lg:px-4 xl:px-6 py-3">
+                                <span className="text-xs sm:text-sm text-gray-600">
+                                  {new Date(ac.created_at).toLocaleString()}
+                                </span>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
                   </div>
                 </div>
+
+                {/* Mobile/Tablet Card View */}
+                <div className="md:hidden space-y-4">
+                  {accessCodes.map((ac, index) => (
+                    <div
+                      key={ac.id}
+                      onClick={() => openDetails(ac)}
+                      className="bg-white rounded-lg shadow-md p-4 border border-gray-200 cursor-pointer hover:shadow-lg transition-shadow"
+                    >
+                      <div className="space-y-3">
+                        <div className="flex items-start justify-between">
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 mb-2">
+                              <span className="text-xs font-semibold text-gray-500 uppercase">Zip Code:</span>
+                              <span className="text-sm font-bold text-gray-900">{ac.zip_code}</span>
+                            </div>
+                            <div className="mb-2">
+                              <span className="text-xs font-semibold text-gray-500 uppercase block mb-1">Address:</span>
+                              <p className="text-sm text-gray-900 break-words">{ac.address}</p>
+                            </div>
+                            <div className="mb-2">
+                              <span className="text-xs font-semibold text-gray-500 uppercase block mb-1">Access Code:</span>
+                              <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-indigo-100 text-indigo-800 border border-indigo-200 break-all">
+                                {ac.access_code}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                        <div className="flex items-center justify-between pt-2 border-t border-gray-200">
+                          <div className="flex items-center gap-4">
+                            <div className="flex items-center gap-2">
+                              <span className="text-xs font-semibold text-gray-500">Images:</span>
+                              <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-indigo-100 text-indigo-800 border border-indigo-200">
+                                {ac.imageCount}
+                              </span>
+                            </div>
+                            <div className="text-xs text-gray-500">
+                              {new Date(ac.created_at).toLocaleDateString()}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
               </div>
+
+              {/* Pagination */}
+              {totalPages > 1 && (
+                <div className="flex flex-wrap justify-center items-center gap-2 mt-6 mb-4 px-2">
+                  {/* Previous Button */}
+                  <button
+                    onClick={() => handlePageChange(currentPage - 1)}
+                    disabled={currentPage === 1}
+                    className={`
+                      group relative inline-flex items-center px-3 sm:px-5 py-2 sm:py-2.5 text-xs sm:text-sm font-semibold 
+                      rounded-lg border transition-all duration-200 ease-out transform
+                      ${currentPage === 1
+                        ? "bg-gray-50 text-gray-400 cursor-not-allowed border-gray-200"
+                        : "bg-white text-gray-700 border-gray-300 hover:bg-gray-50 hover:text-gray-900 hover:border-gray-400 hover:shadow-md hover:scale-[1.02]"
+                      }
+                    `}
+                  >
+                    <svg className="w-3 h-3 sm:w-4 sm:h-4 mr-1 sm:mr-2 transition-transform duration-200 group-hover:-translate-x-0.5" fill="currentColor" viewBox="0 0 20 20">
+                      <path fillRule="evenodd" d="M12.707 5.293a1 1 0 010 1.414L9.414 10l3.293 3.293a1 1 0 01-1.414 1.414l-4-4a1 1 0 010-1.414l4-4a1 1 0 011.414 0z" clipRule="evenodd" />
+                    </svg>
+                    <span className="hidden sm:inline">Previous</span>
+                    <span className="sm:hidden">Prev</span>
+                  </button>
+
+                  {/* Page Numbers */}
+                  <div className="flex flex-wrap gap-1 justify-center">
+                    {[...Array(totalPages)].map((_, index) => {
+                      const pg = index + 1;
+                      // Show first page, last page, current page, and pages around current
+                      const showPage = pg === 1 || pg === totalPages || (pg >= currentPage - 1 && pg <= currentPage + 1);
+                      
+                      if (!showPage && pg === currentPage - 2 && currentPage > 3) {
+                        return <span key={pg} className="px-2 text-gray-400">...</span>;
+                      }
+                      if (!showPage && pg === currentPage + 2 && currentPage < totalPages - 2) {
+                        return <span key={pg} className="px-2 text-gray-400">...</span>;
+                      }
+                      if (!showPage) return null;
+                      
+                      return (
+                        <button
+                          key={pg}
+                          onClick={() => handlePageChange(pg)}
+                          className={`
+                            group relative inline-flex items-center justify-center w-8 h-8 sm:w-10 sm:h-10 text-xs sm:text-sm font-semibold 
+                            rounded-lg border transition-all duration-200 ease-out transform
+                            ${pg === currentPage
+                              ? "bg-blue-600 text-white border-blue-600 shadow-lg shadow-blue-600/25 scale-105"
+                              : "bg-white text-gray-700 border-gray-300 hover:bg-gray-50 hover:text-gray-900 hover:border-gray-400 hover:shadow-md hover:scale-[1.02]"
+                            }
+                          `}
+                        >
+                          <span className="relative">{pg}</span>
+                          {pg === currentPage && (
+                            <div className="absolute inset-0 bg-white opacity-10 rounded-lg animate-pulse"></div>
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  {/* Next Button */}
+                  <button
+                    onClick={() => handlePageChange(currentPage + 1)}
+                    disabled={currentPage === totalPages}
+                    className={`
+                      group relative inline-flex items-center px-3 sm:px-5 py-2 sm:py-2.5 text-xs sm:text-sm font-semibold 
+                      rounded-lg border transition-all duration-200 ease-out transform
+                      ${currentPage === totalPages
+                        ? "bg-gray-50 text-gray-400 cursor-not-allowed border-gray-200"
+                        : "bg-white text-gray-700 border-gray-300 hover:bg-gray-50 hover:text-gray-900 hover:border-gray-400 hover:shadow-md hover:scale-[1.02]"
+                      }
+                    `}
+                  >
+                    <span className="hidden sm:inline">Next</span>
+                    <span className="sm:hidden">Next</span>
+                    <svg className="w-3 h-3 sm:w-4 sm:h-4 ml-1 sm:ml-2 transition-transform duration-200 group-hover:translate-x-0.5" fill="currentColor" viewBox="0 0 20 20">
+                      <path fillRule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clipRule="evenodd" />
+                    </svg>
+                  </button>
+                </div>
+              )}
             )}
           </div>
         </div>
