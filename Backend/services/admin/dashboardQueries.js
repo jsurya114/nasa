@@ -21,7 +21,7 @@ export const AdminDashboardQueries = {
           AND pd.journey_date = $1::date;
       `;
       const result = await pool.query(queryStr, [selectedDate]);
-      console.log(`✅ Updated payment for ${result.rowCount} records on ${selectedDate}`);
+     
       return result;
     } catch (error) {
       console.error("Error in updatePaymentTableForDate:", error);
@@ -126,7 +126,7 @@ export const AdminDashboardQueries = {
 
   getPaymentDashboardPaginated: async (filters = {}, id, role, limit = 10, offset = 0) => {
     try {
-      console.log("getPaymentDashboardPaginated called with filters:", filters);
+      
 
       // ✅ Conditionally include company_earnings based on role
       const companyEarningsField = role === "superadmin" ? "pd.company_earnings," : "";
@@ -219,8 +219,7 @@ export const AdminDashboardQueries = {
       
       queryParams.push(limit, offset);
 
-      console.log("Executing query:", finalQuery);
-      console.log("With params:", queryParams);
+    
 
       const result = await pool.query(finalQuery, queryParams);
       return result.rows;
@@ -232,7 +231,7 @@ export const AdminDashboardQueries = {
 
   PaymentDashboardTable: async (filters = {}, id, role) => {
     try {
-      console.log("PaymentDashboardTable called with filters:", filters);
+  
 
       // ✅ Conditionally include company_earnings based on role
       const companyEarningsField = role === "superadmin" ? "pd.company_earnings," : "";
@@ -322,8 +321,7 @@ export const AdminDashboardQueries = {
 
       finalQuery += " ORDER BY r.name, pd.journey_date DESC, pd.start_seq;";
 
-      console.log("Executing query:", finalQuery);
-      console.log("With params:", queryParams);
+
 
       const result = await pool.query(finalQuery, queryParams);
       return result.rows;
@@ -361,11 +359,9 @@ export const AdminDashboardQueries = {
           AND pd.paid = false;
       `;
 
-      console.log("Executing payment update query:", updateQuery);
-      console.log("With params:", queryParams);
+
 
       const result = await pool.query(updateQuery, queryParams);
-      console.log(`Updated ${result.rowCount} payment records to paid`);
       
       return result;
     } catch (error) {

@@ -35,7 +35,7 @@ export const insertRoute = async (data) => {
     }
   }
 
-  console.log("Inserting route with data:", { ...data, ...prices }); // Debug log
+  
   const result = await pool.query(
     `INSERT INTO routes 
       (name, job, company_route_price, driver_route_price, company_doublestop_price, driver_doublestop_price, enabled) 
@@ -50,23 +50,23 @@ export const insertRoute = async (data) => {
       enabled,
     ]
   );
-  console.log("Inserted route:", result.rows[0]); // Debug log
+  
   return result.rows[0];
 };
 
 // Get all routes
 export const getAllRoutes = async () => {
-  console.log("Fetching all routes..."); // Debug log
+  
   const result = await pool.query("SELECT * FROM routes ORDER BY id ASC");
-  console.log("Fetched routes:", result.rows); // Debug log
+  
   return result.rows;
 };
 
 // Get route by ID
 export const getRouteByIdQuery = async (id) => {
-  console.log(`Fetching route with id: ${id}`); // Debug log
+ 
   const result = await pool.query("SELECT * FROM routes WHERE id = $1", [id]);
-  console.log("Fetched route:", result.rows[0] || null); // Debug log
+ 
   return result.rows[0];
 };
 
@@ -104,7 +104,7 @@ export const updateRouteQuery = async (id, data) => {
     }
   }
 
-  console.log(`Updating route id: ${id} with data:`, { ...data, ...prices }); // Debug log
+  
   const result = await pool.query(
     `UPDATE routes 
      SET name=$1, job=$2, company_route_price=$3, driver_route_price=$4, 
@@ -121,16 +121,16 @@ export const updateRouteQuery = async (id, data) => {
       id,
     ]
   );
-  console.log("Updated route:", result.rows[0] || null); // Debug log
+  
   return result.rows[0];
 };
 
 // Toggle route status
 export const toggleRouteStatusQuery = async (id) => {
-  console.log(`Toggling status for route id: ${id}`); // Debug log
+  
   const route = await getRouteByIdQuery(id);
   if (!route) {
-    console.log(`Route id: ${id} not found`); // Debug log
+  
     return null;
   }
   const result = await pool.query(
@@ -143,9 +143,9 @@ export const toggleRouteStatusQuery = async (id) => {
 
 // Delete route
 export const deleteRouteQuery = async (id) => {
-  console.log(`Deleting route id: ${id}`); // Debug log
+  
   const result = await pool.query("DELETE FROM routes WHERE id=$1 RETURNING *", [id]);
-  console.log("Deleted route:", result.rows[0] || null); // Debug log
+
   return result.rows[0];
 };
 

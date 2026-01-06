@@ -20,7 +20,7 @@ export const ExcelFileQueries = {
           upload_date DATE
         )
       `);
-      console.log(`✅ Table ${tableName} created successfully`);
+      
     } catch (error) {
       console.error("❌ Error creating table:", error);
       throw error;
@@ -30,7 +30,7 @@ export const ExcelFileQueries = {
   insertDataIntoDailyTable: async (tableName, data, uploadDate, client) => {
     try {
       if (!data || data.length === 0) {
-        console.log("⚠️ No data to insert");
+      
         return;
       }
 
@@ -74,7 +74,7 @@ export const ExcelFileQueries = {
       `;
 
       await client.query(query, values);
-      console.log(`✅ Inserted ${data.length} rows into ${tableName}`);
+     
     } catch (error) {
       console.error("❌ Error inserting daily data:", error);
       throw error;
@@ -84,7 +84,7 @@ export const ExcelFileQueries = {
   deleteIfTableAlreadyExists: async (tableName, client) => {
     try {
       await client.query(`DROP TABLE IF EXISTS ${tableName}`);
-      console.log(`✅ Table ${tableName} deleted`);
+      
     } catch (error) {
       console.error(error);
       throw error;
@@ -107,7 +107,7 @@ export const ExcelFileQueries = {
         WHERE d.seq_route_code = e.seq_route_code
           AND DATE(d.driver_set_date) = DATE(e.upload_date);
       `);
-      console.log("✅ Deliveries merged with Excel data");
+      
     } catch (error) {
       throw error;
     }
@@ -134,7 +134,7 @@ export const ExcelFileQueries = {
         WHERE final_result = 'not_assigned';
       `;
       await client.query(queryStr);
-      console.log("✅ Updated no_scanned and failed_attempt");
+     
     } catch (error) {
       throw error;
     }
@@ -296,7 +296,7 @@ export const ExcelFileQueries = {
       `;
 
       await client.query(queryStr);
-      console.log("✅ First stop & double stop updated");
+      
     } catch (error) {
       console.error(error);
       throw error;

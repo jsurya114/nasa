@@ -4,9 +4,7 @@ import HttpStatus from "../../utils/statusCodes.js";
 
 export const getPaymentDashboardData = async (req, res) => {
   try {
-    console.log("getPaymentDashboardData called");
-    console.log("Query params:", req.query);
-
+   
     const { 
       job, 
       driver, 
@@ -31,14 +29,14 @@ export const getPaymentDashboardData = async (req, res) => {
     if (paymentStatus && paymentStatus !== "All") filters.paymentStatus = paymentStatus;
     if (companyEarnings === "true") filters.companyEarnings = true;
 
-    console.log("Processed filters:", filters);
+ 
 
     const pageNum = parseInt(page);
     const limitNum = parseInt(limit);
     const offset = (pageNum - 1) * limitNum;
 
     const totalCount = await AdminDashboardQueries.getPaymentDashboardCount(filters, id, role);
-    console.log("totalcount", totalCount);
+    
     
     const result = await AdminDashboardQueries.getPaymentDashboardPaginated(
       filters, 
@@ -50,7 +48,7 @@ export const getPaymentDashboardData = async (req, res) => {
     
     const totalPages = Math.ceil(totalCount / limitNum);
     
-    console.log("Query successful, returning", result.length, "rows");
+    
     
     return res.status(HttpStatus.OK).json({ 
       success: true, 
@@ -76,8 +74,7 @@ export const getPaymentDashboardData = async (req, res) => {
 
 export const getAllPaymentDashboardData = async (req, res) => {
   try {
-    console.log("getAllPaymentDashboardData called");
-    console.log("Query params:", req.query);
+   
 
     const { job, driver, route, startDate, endDate, paymentStatus, companyEarnings } = req.query;
     const { id, role } = req.user;
@@ -92,11 +89,11 @@ export const getAllPaymentDashboardData = async (req, res) => {
     if (paymentStatus && paymentStatus !== "All") filters.paymentStatus = paymentStatus;
     if (companyEarnings === "true") filters.companyEarnings = true;
 
-    console.log("Processed filters:", filters);
+   
 
     const result = await AdminDashboardQueries.PaymentDashboardTable(filters, id, role);
     
-    console.log("Query successful, returning", result.length, "rows");
+
     
     return res.status(HttpStatus.OK).json({ success: true, data: result });
   } catch (error) {
@@ -182,7 +179,7 @@ export const updateWeeklyTempDataToDashboard = async (req, res) => {
       });
     }
 
-    console.log(`✅ Weekly data found with ${isExists.rowCount} rows. Starting insertion...`);
+
 
     const rowsInserted = await WeeklyExcelQueries.createEntriesFromWeeklyCount();
     await WeeklyExcelQueries.deleteWeeklyTableIfExists('weeklycount');

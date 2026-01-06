@@ -165,7 +165,7 @@ export const toggleRouteStatusQuery = async (id) => {
   console.log(`Toggling status for route id: ${id}`);
   const route = await getRouteByIdQuery(id);
   if (!route) {
-    console.log(`Route id: ${id} not found`);
+   
     return null;
   }
   const result = await pool.query(
@@ -187,7 +187,7 @@ export const deleteRouteQuery = async (id) => {
 // Paginated routes with role-based filtering
 export const routePagination = async (page, limit, search = "", isSuperAdmin = false, adminId = null) => {
   try {
-    console.log('routePagination called with:', { page, limit, search, isSuperAdmin, adminId });
+   
     
     const offset = (page - 1) * limit;
     let routeQuery;
@@ -196,7 +196,7 @@ export const routePagination = async (page, limit, search = "", isSuperAdmin = f
 
     if (isSuperAdmin) {
       // Superadmin sees all routes
-      console.log('Fetching all routes for superadmin');
+   
       if (search) {
         routeQuery = `
           SELECT * FROM routes
@@ -217,7 +217,7 @@ export const routePagination = async (page, limit, search = "", isSuperAdmin = f
       }
     } else {
       // Normal admin sees only routes for their assigned cities
-      console.log('Fetching routes for normal admin:', adminId);
+
       if (search) {
         routeQuery = `
           SELECT DISTINCT r.* 
@@ -263,16 +263,13 @@ export const routePagination = async (page, limit, search = "", isSuperAdmin = f
       }
     }
 
-    console.log('Executing query:', routeQuery);
-    console.log('With values:', values);
 
     const routes = await pool.query(routeQuery, values);
     const total = search
       ? await pool.query(countQuery, isSuperAdmin ? [`%${search}%`] : [adminId, `%${search}%`])
       : await pool.query(countQuery, isSuperAdmin ? [] : [adminId]);
 
-    console.log('Routes found:', routes.rows.length);
-    console.log('Total count:', total.rows[0].count);
+  
 
     return {
       routes: routes.rows,

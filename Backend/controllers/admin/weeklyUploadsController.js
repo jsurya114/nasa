@@ -61,7 +61,7 @@ export const weeklyExcelUpload = async (req, res) => {
       });
     }
 
-    console.log(`Processing file: ${file.originalname}, Size: ${file.size} bytes`);
+    
 
     // Function to process Excel from buffer
     async function processExcelFromBuffer(buffer, batchSize = 500) {
@@ -87,7 +87,7 @@ export const weeklyExcelUpload = async (req, res) => {
         }
       });
       
-      console.log(`Total data rows found: ${jsonData.length}`);
+      
       
       if (jsonData.length === 0) {
         throw new Error('No data rows found in the Excel file');
@@ -103,9 +103,7 @@ export const weeklyExcelUpload = async (req, res) => {
       for (let i = 0; i < jsonData.length; i += batchSize) {
         batchCount++;
         const batch = jsonData.slice(i, i + batchSize);
-        console.log(
-          `Processing batch ${batchCount} (rows ${i + 1} to ${Math.min(i + batchSize, jsonData.length)})`
-        );
+       
 
         for (let rowIndex = 0; rowIndex < batch.length; rowIndex++) {
           const row = batch[rowIndex];
@@ -120,22 +118,20 @@ export const weeklyExcelUpload = async (req, res) => {
             const stopPointDetails = (row[18] || '').toString().trim();
 
             // Debug first few rows
-            if (totalProcessed + totalSkipped < 3) {
-              console.log(`Sample row ${totalProcessed + totalSkipped + 1}:`, {
-                regionRoute,
-                courier,
-                deliveryId,
-                signingTime,
-                structuredAddress,
-                stopPointDetails
-              });
-            }
+            // if (totalProcessed + totalSkipped < 3) {
+            //   console.log(`Sample row ${totalProcessed + totalSkipped + 1}:`, {
+            //     regionRoute,
+            //     courier,
+            //     deliveryId,
+            //     signingTime,
+            //     structuredAddress,
+            //     stopPointDetails
+            //   });
+            // }
 
             // Validation
             if (!deliveryId || !signingTime) {
-              console.log(
-                `Batch ${batchCount}, Row ${rowIndex + 1}: Skipping - Missing required fields`
-              );
+          
               totalSkipped++;
               continue;
             }
@@ -146,9 +142,7 @@ export const weeklyExcelUpload = async (req, res) => {
               moment(signingTime, 'MM/DD/YYYY', true).isValid();
               
             if (!isValidDate) {
-              console.log(
-                `Batch ${batchCount}, Row ${rowIndex + 1}: Skipping - Invalid date: "${signingTime}"`
-              );
+              
               totalSkipped++;
               continue;
             }
@@ -159,9 +153,7 @@ export const weeklyExcelUpload = async (req, res) => {
             // Determine address
             const address = structuredAddress.toUpperCase() || stopPointDetails;
             if (!address) {
-              console.log(
-                `Batch ${batchCount}, Row ${rowIndex + 1}: Skipping - No address found`
-              );
+             
               totalSkipped++;
               continue;
             }
@@ -204,16 +196,9 @@ export const weeklyExcelUpload = async (req, res) => {
           }
         }
         
-        console.log(
-          `Batch ${batchCount} completed. Processed: ${totalProcessed}, Skipped: ${totalSkipped}`
-        );
+       
       }
 
-      console.log(
-        `\nFinal Summary - Total rows: ${jsonData.length}, ` +
-        `Processed: ${totalProcessed}, Skipped: ${totalSkipped}, ` +
-        `Aggregated groups: ${aggregatedData.size}`
-      );
 
       // Prepare and insert into database
       let tableName = "weeklycount";
@@ -242,7 +227,7 @@ export const weeklyExcelUpload = async (req, res) => {
         }
         
         await client.query('COMMIT');
-        console.log(`Database: ${insertCount} records inserted/updated successfully`);
+    
         
         return {
           success: true,

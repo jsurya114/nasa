@@ -37,7 +37,7 @@ import pool from "../../config/db.js";
                           CONSTRAINT weeklycount_unique UNIQUE (driver_id, del_date, del_route)
                       );
                     `);
-            console.log(`✅ Table ${table_name} created successfully`);
+          
             } catch (error) {
             console.error("❌ Error creating table:", error);
             }
@@ -48,24 +48,13 @@ import pool from "../../config/db.js";
       await pool.query(`
                 DROP TABLE IF EXISTS ${table_name}
             `);
-      console.log(`✅ Table ${table_name} deleted`);
+
     } catch (error) {
       console.error(error);
     }
   },
 
-  // tableCheckQuery:async()=>{
-  //   const tableCheckQuery = `
-  //           SELECT EXISTS (
-  //               SELECT 1 FROM information_schema.tables 
-  //               WHERE table_schema = 'public' 
-  //               AND table_name = 'weeklycount'
-  //           ) AS table_exists;
-  //       `;
 
-  //       const tableCheckResult = await pool.query(tableCheckQuery);
-  //       const tableExists = tableCheckResult.rows[0].table_exists;
-  // },
 
   insertBatchDatafromExcel:async(insertPlaceholders,insertValues)=>{
 
@@ -385,8 +374,7 @@ createEntriesFromWeeklyCount: async () => {
     const insertResult = await client.query(insertQuery);
     const insertedIds = insertResult.rows.map(row => row.id);
 
-    console.log(`✅ Inserted ${insertResult.rowCount} rows into dashboard_data`);
-    console.log(`⏳ Trigger function has created payment_dashboard entries...`);
+
 
     // QUERY 2: Update payment_dashboard with business logic
     // Only update the newly inserted records
@@ -409,7 +397,7 @@ createEntriesFromWeeklyCount: async () => {
 
     const updateResult = await client.query(updateQuery, [insertedIds]);
 
-    console.log(`✅ Updated ${updateResult.rowCount} rows in payment_dashboard`);
+   
 
     await client.query('COMMIT');
 

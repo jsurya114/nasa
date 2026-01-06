@@ -174,7 +174,7 @@ export const fetchAllCities = createAsyncThunk(
       }
 
       const data = await res.json();
-      console.log("Fetched all cities:", data.cities);
+    
       return data.cities;
     } catch (error) {
       console.error("fetchAllCities error:", error.message);
@@ -245,7 +245,7 @@ const jobSlice = createSlice({
       .addCase(fetchAllCities.fulfilled, (state, action) => {
         state.allCitiesStatus = "succeeded";
         state.allCities = action.payload || [];
-        console.log("fetchAllCities: All cities updated:", action.payload);
+      
       })
       .addCase(fetchAllCities.rejected, (state, action) => {
         state.allCitiesStatus = "failed";

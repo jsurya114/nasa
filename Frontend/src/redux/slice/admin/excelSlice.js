@@ -29,7 +29,7 @@ export const excelDailyFileUpload = createAsyncThunk(
         headers: getAuthHeaders(true), // true = FormData, don't set Content-Type
       })
       const data = await res.json()
-      console.log(data, 'excel file upload status')
+   
       if (!res.ok) {
         return rejectWithValue(data.message || 'Excel file upload failed')
       }
@@ -45,7 +45,7 @@ export const excelWeeklyFileUpload = createAsyncThunk(
   "excel/uploadWeekly",
   async (formData, { rejectWithValue }) => {
     try {
-      console.log("File from React ", formData);
+      
       const res = await fetch(`${API_BASE_URL}/admin/doubleStop/weekly-upload`, {
         method: "POST",
         body: formData,
@@ -58,7 +58,7 @@ export const excelWeeklyFileUpload = createAsyncThunk(
       }
       
       let data = await res.json();
-      console.log(data, "Data from backend for weekly")
+     
       return data;
     } catch (error) {
       return rejectWithValue(error.message);
@@ -116,7 +116,7 @@ const excelSlice = createSlice({
         state.weekly.success = false;
       })
       .addCase(excelWeeklyFileUpload.fulfilled, (state, action) => {
-        console.log("Excel upload", action.payload);
+        
         state.weekly.loading = false;
         state.weekly.success = action.payload.message;
         state.weekly.message = action.payload.message;

@@ -10,7 +10,7 @@ export const getAccessCodes = async (req, res) => {
     const search = req.query.search || '';
     const zipCodeFilter = req.query.zip_code || '';
 
-    console.log("Controller: Fetching access codes with pagination...", { page, limit, search, zipCodeFilter });
+
     
     const result = await accessCodeQueries.getAccessCodes(page, limit, search, zipCodeFilter);
     result.data.map((access_code)=>{
@@ -25,7 +25,7 @@ export const getAccessCodes = async (req, res) => {
         access_code.imageCount++
       }
     })
-    console.log("Controller: Access codes fetched:", result);
+    
     res.json(result);
   } catch (err) {
     console.error("Controller error in getAccessCodes:", err);
@@ -47,11 +47,12 @@ export const createAccessCode = async (req, res) => {
     return res.status(400).json({ message: "Invalid zip code format" });
   }
 
-  if (!/^[a-zA-Z0-9]+$/.test(access_code)) {
-    return res
-      .status(400)
-      .json({ message: "Access code must be alphanumeric" });
-  }
+ if (!/^[a-zA-Z0-9 ]+$/.test(access_code)) {
+  return res
+    .status(400)
+    .json({ message: "Access code must be alphanumeric and spaces only" });
+}
+
 
   try {
     const imageUrls = files.map((f) => f.path); // ✅ Cloudinary URLs
@@ -150,7 +151,7 @@ export const deleteAccessCode = async (req, res) => {
   const { id } = req.params;
 
   try {
-    console.log("Controller: Deleting access code with id:", id);
+   
     await accessCodeQueries.deleteAccessCode(id);
     res.json({ message: "Access code deleted successfully" });
   } catch (err) {

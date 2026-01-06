@@ -96,7 +96,7 @@ export const DailyExcelUpload = async (req, res) => {
     }
 
     const { uploadDate } = req.body;
-    console.log("uploaddate",uploadDate,new Date(uploadDate))
+   
     
         
     if (!uploadDate) {

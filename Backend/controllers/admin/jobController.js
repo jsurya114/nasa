@@ -9,7 +9,7 @@ const jobController={
     getJob:async(req,res)=>{
         try {
             const jobs = await jobService.getCity()
-            console.log(jobs)
+           
             res.json(jobs)
         } catch (error) {
             res.status(HttpStatus.INTERNAL_SERVER_ERROR).json({ error: error.message })
@@ -19,9 +19,7 @@ const jobController={
         try {
            const {job,city_code,enabled} =req.body
 
-           console.log(job)
-           console.log(city_code)
-           console.log(req.body)
+         
 
            if (!job || job.trim() === "") {
       return res.status(HttpStatus.BAD_REQUEST).json({ field: "job", message: "Job name is required" });

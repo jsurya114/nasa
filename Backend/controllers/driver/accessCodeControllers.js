@@ -8,7 +8,7 @@ export const getAccessCodes = async (req, res) => {
     const search = req.query.search || '';
     const zipCodeFilter = req.query.zip_code || '';
 
-    console.log("Driver Controller: Fetching access codes with pagination...", { page, limit, search, zipCodeFilter });
+    
     
     const result = await accessCodeQueries.getAccessCodes(page, limit, search, zipCodeFilter);
     // add imageCount for convenience on client
@@ -19,7 +19,7 @@ export const getAccessCodes = async (req, res) => {
       if (access_code.image_url3) access_code.imageCount++;
     });
 
-    console.log("Driver Controller: Access codes fetched:", result);
+  
     res.json(result);
   } catch (err) {
     console.error("Driver Controller error in getAccessCodes:", err);
@@ -45,7 +45,7 @@ export const createAccessCode = async (req, res) => {
   }
 
   try {
-    console.log("Driver Controller: Creating access code with data:", { zip_code, address, access_code });
+
     const imageUrls = files.map((f) => `/uploads/accessCodeImages/${f.filename}`);
     const newAccessCode = await accessCodeQueries.createAccessCode(zip_code, address, access_code, imageUrls);
     const imageFiles = files.map((f) => ({

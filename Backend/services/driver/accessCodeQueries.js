@@ -52,12 +52,6 @@ const accessCodeQueries = {
       queryParams.push(limit, offset);
       const dataResult = await pool.query(dataQuery, queryParams);
 
-      console.log('Driver Database query result for access codes:', {
-        total,
-        page,
-        limit,
-        data: dataResult.rows
-      });
 
       return {
         data: dataResult.rows,
@@ -96,7 +90,7 @@ const accessCodeQueries = {
       `;
       const [u1, u2, u3] = imageUrls;
       const result = await pool.query(insertQuery, [zipCode, address, accessCode, u1 || null, u2 || null, u3 || null]);
-      console.log('Driver Created access code:', result.rows[0]);
+
       return result.rows[0];
     } catch (error) {
       console.error('Driver Database error in createAccessCode:', error);

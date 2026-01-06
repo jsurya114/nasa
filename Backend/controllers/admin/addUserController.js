@@ -28,7 +28,7 @@ export const createUsers = async (req, res) => {
 
 export const getUsers = async (req, res) => {
     try {
-        console.log("Entered by Get users route");
+       
 
         const adminId = req.user.id;
         const adminRole = req.user.role;
@@ -65,7 +65,7 @@ export const getUsers = async (req, res) => {
 export const changeStatusUser = async (req, res) => {
     try {
         const id = req.params.id;
-        console.log("Data from url ", id);
+      
         const checkUser = await dbService.getDriverById(id);
         if (!checkUser)
             return res.status(HttpStatus.NOT_FOUND).json({ message: "User does not exists" });

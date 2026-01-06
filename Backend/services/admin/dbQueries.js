@@ -245,7 +245,7 @@ export const dbService = {
 
     getDashboardData: async () => {
         const result = await pool.query(`SELECT * FROM dashboard_data`);
-        console.log('db dash query');
+        
         return result.rows;
     },
 
@@ -363,7 +363,7 @@ export const dbService = {
                 [adminId]
             );
             
-            console.log(`Found ${result.rows.length} cities for admin ${adminId}`);
+   
             return result.rows;
         } catch (error) {
             console.error("Error in getAdminCities:", error.message);
