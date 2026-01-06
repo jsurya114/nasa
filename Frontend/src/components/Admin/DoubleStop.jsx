@@ -335,8 +335,8 @@ const DoubleStop = () => {
       });
   };
 
-  const loadWeeklyData = useCallback((page,limit) => {
-    dispatch(fetchWeeklyTempData({page,limit}));
+  const loadWeeklyData = useCallback(() => {
+    dispatch(fetchWeeklyTempData());
   }, [dispatch]);
 
   // Fixed: Properly pass all three parameters

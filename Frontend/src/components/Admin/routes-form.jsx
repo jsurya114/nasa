@@ -197,7 +197,7 @@ export default function RoutesForm() {
 
   // Memoized table headers
   const tableHeaders = useMemo(() => 
-    ["Route","Route String", "Job", "Company Price", "Driver Price", "Status", "Actions"],
+    ["Route", "Job", "Company Price", "Driver Price", "Status", "Actions"],
   []);
 
   return (
@@ -374,7 +374,6 @@ export default function RoutesForm() {
                       }`}
                     >
                       <td className="px-3 py-2 border-b border-gray-200">{route.route}</td>
-                      <td className="px-3 py-2 border-b border-gray-200">{route.routeCodeInString}</td>
                       <td className="px-3 py-2 border-b border-gray-200">{route.job}</td>
                       <td className="px-3 py-2 border-b border-gray-200">{route.companyRoutePrice}</td>
                       <td className="px-3 py-2 border-b border-gray-200">{route.driverRoutePrice}</td>

@@ -11,33 +11,11 @@ import { unlink } from "fs";
 export const getWeeklyTempData=async(req,res)=>{
   try{
     // Get admin info from request (set by auth middleware)
-
-    const {page=1,limit=10}=req.query;
-    const {id,role} = req.admin;
-
-    let pageNum=Number(page);
-    let pageLimit=Number(limit);
-    let offset=(pageNum-1)* pageLimit
-
-    // let countOfData=await 
-
-    // const adminCities = req.admin?.cities || [];
+    const adminRole = req.admin?.role;
+    const adminCities = req.admin?.cities || [];
     
-    let data = await WeeklyExcelQueries.getWeeklyData(id,role,pageLimit,offset);
-    
-    let countOfData= await WeeklyExcelQueries.getCountOfWeeklyData(id,role);
-    // console.log("Count", countOfData);
-    const total = parseInt(countOfData);
-    const totalPages = Math.ceil(total / pageLimit);
-
-    return res.status(HttpStatus.OK).json({data,
-      pagination: {
-        currentPage: pageNum,
-        totalPages,
-        totalItems: total,
-        itemsPerPage: pageLimit
-      }
-    });
+    let data = await WeeklyExcelQueries.getWeeklyData(adminRole, adminCities);
+    return res.status(HttpStatus.OK).json({data});
   }catch(err){
     console.error("Upload Error:", err);
     res.status(500).json({ success: false, message: "Internal server error" });
