@@ -193,6 +193,7 @@ const DoubleStop = () => {
                 <button
                   type="submit"
                   className="px-6 py-2 bg-purple-700 text-white rounded-lg shadow hover:bg-purple-800"
+                
                 >
                   Upload Weekly Data
                 </button>

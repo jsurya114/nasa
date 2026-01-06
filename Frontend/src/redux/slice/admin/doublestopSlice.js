@@ -29,7 +29,7 @@ export const fetchDashboardData = createAsyncThunk(
       }
 
       const data = await res.json();
-      return data.data; // API returns { success: true, data: [...], pagination: {...} }
+      return data; // API returns { success: true, data: [...], pagination: {...} }
     } catch (err) {
       return rejectWithValue(err.message);
     }
