@@ -12,7 +12,7 @@ function AddDriverForm({ onSubmit, editData, isEdit, onCancel }) {
     name: "",
     email: "",
     phoneNumber: "",
-    driverCode: "",
+    driver_code: "",
     password: "",
     confirmPassword: "",
     city: "",
@@ -28,7 +28,7 @@ function AddDriverForm({ onSubmit, editData, isEdit, onCancel }) {
         name: editData.name || "",
         email: editData.email || "",
         phoneNumber: editData.phone_number || "",
-        driverCode: editData.driver_code || "",
+        driver_code: editData.driver_code || "",
         password: "", // Leave empty - optional to change
         confirmPassword: "",
         city: editData.job || "",
@@ -58,7 +58,7 @@ function AddDriverForm({ onSubmit, editData, isEdit, onCancel }) {
       newErrors.phoneNumber = "Invalid phone number format";
     }
     
-    if (!form.driverCode || !form.driverCode.toString().trim()) newErrors.driverCode = "Driver Code is required";
+    if (!form.driver_code || !form.driver_code.toString().trim()) newErrors.driver_code = "Driver Code is required";
     if (!form.city.trim()) newErrors.city = "City is required";
 
     if (!isEdit) {
@@ -102,7 +102,7 @@ function AddDriverForm({ onSubmit, editData, isEdit, onCancel }) {
         name: "",
         email: "",
         phoneNumber: "",
-        driverCode: "",
+        driver_code: "",
         password: "",
         confirmPassword: "",
         city: "",
@@ -118,7 +118,7 @@ function AddDriverForm({ onSubmit, editData, isEdit, onCancel }) {
       name: "",
       email: "",
       phoneNumber: "",
-      driverCode: "",
+      driver_code: "",
       password: "",
       confirmPassword: "",
       city: "",
@@ -162,17 +162,15 @@ function AddDriverForm({ onSubmit, editData, isEdit, onCancel }) {
 
       <input
         type="number"
-        name="driverCode"
-        value={form.driverCode}
+        name="driver_code"
+        value={form.driver_code}
         onChange={handleChange}
         placeholder="Driver Code"
     
-        className={`px-3 py-2 border rounded-lg ${
-          isEdit ? "bg-gray-100 cursor-not-allowed" : "focus:outline-none focus:ring-2 focus:ring-purple-500"
-        }`}
+         className="px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
       />
-      {errors.driverCode && (
-        <p className="text-red-500 text-sm">{errors.driverCode}</p>
+      {errors.driver_code && (
+        <p className="text-red-500 text-sm">{errors.driver_code}</p>
       )}
 
       <div className="flex flex-col gap-2">

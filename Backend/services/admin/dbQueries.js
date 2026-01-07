@@ -260,20 +260,55 @@ export const dbService = {
             // Hash the new password
             const hashedPwd = await dbService.hashedPassword(data.password);
             
-            updateQuery = `
-                UPDATE drivers
-                SET name=$1, email=$2, city_id=$3, enabled=$4, phone_number=$5, password=$6
-                WHERE id=$7
-            `;
-            updateParams = [data.name, data.email, city_id, data.enabled, data.phoneNumber || null, hashedPwd, id];
+            console.log("updateuser",id,data)
+         updateQuery = `
+  UPDATE drivers
+  SET 
+    name=$1,
+    email=$2,
+    city_id=$3,
+    enabled=$4,
+    phone_number=$5,
+    password=$6,
+    driver_code=$7
+  WHERE id=$8
+`;
+
+updateParams = [
+  data.name,
+  data.email,
+  city_id,
+  data.enabled,
+  data.phoneNumber,
+  hashedPwd,
+  data.driver_code || null,
+  id
+];
+
         } else {
             // Update without changing password
-            updateQuery = `
-                UPDATE drivers
-                SET name=$1, email=$2, city_id=$3, enabled=$4, phone_number=$5
-                WHERE id=$6
-            `;
-            updateParams = [data.name, data.email, city_id, data.enabled, data.phoneNumber || null, id];
+          updateQuery = `
+  UPDATE drivers
+  SET 
+    name=$1,
+    email=$2,
+    city_id=$3,
+    enabled=$4,
+    phone_number=$5,
+    driver_code=$6
+  WHERE id=$7
+`;
+
+updateParams = [
+  data.name,
+  data.email,
+  city_id,
+  data.enabled,
+  data.phoneNumber,
+  data.driver_code || null,
+  id
+];
+
         }
 
         await pool.query(updateQuery, updateParams);

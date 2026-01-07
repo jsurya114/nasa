@@ -80,20 +80,30 @@ export const changeStatusUser = async (req, res) => {
 export const updateUser = async (req, res) => {
     try {
         const id = req.params.id;
-        const { name, email, city, enabled, phoneNumber, password } = req.body;
+        const { name, email, city, enabled, phoneNumber, password,driver_code } = req.body;
 
         const updateData = {
             name,
             email,
             city,
             enabled,
-            phoneNumber
+            phoneNumber,
+            driver_code
+
         };
 
         // Only include password if it's provided (not empty)
         if (password && password.trim()) {
             updateData.password = password;
         }
+        if (driver_code) {
+  
+    return res.status(409).json({
+      message: "Driver code already exists"
+    });
+  
+}
+
 
         const updatedUser = await dbService.updateDriver(id, updateData);
 

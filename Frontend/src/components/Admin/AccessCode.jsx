@@ -230,49 +230,40 @@ export default function AddAccessCodePage() {
   // Generate pagination page numbers with ellipsis (responsive)
   const getPaginationPages = () => {
     const pages = [];
-    // Show max 5 pages on mobile, 7 on tablet, 9 on desktop (handled via CSS)
-    const maxVisible = 7; // Base number, CSS will handle responsive display
+    const maxVisible = 7;
     
     if (totalPages <= maxVisible) {
-      // Show all pages if total is less than max visible
       for (let i = 1; i <= totalPages; i++) {
         pages.push(i);
       }
     } else {
-      // Always show first page
       pages.push(1);
       
       let start = Math.max(2, currentPage - 2);
       let end = Math.min(totalPages - 1, currentPage + 2);
       
-      // Adjust if we're near the start
       if (start <= 2) {
         end = Math.min(totalPages - 1, 5);
         start = 2;
       }
       
-      // Adjust if we're near the end
       if (end >= totalPages - 1) {
         start = Math.max(2, totalPages - 4);
         end = totalPages - 1;
       }
       
-      // Add ellipsis after first page if needed
       if (start > 2) {
         pages.push('ellipsis-start');
       }
       
-      // Add middle pages
       for (let i = start; i <= end; i++) {
         pages.push(i);
       }
       
-      // Add ellipsis before last page if needed
       if (end < totalPages - 1) {
         pages.push('ellipsis-end');
       }
       
-      // Always show last page
       pages.push(totalPages);
     }
     
@@ -479,8 +470,8 @@ export default function AddAccessCodePage() {
                   <option value={5}>5</option>
                   <option value={10}>10</option>
                   <option value={20}>20</option>
-                   <option value={30}>30</option>
-                    <option value={40}>40</option>
+                  <option value={30}>30</option>
+                  <option value={40}>40</option>
                   <option value={50}>50</option>
                 </select>
               </div>
@@ -513,16 +504,6 @@ export default function AddAccessCodePage() {
                   </button>
                 </div>
               </div>
-
-              {/* <div className="w-full md:w-48">
-                <input
-                  type="text"
-                  placeholder="Filter by zip code..."
-                  value={localZipCodeFilter}
-                  onChange={(e) => handleFilterChange(e.target.value)}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 text-sm"
-                />
-              </div> */}
             </div>
           </div>
 
@@ -567,172 +548,242 @@ export default function AddAccessCodePage() {
                 </p>
               </div>
             ) : (
-              <div className="w-full overflow-hidden">
-                <div className="shadow ring-1 ring-black ring-opacity-5 md:rounded-lg">
-                  <table className="w-full divide-y divide-gray-200">
-                    <thead className="bg-gradient-to-r from-gray-50 to-gray-100">
-                      <tr>
-                        <th className="px-2 sm:px-3 lg:px-4 py-3 sm:py-4 text-left text-xs font-bold text-gray-600 uppercase tracking-wider whitespace-nowrap">
-                          Zip Code
-                        </th>
-                        <th className="px-2 sm:px-3 lg:px-4 py-3 sm:py-4 text-left text-xs font-bold text-gray-600 uppercase tracking-wider min-w-[150px]">
-                          Address
-                        </th>
-                        <th className="px-2 sm:px-3 lg:px-4 py-3 sm:py-4 text-left text-xs font-bold text-gray-600 uppercase tracking-wider whitespace-nowrap">
-                          Access Code
-                        </th>
-                        <th className="px-2 sm:px-3 lg:px-4 py-3 sm:py-4 text-left text-xs font-bold text-gray-600 uppercase tracking-wider whitespace-nowrap">
-                          Images
-                        </th>
-                        <th className="px-2 sm:px-3 lg:px-4 py-3 sm:py-4 text-left text-xs font-bold text-gray-600 uppercase tracking-wider hidden md:table-cell whitespace-nowrap">
-                          Created At
-                        </th>
-                        <th className="px-2 sm:px-3 lg:px-4 py-3 sm:py-4 text-left text-xs font-bold text-gray-600 uppercase tracking-wider whitespace-nowrap">
-                          Actions
-                        </th>
-                      </tr>
-                    </thead>
-                    <tbody className="bg-white divide-y divide-gray-100">
-                      {accessCodes.map((ac, index) => (
-                        <tr
-                          key={ac.id}
-                          onClick={() => { setSelectedAC(ac); setShowDetails(true); }}
-                          className={`cursor-pointer hover:bg-gray-50 transition-colors ${index % 2 === 0 ? "bg-white" : "bg-gray-50/50"}`}
-                        >
-                          <td className="px-2 sm:px-3 lg:px-4 py-3 sm:py-4">
-                            <span className="text-xs sm:text-sm font-semibold text-gray-900">
-                              {ac.zip_code}
-                            </span>
-                          </td>
-                          <td className="px-2 sm:px-3 lg:px-4 py-3 sm:py-4">
-                            <div className="text-xs sm:text-sm text-gray-900 break-words max-w-[200px] sm:max-w-[300px] md:max-w-[400px] lg:max-w-none">
-                              {ac.address}
-                            </div>
-                          </td>
-                          <td className="px-2 sm:px-3 lg:px-4 py-3 sm:py-4">
-                            <div className="max-w-[120px] sm:max-w-[150px] md:max-w-[200px]">
-                              <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-indigo-100 text-indigo-800 border border-indigo-200 break-all">
+              <>
+                {/* Desktop Table View - Hidden on mobile */}
+                <div className="hidden md:block w-full overflow-hidden">
+                  <div className="shadow ring-1 ring-black ring-opacity-5 md:rounded-lg">
+                    <table className="w-full divide-y divide-gray-200">
+                      <thead className="bg-gradient-to-r from-gray-50 to-gray-100">
+                        <tr>
+                          <th className="px-3 lg:px-4 py-3 sm:py-4 text-left text-xs font-bold text-gray-600 uppercase tracking-wider whitespace-nowrap">
+                            Zip Code
+                          </th>
+                          <th className="px-3 lg:px-4 py-3 sm:py-4 text-left text-xs font-bold text-gray-600 uppercase tracking-wider min-w-[150px]">
+                            Address
+                          </th>
+                          <th className="px-3 lg:px-4 py-3 sm:py-4 text-left text-xs font-bold text-gray-600 uppercase tracking-wider whitespace-nowrap">
+                            Access Code
+                          </th>
+                          <th className="px-3 lg:px-4 py-3 sm:py-4 text-left text-xs font-bold text-gray-600 uppercase tracking-wider whitespace-nowrap">
+                            Images
+                          </th>
+                          <th className="px-3 lg:px-4 py-3 sm:py-4 text-left text-xs font-bold text-gray-600 uppercase tracking-wider whitespace-nowrap">
+                            Created At
+                          </th>
+                          <th className="px-3 lg:px-4 py-3 sm:py-4 text-left text-xs font-bold text-gray-600 uppercase tracking-wider whitespace-nowrap">
+                            Actions
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody className="bg-white divide-y divide-gray-100">
+                        {accessCodes.map((ac, index) => (
+                          <tr
+                            key={ac.id}
+                            onClick={() => { setSelectedAC(ac); setShowDetails(true); }}
+                            className={`cursor-pointer hover:bg-gray-50 transition-colors ${index % 2 === 0 ? "bg-white" : "bg-gray-50/50"}`}
+                          >
+                            <td className="px-3 lg:px-4 py-3 sm:py-4">
+                              <span className="text-sm font-semibold text-gray-900">
+                                {ac.zip_code}
+                              </span>
+                            </td>
+                            <td className="px-3 lg:px-4 py-3 sm:py-4">
+                              <div className="text-sm text-gray-900 break-words max-w-[300px] lg:max-w-none">
+                                {ac.address}
+                              </div>
+                            </td>
+                            <td className="px-3 lg:px-4 py-3 sm:py-4">
+                              <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-indigo-100 text-indigo-800 border border-indigo-200 break-all max-w-[200px]">
                                 {ac.access_code}
                               </span>
-                            </div>
-                          </td>
-                          <td className="px-2 sm:px-3 lg:px-4 py-3 sm:py-4">
-                            <span className="inline-flex items-center justify-center px-2 py-1 rounded-full text-xs font-medium bg-indigo-100 text-indigo-800 border border-indigo-200">
-                              {ac.imageCount ?? 0}
-                            </span>
-                          </td>
-                          <td className="px-2 sm:px-3 lg:px-4 py-3 sm:py-4 hidden md:table-cell">
-                            <span className="text-xs sm:text-sm text-gray-600 whitespace-nowrap">
-                              {new Date(ac.created_at).toLocaleDateString()}
-                            </span>
-                          </td>
-                          <td className="px-2 sm:px-3 lg:px-4 py-3 sm:py-4">
-                            <button
-                              onClick={(e) => { e.stopPropagation(); handleEdit(ac); }}
-                              className="inline-flex items-center justify-center px-2 sm:px-3 py-1.5 sm:py-2 bg-[#8200db] text-white text-xs font-medium rounded-lg hover:bg-[#7300c4] transition-all whitespace-nowrap"
-                            >
-                              <svg
-                                className="w-3 h-3 sm:w-4 sm:h-4 sm:mr-1"
-                                fill="none"
-                                stroke="currentColor"
-                                viewBox="0 0 24 24"
-                              >
-                                <path
-                                  strokeLinecap="round"
-                                  strokeLinejoin="round"
-                                  strokeWidth={2}
-                                  d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"
-                                />
-                              </svg>
-                              <span className="hidden sm:inline">Edit</span>
-                            </button>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-
-                  {/* Pagination */}
-                  {totalPages > 1 && (
-                    <div className="flex flex-wrap justify-center items-center gap-1 sm:gap-2 mt-8 mb-4 px-2 sm:px-3 lg:px-6">
-                      {/* Previous Button */}
-                      <button
-                        onClick={() => handlePageChange(currentPage - 1)}
-                        disabled={currentPage === 1}
-                        className={`
-                          group relative inline-flex items-center px-2 sm:px-4 py-2 text-xs sm:text-sm font-semibold 
-                          rounded-lg border transition-all duration-200 ease-out transform
-                          ${currentPage === 1
-                            ? "bg-gray-50 text-gray-400 cursor-not-allowed border-gray-200"
-                            : "bg-white text-gray-700 border-gray-300 hover:bg-gray-50 hover:text-gray-900 hover:border-gray-400 hover:shadow-md hover:scale-[1.02]"
-                          }
-                        `}
-                      >
-                        <svg className="w-3 h-3 sm:w-4 sm:h-4 sm:mr-1 sm:mr-2 transition-transform duration-200 group-hover:-translate-x-0.5" fill="currentColor" viewBox="0 0 20 20">
-                          <path fillRule="evenodd" d="M12.707 5.293a1 1 0 010 1.414L9.414 10l3.293 3.293a1 1 0 01-1.414 1.414l-4-4a1 1 0 010-1.414l4-4a1 1 0 011.414 0z" clipRule="evenodd" />
-                        </svg>
-                        <span className="hidden sm:inline">Previous</span>
-                        <span className="sm:hidden">Prev</span>
-                      </button>
-
-                      {/* Page Numbers */}
-                      <div className="flex flex-wrap gap-1 justify-center">
-                        {getPaginationPages().map((page, index) => {
-                          if (page === 'ellipsis-start' || page === 'ellipsis-end') {
-                            return (
-                              <span
-                                key={`ellipsis-${index}`}
-                                className="inline-flex items-center justify-center w-8 h-8 sm:w-10 sm:h-10 text-gray-500"
-                              >
-                                ...
+                            </td>
+                            <td className="px-3 lg:px-4 py-3 sm:py-4">
+                              <span className="inline-flex items-center justify-center px-2 py-1 rounded-full text-xs font-medium bg-indigo-100 text-indigo-800 border border-indigo-200">
+                                {ac.imageCount ?? 0}
                               </span>
-                            );
-                          }
-                          return (
-                            <button
-                              key={page}
-                              onClick={() => handlePageChange(page)}
-                              className={`
-                                group relative inline-flex items-center justify-center w-8 h-8 sm:w-10 sm:h-10 text-xs sm:text-sm font-semibold 
-                                rounded-lg border transition-all duration-200 ease-out transform
-                                ${page === currentPage
-                                  ? "bg-blue-600 text-white border-blue-600 shadow-lg shadow-blue-600/25 scale-105"
-                                  : "bg-white text-gray-700 border-gray-300 hover:bg-gray-50 hover:text-gray-900 hover:border-gray-400 hover:shadow-md hover:scale-[1.02]"
-                                }
-                              `}
-                            >
-                              <span className="relative">{page}</span>
-                              {page === currentPage && (
-                                <div className="absolute inset-0 bg-white opacity-10 rounded-lg animate-pulse"></div>
-                              )}
-                            </button>
-                          );
-                        })}
+                            </td>
+                            <td className="px-3 lg:px-4 py-3 sm:py-4">
+                              <span className="text-sm text-gray-600 whitespace-nowrap">
+                                {new Date(ac.created_at).toLocaleDateString()}
+                              </span>
+                            </td>
+                            <td className="px-3 lg:px-4 py-3 sm:py-4">
+                              <button
+                                onClick={(e) => { e.stopPropagation(); handleEdit(ac); }}
+                                className="inline-flex items-center justify-center px-3 py-2 bg-[#8200db] text-white text-xs font-medium rounded-lg hover:bg-[#7300c4] transition-all whitespace-nowrap"
+                              >
+                                <svg
+                                  className="w-4 h-4 mr-1"
+                                  fill="none"
+                                  stroke="currentColor"
+                                  viewBox="0 0 24 24"
+                                >
+                                  <path
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                    strokeWidth={2}
+                                    d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"
+                                  />
+                                </svg>
+                                Edit
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+
+                {/* Mobile Card View - Shown only on mobile */}
+                <div className="md:hidden space-y-4">
+                  {accessCodes.map((ac, index) => (
+                    <div
+                      key={ac.id}
+                      className="bg-white border border-gray-200 rounded-xl shadow-sm p-4 hover:shadow-md transition-shadow"
+                    >
+                      <div
+                        onClick={() => { setSelectedAC(ac); setShowDetails(true); }}
+                        className="cursor-pointer"
+                      >
+                        {/* Zip Code & Images Badge */}
+                        <div className="flex items-center justify-between mb-3">
+                          <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-semibold bg-blue-100 text-blue-800">
+                            {ac.zip_code}
+                          </span>
+                          <span className="inline-flex items-center justify-center px-2 py-1 rounded-full text-xs font-medium bg-indigo-100 text-indigo-800 border border-indigo-200">
+                            📷 {ac.imageCount ?? 0}
+                          </span>
+                        </div>
+
+                        {/* Address */}
+                        <div className="mb-3">
+                          <p className="text-xs font-semibold text-gray-500 uppercase mb-1">Address</p>
+                          <p className="text-sm text-gray-900 break-words">{ac.address}</p>
+                        </div>
+
+                        {/* Access Code */}
+                        <div className="mb-3">
+                          <p className="text-xs font-semibold text-gray-500 uppercase mb-1">Access Code</p>
+                          <span className="inline-flex items-center px-3 py-1.5 rounded-lg text-sm font-medium bg-indigo-50 text-indigo-800 border border-indigo-200 break-all">
+                            {ac.access_code}
+                          </span>
+                        </div>
+
+                        {/* Created Date */}
+                        <div className="mb-3">
+                          <p className="text-xs text-gray-500">
+                            Created: {new Date(ac.created_at).toLocaleDateString()}
+                          </p>
+                        </div>
                       </div>
 
-                      {/* Next Button */}
-                      <button
-                        onClick={() => handlePageChange(currentPage + 1)}
-                        disabled={currentPage === totalPages}
-                        className={`
-                          group relative inline-flex items-center px-2 sm:px-4 py-2 text-xs sm:text-sm font-semibold 
-                          rounded-lg border transition-all duration-200 ease-out transform
-                          ${currentPage === totalPages
-                            ? "bg-gray-50 text-gray-400 cursor-not-allowed border-gray-200"
-                            : "bg-white text-gray-700 border-gray-300 hover:bg-gray-50 hover:text-gray-900 hover:border-gray-400 hover:shadow-md hover:scale-[1.02]"
-                          }
-                        `}
-                      >
-                        <span className="hidden sm:inline">Next</span>
-                        <span className="sm:hidden">Next</span>
-                        <svg className="w-3 h-3 sm:w-4 sm:h-4 sm:ml-1 sm:ml-2 transition-transform duration-200 group-hover:translate-x-0.5" fill="currentColor" viewBox="0 0 20 20">
-                          <path fillRule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clipRule="evenodd" />
-                        </svg>
-                      </button>
+                      {/* Edit Button - Always visible at bottom */}
+                      <div className="pt-3 border-t border-gray-100">
+                        <button
+                          onClick={(e) => { e.stopPropagation(); handleEdit(ac); }}
+                          className="w-full inline-flex items-center justify-center px-4 py-2.5 bg-gradient-to-r from-[#8200db] to-[#9d00ff] text-white text-sm font-semibold rounded-lg hover:from-[#7300c4] hover:to-[#8a00e6] transition-all shadow-md hover:shadow-lg"
+                        >
+                          <svg
+                            className="w-4 h-4 mr-2"
+                            fill="none"
+                            stroke="currentColor"
+                            viewBox="0 0 24 24"
+                          >
+                            <path
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              strokeWidth={2}
+                              d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"
+                            />
+                          </svg>
+                          Edit Access Code
+                        </button>
+                      </div>
                     </div>
-                  )}
+                  ))}
                 </div>
-              </div>
+
+                {/* Pagination */}
+                {totalPages > 1 && (
+                  <div className="flex flex-wrap justify-center items-center gap-1 sm:gap-2 mt-8 mb-4 px-2">
+                    {/* Previous Button */}
+                    <button
+                      onClick={() => handlePageChange(currentPage - 1)}
+                      disabled={currentPage === 1}
+                      className={`
+                        group relative inline-flex items-center px-2 sm:px-4 py-2 text-xs sm:text-sm font-semibold 
+                        rounded-lg border transition-all duration-200 ease-out transform
+                        ${currentPage === 1
+                          ? "bg-gray-50 text-gray-400 cursor-not-allowed border-gray-200"
+                          : "bg-white text-gray-700 border-gray-300 hover:bg-gray-50 hover:text-gray-900 hover:border-gray-400 hover:shadow-md hover:scale-[1.02]"
+                        }
+                      `}
+                    >
+                      <svg className="w-3 h-3 sm:w-4 sm:h-4 sm:mr-2 transition-transform duration-200 group-hover:-translate-x-0.5" fill="currentColor" viewBox="0 0 20 20">
+                        <path fillRule="evenodd" d="M12.707 5.293a1 1 0 010 1.414L9.414 10l3.293 3.293a1 1 0 01-1.414 1.414l-4-4a1 1 0 010-1.414l4-4a1 1 0 011.414 0z" clipRule="evenodd" />
+                      </svg>
+                      <span className="hidden sm:inline">Previous</span>
+                      <span className="sm:hidden">Prev</span>
+                    </button>
+
+                    {/* Page Numbers */}
+                    <div className="flex flex-wrap gap-1 justify-center">
+                      {getPaginationPages().map((page, index) => {
+                        if (page === 'ellipsis-start' || page === 'ellipsis-end') {
+                          return (
+                            <span
+                              key={`ellipsis-${index}`}
+                              className="inline-flex items-center justify-center w-8 h-8 sm:w-10 sm:h-10 text-gray-500"
+                            >
+                              ...
+                            </span>
+                          );
+                        }
+                        return (
+                          <button
+                            key={page}
+                            onClick={() => handlePageChange(page)}
+                            className={`
+                              group relative inline-flex items-center justify-center w-8 h-8 sm:w-10 sm:h-10 text-xs sm:text-sm font-semibold 
+                              rounded-lg border transition-all duration-200 ease-out transform
+                              ${page === currentPage
+                                ? "bg-blue-600 text-white border-blue-600 shadow-lg shadow-blue-600/25 scale-105"
+                                : "bg-white text-gray-700 border-gray-300 hover:bg-gray-50 hover:text-gray-900 hover:border-gray-400 hover:shadow-md hover:scale-[1.02]"
+                              }
+                            `}
+                          >
+                            <span className="relative">{page}</span>
+                            {page === currentPage && (
+                              <div className="absolute inset-0 bg-white opacity-10 rounded-lg animate-pulse"></div>
+                            )}
+                          </button>
+                        );
+                      })}
+                    </div>
+
+                    {/* Next Button */}
+                    <button
+                      onClick={() => handlePageChange(currentPage + 1)}
+                      disabled={currentPage === totalPages}
+                      className={`
+                        group relative inline-flex items-center px-2 sm:px-4 py-2 text-xs sm:text-sm font-semibold 
+                        rounded-lg border transition-all duration-200 ease-out transform
+                        ${currentPage === totalPages
+                          ? "bg-gray-50 text-gray-400 cursor-not-allowed border-gray-200"
+                          : "bg-white text-gray-700 border-gray-300 hover:bg-gray-50 hover:text-gray-900 hover:border-gray-400 hover:shadow-md hover:scale-[1.02]"
+                        }
+                      `}
+                    >
+                      <span className="hidden sm:inline">Next</span>
+                      <span className="sm:hidden">Next</span>
+                      <svg className="w-3 h-3 sm:w-4 sm:h-4 sm:ml-2 transition-transform duration-200 group-hover:translate-x-0.5" fill="currentColor" viewBox="0 0 20 20">
+                        <path fillRule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clipRule="evenodd" />
+                      </svg>
+                    </button>
+                  </div>
+                )}
+              </>
             )}
           </div>
         </div>
