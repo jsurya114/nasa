@@ -264,12 +264,12 @@ const DoubleStop = () => {
         </section>
 
         {/* Analytics Section */}
-        <div className="mb-3">
+        {/* <div className="mb-3">
           <Analystic 
             viewType={activeView} 
             selectedDate={selectedDate} 
           />
-        </div>
+        </div> */}
 
         {/* Driver Payment Section */}
         {activeView === "weekly" ? (
