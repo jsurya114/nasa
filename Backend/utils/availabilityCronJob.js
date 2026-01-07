@@ -3,14 +3,15 @@ import pool from '../config/db.js';
 
 /**
  * Weekly Availability Reset Service
- * Resets all driver availability to false every Monday at 12:00 AM
+ * Resets all driver availability to false every Sunday at 12:00 PM (noon)
  */
 export const initializeAvailabilityResetCron = () => {
-  // Cron expression: '0 0 * * 1' means "At 00:00 on Monday"
-  // Alternatively, use '0 0 * * 0' for Sunday at midnight
-  cron.schedule('0 0 * * 1', async () => {
+  // Cron expression: '0 12 * * 0' means "At 12:00 PM (noon) on Sunday"
+  // Minute Hour Day Month DayOfWeek
+  // 0      12   *   *     0 (Sunday)
+  cron.schedule('0 12 * * 0', async () => {
     try {
-      console.log('🔄 Running weekly availability reset...');
+      console.log('🔄 Running weekly availability reset (Sunday 12:00 PM)...');
       
       const result = await pool.query(
         `UPDATE drivers
@@ -33,7 +34,7 @@ export const initializeAvailabilityResetCron = () => {
     }
   });
 
-  console.log('📅 Weekly availability reset cron job initialized (runs every Monday at 12:00 AM)');
+  console.log('📅 Weekly availability reset cron job initialized (runs every Sunday at 12:00 PM)');
 };
 
 /**

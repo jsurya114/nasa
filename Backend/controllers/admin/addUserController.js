@@ -3,9 +3,9 @@ import { dbService } from '../../services/admin/dbQueries.js';
 
 export const createUsers = async (req, res) => {
     try {
-        const { email, password, name, driverCode, city, enabled, phoneNumber } = req.body;
+        const { email, password, name, driver_code, city, enabled, phoneNumber } = req.body;
 
-        if (!email || !password || !city || !driverCode) {
+        if (!email || !password || !city || !driver_code) {
             return res.status(HttpStatus.UNAUTHORIZED).json({ message: "Email, password, city & driver code is required" })
         }
 
@@ -13,11 +13,11 @@ export const createUsers = async (req, res) => {
         if (driver)
             return res.status(HttpStatus.CONFLICT).json({ message: "User already Exists" });
 
-        const driverCodeExists = await dbService.getDriverByCode(driverCode);
+        const driverCodeExists = await dbService.getDriverByCode(driver_code);
         if (driverCodeExists)
             return res.status(HttpStatus.CONFLICT).json({ message: "Driver Code already used" });
 
-        const insertUser = await dbService.insertUser({ name, email, driverCode, password, city, enabled, phoneNumber });
+        const insertUser = await dbService.insertUser({ name, email, driver_code, password, city, enabled, phoneNumber });
 
         return res.status(HttpStatus.OK).json({ message: "User Added Successfully!!", insertUser });
     } catch (err) {

@@ -122,7 +122,7 @@ export const dbService = {
                 `INSERT INTO drivers (name, email, driver_code, password, city_id, enabled, phone_number) 
                  VALUES ($1, $2, $3, $4, $5, $6, $7)
                  RETURNING id, name, email, enabled, city_id, driver_code, phone_number`,
-                [data.name, data.email, data.driverCode, hashedPwd, city_id, data.enabled, data.phoneNumber || null]
+                [data.name, data.email, data.driver_code, hashedPwd, city_id, data.enabled, data.phoneNumber || null]
             );
             
             const driver = result.rows[0];

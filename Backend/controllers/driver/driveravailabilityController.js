@@ -26,20 +26,35 @@ const driverAvailabilityController = {
     updateAvailability: async (req, res) => {
         try {
             const driverId = req.driver.id;
-            const { availability } = req.body;
+            const { availability, dayToUpdate } = req.body;
 
-            // Check if current time is after 7:30 PM
+            // Get current date and time
             const now = new Date();
-            const hours = now.getHours();
-            const minutes = now.getMinutes();
-            const currentTimeInMinutes = hours * 60 + minutes;
-            const cutoffTimeInMinutes = 19 * 60 + 30; // 7:30 PM = 19:30
-
-            if (currentTimeInMinutes >= cutoffTimeInMinutes) {
-                return res.status(403).json({
-                    success: false,
-                    message: "Availability cannot be updated after 7:30 PM. Please try again tomorrow."
-                });
+            const currentDay = now.getDay(); // 0 = Sunday, 1 = Monday, ..., 6 = Saturday
+            
+            // Map day numbers to day names
+            const dayNames = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+            const currentDayName = dayNames[currentDay];
+            
+            // If dayToUpdate is provided, check if it's trying to update a past day
+            if (dayToUpdate) {
+                const dayIndex = dayNames.indexOf(dayToUpdate.toLowerCase());
+                
+                if (dayIndex === -1) {
+                    return res.status(400).json({
+                        success: false,
+                        message: "Invalid day specified"
+                    });
+                }
+                
+                // Check if trying to update a day that has already passed
+                // Days before current day are locked (they've ended)
+                if (dayIndex < currentDay) {
+                    return res.status(403).json({
+                        success: false,
+                        message: `Cannot update availability for ${dayToUpdate}. That day has already ended. You can only update availability for today (${currentDayName}) and future days.`
+                    });
+                }
             }
 
             // Validate availability object
@@ -59,6 +74,26 @@ const driverAvailabilityController = {
                         success: false,
                         message: `Invalid value for ${day}. Must be boolean.`
                     });
+                }
+            }
+            
+            // Additional validation: prevent updating past days
+            // Check each day in the availability object
+            for (const day of validDays) {
+                const dayIndex = dayNames.indexOf(day);
+                
+                // If trying to change a past day (before current day)
+                if (dayIndex < currentDay) {
+                    // Get the current value from database to ensure it's not being changed
+                    const currentAvailability = await availabilityService.getDriverAvailability(driverId);
+                    
+                    // If the value for this past day is different from current, reject
+                    if (availability[day] !== currentAvailability.availability[day]) {
+                        return res.status(403).json({
+                            success: false,
+                            message: `Cannot modify availability for ${day}. That day has already ended. You can only update today (${currentDayName}) and future days.`
+                        });
+                    }
                 }
             }
 

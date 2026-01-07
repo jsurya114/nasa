@@ -330,7 +330,7 @@ const Deliveries = () => {
                         : "bg-gray-100 text-gray-700 hover:bg-gray-200"
                     }`}
                   >
-                    📊 Daily ({deliveries.filter(d => d.data_type === 'daily').length})
+                    📊 SPEEDX ({deliveries.filter(d => d.data_type === 'daily').length})
                   </button>
                   <button
                     onClick={() => setSelectedDataType("weekly")}
@@ -340,7 +340,7 @@ const Deliveries = () => {
                         : "bg-gray-100 text-gray-700 hover:bg-gray-200"
                     }`}
                   >
-                    📅 Weekly ({deliveries.filter(d => d.data_type === 'weekly').length})
+                    📅 GOFO ({deliveries.filter(d => d.data_type === 'weekly').length})
                   </button>
                 </div>
               </div>
@@ -355,7 +355,7 @@ const Deliveries = () => {
                   ? 'bg-purple-100 text-purple-700 border border-purple-300' 
                   : 'bg-blue-100 text-blue-700 border border-blue-300'
               }`}>
-                {currentDataType === 'weekly' ? '📅 Showing Weekly Data' : '📊 Showing Daily Data'}
+                {currentDataType === 'weekly' ? '📅 Showing GOFO data' : '📊 Showing SPEEDX data'}
               </div>
             </div>
           )}

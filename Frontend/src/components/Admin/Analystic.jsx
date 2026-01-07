@@ -16,61 +16,46 @@ const Analystic = ({ viewType, selectedDate }) => {
     }
   }, [dispatch, viewType, selectedDate]);
 
-  // Group data by driver, route, and issue combination
+  // Group data by driver and route, organizing sequences by issue type
   const groupedData = React.useMemo(() => {
     if (!data || data.length === 0) return [];
 
     const grouped = {};
 
     data.forEach((item) => {
-      // Determine which issues this sequence has
-      const issues = [];
-      if (item.no_scanned > 0) issues.push('no_scanned');
-      if (item.double_stop > 0) issues.push('double_stop');
-      if (item.failed_attempt > 0) issues.push('failed_attempt');
-
-      // Create a unique key for driver + route + issue combination
-      const issueKey = issues.sort().join('_');
-      const key = `${item.driver_name}|${item.route}|${issueKey}`;
+      // Create a unique key for driver + route combination
+      const key = `${item.driver_name}|${item.route}`;
       
       if (!grouped[key]) {
         grouped[key] = {
           driver_name: item.driver_name,
           route: item.route,
-          sequences: [],
-          issues: issues
+          no_scanned: [],
+          double_stop: [],
+          failed_attempt: []
         };
       }
 
-      grouped[key].sequences.push(item.sequence);
+      // Add sequences to respective issue arrays
+      if (item.no_scanned > 0) {
+        grouped[key].no_scanned.push(item.sequence);
+      }
+      if (item.double_stop > 0) {
+        grouped[key].double_stop.push(item.sequence);
+      }
+      if (item.failed_attempt > 0) {
+        grouped[key].failed_attempt.push(item.sequence);
+      }
     });
 
-    // Convert to array and sort sequences
+    // Convert to array and sort sequences for each issue type
     return Object.values(grouped).map(group => ({
       ...group,
-      sequences: group.sequences.sort((a, b) => a - b)
+      no_scanned: group.no_scanned.sort((a, b) => a - b),
+      double_stop: group.double_stop.sort((a, b) => a - b),
+      failed_attempt: group.failed_attempt.sort((a, b) => a - b)
     }));
   }, [data]);
-
-  // Format issue name for display
-  const formatIssue = (issue) => {
-    const issueMap = {
-      'no_scanned': 'No Scanned',
-      'double_stop': 'Double Stop',
-      'failed_attempt': 'Failed Attempt'
-    };
-    return issueMap[issue] || issue;
-  };
-
-  // Get badge color based on issue type
-  const getIssueBadgeClass = (issue) => {
-    const classMap = {
-      'no_scanned': 'bg-orange-100 text-orange-700',
-      'double_stop': 'bg-green-100 text-green-700',
-      'failed_attempt': 'bg-red-100 text-red-700'
-    };
-    return classMap[issue] || 'bg-gray-100 text-gray-700';
-  };
 
   // Don't render if no data has been uploaded
   if (!data || data.length === 0) {
@@ -125,10 +110,22 @@ const Analystic = ({ viewType, selectedDate }) => {
                   Route
                 </th>
                 <th className="px-4 py-3 text-left font-semibold text-gray-700 border-b-2 border-purple-200">
-                  Sequence
+                  <div className="flex items-center gap-1">
+                    <span className="inline-block w-2 h-2 rounded-full bg-orange-500"></span>
+                    No Scanned
+                  </div>
                 </th>
                 <th className="px-4 py-3 text-left font-semibold text-gray-700 border-b-2 border-purple-200">
-                  Issues
+                  <div className="flex items-center gap-1">
+                    <span className="inline-block w-2 h-2 rounded-full bg-green-500"></span>
+                    Double Stop
+                  </div>
+                </th>
+                <th className="px-4 py-3 text-left font-semibold text-gray-700 border-b-2 border-purple-200">
+                  <div className="flex items-center gap-1">
+                    <span className="inline-block w-2 h-2 rounded-full bg-red-500"></span>
+                    Failed Attempt
+                  </div>
                 </th>
               </tr>
             </thead>
@@ -144,20 +141,32 @@ const Analystic = ({ viewType, selectedDate }) => {
                   <td className="px-4 py-3 text-gray-600">
                     {group.route}
                   </td>
-                  <td className="px-4 py-3 text-gray-600 font-semibold">
-                    {group.sequences.join(', ')}
+                  <td className="px-4 py-3">
+                    {group.no_scanned.length > 0 ? (
+                      <span className="px-3 py-1 bg-orange-50 text-orange-700 rounded-md text-xs font-semibold inline-block">
+                        {group.no_scanned.join(', ')}
+                      </span>
+                    ) : (
+                      <span className="text-gray-400 text-xs">-</span>
+                    )}
                   </td>
                   <td className="px-4 py-3">
-                    <div className="flex flex-wrap gap-2">
-                      {group.issues.map((issue, issueIdx) => (
-                        <span
-                          key={issueIdx}
-                          className={`px-3 py-1 rounded-full text-xs font-semibold ${getIssueBadgeClass(issue)}`}
-                        >
-                          {formatIssue(issue)}
-                        </span>
-                      ))}
-                    </div>
+                    {group.double_stop.length > 0 ? (
+                      <span className="px-3 py-1 bg-green-50 text-green-700 rounded-md text-xs font-semibold inline-block">
+                        {group.double_stop.join(', ')}
+                      </span>
+                    ) : (
+                      <span className="text-gray-400 text-xs">-</span>
+                    )}
+                  </td>
+                  <td className="px-4 py-3">
+                    {group.failed_attempt.length > 0 ? (
+                      <span className="px-3 py-1 bg-red-50 text-red-700 rounded-md text-xs font-semibold inline-block">
+                        {group.failed_attempt.join(', ')}
+                      </span>
+                    ) : (
+                      <span className="text-gray-400 text-xs">-</span>
+                    )}
                   </td>
                 </tr>
               ))}

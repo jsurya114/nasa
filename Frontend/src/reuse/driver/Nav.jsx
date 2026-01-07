@@ -6,7 +6,7 @@ function Nav() {
     { to: "/driver/dashboard", icon: "📊", label: "Dashboard" },
     { to: "/driver/access-codes", icon: "🔑", label: "Access Codes" },
     { to: "/driver/delivery", icon: "🚛", label: "Deliveries" },
-    // { to: "/driver/availability", icon: "📅", label: "Availability" },
+    { to: "/driver/availability", icon: "📅", label: "Availability" },
   ];
 
   return (
