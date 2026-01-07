@@ -166,7 +166,7 @@ function AddDriverForm({ onSubmit, editData, isEdit, onCancel }) {
         value={form.driverCode}
         onChange={handleChange}
         placeholder="Driver Code"
-        disabled={isEdit}
+    
         className={`px-3 py-2 border rounded-lg ${
           isEdit ? "bg-gray-100 cursor-not-allowed" : "focus:outline-none focus:ring-2 focus:ring-purple-500"
         }`}
