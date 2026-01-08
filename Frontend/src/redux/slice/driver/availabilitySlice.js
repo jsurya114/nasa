@@ -28,9 +28,7 @@ export const getDriverAvailability = createAsyncThunk(
     try {
       const response = await axios.get(
         `${API_BASE_URL}/driver/availability`,
-        {
-          headers: getDriverAuthHeaders(),
-        }
+        { headers: getDriverAuthHeaders() }
       );
       return response.data.data;
     } catch (error) {
@@ -49,9 +47,7 @@ export const updateDriverAvailability = createAsyncThunk(
       const response = await axios.post(
         `${API_BASE_URL}/driver/availability`,
         { availability },
-        {
-          headers: getDriverAuthHeaders(),
-        }
+        { headers: getDriverAuthHeaders() }
       );
       return response.data.data;
     } catch (error) {
@@ -64,29 +60,51 @@ export const updateDriverAvailability = createAsyncThunk(
 
 // ================= ADMIN =================
 
-// Admin: Get all drivers availability with pagination
+// Admin: Get all drivers availability
 export const getAllDriversAvailability = createAsyncThunk(
   "availability/getAllDriversAvailability",
-  async ({ filterDay = null, page = 1, limit = 10 }, { rejectWithValue }) => {
+  async ({ filterDay = null, page = 1, limit = 10 ,searchQuery=null}, { rejectWithValue }) => {
     try {
-      let url = `${API_BASE_URL}/admin/drivers/availability?page=${page}&limit=${limit}`;
-      
-      if (filterDay) {
-        url += `&day=${filterDay}`;
-      }
+      const params = { page, limit ,searchQuery};
+      if (filterDay) params.day = filterDay;
 
-      const response = await axios.get(url, {
-        headers: getAdminAuthHeaders(),
-      });
+      const response = await axios.get(
+        `${API_BASE_URL}/admin/drivers/availability`,
+        {
+          params,
+          headers: getAdminAuthHeaders(),
+        }
+      );
 
       return {
         data: response.data.data,
-        pagination: response.data.pagination
+        pagination: response.data.pagination,
       };
     } catch (error) {
       return rejectWithValue(
         error.response?.data?.message ||
           "Failed to fetch drivers availability"
+      );
+    }
+  }
+);
+
+// ✅ FIXED: Admin update specific driver's availability
+export const updateDriverAvailabilityByAdmin = createAsyncThunk(
+  "availability/updateDriverAvailabilityByAdmin",
+  async ({ driverId, availability }, { rejectWithValue }) => {
+    try {
+      const response = await axios.put(
+        `${API_BASE_URL}/admin/drivers/availability/${driverId}`, // ✅ FIXED URL
+        { availability },
+        { headers: getAdminAuthHeaders() }
+      );
+
+      return response.data.data;
+    } catch (error) {
+      return rejectWithValue(
+        error.response?.data?.message ||
+          "Failed to update driver availability"
       );
     }
   }
@@ -110,6 +128,7 @@ const availabilitySlice = createSlice({
     pagination: null,
     updatedAt: null,
     loading: false,
+    updateLoading: false,
     error: null,
     successMessage: null,
   },
@@ -133,15 +152,13 @@ const availabilitySlice = createSlice({
   },
   extraReducers: (builder) => {
     builder
-      // ===== GET DRIVER AVAILABILITY =====
+      // ===== DRIVER GET =====
       .addCase(getDriverAvailability.pending, (state) => {
         state.loading = true;
-        state.error = null;
       })
       .addCase(getDriverAvailability.fulfilled, (state, action) => {
         state.loading = false;
-        state.driverAvailability =
-          action.payload.availability || state.driverAvailability;
+        state.driverAvailability = action.payload.availability;
         state.updatedAt = action.payload.availability_updated_at;
       })
       .addCase(getDriverAvailability.rejected, (state, action) => {
@@ -149,11 +166,9 @@ const availabilitySlice = createSlice({
         state.error = action.payload;
       })
 
-      // ===== UPDATE DRIVER AVAILABILITY =====
+      // ===== DRIVER UPDATE =====
       .addCase(updateDriverAvailability.pending, (state) => {
         state.loading = true;
-        state.error = null;
-        state.successMessage = null;
       })
       .addCase(updateDriverAvailability.fulfilled, (state, action) => {
         state.loading = false;
@@ -166,10 +181,9 @@ const availabilitySlice = createSlice({
         state.error = action.payload;
       })
 
-      // ===== ADMIN GET ALL WITH PAGINATION =====
+      // ===== ADMIN GET ALL =====
       .addCase(getAllDriversAvailability.pending, (state) => {
         state.loading = true;
-        state.error = null;
       })
       .addCase(getAllDriversAvailability.fulfilled, (state, action) => {
         state.loading = false;
@@ -179,10 +193,35 @@ const availabilitySlice = createSlice({
       .addCase(getAllDriversAvailability.rejected, (state, action) => {
         state.loading = false;
         state.error = action.payload;
+      })
+
+      // ===== ADMIN UPDATE (SUPER ADMIN ONLY) =====
+      .addCase(updateDriverAvailabilityByAdmin.pending, (state) => {
+        state.updateLoading = true;
+      })
+      .addCase(updateDriverAvailabilityByAdmin.fulfilled, (state, action) => {
+        state.updateLoading = false;
+        state.successMessage = "Driver availability updated successfully";
+
+        const index = state.allDriversAvailability.findIndex(
+          (driver) => driver.id === action.payload.id
+        );
+
+        if (index !== -1) {
+          state.allDriversAvailability[index].availability =
+            action.payload.availability;
+          state.allDriversAvailability[index].availability_updated_at =
+            action.payload.availability_updated_at;
+        }
+      })
+      .addCase(updateDriverAvailabilityByAdmin.rejected, (state, action) => {
+        state.updateLoading = false;
+        state.error = action.payload;
       });
   },
 });
 
 export const { clearMessages, resetAvailability } =
   availabilitySlice.actions;
+
 export default availabilitySlice.reducer;

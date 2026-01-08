@@ -16,7 +16,7 @@ const AdminJourneyQuery = {
 
     const params = [];
 
-    // 🔐 Apply restriction ONLY for admin
+    // 🔒 Apply restriction ONLY for admin
     if (role === "admin") {
       query += `
         AND EXISTS (
@@ -123,7 +123,7 @@ const AdminJourneyQuery = {
 
   getAllDrivers: async () => {
     const query = `
-      SELECT id, name 
+      SELECT id, name,enabled 
       FROM drivers 
       WHERE enabled = true 
       ORDER BY name
@@ -132,16 +132,18 @@ const AdminJourneyQuery = {
     return result.rows;
   },
 
-  // ✅ NEW: Get total count for pagination
-  getJourneysCount: async (id, role) => {
+  // ✅ NEW: Get total count for pagination with filters
+  getJourneysCount: async (id, role, filters = {}) => {
     let query = `
       SELECT COUNT(*) as total
       FROM dashboard_data d
+      JOIN routes r ON d.route_id = r.id
       JOIN drivers dr ON d.driver_id = dr.id
       WHERE 1 = 1
     `;
 
     const params = [];
+    let paramIndex = 1;
 
     if (role === "admin") {
       query += `
@@ -149,18 +151,38 @@ const AdminJourneyQuery = {
           SELECT 1
           FROM admin_city_ref acr
           WHERE acr.city_id = dr.city_id
-            AND acr.admin_id = $1
+            AND acr.admin_id = $${paramIndex}
         )
       `;
       params.push(id);
+      paramIndex++;
+    }
+
+    // ✅ Apply filters
+    if (filters.route_id) {
+      query += ` AND d.route_id = $${paramIndex}`;
+      params.push(filters.route_id);
+      paramIndex++;
+    }
+
+    if (filters.driver_name) {
+      query += ` AND LOWER(dr.name) LIKE LOWER($${paramIndex})`;
+      params.push(`%${filters.driver_name}%`);
+      paramIndex++;
+    }
+
+    if (filters.journey_date) {
+      query += ` AND d.journey_date = $${paramIndex}::date`;
+      params.push(filters.journey_date);
+      paramIndex++;
     }
 
     const result = await pool.query(query, params);
     return parseInt(result.rows[0].total);
   },
 
-  // Get paginated journeys (ONLY for AdminJourney page)
-  getPaginatedJourneys: async (id, role, limit = 10, offset = 0) => {
+  // ✅ Get paginated journeys (ONLY for AdminJourney page) with filters
+  getPaginatedJourneys: async (id, role, limit = 10, offset = 0, filters = {}) => {
     let query = `
       SELECT 
         d.*, 
@@ -174,6 +196,7 @@ const AdminJourneyQuery = {
     `;
 
     const params = [];
+    let paramIndex = 1;
 
     if (role === "admin") {
       query += `
@@ -181,17 +204,37 @@ const AdminJourneyQuery = {
           SELECT 1
           FROM admin_city_ref acr
           WHERE acr.city_id = dr.city_id
-            AND acr.admin_id = $1
+            AND acr.admin_id = $${paramIndex}
         )
       `;
       params.push(id);
+      paramIndex++;
+    }
+
+    // ✅ Apply filters
+    if (filters.route_id) {
+      query += ` AND d.route_id = $${paramIndex}`;
+      params.push(filters.route_id);
+      paramIndex++;
+    }
+
+    if (filters.driver_name) {
+      query += ` AND LOWER(dr.name) LIKE LOWER($${paramIndex})`;
+      params.push(`%${filters.driver_name}%`);
+      paramIndex++;
+    }
+
+    if (filters.journey_date) {
+      query += ` AND d.journey_date = $${paramIndex}::date`;
+      params.push(filters.journey_date);
+      paramIndex++;
     }
 
     // ✅ CHANGED: Order by route first, then date, then sequence
-  query += `
-    ORDER BY r.name, d.journey_date DESC, d.start_seq
-    LIMIT $${params.length + 1} OFFSET $${params.length + 2}
-  `;
+    query += `
+      ORDER BY r.name, d.journey_date DESC, d.start_seq
+      LIMIT $${paramIndex} OFFSET $${paramIndex + 1}
+    `;
     
     params.push(limit, offset);
 

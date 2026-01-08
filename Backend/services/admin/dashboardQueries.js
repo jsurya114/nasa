@@ -98,6 +98,18 @@ export const AdminDashboardQueries = {
         queryParams.push(isPaid);
       }
 
+      // ✅ Filter by data type
+      if (filters.dataType && filters.dataType !== "all") {
+        whereClauses.push(`
+          CASE 
+            WHEN pd.start_seq IS NULL OR pd.end_seq IS NULL OR pd.start_seq = 0 OR pd.end_seq = 0 
+            THEN 'weekly' 
+            ELSE 'daily' 
+          END = $${queryParams.length + 1}
+        `);
+        queryParams.push(filters.dataType);
+      }
+
       if (role === "admin") {
         whereClauses.push(`
           EXISTS (
@@ -126,8 +138,6 @@ export const AdminDashboardQueries = {
 
   getPaymentDashboardPaginated: async (filters = {}, id, role, limit = 10, offset = 0) => {
     try {
-      
-
       // ✅ Conditionally include company_earnings based on role
       const companyEarningsField = role === "superadmin" ? "pd.company_earnings," : "";
 
@@ -154,7 +164,12 @@ export const AdminDashboardQueries = {
           pd.paid,
           pd.start_seq,
           pd.end_seq, 
-          pd.first_stop
+          pd.first_stop,
+          CASE 
+            WHEN pd.start_seq IS NULL OR pd.end_seq IS NULL OR pd.start_seq = 0 OR pd.end_seq = 0 
+            THEN 'weekly' 
+            ELSE 'daily' 
+          END AS data_type
         FROM payment_dashboard pd
         JOIN drivers d ON d.id = pd.driver_id
         JOIN city c ON d.city_id = c.id
@@ -196,6 +211,18 @@ export const AdminDashboardQueries = {
         queryParams.push(isPaid);
       }
 
+      // ✅ Filter by data type
+      if (filters.dataType && filters.dataType !== "all") {
+        whereClauses.push(`
+          CASE 
+            WHEN pd.start_seq IS NULL OR pd.end_seq IS NULL OR pd.start_seq = 0 OR pd.end_seq = 0 
+            THEN 'weekly' 
+            ELSE 'daily' 
+          END = $${queryParams.length + 1}
+        `);
+        queryParams.push(filters.dataType);
+      }
+
       if (role === "admin") {
         whereClauses.push(`
           EXISTS (
@@ -219,8 +246,6 @@ export const AdminDashboardQueries = {
       
       queryParams.push(limit, offset);
 
-    
-
       const result = await pool.query(finalQuery, queryParams);
       return result.rows;
     } catch (error) {
@@ -231,8 +256,6 @@ export const AdminDashboardQueries = {
 
   PaymentDashboardTable: async (filters = {}, id, role) => {
     try {
-  
-
       // ✅ Conditionally include company_earnings based on role
       const companyEarningsField = role === "superadmin" ? "pd.company_earnings," : "";
 
@@ -259,7 +282,12 @@ export const AdminDashboardQueries = {
           pd.paid,
           pd.start_seq,
           pd.end_seq, 
-          pd.first_stop
+          pd.first_stop,
+          CASE 
+            WHEN pd.start_seq IS NULL OR pd.end_seq IS NULL OR pd.start_seq = 0 OR pd.end_seq = 0 
+            THEN 'weekly' 
+            ELSE 'daily' 
+          END AS data_type
         FROM payment_dashboard pd
         JOIN drivers d ON d.id = pd.driver_id
         JOIN city c ON d.city_id = c.id
@@ -301,6 +329,18 @@ export const AdminDashboardQueries = {
         queryParams.push(isPaid);
       }
 
+      // ✅ Filter by data type
+      if (filters.dataType && filters.dataType !== "all") {
+        whereClauses.push(`
+          CASE 
+            WHEN pd.start_seq IS NULL OR pd.end_seq IS NULL OR pd.start_seq = 0 OR pd.end_seq = 0 
+            THEN 'weekly' 
+            ELSE 'daily' 
+          END = $${queryParams.length + 1}
+        `);
+        queryParams.push(filters.dataType);
+      }
+
       if (role === "admin") {
         whereClauses.push(`
           EXISTS (
@@ -320,8 +360,6 @@ export const AdminDashboardQueries = {
       }
 
       finalQuery += " ORDER BY r.name, pd.journey_date DESC, pd.start_seq;";
-
-
 
       const result = await pool.query(finalQuery, queryParams);
       return result.rows;
@@ -358,8 +396,6 @@ export const AdminDashboardQueries = {
           AND ${whereClauses.join(' AND ')}
           AND pd.paid = false;
       `;
-
-
 
       const result = await pool.query(updateQuery, queryParams);
       

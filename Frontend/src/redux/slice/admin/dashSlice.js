@@ -90,6 +90,7 @@ const dashboardSlice = createSlice({
     filteredPaymentData: [],
     allPaymentData: [],
     filters: {},
+    selectedDataType: "all", // ✅ NEW: Track selected data type tab
     pagination: {
       total: 0,
       page: 1,
@@ -109,12 +110,17 @@ const dashboardSlice = createSlice({
       state.filteredPaymentData = [];
       state.isFiltered = false;
       state.filters = {};
+      state.selectedDataType = "all"; // ✅ Reset data type
       state.pagination = {
         total: 0,
         page: 1,
         limit: 10,
         totalPages: 1
       };
+    },
+    // ✅ NEW: Action to set data type
+    setDataType: (state, action) => {
+      state.selectedDataType = action.payload;
     },
   },
   extraReducers: (builder) => {
@@ -173,5 +179,5 @@ const dashboardSlice = createSlice({
   },
 });
 
-export const { clearFilteredData } = dashboardSlice.actions;
+export const { clearFilteredData, setDataType } = dashboardSlice.actions;
 export default dashboardSlice.reducer;

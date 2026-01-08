@@ -55,7 +55,7 @@ export const insertRoute = async (data) => {
 
 // Get all routes - for superadmin
 export const getAllRoutes = async () => {
-  const result = await pool.query("SELECT * FROM routes WHERE enabled = true ORDER BY id ASC");
+  const result = await pool.query("SELECT * FROM routes ORDER BY id ASC");
   return result.rows;
 };
 
@@ -68,7 +68,6 @@ export const getRoutesForAdmin = async (adminId) => {
     INNER JOIN city c ON r.job = c.job
     INNER JOIN admin_city_ref acr ON c.id = acr.city_id
     WHERE acr.admin_id = $1
-      AND r.enabled = true
       AND c.enabled = true
     ORDER BY r.id ASC
   `, [adminId]);

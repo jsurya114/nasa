@@ -158,13 +158,31 @@ export const fetchAllJourneys = createAsyncThunk(
   }
 );
 
-// Fetch paginated journeys (admin)
+// ✅ Updated: Fetch paginated journeys with filters (admin)
 export const fetchPaginatedJourneys = createAsyncThunk(
   "journeys/fetchPaginatedJourneys",
-  async ({ page = 1, limit = 10 } = {}, { signal, rejectWithValue }) => {
+  async ({ page = 1, limit = 10, route_id, driver_name, journey_date } = {}, { signal, rejectWithValue }) => {
     try {
+      // ✅ Build query params with filters
+      const params = new URLSearchParams({
+        page: page.toString(),
+        limit: limit.toString()
+      });
+
+      if (route_id) {
+        params.append('route_id', route_id.toString());
+      }
+
+      if (driver_name && driver_name.trim() !== '') {
+        params.append('driver_name', driver_name.trim());
+      }
+
+      if (journey_date && journey_date.trim() !== '') {
+        params.append('journey_date', journey_date.trim());
+      }
+
       const res = await fetch(
-        `${API_BASE_URL}/admin/journeys/paginated?page=${page}&limit=${limit}`, 
+        `${API_BASE_URL}/admin/journeys/paginated?${params.toString()}`, 
         { 
           signal, 
           headers: getAuthHeaders() 
@@ -250,20 +268,20 @@ export const fetchAllDrivers = createAsyncThunk(
 // Update journey (admin)
 export const updateJourney = createAsyncThunk(
   "journeys/updateJourney",
-  async ({ journey_id, updatedData }, { rejectWithValue }) => {
+  async ({ journey_id, ...journeyData }, { rejectWithValue }) => {
     try {
       const res = await fetch(`${API_BASE_URL}/admin/journey/${journey_id}`, {
         method: "PUT",
         headers: getAuthHeaders(),
-        body: JSON.stringify(updatedData),
+        body: JSON.stringify(journeyData),
       });
-
+      
       const data = await res.json();
-
+      
       if (!res.ok) {
         return rejectWithValue(data);
       }
-
+      
       return data.data;
     } catch (error) {
       console.error("updateJourney error:", error);
@@ -277,21 +295,17 @@ export const deleteJourney = createAsyncThunk(
   "journeys/deleteJourney",
   async (journey_id, { rejectWithValue }) => {
     try {
-      const res = await fetch(
-        `${API_BASE_URL}/admin/journey/${journey_id}`,
-        {
-          method: "DELETE",
-          headers: getAuthHeaders(),
-          credentials: "include",
-        }
-      );
-
+      const res = await fetch(`${API_BASE_URL}/admin/journey/${journey_id}`, {
+        method: "DELETE",
+        headers: getAuthHeaders(),
+      });
+      
       const data = await res.json();
-
+      
       if (!res.ok) {
         return rejectWithValue(data);
       }
-
+      
       return journey_id;
     } catch (error) {
       console.error("deleteJourney error:", error);
@@ -304,19 +318,19 @@ const journeySlice = createSlice({
   name: "journey",
   initialState: {
     routes: [],
-    routesStatus: "idle",
-    routesError: null,
     journeys: [],
-    journeyStatus: "idle",
-    journeyError: null,
     adminJourneys: [],
-    adminStatus: "idle",
-    adminError: null,
     paginatedJourneys: [],
-    paginatedStatus: "idle",
-    paginatedError: null,
     drivers: [],
+    routesStatus: "idle",
+    journeyStatus: "idle",
+    adminStatus: "idle",
+    paginatedStatus: "idle",
     driversStatus: "idle",
+    routesError: null,
+    journeyError: null,
+    adminError: null,
+    paginatedError: null,
     driversError: null,
     pagination: {
       total: 0,
@@ -331,7 +345,6 @@ const journeySlice = createSlice({
     },
     clearJourneyError(state) {
       state.journeyError = null;
-      state.adminError = null;
       state.paginatedError = null;
     },
     resetRoutesStatus(state) {

@@ -75,6 +75,12 @@ router.get('/analytics',getAnalyticsData)
 
 // Driver Availability Management (Admin View)
 router.get("/drivers/availability", adminAvailabilityController.getAllDriversAvailability)
+// ✅ NEW: Admin update driver availability
+router.put(
+  "/drivers/availability/:driverId",
+  adminAvailabilityController.updateDriverAvailability
+);
+
 
 router.post('/logout',adminController.Logout);
 

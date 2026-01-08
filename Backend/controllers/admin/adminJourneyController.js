@@ -142,35 +142,34 @@ const adminJourneyController = {
       });
     }
   },
+  
   deleteJourney: async (req, res) => {
-  try {
-    const { journey_id } = req.params;
+    try {
+      const { journey_id } = req.params;
 
-    const deleted = await AdminJourneyQuery.deleteJourneyById(journey_id);
+      const deleted = await AdminJourneyQuery.deleteJourneyById(journey_id);
 
-    if (!deleted) {
-      return res.status(404).json({
+      if (!deleted) {
+        return res.status(404).json({
+          success: false,
+          message: "Journey not found"
+        });
+      }
+
+      res.status(200).json({
+        success: true,
+        message: "Journey and related data deleted successfully"
+      });
+
+    } catch (error) {
+      console.error("deleteJourney error:", error);
+      res.status(500).json({
         success: false,
-        message: "Journey not found"
+        message: error.message
       });
     }
+  },
 
-    res.status(200).json({
-      success: true,
-      message: "Journey and related data deleted successfully"
-    });
-
-  } catch (error) {
-    console.error("deleteJourney error:", error);
-    res.status(500).json({
-      success: false,
-      message: error.message
-    });
-  }
-},
-
-
- 
   fetchAllDrivers: async (req, res) => {
     try {
       let drivers;
@@ -191,15 +190,33 @@ const adminJourneyController = {
       });
     }
   },
-   fetchPaginatedJourneys: async (req, res) => {
+
+  // ✅ Updated: Fetch paginated journeys with filters
+  fetchPaginatedJourneys: async (req, res) => {
     try {
       const { id, role } = req.user;
       const page = parseInt(req.query.page) || 1;
       const limit = parseInt(req.query.limit) || 10;
       const offset = (page - 1) * limit;
       
-      const totalCount = await AdminJourneyQuery.getJourneysCount(id, role);
-      const journeys = await AdminJourneyQuery.getPaginatedJourneys(id, role, limit, offset);
+      // ✅ Extract filter parameters from query
+      const filters = {};
+      
+      if (req.query.route_id) {
+        filters.route_id = parseInt(req.query.route_id);
+      }
+      
+      if (req.query.driver_name && req.query.driver_name.trim() !== '') {
+        filters.driver_name = req.query.driver_name.trim();
+      }
+      
+      if (req.query.journey_date && req.query.journey_date.trim() !== '') {
+        filters.journey_date = req.query.journey_date.trim();
+      }
+      
+      // ✅ Pass filters to query functions
+      const totalCount = await AdminJourneyQuery.getJourneysCount(id, role, filters);
+      const journeys = await AdminJourneyQuery.getPaginatedJourneys(id, role, limit, offset, filters);
       
       const totalPages = Math.ceil(totalCount / limit);
       res.status(HttpStatus.OK).json({ 

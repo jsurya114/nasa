@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import {
   getAllDriversAvailability,
+  updateDriverAvailabilityByAdmin,
   clearMessages
 } from "../../redux/slice/driver/availabilitySlice.js";
 import { toast } from "react-toastify";
@@ -15,11 +16,17 @@ export default function AdminDriverAvailability() {
   const { allDriversAvailability, pagination, loading, error } = useSelector(
     (state) => state.availability
   );
+const { admin } = useSelector((state) => state.admin);
+
 
   const [filterDay, setFilterDay] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage] = useState(10);
+  // ===== EDIT STATE (ADD) =====
+const [editingDriverId, setEditingDriverId] = useState(null);
+const [editAvailability, setEditAvailability] = useState({});
+
 
   const daysOfWeek = [
     "monday",
@@ -45,9 +52,10 @@ export default function AdminDriverAvailability() {
     dispatch(getAllDriversAvailability({
       filterDay: filterDay || null,
       page: currentPage,
-      limit: itemsPerPage
+      limit: itemsPerPage,
+      searchQuery:searchQuery||null
     }));
-  }, [dispatch, currentPage, filterDay, itemsPerPage]);
+  }, [dispatch, currentPage, filterDay, itemsPerPage,searchQuery]);
 
   useEffect(() => {
     if (error) {
@@ -128,6 +136,39 @@ export default function AdminDriverAvailability() {
   const getAvailableDays = (availability) => {
     return Object.values(availability).filter(Boolean).length;
   };
+
+  // ===== EDIT HANDLERS (ADD) =====
+const startEdit = (driver) => {
+  setEditingDriverId(driver.id);
+  setEditAvailability({ ...driver.availability });
+};
+
+const cancelEdit = () => {
+  setEditingDriverId(null);
+  setEditAvailability({});
+};
+
+const toggleDay = (day) => {
+  setEditAvailability((prev) => ({
+    ...prev,
+    [day]: !prev[day]
+  }));
+};
+
+const saveAvailability = (driverId) => {
+  dispatch(
+    updateDriverAvailabilityByAdmin({
+      driverId,
+      availability: editAvailability
+    })
+  ).then((res) => {
+    if (!res.error) {
+      setEditingDriverId(null);
+      setEditAvailability({});
+    }
+  });
+};
+
 
   return (
     <>
@@ -241,6 +282,10 @@ export default function AdminDriverAvailability() {
                       <th className="px-6 py-4 text-center text-xs font-bold text-gray-700 uppercase tracking-wider">
                         Status
                       </th>
+                      <th className="px-6 py-4 text-center text-xs font-bold text-gray-700 uppercase tracking-wider">
+  Action
+</th>
+
                     </tr>
                   </thead>
 
@@ -279,23 +324,26 @@ export default function AdminDriverAvailability() {
                           </span>
                         </td>
 
-                        {daysOfWeek.map((day) => (
-                          <td key={day} className="px-4 py-4 whitespace-nowrap text-center">
-                            {driver.availability?.[day] ? (
-                              <span className="inline-flex items-center justify-center w-8 h-8 bg-green-100 rounded-md">
-                                <svg className="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
-                                </svg>
-                              </span>
-                            ) : (
-                              <span className="inline-flex items-center justify-center w-8 h-8 bg-red-100 rounded-md">
-                                <svg className="w-5 h-5 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12" />
-                                </svg>
-                              </span>
-                            )}
-                          </td>
-                        ))}
+                       {daysOfWeek.map((day) => (
+  <td key={day} className="px-4 py-4 whitespace-nowrap text-center">
+    {editingDriverId === driver.id ? (
+      <input
+        type="checkbox"
+        checked={editAvailability[day]}
+        onChange={() => toggleDay(day)}
+      />
+    ) : driver.availability?.[day] ? (
+      <span className="inline-flex items-center justify-center w-8 h-8 bg-green-100 rounded-md">
+        ✅
+      </span>
+    ) : (
+      <span className="inline-flex items-center justify-center w-8 h-8 bg-red-100 rounded-md">
+        ❌
+      </span>
+    )}
+  </td>
+))}
+
 
                         <td className="px-6 py-4 whitespace-nowrap text-center">
                           <span
@@ -311,6 +359,34 @@ export default function AdminDriverAvailability() {
                             {driver.enabled ? "Active" : "Inactive"}
                           </span>
                         </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-center">
+  {admin?.role === "superadmin" && (
+    editingDriverId === driver.id ? (
+      <div className="flex gap-2 justify-center">
+        <button
+          onClick={() => saveAvailability(driver.id)}
+          className="px-3 py-1 bg-green-600 text-white rounded"
+        >
+          Save
+        </button>
+        <button
+          onClick={cancelEdit}
+          className="px-3 py-1 bg-gray-400 text-white rounded"
+        >
+          Cancel
+        </button>
+      </div>
+    ) : (
+      <button
+        onClick={() => startEdit(driver)}
+        className="px-3 py-1 bg-blue-600 text-white rounded"
+      >
+        Edit
+      </button>
+    )
+  )}
+</td>
+
                       </tr>
                     ))}
                   </tbody>

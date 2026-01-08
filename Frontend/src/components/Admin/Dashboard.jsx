@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useCallback, useEffect } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import { useNavigate } from "react-router-dom";
-import { fetchDashboardData, fetchFilteredPaymentData, clearFilteredData, payDriver } from "../../redux/slice/admin/dashSlice.js";
+import { fetchDashboardData, fetchFilteredPaymentData, clearFilteredData, payDriver, setDataType } from "../../redux/slice/admin/dashSlice.js";
 import Header from "../../reuse/Header.jsx";
 import Nav from "../../reuse/Nav.jsx";
 import PaymentDashboardTable from "./DashboardTable.jsx"; 
@@ -21,14 +21,15 @@ export default function Dashboard() {
     isFiltered,
     paymentProcessing,
     pagination,
-    filters: reduxFilters // Get filters from Redux
+    filters: reduxFilters,
+    selectedDataType
   } = useSelector((state) => state.dash);
 
   const { isSuperAdmin } = useSelector((state) => state.admin);
 
   const getTodayDate = () => {
     const today = new Date();
-    return today.toISOString().split('T')[0];
+    return today.toLocaleDateString("en-CA")
   };
 
   // Local state for form inputs only
@@ -47,16 +48,27 @@ export default function Dashboard() {
   const [showExtraFields, setShowExtraFields] = useState(false);
   const [showConfirmModal, setShowConfirmModal] = useState(false);
 
-  // Use Redux filters for business logic
-  const shouldShowPayButton = useMemo(() => {
-    console.log("Checking shouldShowPayButton:", {
-      isFiltered,
-      driver: reduxFilters.driver,
-      paymentStatus: reduxFilters.paymentStatus,
-      dataLength: filteredPaymentData.length,
-      hasUnpaid: filteredPaymentData.some(row => !row.paid)
-    });
+  // ✅ Calculate available data types based on filtered data
+  const availableDataTypes = useMemo(() => {
+    if (!isFiltered || filteredPaymentData.length === 0) {
+      return { daily: false, weekly: false };
+    }
 
+    const hasDaily = filteredPaymentData.some(row => row.data_type === 'daily');
+    const hasWeekly = filteredPaymentData.some(row => row.data_type === 'weekly');
+
+    return { daily: hasDaily, weekly: hasWeekly };
+  }, [filteredPaymentData, isFiltered]);
+
+  // ✅ Show data type tabs only when driver is selected
+  const shouldShowDataTypeTabs = useMemo(() => {
+    return isFiltered && 
+           reduxFilters.driver && 
+           reduxFilters.driver !== "All" &&
+           (availableDataTypes.daily || availableDataTypes.weekly);
+  }, [isFiltered, reduxFilters.driver, availableDataTypes]);
+
+  const shouldShowPayButton = useMemo(() => {
     return (
       isFiltered &&
       reduxFilters.driver && 
@@ -126,10 +138,13 @@ export default function Dashboard() {
     
     const filterParams = {
       page: 1,
-      limit: itemsPerPage
+      limit: itemsPerPage,
+      dataType: "all" // Reset to all when filtering
     };
     
-    // Only add non-default filter values
+    // Reset data type selection
+    dispatch(setDataType("all"));
+    
     if (localFilters.job !== "All") filterParams.job = localFilters.job;
     if (localFilters.driver !== "All") filterParams.driver = localFilters.driver;
     if (localFilters.route !== "All") filterParams.route = localFilters.route;
@@ -137,11 +152,13 @@ export default function Dashboard() {
     if (localFilters.endDate) filterParams.endDate = localFilters.endDate;
     if (localFilters.paymentStatus !== "All") filterParams.paymentStatus = localFilters.paymentStatus;
     if (isSuperAdmin && localFilters.companyEarnings) filterParams.companyEarnings = localFilters.companyEarnings;
-
-    console.log("Filtering with params:", filterParams);
     
     setCurrentPage(1);
-    dispatch(fetchFilteredPaymentData(filterParams));
+    dispatch(fetchFilteredPaymentData({
+  ...filterParams,
+  dataType: selectedDataType
+}));
+
   };
 
   const handleClearFilters = () => {
@@ -158,6 +175,7 @@ export default function Dashboard() {
     setCurrentPage(1);
     
     dispatch(clearFilteredData());
+    dispatch(setDataType("all"));
     
     const today = getTodayDate();
     dispatch(fetchFilteredPaymentData({
@@ -168,14 +186,27 @@ export default function Dashboard() {
     }));
   };
 
+  // ✅ Handle data type tab change
+  const handleDataTypeChange = (dataType) => {
+    dispatch(setDataType(dataType));
+    
+    const filterParams = {
+      ...reduxFilters,
+      dataType: dataType,
+      page: 1,
+      limit: itemsPerPage
+    };
+    
+    setCurrentPage(1);
+   dispatch(fetchFilteredPaymentData({
+  ...filterParams,
+  dataType: selectedDataType
+}));
+
+  };
+
   const handlePayDriver = async () => {
     setShowConfirmModal(false);
-    
-    console.log("Paying driver with:", {
-      driverName: reduxFilters.driver,
-      startDate: reduxFilters.startDate,
-      endDate: reduxFilters.endDate
-    });
     
     const result = await dispatch(payDriver({
       driverName: reduxFilters.driver,
@@ -184,16 +215,15 @@ export default function Dashboard() {
     }));
     
     if (result.type === 'dashboard/payDriver/fulfilled') {
-      // Update local filters to show all payments
       setLocalFilters(prev => ({
         ...prev,
         paymentStatus: "All"
       }));
       
-      // Refresh with current filters but payment status All
       const filterParams = {
         page: currentPage,
-        limit: itemsPerPage
+        limit: itemsPerPage,
+        dataType: selectedDataType
       };
       
       if (reduxFilters.job && reduxFilters.job !== "All") filterParams.job = reduxFilters.job;
@@ -261,6 +291,31 @@ export default function Dashboard() {
         }
         .animate-fadeIn {
           animation: fadeIn 0.2s ease-out;
+        }
+        
+        .data-type-tab {
+          position: relative;
+          padding: 0.75rem 1.5rem;
+          font-weight: 600;
+          border-radius: 0.5rem;
+          transition: all 0.2s ease;
+          cursor: pointer;
+        }
+        
+        .data-type-tab:hover:not(.active):not(.disabled) {
+          background-color: #e0f2fe;
+        }
+        
+        .data-type-tab.active {
+          background-color: #3b82f6;
+          color: white;
+          box-shadow: 0 4px 6px -1px rgba(59, 130, 246, 0.3);
+        }
+        
+        .data-type-tab.disabled {
+          opacity: 0.4;
+          cursor: not-allowed;
+          color: #9ca3af;
         }
       `}</style>
       
@@ -389,6 +444,44 @@ export default function Dashboard() {
             )}
           </div>
         </section>
+
+        {/* ✅ Data Type Tabs - Show only when driver is selected */}
+        {shouldShowDataTypeTabs && (
+          <section className="bg-white border border-gray-200 rounded-xl shadow-sm mb-4 p-4">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-sm font-semibold text-gray-700 mr-2">View:</span>
+              
+              <button
+                onClick={() => handleDataTypeChange("all")}
+                className={`data-type-tab ${selectedDataType === "all" ? "active" : ""}`}
+              >
+                📊 All Data
+              </button>
+              
+              <button
+                onClick={() => handleDataTypeChange("daily")}
+                disabled={!availableDataTypes.daily}
+                className={`data-type-tab ${selectedDataType === "daily" ? "active" : ""} ${!availableDataTypes.daily ? "disabled" : ""}`}
+              >
+                📅 SPEEDX
+              </button>
+              
+              <button
+                onClick={() => handleDataTypeChange("weekly")}
+                disabled={!availableDataTypes.weekly}
+                className={`data-type-tab ${selectedDataType === "weekly" ? "active" : ""} ${!availableDataTypes.weekly ? "disabled" : ""}`}
+              >
+                📆 GOFFO
+              </button>
+              
+              <span className="ml-auto text-xs text-gray-500">
+                {selectedDataType === "all" && "Showing all records"}
+                {selectedDataType === "daily" && "Showing daily records only"}
+                {selectedDataType === "weekly" && "Showing weekly records only"}
+              </span>
+            </div>
+          </section>
+        )}
 
         <section className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-x-auto">
           <div className="font-bold text-gray-900 bg-gray-50 border-b border-gray-200 px-4 py-3">

@@ -29,6 +29,7 @@ const AdminJourney = () => {
     driversStatus,
     pagination 
   } = useSelector((state) => state.journey);
+const [isAdding, setIsAdding] = useState(false);
 
   const [editableJourneyId, setEditableJourneyId] = useState(null);
   const [formData, setFormData] = useState({});
@@ -38,7 +39,7 @@ const AdminJourney = () => {
     route_id: "",
     start_seq: "",
     end_seq: "",
-    journey_date: new Date().toISOString().split('T')[0],
+    journey_date: new Date().toLocaleDateString("en-CA"),
   });
   
   const [validationErrors, setValidationErrors] = useState({});
@@ -46,10 +47,21 @@ const AdminJourney = () => {
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(10);
 
-  // ✅ Fetch paginated data on mount and when page/limit changes
+  // ✅ NEW: Filter states
+  const [filters, setFilters] = useState({
+    route_id: "",
+    driver_name: "",
+    journey_date: ""
+  });
+
+  // ✅ Fetch paginated data with filters on mount and when page/limit/filters change
   useEffect(() => {
-    dispatch(fetchPaginatedJourneys({ page: currentPage, limit: itemsPerPage }));
-  }, [dispatch, currentPage, itemsPerPage]);
+    dispatch(fetchPaginatedJourneys({ 
+      page: currentPage, 
+      limit: itemsPerPage,
+      ...filters 
+    }));
+  }, [dispatch, currentPage, itemsPerPage, filters]);
 
   // ✅ Fetch routes and drivers only once
   useEffect(() => {
@@ -95,9 +107,32 @@ const AdminJourney = () => {
     }
   }, [paginatedError, dispatch]);
 
+  // ✅ NEW: Handle filter changes
+  const handleFilterChange = useCallback((filterName, value) => {
+    setFilters(prev => ({
+      ...prev,
+      [filterName]: value
+    }));
+    setCurrentPage(1); // Reset to first page when filter changes
+  }, []);
+
+  // ✅ NEW: Clear all filters
+  const handleClearFilters = useCallback(() => {
+    setFilters({
+      route_id: "",
+      driver_name: "",
+      journey_date: ""
+    });
+    setCurrentPage(1);
+  }, []);
+
   const handleRefresh = useCallback(() => {
-    dispatch(fetchPaginatedJourneys({ page: currentPage, limit: itemsPerPage }));
-  }, [dispatch, currentPage, itemsPerPage]);
+    dispatch(fetchPaginatedJourneys({ 
+      page: currentPage, 
+      limit: itemsPerPage,
+      ...filters 
+    }));
+  }, [dispatch, currentPage, itemsPerPage, filters]);
 
   const handleEdit = useCallback((journey) => {
     setEditableJourneyId(journey.id);
@@ -216,9 +251,13 @@ const AdminJourney = () => {
       }
 
       try {
-        await dispatch(updateJourney({ journey_id: id, updatedData: formData })).unwrap();
+        await dispatch(updateJourney({ journey_id: id, ...formData })).unwrap();
         toast.success("Journey updated successfully!");
-        dispatch(fetchPaginatedJourneys({ page: currentPage, limit: itemsPerPage }));
+        dispatch(fetchPaginatedJourneys({ 
+          page: currentPage, 
+          limit: itemsPerPage,
+          ...filters 
+        }));
         setEditableJourneyId(null);
         setEditValidationErrors({});
       } catch (err) {
@@ -242,7 +281,7 @@ const AdminJourney = () => {
         }
       }
     },
-    [dispatch, formData, validateSequenceOverlap, paginatedJourneys, currentPage, itemsPerPage]
+    [dispatch, formData, validateSequenceOverlap, paginatedJourneys, currentPage, itemsPerPage, filters]
   );
 
   const handleNewJourneyChange = useCallback((e) => {
@@ -267,7 +306,13 @@ const AdminJourney = () => {
   }, [validationErrors]);
 
   const handleAddJourney = useCallback(
-    async () => {
+    async (e) => {
+
+    if (isAdding) return; // ⛔ prevent multiple calls
+
+    setIsAdding(true);
+
+
       if (errorTimeout) {
         clearTimeout(errorTimeout);
         setErrorTimeout(null);
@@ -327,6 +372,7 @@ const AdminJourney = () => {
         setValidationErrors({
           general: `Sequence overlap detected! This driver already has sequences ${overlapping.start_seq}-${overlapping.end_seq} on this route for this date.`
         });
+        setIsAdding(false)
         return;
       }
 
@@ -334,24 +380,30 @@ const AdminJourney = () => {
         await dispatch(addJourney(newJourneyData)).unwrap();
         toast.success("Journey added successfully!");
         
-        // Refresh with current pagination
-        dispatch(fetchPaginatedJourneys({ page: currentPage, limit: itemsPerPage }));
+        // Refresh with current pagination and filters
+        dispatch(fetchPaginatedJourneys({ 
+          page: currentPage, 
+          limit: itemsPerPage,
+          ...filters 
+        }));
         
         setNewJourneyData({
           driver_id: "",
           route_id: "",
           start_seq: "",
           end_seq: "",
-          journey_date: new Date().toISOString().split('T')[0],
+          journey_date: new Date().toLocaleDateString("en-CA"),
         });
         setValidationErrors({});
       } catch (err) {
         setValidationErrors({
           general: err.message || "Failed to add journey"
         });
-      }
+      } finally {
+      setIsAdding(false);
+    }
     },
-    [dispatch, newJourneyData, validateSequenceOverlap, errorTimeout, currentPage, itemsPerPage]
+    [isAdding,dispatch, newJourneyData, validateSequenceOverlap, errorTimeout, currentPage, itemsPerPage, filters]
   );
 
   const handleDelete = async (id) => {
@@ -360,7 +412,11 @@ const AdminJourney = () => {
     try {
       await dispatch(deleteJourney(id)).unwrap();
       toast.success("Journey deleted successfully");
-      dispatch(fetchPaginatedJourneys({ page: currentPage, limit: itemsPerPage }));
+      dispatch(fetchPaginatedJourneys({ 
+        page: currentPage, 
+        limit: itemsPerPage,
+        ...filters 
+      }));
     } catch (err) {
       toast.error(err.message || "Delete failed");
     }
@@ -392,22 +448,22 @@ const AdminJourney = () => {
     const rangeStart = Math.max(2, current - delta);
     const rangeEnd = Math.min(totalPages - 1, current + delta);
 
-    // Add ellipsis after first page if needed
+    // Add dots if there's a gap after first page
     if (rangeStart > 2) {
       pages.push('...');
     }
 
-    // Add pages in range
+    // Add pages around current
     for (let i = rangeStart; i <= rangeEnd; i++) {
       pages.push(i);
     }
 
-    // Add ellipsis before last page if needed
+    // Add dots if there's a gap before last page
     if (rangeEnd < totalPages - 1) {
       pages.push('...');
     }
 
-    // Always show last page if there's more than 1 page
+    // Always show last page (if more than 1 page exists)
     if (totalPages > 1) {
       pages.push(totalPages);
     }
@@ -415,137 +471,259 @@ const AdminJourney = () => {
     return pages;
   };
 
-  const routeMap = useMemo(() => {
-    const map = new Map();
-    routes.forEach(route => {
-      map.set(route.id, route.route || route.name || route.route_name || `Route ${route.id}`);
-    });
-    return map;
-  }, [routes]);
-
   const tableRows = useMemo(() => {
-    if (paginatedStatus !== "succeeded") return null;
-
     return paginatedJourneys.map((journey) => {
-      const displayRouteName = routeMap.get(journey.route_id) || journey.route_name || 'Unknown Route';
-      
-      const formatDate = (dateString) => {
-        if (!dateString) return '';
-        const date = new Date(dateString + 'T00:00:00');
-        return date.toLocaleDateString('en-CA');
-      };
-      
+      const isEditing = editableJourneyId === journey.id;
+
       return (
-        <tr key={journey.id} className="border-t hover:bg-gray-50 transition-colors">
-          <td className="px-4 py-2">{journey.driver_name}</td>
-          <td className="px-4 py-2">{formatDate(journey.journey_date)}</td>
-          <td className="px-4 py-2">
-            {editableJourneyId === journey.id ? (
-              <select
+        <tr
+          key={journey.id}
+          className="border-b hover:bg-blue-50 transition-colors duration-200"
+        >
+          {/* Driver Cell */}
+          <td className="px-4 py-3">
+            {isEditing ? (
+              <Select
+                name="driver_id"
+                options={drivers.map((driver) => ({
+                  value: driver.id,
+                  label: driver.name,
+                }))}
+                value={
+                  drivers.find(d => d.id === formData.driver_id)
+                    ? {
+                        value: formData.driver_id,
+                        label: drivers.find(d => d.id === formData.driver_id).name,
+                      }
+                    : null
+                }
+                onChange={(selectedOption) =>
+                  setFormData(prev => ({ ...prev, driver_id: selectedOption?.value || '' }))
+                }
+                placeholder="Select driver..."
+                isClearable
+                isSearchable
+                classNamePrefix="react-select"
+                styles={{
+                  control: (base, state) => ({
+                    ...base,
+                    borderColor: editValidationErrors.driver_id ? '#ef4444' : '#3b82f6',
+                    boxShadow: state.isFocused ? '0 0 0 1px #3b82f6' : base.boxShadow,
+                    minHeight: '38px',
+                    borderRadius: '0.375rem',
+                  }),
+                  menu: base => ({
+                    ...base,
+                    zIndex: 9999,
+                  }),
+                }}
+              />
+            ) : (
+              <span className="font-medium text-gray-800">{journey.driver_name}</span>
+            )}
+            {isEditing && editValidationErrors.driver_id && (
+              <p className="text-xs text-red-500 mt-1">{editValidationErrors.driver_id}</p>
+            )}
+          </td>
+
+          {/* Date Cell */}
+          <td className="px-4 py-3 text-gray-700">{journey.journey_date}</td>
+
+          {/* Route Cell */}
+          <td className="px-4 py-3">
+            {isEditing ? (
+              <Select
                 name="route_id"
-                value={formData.route_id}
-                onChange={handleChange}
-                className="w-full border rounded px-2 py-1"
-              >
-                <option value="">Select Route</option>
-                {routes.map((routeItem) => (
-                  <option key={routeItem.id} value={routeItem.id}>
-                    {routeItem.route || routeItem.name || `Route ${routeItem.id}`}
-                  </option>
-                ))}
-              </select>
-            ) : (
-              displayRouteName
-            )}
-          </td>
-          <td className="px-4 py-2 text-center">
-            {editableJourneyId === journey.id ? (
-              <input
-                type="number"
-                name="start_seq"
-                value={formData.start_seq}
-                onChange={handleChange}
-                min="1"
-                className="w-16 border rounded px-1 py-0.5"
+                options={routes.map((route) => ({
+                  value: route.id,
+                  label: route.route || route.name || `Route ${route.id}`,
+                }))}
+                value={
+                  routes.find(r => r.id === formData.route_id)
+                    ? {
+                        value: formData.route_id,
+                        label: routes.find(r => r.id === formData.route_id).route || routes.find(r => r.id === formData.route_id).name,
+                      }
+                    : null
+                }
+                onChange={(selectedOption) =>
+                  setFormData(prev => ({ ...prev, route_id: selectedOption?.value || '' }))
+                }
+                placeholder="Select route..."
+                isClearable
+                isSearchable
+                classNamePrefix="react-select"
+                styles={{
+                  control: (base, state) => ({
+                    ...base,
+                    borderColor: editValidationErrors.route_id ? '#ef4444' : '#3b82f6',
+                    boxShadow: state.isFocused ? '0 0 0 1px #3b82f6' : base.boxShadow,
+                    minHeight: '38px',
+                    borderRadius: '0.375rem',
+                  }),
+                  menu: base => ({
+                    ...base,
+                    zIndex: 9999,
+                  }),
+                }}
               />
             ) : (
-              journey.start_seq
+              <span className="font-medium text-gray-800">{journey.route_name}</span>
+            )}
+            {isEditing && editValidationErrors.route_id && (
+              <p className="text-xs text-red-500 mt-1">{editValidationErrors.route_id}</p>
             )}
           </td>
-          <td className="px-4 py-2 text-center">
-            {editableJourneyId === journey.id ? (
-              <input
-                type="number"
-                name="end_seq"
-                value={formData.end_seq}
-                onChange={handleChange}
-                min="1"
-                className="w-16 border rounded px-1 py-0.5"
-              />
-            ) : (
-              journey.end_seq
-            )}
-          </td>
-          <td className="px-4 py-2 text-center">
-            {journey.packages || (journey.end_seq - journey.start_seq + 1)}
-          </td>
-          <td className="px-4 py-2 space-x-2 text-center">
-            {editableJourneyId === journey.id ? (
+
+          {/* Start Seq Cell */}
+          <td className="px-4 py-3 text-center">
+            {isEditing ? (
               <>
+                <input
+                  type="number"
+                  name="start_seq"
+                  value={formData.start_seq}
+                  onChange={handleChange}
+                  className={`w-20 border-2 rounded px-2 py-1 text-center focus:outline-none focus:ring-2 ${
+                    editValidationErrors.start_seq 
+                      ? 'border-red-500 focus:ring-red-500' 
+                      : 'border-blue-500 focus:ring-blue-500'
+                  }`}
+                  min="1"
+                />
+                {editValidationErrors.start_seq && (
+                  <p className="text-xs text-red-500 mt-1">{editValidationErrors.start_seq}</p>
+                )}
+              </>
+            ) : (
+              <span className="inline-block bg-blue-100 text-blue-800 px-3 py-1 rounded-full font-semibold">
+                {journey.start_seq}
+              </span>
+            )}
+          </td>
+
+          {/* End Seq Cell */}
+          <td className="px-4 py-3 text-center">
+            {isEditing ? (
+              <>
+                <input
+                  type="number"
+                  name="end_seq"
+                  value={formData.end_seq}
+                  onChange={handleChange}
+                  className={`w-20 border-2 rounded px-2 py-1 text-center focus:outline-none focus:ring-2 ${
+                    editValidationErrors.end_seq 
+                      ? 'border-red-500 focus:ring-red-500' 
+                      : 'border-blue-500 focus:ring-blue-500'
+                  }`}
+                  min="1"
+                />
+                {editValidationErrors.end_seq && (
+                  <p className="text-xs text-red-500 mt-1">{editValidationErrors.end_seq}</p>
+                )}
+              </>
+            ) : (
+              <span className="inline-block bg-green-100 text-green-800 px-3 py-1 rounded-full font-semibold">
+                {journey.end_seq}
+              </span>
+            )}
+          </td>
+
+          {/* Packages Cell */}
+          <td className="px-4 py-3 text-center">
+            <span className="inline-block bg-purple-100 text-purple-800 px-3 py-1 rounded-full font-semibold">
+              {journey.packages}
+            </span>
+          </td>
+
+          {/* Actions Cell */}
+          <td className="px-4 py-3 text-center">
+            {isEditing ? (
+              <div className="flex justify-center gap-2">
                 <button
                   onClick={() => handleSave(journey.id)}
-                  className="bg-green-500 text-white px-3 py-1 rounded hover:bg-green-600 transition-colors"
+                  className="bg-green-500 text-white px-4 py-2 rounded-lg hover:bg-green-600 transition-colors font-medium flex items-center gap-1"
                 >
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    className="h-4 w-4"
+                    viewBox="0 0 20 20"
+                    fill="currentColor"
+                  >
+                    <path
+                      fillRule="evenodd"
+                      d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"
+                      clipRule="evenodd"
+                    />
+                  </svg>
                   Save
                 </button>
                 <button
                   onClick={handleCancel}
-                  className="bg-gray-400 text-white px-3 py-1 rounded hover:bg-gray-500 transition-colors"
+                  className="bg-gray-500 text-white px-4 py-2 rounded-lg hover:bg-gray-600 transition-colors font-medium flex items-center gap-1"
                 >
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    className="h-4 w-4"
+                    viewBox="0 0 20 20"
+                    fill="currentColor"
+                  >
+                    <path
+                      fillRule="evenodd"
+                      d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z"
+                      clipRule="evenodd"
+                    />
+                  </svg>
                   Cancel
                 </button>
-              </>
+              </div>
             ) : (
-              <button
-                onClick={() => handleEdit(journey)}
-                className="bg-blue-500 text-white px-3 py-1 rounded hover:bg-blue-600 transition-colors"
-              >
-                Edit
-              </button>
+              <div className="flex justify-center gap-2">
+                <button
+                  onClick={() => handleEdit(journey)}
+                  className="bg-blue-500 text-white px-4 py-2 rounded-lg hover:bg-blue-600 transition-colors font-medium flex items-center gap-1"
+                >
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    className="h-4 w-4"
+                    viewBox="0 0 20 20"
+                    fill="currentColor"
+                  >
+                    <path d="M13.586 3.586a2 2 0 112.828 2.828l-.793.793-2.828-2.828.793-.793zM11.379 5.793L3 14.172V17h2.828l8.38-8.379-2.83-2.828z" />
+                  </svg>
+                  Edit
+                </button>
+                <button
+                  onClick={() => handleDelete(journey.id)}
+                  className="bg-red-500 text-white px-4 py-2 rounded-lg hover:bg-red-600 transition-colors font-medium flex items-center gap-1"
+                >
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    className="h-4 w-4"
+                    viewBox="0 0 20 20"
+                    fill="currentColor"
+                  >
+                    <path
+                      fillRule="evenodd"
+                      d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z"
+                      clipRule="evenodd"
+                    />
+                  </svg>
+                  Delete
+                </button>
+              </div>
             )}
-            <button
-              onClick={() => handleDelete(journey.id)}
-              className="bg-red-500 text-white px-3 py-1 rounded hover:bg-red-600 transition-colors"
-            >
-              Delete
-            </button>
+            {isEditing && editValidationErrors.general && (
+              <p className="text-xs text-red-500 mt-2 text-left">{editValidationErrors.general}</p>
+            )}
           </td>
         </tr>
       );
     });
-  }, [paginatedJourneys, paginatedStatus, editableJourneyId, formData, routes, routeMap, editValidationErrors, handleChange, handleEdit, handleCancel, handleSave]);
+  }, [paginatedJourneys, editableJourneyId, formData, handleEdit, handleCancel, handleSave, handleChange, handleDelete, editValidationErrors, drivers, routes]);
 
   return (
-    <div className="min-h-screen bg-gray-50 text-gray-900 font-poppins">
-      <style>{`
-        @keyframes fadeIn {
-          from { opacity: 0; transform: translateY(-10px); }
-          to { opacity: 1; transform: translateY(0); }
-        }
-        .animate-fade-in {
-          animation: fadeIn 0.3s ease-in-out;
-        }
-        
-        /* Custom Select Dropdown Styling */
-        .custom-select {
-          appearance: none;
-          background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3E%3Cpath stroke='%236B7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3E%3C/svg%3E");
-          background-position: right 0.5rem center;
-          background-repeat: no-repeat;
-          background-size: 1.5em 1.5em;
-          padding-right: 2.5rem;
-        }
-      `}</style>
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-purple-50">
       <Header />
 
       <main className="max-w-[1450px] mx-auto p-4 pt-16 pb-40">
@@ -596,6 +774,97 @@ const AdminJourney = () => {
           </div>
         </div>
 
+        {/* ✅ NEW: Filter Section */}
+        <div className="bg-white rounded-xl shadow-sm p-6 mb-4 border-2 border-blue-200">
+          <div className="flex justify-between items-center mb-4">
+            <h2 className="text-lg font-semibold text-blue-700">Filter Journeys</h2>
+            <button
+              onClick={handleClearFilters}
+              className="text-sm bg-gray-200 hover:bg-gray-300 text-gray-700 px-3 py-1 rounded-lg transition-colors flex items-center gap-1"
+            >
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                className="h-4 w-4"
+                viewBox="0 0 20 20"
+                fill="currentColor"
+              >
+                <path
+                  fillRule="evenodd"
+                  d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z"
+                  clipRule="evenodd"
+                />
+              </svg>
+              Clear Filters
+            </button>
+          </div>
+          
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div>
+              <label className="block text-sm font-medium mb-1">Filter by Route</label>
+              <Select
+                name="route_filter"
+                options={routes.map((route) => ({
+                  value: route.id,
+                  label: route.route || route.name || `Route ${route.id}`,
+                }))}
+                value={
+                  filters.route_id
+                    ? routes.find(r => r.id === filters.route_id)
+                      ? {
+                          value: filters.route_id,
+                          label: routes.find(r => r.id === filters.route_id).route || routes.find(r => r.id === filters.route_id).name,
+                        }
+                      : null
+                    : null
+                }
+                onChange={(selectedOption) =>
+                  handleFilterChange('route_id', selectedOption?.value || '')
+                }
+                placeholder="All routes..."
+                isClearable
+                isSearchable
+                classNamePrefix="react-select"
+                styles={{
+                  control: (base, state) => ({
+                    ...base,
+                    borderColor: '#3b82f6',
+                    boxShadow: state.isFocused ? '0 0 0 1px #3b82f6' : base.boxShadow,
+                    minHeight: '38px',
+                    borderRadius: '0.375rem',
+                  }),
+                  menu: base => ({
+                    ...base,
+                    zIndex: 9999,
+                  }),
+                }}
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium mb-1">Filter by Driver Name</label>
+              <input
+                type="text"
+                name="driver_name_filter"
+                value={filters.driver_name}
+                onChange={(e) => handleFilterChange('driver_name', e.target.value)}
+                className="w-full border-2 border-blue-300 rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                placeholder="Enter driver name..."
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium mb-1">Filter by Date</label>
+              <input
+                type="date"
+                name="journey_date_filter"
+                value={filters.journey_date}
+                onChange={(e) => handleFilterChange('journey_date', e.target.value)}
+                className="w-full border-2 border-blue-300 rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
+          </div>
+        </div>
+
         {/* Add Journey Form */}
         <div className="bg-white rounded-xl shadow-sm p-6 mb-4 border-2 border-green-200">
           <h2 className="text-lg font-semibold mb-4 text-green-700">Add New Journey</h2>
@@ -616,7 +885,7 @@ const AdminJourney = () => {
               <label className="block text-sm font-medium mb-1">Driver *</label>
               <Select
                 name="driver_id"
-                options={drivers.map((driver) => ({
+                options={drivers.filter(d=>d.enabled).map((driver) => ({
                   value: driver.id,
                   label: driver.name,
                 }))}
@@ -658,7 +927,7 @@ const AdminJourney = () => {
               <label className="block text-sm font-medium mb-1">Route *</label>
               <Select
                 name="route_id"
-                options={routes.map((route) => ({
+                options={routes.filter(r=>r.enabled).map((route) => ({
                   value: route.id,
                   label: route.route || route.name || `Route ${route.id}`,
                 }))}
@@ -756,24 +1025,35 @@ const AdminJourney = () => {
           </div>
 
           <div className="flex gap-2 mt-4">
-            <button
-              onClick={handleAddJourney}
-              className="bg-green-500 text-white px-6 py-2 rounded hover:bg-green-600 transition-colors font-medium flex items-center gap-2"
-            >
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                className="h-5 w-5"
-                viewBox="0 0 20 20"
-                fill="currentColor"
-              >
-                <path
-                  fillRule="evenodd"
-                  d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z"
-                  clipRule="evenodd"
-                />
-              </svg>
-              Add Journey
-            </button>
+           <button
+  type="button"
+  onClick={handleAddJourney}
+  disabled={isAdding}
+  className="
+    bg-green-500 text-white px-6 py-2 rounded
+    font-medium flex items-center gap-2
+    transition-colors
+    hover:bg-green-600
+    disabled:opacity-50
+    disabled:cursor-not-allowed
+    disabled:hover:bg-green-500
+  "
+>
+  <svg
+    xmlns="http://www.w3.org/2000/svg"
+    className="h-5 w-5 pointer-events-none"
+    viewBox="0 0 20 20"
+    fill="currentColor"
+  >
+    <path
+      fillRule="evenodd"
+      d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z"
+      clipRule="evenodd"
+    />
+  </svg>
+  {isAdding ? "Adding..." : "Add Journey"}
+</button>
+
           </div>
         </div>
 
@@ -813,7 +1093,7 @@ const AdminJourney = () => {
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                         </svg>
                         <p className="text-gray-500 text-lg font-medium">No journeys found</p>
-                        <p className="text-gray-400 text-sm">Add a new journey to get started</p>
+                        <p className="text-gray-400 text-sm">Try adjusting your filters or add a new journey</p>
                       </div>
                     </td>
                   </tr>

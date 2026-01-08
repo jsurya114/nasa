@@ -148,7 +148,15 @@ export default function PaymentDashboardTable() {
     return baseHeaders;
   }, [isSuperAdmin]);
 
-  const displayData = filteredPaymentData;
+  const { selectedDataType } = useSelector(state => state.dash);
+
+const displayData = useMemo(() => {
+  if (selectedDataType === "all") return filteredPaymentData;
+  return filteredPaymentData.filter(
+    row => row.data_type === selectedDataType
+  );
+}, [filteredPaymentData, selectedDataType]);
+
   const isLoading = paymentLoading;
   const displayError = paymentError;
 

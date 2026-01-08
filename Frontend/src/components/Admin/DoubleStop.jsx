@@ -19,7 +19,7 @@ const DoubleStop = () => {
   const dispatch = useDispatch();
   const [activeView, setActiveView] = useState("weekly");
   const [selectedDate, setSelectedDate] = useState(
-    new Date().toISOString().split("T")[0]
+    new Date().toLocaleDateString("en-CA")
   );
 
   const [file, setFile] = useState(null);
@@ -264,12 +264,12 @@ const DoubleStop = () => {
         </section>
 
         {/* Analytics Section */}
-        {/* <div className="mb-3">
+        <div className="mb-3">
           <Analystic 
             viewType={activeView} 
             selectedDate={selectedDate} 
           />
-        </div> */}
+        </div>
 
         {/* Driver Payment Section */}
         {activeView === "weekly" ? (
