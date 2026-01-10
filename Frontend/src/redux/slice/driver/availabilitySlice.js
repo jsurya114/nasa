@@ -63,10 +63,11 @@ export const updateDriverAvailability = createAsyncThunk(
 // Admin: Get all drivers availability
 export const getAllDriversAvailability = createAsyncThunk(
   "availability/getAllDriversAvailability",
-  async ({ filterDay = null, page = 1, limit = 10 ,searchQuery=null}, { rejectWithValue }) => {
+  async ({ filterDay = null, page = 1, limit = 10, searchQuery = null, filterCity = null }, { rejectWithValue }) => {
     try {
-      const params = { page, limit ,searchQuery};
+      const params = { page, limit, searchQuery };
       if (filterDay) params.day = filterDay;
+      if (filterCity) params.city = filterCity;  // NEW: Add city filter
 
       const response = await axios.get(
         `${API_BASE_URL}/admin/drivers/availability`,
@@ -89,13 +90,32 @@ export const getAllDriversAvailability = createAsyncThunk(
   }
 );
 
-// ✅ FIXED: Admin update specific driver's availability
+// NEW: Admin: Get available cities for filter
+export const getAvailableCities = createAsyncThunk(
+  "availability/getAvailableCities",
+  async (_, { rejectWithValue }) => {
+    try {
+      const response = await axios.get(
+        `${API_BASE_URL}/admin/drivers/availability/cities`,
+        { headers: getAdminAuthHeaders() }
+      );
+
+      return response.data.data;
+    } catch (error) {
+      return rejectWithValue(
+        error.response?.data?.message || "Failed to fetch cities"
+      );
+    }
+  }
+);
+
+// Admin update specific driver's availability
 export const updateDriverAvailabilityByAdmin = createAsyncThunk(
   "availability/updateDriverAvailabilityByAdmin",
   async ({ driverId, availability }, { rejectWithValue }) => {
     try {
       const response = await axios.put(
-        `${API_BASE_URL}/admin/drivers/availability/${driverId}`, // ✅ FIXED URL
+        `${API_BASE_URL}/admin/drivers/availability/${driverId}`,
         { availability },
         { headers: getAdminAuthHeaders() }
       );
@@ -125,10 +145,12 @@ const availabilitySlice = createSlice({
       sunday: false,
     },
     allDriversAvailability: [],
+    availableCities: [],  // NEW: Store available cities
     pagination: null,
     updatedAt: null,
     loading: false,
     updateLoading: false,
+    citiesLoading: false,  // NEW: Loading state for cities
     error: null,
     successMessage: null,
   },
@@ -192,6 +214,19 @@ const availabilitySlice = createSlice({
       })
       .addCase(getAllDriversAvailability.rejected, (state, action) => {
         state.loading = false;
+        state.error = action.payload;
+      })
+
+      // ===== ADMIN GET CITIES =====
+      .addCase(getAvailableCities.pending, (state) => {
+        state.citiesLoading = true;
+      })
+      .addCase(getAvailableCities.fulfilled, (state, action) => {
+        state.citiesLoading = false;
+        state.availableCities = action.payload;
+      })
+      .addCase(getAvailableCities.rejected, (state, action) => {
+        state.citiesLoading = false;
         state.error = action.payload;
       })
 

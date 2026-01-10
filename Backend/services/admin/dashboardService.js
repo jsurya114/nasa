@@ -1,17 +1,17 @@
 import pool from "../../config/db.js";
 
 export const getAllCities = async () => {
-  const result = await pool.query(`SELECT * FROM city ORDER BY job ASC`);
+  const result = await pool.query(`SELECT * FROM city  ORDER BY job ASC`);
   return result.rows;
 };
 
 export const getAllDrivers = async () => {
-  const result = await pool.query(`SELECT * FROM drivers ORDER BY name ASC`);
+  const result = await pool.query(`SELECT * FROM drivers  WHERE enabled=true ORDER BY name ASC`);
   return result.rows;
 };
 
 export const getAllRoutes = async () => {
-  const result = await pool.query(`SELECT * FROM routes ORDER BY name ASC`);
+  const result = await pool.query(`SELECT * FROM routes  ORDER BY name ASC`);
   return result.rows;
 };
 
@@ -36,7 +36,8 @@ export const getAllottedDrivers = async (id) => {
     FROM drivers d
     JOIN city c ON c.id = d.city_id
     JOIN admin_city_ref acr ON acr.city_id = c.id
-    WHERE acr.admin_id = $1
+    WHERE acr.admin_id = $1 
+    AND d.enabled=true
       `,
     [id]
   );

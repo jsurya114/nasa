@@ -9,7 +9,7 @@ import { createAccessCode } from '../controllers/admin/accessCodeControllers.js'
 import {DailyExcelUpload, getUpdatedTempDashboardData} from '../controllers/admin/fileUploadsController.js';
 import { getAccessCodes,updateAccessCode, } from '../controllers/admin/accessCodeControllers.js';
 import { changeRoleAdmin, changeStatusAdmin, createAdmins, getAdmins, updateAdmin, getAdminCities } from '../controllers/admin/addAdminController.js';
-import { getPaymentDashboardData, getAllPaymentDashboardData, updatePaymentData, updateWeeklyTempDataToDashboard, payDriver } from '../controllers/admin/dashboardController.js';
+import { getPaymentDashboardData, getAllPaymentDashboardData, updatePaymentData, updateWeeklyTempDataToDashboard, payDriver, getSummaryData } from '../controllers/admin/dashboardController.js';
 import adminJourneyController from '../controllers/admin/adminJourneyController.js';
 import adminAuth from '../middlewares/adminAuth.js';
 import superAdminAuth from '../middlewares/superAdminAuth.js';
@@ -17,6 +17,7 @@ import { getAllData } from '../controllers/admin/dashController.js';
 import { getWeeklyTempData, weeklyExcelUpload } from '../controllers/admin/weeklyUploadsController.js';
 import { getAnalyticsData } from '../controllers/admin/analyticsController.js';
 import adminAvailabilityController from '../controllers/admin/adminavailabilityController.js';
+
 
 router.post('/login',adminController.Login);
 
@@ -63,6 +64,10 @@ router.get("/drivers",adminJourneyController.fetchAllDrivers)
 router.get('/dashboard/data', getAllData)
 router.get('/dashboard/paymentTable', getPaymentDashboardData)
 router.get('/dashboard/paymentTableAll', getAllPaymentDashboardData)
+
+// ✅ NEW: Summary endpoint for total counts
+router.get('/dashboard/summary', getSummaryData)
+
 router.post('/dashboard/payDriver', payDriver)
 
 router.post('/doubleStop/weekly-upload',upload.single('file'),weeklyExcelUpload);
@@ -74,8 +79,10 @@ router.get('/doubleStop/calculatePayment',updatePaymentData);
 router.get('/analytics',getAnalyticsData)
 
 // Driver Availability Management (Admin View)
-router.get("/drivers/availability", adminAvailabilityController.getAllDriversAvailability)
-// ✅ NEW: Admin update driver availability
+router.get("/drivers/availability", adminAvailabilityController.getAllDriversAvailability);
+// NEW: Get available cities for filter
+router.get("/drivers/availability/cities", adminAvailabilityController.getAvailableCities);
+// Admin update driver availability
 router.put(
   "/drivers/availability/:driverId",
   adminAvailabilityController.updateDriverAvailability

@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useCallback, useEffect } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import { useNavigate } from "react-router-dom";
-import { fetchDashboardData, fetchFilteredPaymentData, clearFilteredData, payDriver, setDataType } from "../../redux/slice/admin/dashSlice.js";
+import { fetchDashboardData, fetchFilteredPaymentData, fetchSummaryData, clearFilteredData, payDriver, setDataType } from "../../redux/slice/admin/dashSlice.js";
 import Header from "../../reuse/Header.jsx";
 import Nav from "../../reuse/Nav.jsx";
 import PaymentDashboardTable from "./DashboardTable.jsx"; 
@@ -18,6 +18,8 @@ export default function Dashboard() {
     loading, 
     error, 
     filteredPaymentData, 
+    summaryData,
+    summaryLoading,
     isFiltered,
     paymentProcessing,
     pagination,
@@ -79,12 +81,14 @@ export default function Dashboard() {
     );
   }, [isFiltered, reduxFilters.driver, reduxFilters.paymentStatus, filteredPaymentData]);
 
+  // ✅ Use summaryData from Redux instead of calculating from paginated data
   const extraFieldsData = useMemo(() => {
-    if (!isFiltered || filteredPaymentData.length === 0) {
+    if (!isFiltered || !summaryData) {
       return {
         packages: 0,
         noScanned: 0,
         failedAttempt: 0,
+        firstStop: 0,
         doubleStop: 0,
         delivered: 0,
         driversPayment: 0,
@@ -92,37 +96,21 @@ export default function Dashboard() {
       };
     }
 
-    return filteredPaymentData.reduce((totals, row) => {
-      return {
-        packages: totals.packages + (Number(row.packages) || 0),
-        noScanned: totals.noScanned + (Number(row.no_scanned) || 0),
-        failedAttempt: totals.failedAttempt + (Number(row.failed_attempt) || 0),
-        doubleStop: totals.doubleStop + (Number(row.ds) || 0),
-        delivered: totals.delivered + (Number(row.delivered) || 0),
-        driversPayment: totals.driversPayment + (Number(row.driver_payment) || 0),
-        companyEarnings: totals.companyEarnings + (Number(row.company_earnings) || 0),
-      };
-    }, {
-      packages: 0,
-      noScanned: 0,
-      failedAttempt: 0,
-      doubleStop: 0,
-      delivered: 0,
-      driversPayment: 0,
-      companyEarnings: 0,
-    });
-  }, [filteredPaymentData, isFiltered]);
+    return {
+      packages: Number(summaryData.total_packages) || 0,
+      noScanned: Number(summaryData.total_no_scanned) || 0,
+      failedAttempt: Number(summaryData.total_failed_attempt) || 0,
+      firstStop: Number(summaryData.total_fs) || 0,
+      doubleStop: Number(summaryData.total_ds) || 0,
+      delivered: Number(summaryData.total_delivered) || 0,
+      driversPayment: Number(summaryData.total_driver_payment) || 0,
+      companyEarnings: Number(summaryData.total_company_earnings) || 0,
+    };
+  }, [summaryData, isFiltered]);
 
+  // ✅ Only fetch dropdown data on mount, don't fetch payment data
   useEffect(() => {
     dispatch(fetchDashboardData());
-    
-    const today = getTodayDate();
-    dispatch(fetchFilteredPaymentData({
-      startDate: today,
-      endDate: today,
-      page: 1,
-      limit: 10
-    }));
   }, [dispatch]);
 
   const handleFilterChange = useCallback((e) => {
@@ -154,11 +142,18 @@ export default function Dashboard() {
     if (isSuperAdmin && localFilters.companyEarnings) filterParams.companyEarnings = localFilters.companyEarnings;
     
     setCurrentPage(1);
-    dispatch(fetchFilteredPaymentData({
-  ...filterParams,
-  dataType: selectedDataType
-}));
-
+    
+    // ✅ Fetch both paginated data AND summary data
+    dispatch(fetchFilteredPaymentData(filterParams));
+    
+    // ✅ Fetch summary data if company earnings is enabled
+    if (isSuperAdmin && localFilters.companyEarnings) {
+      const summaryParams = { ...filterParams };
+      delete summaryParams.page;
+      delete summaryParams.limit;
+      delete summaryParams.companyEarnings;
+      dispatch(fetchSummaryData(summaryParams));
+    }
   };
 
   const handleClearFilters = () => {
@@ -174,16 +169,9 @@ export default function Dashboard() {
     setShowExtraFields(false);
     setCurrentPage(1);
     
+    // ✅ Just clear data, don't fetch anything
     dispatch(clearFilteredData());
     dispatch(setDataType("all"));
-    
-    const today = getTodayDate();
-    dispatch(fetchFilteredPaymentData({
-      startDate: today,
-      endDate: today,
-      page: 1,
-      limit: itemsPerPage
-    }));
   };
 
   // ✅ Handle data type tab change
@@ -198,11 +186,18 @@ export default function Dashboard() {
     };
     
     setCurrentPage(1);
-   dispatch(fetchFilteredPaymentData({
-  ...filterParams,
-  dataType: selectedDataType
-}));
-
+    
+    // ✅ Fetch both paginated data AND summary data
+    dispatch(fetchFilteredPaymentData(filterParams));
+    
+    // ✅ Update summary data for the selected data type
+    if (isSuperAdmin && showExtraFields) {
+      const summaryParams = { ...filterParams };
+      delete summaryParams.page;
+      delete summaryParams.limit;
+      delete summaryParams.companyEarnings;
+      dispatch(fetchSummaryData(summaryParams));
+    }
   };
 
   const handlePayDriver = async () => {
@@ -234,6 +229,15 @@ export default function Dashboard() {
       if (isSuperAdmin && reduxFilters.companyEarnings) filterParams.companyEarnings = reduxFilters.companyEarnings;
       
       dispatch(fetchFilteredPaymentData(filterParams));
+      
+      // ✅ Refetch summary data
+      if (isSuperAdmin && showExtraFields) {
+        const summaryParams = { ...filterParams };
+        delete summaryParams.page;
+        delete summaryParams.limit;
+        delete summaryParams.companyEarnings;
+        dispatch(fetchSummaryData(summaryParams));
+      }
     }
   };
 
@@ -326,9 +330,11 @@ export default function Dashboard() {
         <section className="bg-white border border-gray-200 rounded-xl shadow-sm mb-4">
           <div className="font-bold text-gray-900 bg-gray-50 border-b border-gray-200 px-4 py-3 flex items-center justify-between">
             <span>Data Filters</span>
-            <span className="text-sm font-normal text-gray-600">
-              📅 Showing: {isFiltered && !reduxFilters.startDate && !reduxFilters.endDate ? "Today's data" : "Filtered data"}
-            </span>
+            {isFiltered && (
+              <span className="text-sm font-normal text-gray-600">
+                📅 Showing filtered data
+              </span>
+            )}
           </div>
           <div className="divide-y">
             {filterOptions.map((item, i) => (
@@ -375,7 +381,7 @@ export default function Dashboard() {
                   className="w-4 h-4"
                 />
                 <span className="font-medium text-gray-700">
-                  Company Earnings
+                  Summary
                 </span>
               </div>
             )}
@@ -391,7 +397,7 @@ export default function Dashboard() {
                 onClick={handleClearFilters}
                 className="bg-gray-500 text-white font-semibold px-4 py-2 rounded-lg shadow-md hover:bg-gray-600 transition-colors"
               >
-                Clear Filters (Show Today)
+                Clear Filters
               </button>
               <button
                 onClick={handleAddDelivery}
@@ -417,13 +423,15 @@ export default function Dashboard() {
                   <svg className="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
                   </svg>
-                  Company Earnings Summary
+                   Summary
+                  {summaryLoading && <span className="text-sm text-gray-500 ml-2">(Loading...)</span>}
                 </div>
                 
                 {[
                   { field: "packages", label: "Total Packages" },
                   { field: "noScanned", label: "Total No Scanned" },
                   { field: "failedAttempt", label: "Total Failed Attempt" },
+                  { field: "firstStop", label: "Total First Stop (FS)" },
                   { field: "doubleStop", label: "Total Double Stop (DS)" },
                   { field: "delivered", label: "Total Delivered" },
                   { field: "driversPayment", label: "Total Drivers Payment" },
@@ -471,7 +479,7 @@ export default function Dashboard() {
                 disabled={!availableDataTypes.weekly}
                 className={`data-type-tab ${selectedDataType === "weekly" ? "active" : ""} ${!availableDataTypes.weekly ? "disabled" : ""}`}
               >
-                📆 GOFFO
+                📆 GOFO
               </button>
               
               <span className="ml-auto text-xs text-gray-500">
@@ -483,12 +491,29 @@ export default function Dashboard() {
           </section>
         )}
 
-        <section className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-x-auto">
-          <div className="font-bold text-gray-900 bg-gray-50 border-b border-gray-200 px-4 py-3">
-            Driver Jobs
-          </div>
-          <PaymentDashboardTable showExtraFields={showExtraFields && isSuperAdmin} />
-        </section>
+        {/* ✅ Show message when no data is displayed */}
+        {!isFiltered && (
+          <section className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-x-auto p-8 text-center">
+            <div className="flex flex-col items-center gap-4">
+              <svg className="w-20 h-20 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" />
+              </svg>
+              <div>
+                <p className="text-gray-700 text-lg font-medium mb-2">No Data to Display</p>
+                <p className="text-gray-500">Please use the filters above and click "Filter Data" to view payment records</p>
+              </div>
+            </div>
+          </section>
+        )}
+
+        {isFiltered && (
+          <section className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-x-auto">
+            <div className="font-bold text-gray-900 bg-gray-50 border-b border-gray-200 px-4 py-3">
+              Driver Jobs
+            </div>
+            <PaymentDashboardTable showExtraFields={showExtraFields && isSuperAdmin} />
+          </section>
+        )}
       </main>
 
       <Nav />

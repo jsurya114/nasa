@@ -2,6 +2,46 @@ import { AdminDashboardQueries } from "../../services/admin/dashboardQueries.js"
 import { WeeklyExcelQueries } from "../../services/admin/weeklyExcelQueries.js";
 import HttpStatus from "../../utils/statusCodes.js";
 
+// ✅ NEW: Get summary data for all records matching the filter
+export const getSummaryData = async (req, res) => {
+  try {
+    const { 
+      job, 
+      driver, 
+      route, 
+      startDate, 
+      endDate, 
+      paymentStatus,
+      dataType
+    } = req.query;
+    
+    const { id, role } = req.user;
+    
+    const filters = {};
+    
+    if (job && job !== "All") filters.job = job;
+    if (driver && driver !== "All") filters.driver = driver;
+    if (route && route !== "All") filters.route = route;
+    if (startDate) filters.startDate = startDate;
+    if (endDate) filters.endDate = endDate;
+    if (paymentStatus && paymentStatus !== "All") filters.paymentStatus = paymentStatus;
+    if (dataType && dataType !== "all") filters.dataType = dataType;
+
+    const summary = await AdminDashboardQueries.getSummaryData(filters, id, role);
+    
+    return res.status(HttpStatus.OK).json({ 
+      success: true, 
+      data: summary
+    });
+  } catch (error) {
+    console.error("Error in getSummaryData:", error);
+    return res.status(HttpStatus.INTERNAL_SERVER_ERROR).json({ 
+      success: false, 
+      message: error.message || "Failed to fetch summary data" 
+    });
+  }
+};
+
 export const getPaymentDashboardData = async (req, res) => {
   try {
    
@@ -13,6 +53,7 @@ export const getPaymentDashboardData = async (req, res) => {
       endDate, 
       paymentStatus, 
       companyEarnings,
+      dataType,
       page = 1,
       limit = 10
     } = req.query;
@@ -28,15 +69,13 @@ export const getPaymentDashboardData = async (req, res) => {
     if (endDate) filters.endDate = endDate;
     if (paymentStatus && paymentStatus !== "All") filters.paymentStatus = paymentStatus;
     if (companyEarnings === "true") filters.companyEarnings = true;
-
- 
+    if (dataType && dataType !== "all") filters.dataType = dataType;
 
     const pageNum = parseInt(page);
     const limitNum = parseInt(limit);
     const offset = (pageNum - 1) * limitNum;
 
     const totalCount = await AdminDashboardQueries.getPaymentDashboardCount(filters, id, role);
-    
     
     const result = await AdminDashboardQueries.getPaymentDashboardPaginated(
       filters, 
@@ -47,8 +86,6 @@ export const getPaymentDashboardData = async (req, res) => {
     );
     
     const totalPages = Math.ceil(totalCount / limitNum);
-    
-    
     
     return res.status(HttpStatus.OK).json({ 
       success: true, 
@@ -74,9 +111,7 @@ export const getPaymentDashboardData = async (req, res) => {
 
 export const getAllPaymentDashboardData = async (req, res) => {
   try {
-   
-
-    const { job, driver, route, startDate, endDate, paymentStatus, companyEarnings } = req.query;
+    const { job, driver, route, startDate, endDate, paymentStatus, companyEarnings, dataType } = req.query;
     const { id, role } = req.user;
     
     const filters = {};
@@ -88,12 +123,9 @@ export const getAllPaymentDashboardData = async (req, res) => {
     if (endDate) filters.endDate = endDate;
     if (paymentStatus && paymentStatus !== "All") filters.paymentStatus = paymentStatus;
     if (companyEarnings === "true") filters.companyEarnings = true;
-
-   
+    if (dataType && dataType !== "all") filters.dataType = dataType;
 
     const result = await AdminDashboardQueries.PaymentDashboardTable(filters, id, role);
-    
-
     
     return res.status(HttpStatus.OK).json({ success: true, data: result });
   } catch (error) {
@@ -178,8 +210,6 @@ export const updateWeeklyTempDataToDashboard = async (req, res) => {
         message: "Please upload weekly data first"
       });
     }
-
-
 
     const rowsInserted = await WeeklyExcelQueries.createEntriesFromWeeklyCount();
     await WeeklyExcelQueries.deleteWeeklyTableIfExists('weeklycount');

@@ -54,15 +54,17 @@ const Deliveries = () => {
   const summary = useMemo(() => {
     if (!filteredDeliveries || filteredDeliveries.length === 0) return null;
     return filteredDeliveries.reduce(
-      (acc, d) => ({
-        packages: acc.packages + (parseInt(d.packages) || 0),
-        no_scanned: acc.no_scanned + (parseInt(d.no_scanned) || 0),
-        failed_attempt: acc.failed_attempt + (parseInt(d.failed_attempt) || 0),
-        first_stop: acc.first_stop + (parseInt(d.first_stop) || 0),
-        double_stop: acc.double_stop + (parseInt(d.double_stop) || 0),
-        delivered: acc.delivered + (parseInt(d.delivered) || 0),
-        earning: acc.earning + (parseFloat(d.earning) || 0),
-      }),
+      (acc, d) => {
+        return {
+          packages: acc.packages + (parseInt(d.packages) || 0),
+          no_scanned: acc.no_scanned + (parseInt(d.no_scanned) || 0),
+          failed_attempt: acc.failed_attempt + (parseInt(d.failed_attempt) || 0),
+          first_stop: acc.first_stop + (parseInt(d.first_stop) || 0),
+          double_stop: acc.double_stop + (parseInt(d.double_stop) || 0),
+          delivered: acc.delivered + (parseInt(d.delivered) || 0),
+          earning: acc.earning + (parseFloat(d.earning) || 0),
+        };
+      },
       { packages: 0, no_scanned: 0, failed_attempt: 0, first_stop: 0, double_stop: 0, delivered: 0, earning: 0 }
     );
   }, [filteredDeliveries]);
@@ -210,11 +212,11 @@ const Deliveries = () => {
   // ✅ Dynamic table headers based on current data type
   const tableHeaders = useMemo(() => {
     if (currentDataType === 'weekly') {
-      return ["Date", "Route", "First Stop", "Double Stop", "Delivered", "Earning"];
+      return ["Date", "Route", "Packages", "First Stop", "Double Stop", "Delivered", "Closed", "Earning", "Paid"];
     } else {
       return [
         "Date", "Route", "Start Seq", "End Seq", "Packages", 
-        "Not Scanned", "Failed", "Double Stop", "Delivered", "Earning"
+        "Not Scanned", "Failed", "Double Stop", "Delivered", "Closed", "Earning", "Paid"
       ];
     }
   }, [currentDataType]);
@@ -223,6 +225,7 @@ const Deliveries = () => {
   const summaryLabels = useMemo(() => {
     if (currentDataType === 'weekly') {
       return {
+        "Total Packages": summary?.packages,
         "First Stop": summary?.first_stop,
         "Double Stop": summary?.double_stop,
         "Delivered": summary?.delivered,
@@ -460,11 +463,22 @@ const Deliveries = () => {
                       
                       {currentDataType === 'weekly' ? (
                         <>
+                          <td className="px-4 py-3 text-sm text-blue-600 text-center">{d.packages}</td>
                           <td className="px-4 py-3 text-sm text-purple-600 text-center">{d.first_stop}</td>
                           <td className="px-4 py-3 text-sm text-purple-600 text-center">{d.double_stop}</td>
                           <td className="px-4 py-3 text-sm text-green-600 text-center">{d.delivered}</td>
+                          <td className={`px-4 py-3 text-sm font-semibold text-center ${
+                            d.closed ? "text-green-600" : "text-red-600"
+                          }`}>
+                            {d.closed ? "Yes" : "No"}
+                          </td>
                           <td className="px-4 py-3 text-sm text-indigo-600 font-semibold">
                             ${parseFloat(d.earning || 0).toFixed(2)}
+                          </td>
+                          <td className={`px-4 py-3 text-sm font-semibold text-center ${
+                            d.paid ? "text-green-600" : "text-red-600"
+                          }`}>
+                            {d.paid ? "Yes" : "No"}
                           </td>
                         </>
                       ) : (
@@ -476,8 +490,18 @@ const Deliveries = () => {
                           <td className="px-4 py-3 text-sm text-red-600 text-center">{d.failed_attempt}</td>
                           <td className="px-4 py-3 text-sm text-purple-600 text-center">{d.double_stop}</td>
                           <td className="px-4 py-3 text-sm text-green-600 text-center">{d.delivered}</td>
+                          <td className={`px-4 py-3 text-sm font-semibold text-center ${
+                            d.closed ? "text-green-600" : "text-red-600"
+                          }`}>
+                            {d.closed ? "Yes" : "No"}
+                          </td>
                           <td className="px-4 py-3 text-sm text-indigo-600 font-semibold">
                             ${parseFloat(d.earning || 0).toFixed(2)}
+                          </td>
+                          <td className={`px-4 py-3 text-sm font-semibold text-center ${
+                            d.paid ? "text-green-600" : "text-red-600"
+                          }`}>
+                            {d.paid ? "Yes" : "No"}
                           </td>
                         </>
                       )}

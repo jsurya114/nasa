@@ -25,6 +25,23 @@ export const fetchDashboardData = createAsyncThunk(
   }
 );
 
+// ✅ NEW: Fetch summary data for all matching records
+export const fetchSummaryData = createAsyncThunk(
+  "dashboard/fetchSummaryData",
+  async (filters, { rejectWithValue }) => {
+    try {
+      const res = await axios.get(`${API_BASE_URL}/admin/dashboard/summary`, {
+        params: filters,
+        headers: getAuthHeaders()
+      });
+      if (!res.data.success) throw new Error(res.data.message);
+      return res.data.data;
+    } catch (err) {
+      return rejectWithValue(err.response?.data?.message || err.message);
+    }
+  }
+);
+
 export const fetchFilteredPaymentData = createAsyncThunk(
   "dashboard/fetchFilteredPaymentData",
   async (filters, { rejectWithValue }) => {
@@ -89,8 +106,9 @@ const dashboardSlice = createSlice({
     routes: [],
     filteredPaymentData: [],
     allPaymentData: [],
+    summaryData: null, // ✅ NEW: Store summary data
     filters: {},
-    selectedDataType: "all", // ✅ NEW: Track selected data type tab
+    selectedDataType: "all",
     pagination: {
       total: 0,
       page: 1,
@@ -100,9 +118,11 @@ const dashboardSlice = createSlice({
     loading: false,
     paymentLoading: false,
     allPaymentLoading: false,
+    summaryLoading: false, // ✅ NEW: Loading state for summary
     paymentProcessing: false,
     error: null,
     paymentError: null,
+    summaryError: null, // ✅ NEW: Error state for summary
     isFiltered: false,
   },
   reducers: {
@@ -110,7 +130,8 @@ const dashboardSlice = createSlice({
       state.filteredPaymentData = [];
       state.isFiltered = false;
       state.filters = {};
-      state.selectedDataType = "all"; // ✅ Reset data type
+      state.selectedDataType = "all";
+      state.summaryData = null; // ✅ Clear summary data
       state.pagination = {
         total: 0,
         page: 1,
@@ -118,7 +139,6 @@ const dashboardSlice = createSlice({
         totalPages: 1
       };
     },
-    // ✅ NEW: Action to set data type
     setDataType: (state, action) => {
       state.selectedDataType = action.payload;
     },
@@ -138,6 +158,19 @@ const dashboardSlice = createSlice({
       .addCase(fetchDashboardData.rejected, (state, action) => {
         state.loading = false;
         state.error = action.payload;
+      })
+      // ✅ NEW: Handle summary data fetch
+      .addCase(fetchSummaryData.pending, (state) => {
+        state.summaryLoading = true;
+        state.summaryError = null;
+      })
+      .addCase(fetchSummaryData.fulfilled, (state, action) => {
+        state.summaryLoading = false;
+        state.summaryData = action.payload;
+      })
+      .addCase(fetchSummaryData.rejected, (state, action) => {
+        state.summaryLoading = false;
+        state.summaryError = action.payload;
       })
       .addCase(fetchFilteredPaymentData.pending, (state) => {
         state.paymentLoading = true;

@@ -13,7 +13,7 @@ const fetchDeliverySummary = async (driverId, fromDate, toDate) => {
             COALESCE(r.driver_doublestop_price, 0) AS driver_doublestop_price,
             COALESCE(r.company_route_price, 0) AS company_route_price,
             COALESCE(r.company_doublestop_price, 0) AS company_doublestop_price,
-            (pd.end_seq - pd.start_seq + 1) AS packages,
+            pd.packages,
             pd.no_scanned,
             pd.failed_attempt,
             pd.fs AS first_stop,
@@ -22,6 +22,8 @@ const fetchDeliverySummary = async (driverId, fromDate, toDate) => {
             pd.driver_payment AS earning,
             pd.start_seq,
             pd.end_seq,
+            pd.closed,
+            pd.paid,
             CASE 
                 WHEN pd.start_seq IS NULL OR pd.end_seq IS NULL OR pd.start_seq = 0 OR pd.end_seq = 0 
                 THEN 'weekly' 

@@ -31,10 +31,15 @@ const driverAvailabilityController = {
             // Get current date and time
             const now = new Date();
             const currentDay = now.getDay(); // 0 = Sunday, 1 = Monday, ..., 6 = Saturday
+            const currentHour = now.getHours(); // 0-23
             
             // Map day numbers to day names
             const dayNames = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
             const currentDayName = dayNames[currentDay];
+            
+            // Calculate next day index
+            const nextDayIndex = (currentDay + 1) % 7;
+            const nextDayName = dayNames[nextDayIndex];
             
             // If dayToUpdate is provided, check if it's trying to update a past day
             if (dayToUpdate) {
@@ -77,21 +82,43 @@ const driverAvailabilityController = {
                 }
             }
             
-            // Additional validation: prevent updating past days
+            // Get current availability from database ONCE before validation
+            const currentAvailability = await availabilityService.getDriverAvailability(driverId);
+            
+            // Additional validation: prevent updating past days and enforce 7 PM cutoff
             // Check each day in the availability object
             for (const day of validDays) {
                 const dayIndex = dayNames.indexOf(day);
                 
                 // If trying to change a past day (before current day)
                 if (dayIndex < currentDay) {
-                    // Get the current value from database to ensure it's not being changed
-                    const currentAvailability = await availabilityService.getDriverAvailability(driverId);
-                    
                     // If the value for this past day is different from current, reject
                     if (availability[day] !== currentAvailability.availability[day]) {
                         return res.status(403).json({
                             success: false,
                             message: `Cannot modify availability for ${day}. That day has already ended. You can only update today (${currentDayName}) and future days.`
+                        });
+                    }
+                }
+                
+                // NEW: Check if trying to modify today's availability after 7:00 PM
+                if (dayIndex === currentDay && currentHour >= 19) {
+                    // Check if driver is trying to change today's availability after 7 PM
+                    if (availability[day] !== currentAvailability.availability[day]) {
+                        return res.status(403).json({
+                            success: false,
+                            message: `Cannot modify today's availability after 7:00 PM.`
+                        });
+                    }
+                }
+                
+                // Check if trying to modify next day's availability after 7:00 PM today
+                if (dayIndex === nextDayIndex && currentHour >= 19) { // 19 = 7:00 PM in 24-hour format
+                    // Check if driver is trying to change tomorrow's availability after 7 PM
+                    if (availability[day] !== currentAvailability.availability[day]) {
+                        return res.status(403).json({
+                            success: false,
+                            message: `Cannot modify availability for ${nextDayName} after 7:00 PM. The cutoff time has passed.`
                         });
                     }
                 }

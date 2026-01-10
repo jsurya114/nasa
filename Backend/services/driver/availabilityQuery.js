@@ -101,14 +101,15 @@ export const availabilityService = {
     };
   },
 
-  // Admin: get all drivers availability
+  // Admin: get all drivers availability with city filter
   getAllDriversAvailability: async (
     page = 1,
     limit = 10,
     filterDay = null,
     adminId,
     adminRole,
-    searchQuery = ""
+    searchQuery = "",
+    filterCity = null
   ) => {
     const offset = (page - 1) * limit;
     const searchPattern = searchQuery ? `${searchQuery}%` : "%";
@@ -117,6 +118,9 @@ export const availabilityService = {
       filterDay && VALID_DAYS.includes(filterDay)
         ? `AND d.${filterDay} = true`
         : "";
+
+    // City filter condition
+    const cityCondition = filterCity ? `AND c.job = ` : "";
 
     /* ================= COUNT QUERY ================= */
     let countQuery = `
@@ -135,6 +139,11 @@ export const availabilityService = {
         AND d.name ILIKE $2
       `;
       countParams = [adminId, searchPattern];
+      
+      if (filterCity) {
+        countQuery += ` AND c.job = $3`;
+        countParams.push(filterCity);
+      }
     } else if (adminRole === "superadmin") {
       countQuery += `
         WHERE 1=1
@@ -142,6 +151,11 @@ export const availabilityService = {
         AND d.name ILIKE $1
       `;
       countParams = [searchPattern];
+      
+      if (filterCity) {
+        countQuery += ` AND c.job = $2`;
+        countParams.push(filterCity);
+      }
     } else {
       throw new Error("Unauthorized role");
     }
@@ -179,19 +193,31 @@ export const availabilityService = {
         WHERE acr.admin_id = $1
         ${dayCondition}
         AND d.name ILIKE $2
-        ORDER BY d.name
-        LIMIT $3 OFFSET $4
       `;
-      params = [adminId, searchPattern, limit, offset];
+      params = [adminId, searchPattern];
+      
+      if (filterCity) {
+        dataQuery += ` AND c.job = $3`;
+        params.push(filterCity);
+      }
+      
+      dataQuery += ` ORDER BY d.name LIMIT $${params.length + 1} OFFSET $${params.length + 2}`;
+      params.push(limit, offset);
     } else {
       dataQuery += `
         WHERE 1=1
         ${dayCondition}
         AND d.name ILIKE $1
-        ORDER BY d.name
-        LIMIT $2 OFFSET $3
       `;
-      params = [searchPattern, limit, offset];
+      params = [searchPattern];
+      
+      if (filterCity) {
+        dataQuery += ` AND c.job = $2`;
+        params.push(filterCity);
+      }
+      
+      dataQuery += ` ORDER BY d.name LIMIT $${params.length + 1} OFFSET $${params.length + 2}`;
+      params.push(limit, offset);
     }
 
     const result = await pool.query(dataQuery, params);
@@ -226,6 +252,35 @@ export const availabilityService = {
         hasPreviousPage: page > 1
       }
     };
+  },
+
+  // Get unique cities for filter dropdown
+  getAvailableCities: async (adminId, adminRole) => {
+    let query;
+    let params = [];
+
+    if (adminRole === "admin") {
+      query = `
+        SELECT DISTINCT c.job AS city
+        FROM city c
+        JOIN admin_city_ref acr ON acr.city_id = c.id
+        WHERE acr.admin_id = $1
+        ORDER BY c.job
+      `;
+      params = [adminId];
+    } else if (adminRole === "superadmin") {
+      query = `
+        SELECT DISTINCT c.job AS city
+        FROM city c
+        JOIN drivers d ON d.city_id = c.id
+        ORDER BY c.job
+      `;
+    } else {
+      throw new Error("Unauthorized role");
+    }
+
+    const result = await pool.query(query, params);
+    return result.rows.map(row => row.city);
   },
 
   // Admin: update specific driver's availability
