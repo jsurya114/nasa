@@ -193,6 +193,7 @@ export const ExcelFileQueries = {
         JOIN routes r ON dd.route_id = r.id
         JOIN drivers d ON d.id = dd.driver_id
         WHERE dd.journey_date = $1
+          AND NOT (dd.start_seq = 0 AND dd.end_seq = 0)
       `;
 
       const params = [selectedDate];
@@ -238,6 +239,7 @@ export const ExcelFileQueries = {
         JOIN routes r ON dd.route_id = r.id
         JOIN drivers d ON d.id = dd.driver_id
         WHERE dd.journey_date = $1
+          AND NOT (dd.start_seq = 0 AND dd.end_seq = 0)
       `;
 
       const params = [selectedDate];
