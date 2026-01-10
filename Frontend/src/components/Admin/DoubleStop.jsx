@@ -102,8 +102,8 @@ const DoubleStop = () => {
       });
   };
 
-  const loadWeeklyData = useCallback((page,limit) => {
-    dispatch(fetchWeeklyTempData({page,limit}));
+  const loadWeeklyData = useCallback((page, limit) => {
+    dispatch(fetchWeeklyTempData({page, limit}));
   }, [dispatch]);
 
   // Fixed: Properly pass all three parameters
@@ -193,7 +193,6 @@ const DoubleStop = () => {
                 <button
                   type="submit"
                   className="px-6 py-2 bg-purple-700 text-white rounded-lg shadow hover:bg-purple-800"
-                
                 >
                   Upload Weekly Data
                 </button>
@@ -245,34 +244,48 @@ const DoubleStop = () => {
           </section>
         )}
 
-        {/* Uploaded Data */}
-        <section className="bg-white border mb-3 border-gray-200 rounded-xl shadow-sm overflow-x-auto">
-          <h2 className="font-bold text-gray-900 bg-gray-50 border-b border-gray-200 px-4 py-3 rounded-t-xl">
-            {activeView === "weekly" ? "Weekly Data" : "Daily Data"}
-          </h2>
-          <div className="p-4">
-            {activeView === "weekly" ? (
+        {/* Uploaded Data - Only show for the current view */}
+        {activeView === "weekly" && (
+          <section className="bg-white border mb-3 border-gray-200 rounded-xl shadow-sm overflow-x-auto">
+            <h2 className="font-bold text-gray-900 bg-gray-50 border-b border-gray-200 px-4 py-3 rounded-t-xl">
+              Weekly Data
+            </h2>
+            <div className="p-4">
               <TempUploadedData viewType="weekly" loadData={loadWeeklyData} />
-            ) : (
+            </div>
+          </section>
+        )}
+
+        {activeView === "daily" && (
+          <section className="bg-white border mb-3 border-gray-200 rounded-xl shadow-sm overflow-x-auto">
+            <h2 className="font-bold text-gray-900 bg-gray-50 border-b border-gray-200 px-4 py-3 rounded-t-xl">
+              Daily Data
+            </h2>
+            <div className="p-4">
               <UploadedData 
                 viewType="daily" 
                 loadData={loadDailyData}
                 selectedDate={selectedDate}
               />
-            )}
+            </div>
+          </section>
+        )}
+
+        {/* Analytics Section - Only show for the current view */}
+        {activeView === "weekly" && (
+          <div className="mb-3">
+            <Analystic viewType="weekly" />
           </div>
-        </section>
+        )}
 
-        {/* Analytics Section */}
-        <div className="mb-3">
-          <Analystic 
-            viewType={activeView} 
-            selectedDate={selectedDate} 
-          />
-        </div>
+        {activeView === "daily" && (
+          <div className="mb-3">
+            <Analystic viewType="daily" selectedDate={selectedDate} />
+          </div>
+        )}
 
-        {/* Driver Payment Section */}
-        {activeView === "weekly" ? (
+        {/* Driver Payment Section - Only show for the current view */}
+        {activeView === "weekly" && (
           <DriverPaymentSection
             loadData={() => {
               dispatch(updateWeeklyExcelToDashboard())
@@ -285,7 +298,9 @@ const DoubleStop = () => {
                 });
             }}
           />
-        ) : (
+        )}
+
+        {activeView === "daily" && (
           <DriverPaymentSection 
             loadData={() => dispatch(fetchDriverPayment(selectedDate))}
           />
