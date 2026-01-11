@@ -4,6 +4,7 @@ import {
   getAllDriversAvailability,
   getAvailableCities,
   updateDriverAvailabilityByAdmin,
+  manualResetAllDriversAvailability,
   clearMessages
 } from "../../redux/slice/driver/availabilitySlice.js";
 import { toast } from "react-toastify";
@@ -14,7 +15,7 @@ import Nav from "../../reuse/Nav";
 export default function AdminDriverAvailability() {
   const dispatch = useDispatch();
 
-  const { allDriversAvailability, availableCities, pagination, loading, citiesLoading, error } = useSelector(
+  const { allDriversAvailability, availableCities, pagination, loading, citiesLoading, resetLoading, error } = useSelector(
     (state) => state.availability
   );
   const { admin } = useSelector((state) => state.admin);
@@ -222,6 +223,28 @@ export default function AdminDriverAvailability() {
     }
   };
 
+  const handleManualReset = async () => {
+    if (window.confirm(
+      '⚠️ WARNING: This will reset availability for ALL drivers (enabled and disabled) to unavailable.\n\nAre you sure you want to continue?'
+    )) {
+      try {
+        const result = await dispatch(manualResetAllDriversAvailability()).unwrap();
+        toast.success(`✅ ${result.totalDriversReset} drivers reset successfully!`);
+        
+        // Refresh the current page
+        dispatch(getAllDriversAvailability({
+          filterDay: filterDay || null,
+          page: currentPage,
+          limit: itemsPerPage,
+          searchQuery: searchQuery || null,
+          filterCity: filterCity || null
+        }));
+      } catch (error) {
+        toast.error(error || 'Failed to reset availability');
+      }
+    }
+  };
+
   const clearFilters = () => {
     setFilterDay("");
     setFilterCity("");
@@ -400,6 +423,46 @@ export default function AdminDriverAvailability() {
             </div>
           </div>
 
+          {/* Manual Reset Button (Superadmin Only) */}
+          {admin?.role === "superadmin" && (
+            <div className="bg-gradient-to-r from-red-50 to-orange-50 border border-red-200 rounded-xl p-4 mb-4 sm:mb-6 shadow-sm">
+              <div className="flex items-center justify-between gap-4">
+                <div className="flex items-start gap-3 flex-1">
+                  <svg className="w-6 h-6 text-red-600 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                  </svg>
+                  <div className="flex-1">
+                    <h3 className="text-sm font-semibold text-red-900">Superadmin Action</h3>
+                    <p className="text-xs text-red-700 mt-1">
+                      Reset all drivers' availability to unavailable. This action affects all enabled and disabled drivers.
+                    </p>
+                  </div>
+                </div>
+                <button
+                  onClick={handleManualReset}
+                  disabled={resetLoading}
+                  className="px-4 py-2 bg-red-600 text-white text-sm font-semibold rounded-lg hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-sm flex items-center gap-2 whitespace-nowrap"
+                >
+                  {resetLoading ? (
+                    <>
+                      <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
+                        <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" className="opacity-25" />
+                        <path fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" className="opacity-75" />
+                      </svg>
+                      Resetting...
+                    </>
+                  ) : (
+                    <>
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                      </svg>
+                      Reset All Availability
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+          )}
           {/* Info about locked days */}
           <div className="bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-200 rounded-xl p-3 sm:p-4 mb-4 sm:mb-6 shadow-sm">
             <div className="flex items-start gap-2">
@@ -442,7 +505,7 @@ export default function AdminDriverAvailability() {
             </div>
           ) : (
             <div className="bg-white rounded-xl shadow-md border border-gray-200 overflow-hidden">
-              {/* Desktop Table - keeping previous implementation but with existing structure*/}
+              {/* Desktop Table */}
               <div className="hidden md:block overflow-x-auto">
                 <table className="w-full">
                   <thead className="bg-gradient-to-r from-gray-50 to-gray-100 border-b-2 border-gray-200">
@@ -465,11 +528,9 @@ export default function AdminDriverAvailability() {
                           </div>
                         </th>
                       ))}
-                      {admin?.role === "superadmin" && (
-                        <th className="px-6 py-4 text-center text-xs font-bold text-gray-700 uppercase tracking-wider">
-                          Actions
-                        </th>
-                      )}
+                      <th className="px-6 py-4 text-center text-xs font-bold text-gray-700 uppercase tracking-wider">
+                        Actions
+                      </th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-200">
@@ -511,7 +572,7 @@ export default function AdminDriverAvailability() {
 
                             return (
                               <td key={day} className="px-3 py-4 text-center">
-                                {isEditing && admin?.role === "superadmin" ? (
+                                {isEditing ? (
                                   <button
                                     onClick={() => toggleDay(day)}
                                     disabled={isLocked}
@@ -557,56 +618,54 @@ export default function AdminDriverAvailability() {
                             );
                           })}
 
-                          {admin?.role === "superadmin" && (
-                            <td className="px-6 py-4 text-center">
-                              {isEditing ? (
-                                <div className="flex justify-center gap-2">
-                                  <button
-                                    onClick={() => saveAvailability(driver.id)}
-                                    disabled={isSaving}
-                                    className="px-3 py-1.5 bg-green-600 text-white text-xs font-medium rounded-lg hover:bg-green-700 transition-all shadow-sm disabled:opacity-50 flex items-center gap-1"
-                                  >
-                                    {isSaving ? (
-                                      <>
-                                        <svg className="animate-spin h-3 w-3" viewBox="0 0 24 24">
-                                          <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" className="opacity-25" />
-                                          <path fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" className="opacity-75" />
-                                        </svg>
-                                        Save
-                                      </>
-                                    ) : (
-                                      <>
-                                        <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                                        </svg>
-                                        Save
-                                      </>
-                                    )}
-                                  </button>
-                                  <button
-                                    onClick={cancelEdit}
-                                    disabled={isSaving}
-                                    className="px-3 py-1.5 bg-gray-500 text-white text-xs font-medium rounded-lg hover:bg-gray-600 transition-all shadow-sm disabled:opacity-50 flex items-center gap-1"
-                                  >
-                                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                                    </svg>
-                                    Cancel
-                                  </button>
-                                </div>
-                              ) : (
+                          <td className="px-6 py-4 text-center">
+                            {isEditing ? (
+                              <div className="flex justify-center gap-2">
                                 <button
-                                  onClick={() => startEdit(driver)}
-                                  className="px-3 py-1.5 bg-blue-600 text-white text-xs font-medium rounded-lg hover:bg-blue-700 transition-all shadow-sm flex items-center gap-1 mx-auto"
+                                  onClick={() => saveAvailability(driver.id)}
+                                  disabled={isSaving}
+                                  className="px-3 py-1.5 bg-green-600 text-white text-xs font-medium rounded-lg hover:bg-green-700 transition-all shadow-sm disabled:opacity-50 flex items-center gap-1"
+                                >
+                                  {isSaving ? (
+                                    <>
+                                      <svg className="animate-spin h-3 w-3" viewBox="0 0 24 24">
+                                        <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" className="opacity-25" />
+                                        <path fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" className="opacity-75" />
+                                      </svg>
+                                      Save
+                                    </>
+                                  ) : (
+                                    <>
+                                      <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                                      </svg>
+                                      Save
+                                    </>
+                                  )}
+                                </button>
+                                <button
+                                  onClick={cancelEdit}
+                                  disabled={isSaving}
+                                  className="px-3 py-1.5 bg-gray-500 text-white text-xs font-medium rounded-lg hover:bg-gray-600 transition-all shadow-sm disabled:opacity-50 flex items-center gap-1"
                                 >
                                   <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                                   </svg>
-                                  Edit
+                                  Cancel
                                 </button>
-                              )}
-                            </td>
-                          )}
+                              </div>
+                            ) : (
+                              <button
+                                onClick={() => startEdit(driver)}
+                                className="px-3 py-1.5 bg-blue-600 text-white text-xs font-medium rounded-lg hover:bg-blue-700 transition-all shadow-sm flex items-center gap-1 mx-auto"
+                              >
+                                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                                </svg>
+                                Edit
+                              </button>
+                            )}
+                          </td>
                         </tr>
                       );
                     })}
@@ -614,7 +673,7 @@ export default function AdminDriverAvailability() {
                 </table>
               </div>
 
-              {/* Mobile Cards - keeping similar implementation */}
+              {/* Mobile Cards */}
               <div className="md:hidden divide-y divide-gray-200">
                 {filteredDrivers.map((driver) => {
                   const isEditing = editingDriverId === driver.id;
@@ -662,7 +721,7 @@ export default function AdminDriverAvailability() {
                               <div
                                 key={day}
                                 onClick={() => {
-                                  if (isEditing && admin?.role === "superadmin" && !isLocked) {
+                                  if (isEditing && !isLocked) {
                                     toggleDay(day);
                                   }
                                 }}
@@ -673,7 +732,7 @@ export default function AdminDriverAvailability() {
                                     ? 'bg-green-100'
                                     : 'bg-red-100'
                                 } ${
-                                  isEditing && admin?.role === "superadmin" && !isLocked
+                                  isEditing && !isLocked
                                     ? 'cursor-pointer active:scale-95 shadow-sm'
                                     : ''
                                 }`}
@@ -700,56 +759,54 @@ export default function AdminDriverAvailability() {
                         </div>
                       </div>
 
-                      {admin?.role === "superadmin" && (
-                        <div className="pt-3 border-t border-gray-200 mt-3">
-                          {editingDriverId === driver.id ? (
-                            <div className="flex gap-2">
-                              <button
-                                onClick={() => saveAvailability(driver.id)}
-                                disabled={isSaving}
-                                className="flex-1 px-4 py-2 bg-green-600 text-white text-sm font-medium rounded-lg hover:bg-green-700 transition-all shadow-sm flex items-center justify-center gap-2 disabled:opacity-50"
-                              >
-                                {isSaving ? (
-                                  <>
-                                    <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
-                                      <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" className="opacity-25" />
-                                      <path fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" className="opacity-75" />
-                                    </svg>
-                                    Saving...
-                                  </>
-                                ) : (
-                                  <>
-                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                                    </svg>
-                                    Save
-                                  </>
-                                )}
-                              </button>
-                              <button
-                                onClick={cancelEdit}
-                                disabled={isSaving}
-                                className="flex-1 px-4 py-2 bg-gray-500 text-white text-sm font-medium rounded-lg hover:bg-gray-600 transition-all shadow-sm flex items-center justify-center gap-2 disabled:opacity-50"
-                              >
-                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                                </svg>
-                                Cancel
-                              </button>
-                            </div>
-                          ) : (
+                      <div className="pt-3 border-t border-gray-200 mt-3">
+                        {editingDriverId === driver.id ? (
+                          <div className="flex gap-2">
                             <button
-                              onClick={() => startEdit(driver)}
-                              className="w-full px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-all shadow-sm flex items-center justify-center gap-2"
+                              onClick={() => saveAvailability(driver.id)}
+                              disabled={isSaving}
+                              className="flex-1 px-4 py-2 bg-green-600 text-white text-sm font-medium rounded-lg hover:bg-green-700 transition-all shadow-sm flex items-center justify-center gap-2 disabled:opacity-50"
+                            >
+                              {isSaving ? (
+                                <>
+                                  <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
+                                    <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" className="opacity-25" />
+                                    <path fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" className="opacity-75" />
+                                  </svg>
+                                  Saving...
+                                </>
+                              ) : (
+                                <>
+                                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                                  </svg>
+                                  Save
+                                </>
+                              )}
+                            </button>
+                            <button
+                              onClick={cancelEdit}
+                              disabled={isSaving}
+                              className="flex-1 px-4 py-2 bg-gray-500 text-white text-sm font-medium rounded-lg hover:bg-gray-600 transition-all shadow-sm flex items-center justify-center gap-2 disabled:opacity-50"
                             >
                               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                               </svg>
-                              Edit Availability
+                              Cancel
                             </button>
-                          )}
-                        </div>
-                      )}
+                          </div>
+                        ) : (
+                          <button
+                            onClick={() => startEdit(driver)}
+                            className="w-full px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-all shadow-sm flex items-center justify-center gap-2"
+                          >
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                            </svg>
+                            Edit Availability
+                          </button>
+                        )}
+                      </div>
                     </div>
                   );
                 })}
