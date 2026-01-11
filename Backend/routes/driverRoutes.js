@@ -20,12 +20,19 @@ router.post("/journey", saveJourney)
 router.get("/journey/:driver_id", fetchTodayJourney)
 router.get("/routes-list", getDriverRoutes)
 router.get("/deliveries/:driverId", getDeliverySummary)
+
 // AccessCode Management 
 router.post("/access-codes", uploadAccessCodeImages.array('images', 3), createAccessCode)
 router.get("/access-codes/list", getAccessCodes)
 
-// Availability Management
+// ============================================
+// Driver Availability Management (Driver View)
+// ============================================
+
+// Get driver's own availability
 router.get("/availability", driverAvailabilityController.getAvailability)
+
+// Update driver's own availability
 router.post("/availability", driverAvailabilityController.updateAvailability)
 
 

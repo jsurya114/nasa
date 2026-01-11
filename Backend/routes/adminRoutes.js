@@ -65,7 +65,7 @@ router.get('/dashboard/data', getAllData)
 router.get('/dashboard/paymentTable', getPaymentDashboardData)
 router.get('/dashboard/paymentTableAll', getAllPaymentDashboardData)
 
-// ✅ NEW: Summary endpoint for total counts
+// Summary endpoint for total counts
 router.get('/dashboard/summary', getSummaryData)
 
 router.post('/dashboard/payDriver', payDriver)
@@ -78,14 +78,27 @@ router.get('/doubleStop/tempDashboardData',getUpdatedTempDashboardData);
 router.get('/doubleStop/calculatePayment',updatePaymentData);
 router.get('/analytics',getAnalyticsData)
 
+// ============================================
 // Driver Availability Management (Admin View)
+// ============================================
+
+// Get all drivers availability with filters
 router.get("/drivers/availability", adminAvailabilityController.getAllDriversAvailability);
-// NEW: Get available cities for filter
+
+// Get available cities for filter dropdown
 router.get("/drivers/availability/cities", adminAvailabilityController.getAvailableCities);
-// Admin update driver availability
+
+// Update specific driver's availability (Admin/Superadmin)
 router.put(
   "/drivers/availability/:driverId",
   adminAvailabilityController.updateDriverAvailability
+);
+
+// Manual reset all drivers availability (Superadmin only)
+router.post(
+  "/drivers/availability/reset-all",
+ 
+  adminAvailabilityController.manualResetAllDriversAvailability
 );
 
 

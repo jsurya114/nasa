@@ -67,7 +67,7 @@ export const getAllDriversAvailability = createAsyncThunk(
     try {
       const params = { page, limit, searchQuery };
       if (filterDay) params.day = filterDay;
-      if (filterCity) params.city = filterCity;  // NEW: Add city filter
+      if (filterCity) params.city = filterCity;
 
       const response = await axios.get(
         `${API_BASE_URL}/admin/drivers/availability`,
@@ -90,7 +90,7 @@ export const getAllDriversAvailability = createAsyncThunk(
   }
 );
 
-// NEW: Admin: Get available cities for filter
+// Admin: Get available cities for filter
 export const getAvailableCities = createAsyncThunk(
   "availability/getAvailableCities",
   async (_, { rejectWithValue }) => {
@@ -130,6 +130,27 @@ export const updateDriverAvailabilityByAdmin = createAsyncThunk(
   }
 );
 
+// NEW: Admin manual reset all drivers availability (Superadmin only)
+export const manualResetAllDriversAvailability = createAsyncThunk(
+  "availability/manualResetAllDriversAvailability",
+  async (_, { rejectWithValue }) => {
+    try {
+      const response = await axios.post(
+        `${API_BASE_URL}/admin/drivers/availability/reset-all`,
+        {},
+        { headers: getAdminAuthHeaders() }
+      );
+
+      return response.data.data;
+    } catch (error) {
+      return rejectWithValue(
+        error.response?.data?.message ||
+          "Failed to reset all drivers availability"
+      );
+    }
+  }
+);
+
 // ================= SLICE =================
 
 const availabilitySlice = createSlice({
@@ -145,12 +166,13 @@ const availabilitySlice = createSlice({
       sunday: false,
     },
     allDriversAvailability: [],
-    availableCities: [],  // NEW: Store available cities
+    availableCities: [],
     pagination: null,
     updatedAt: null,
     loading: false,
     updateLoading: false,
-    citiesLoading: false,  // NEW: Loading state for cities
+    citiesLoading: false,
+    resetLoading: false, // NEW: Loading state for manual reset
     error: null,
     successMessage: null,
   },
@@ -230,7 +252,7 @@ const availabilitySlice = createSlice({
         state.error = action.payload;
       })
 
-      // ===== ADMIN UPDATE (SUPER ADMIN ONLY) =====
+      // ===== ADMIN UPDATE DRIVER AVAILABILITY =====
       .addCase(updateDriverAvailabilityByAdmin.pending, (state) => {
         state.updateLoading = true;
       })
@@ -251,6 +273,49 @@ const availabilitySlice = createSlice({
       })
       .addCase(updateDriverAvailabilityByAdmin.rejected, (state, action) => {
         state.updateLoading = false;
+        state.error = action.payload;
+      })
+
+      // ===== ADMIN MANUAL RESET ALL =====
+      .addCase(manualResetAllDriversAvailability.pending, (state) => {
+        state.resetLoading = true;
+        state.error = null;
+      })
+      .addCase(manualResetAllDriversAvailability.fulfilled, (state, action) => {
+        state.resetLoading = false;
+        state.successMessage = `Successfully reset ${action.payload.totalDriversReset} drivers (${action.payload.enabledDriversReset} enabled, ${action.payload.disabledDriversReset} disabled)`;
+
+        // Reset all drivers in the current list to have all days = false
+        state.allDriversAvailability = state.allDriversAvailability.map(
+          (driver) => ({
+            ...driver,
+            availability: {
+              monday: false,
+              tuesday: false,
+              wednesday: false,
+              thursday: false,
+              friday: false,
+              saturday: false,
+              sunday: false,
+            },
+            availability_updated_at: action.payload.resetTimestamp,
+          })
+        );
+
+        // Also reset driver's own availability if they're viewing it
+        state.driverAvailability = {
+          monday: false,
+          tuesday: false,
+          wednesday: false,
+          thursday: false,
+          friday: false,
+          saturday: false,
+          sunday: false,
+        };
+        state.updatedAt = action.payload.resetTimestamp;
+      })
+      .addCase(manualResetAllDriversAvailability.rejected, (state, action) => {
+        state.resetLoading = false;
         state.error = action.payload;
       });
   },
