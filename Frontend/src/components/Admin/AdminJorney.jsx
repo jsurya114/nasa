@@ -49,6 +49,10 @@ const [selectedDriverForRoutes, setSelectedDriverForRoutes] = useState(null);
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(10);
 
+  // ✅ NEW: Delete modal state
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [journeyToDelete, setJourneyToDelete] = useState(null);
+
   // ✅ NEW: Filter states
   const [filters, setFilters] = useState({
     route_id: "",
@@ -464,10 +468,17 @@ useEffect(() => {
   );
 
   const handleDelete = async (id) => {
-    if (!window.confirm("Are you sure? This will delete all related data.")) return;
+    // ✅ NEW: Open modal instead of browser alert
+    setJourneyToDelete(id);
+    setShowDeleteModal(true);
+  };
+
+  // ✅ NEW: Confirm delete from modal
+  const confirmDelete = async () => {
+    if (!journeyToDelete) return;
 
     try {
-      await dispatch(deleteJourney(id)).unwrap();
+      await dispatch(deleteJourney(journeyToDelete)).unwrap();
       toast.success("Journey deleted successfully");
       dispatch(fetchPaginatedJourneys({ 
         page: currentPage, 
@@ -476,7 +487,16 @@ useEffect(() => {
       }));
     } catch (err) {
       toast.error(err.message || "Delete failed");
+    } finally {
+      setShowDeleteModal(false);
+      setJourneyToDelete(null);
     }
+  };
+
+  // ✅ NEW: Cancel delete
+  const cancelDelete = () => {
+    setShowDeleteModal(false);
+    setJourneyToDelete(null);
   };
 
   // ✅ Pagination Controls
@@ -1298,6 +1318,65 @@ useEffect(() => {
           )}
         </div>
       </main>
+
+      {/* ✅ DELETE CONFIRMATION MODAL */}
+      {showDeleteModal && (
+        <div className="fixed inset-0 z-50 overflow-y-auto">
+          {/* Backdrop */}
+          <div 
+            className="fixed inset-0 bg-black bg-opacity-50 transition-opacity"
+            onClick={cancelDelete}
+          ></div>
+          
+          {/* Modal */}
+          <div className="flex min-h-full items-center justify-center p-4">
+            <div className="relative bg-white rounded-lg shadow-xl max-w-md w-full p-6 transform transition-all">
+              {/* Icon */}
+              <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-red-100 mb-4">
+                <svg
+                  className="h-6 w-6 text-red-600"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  strokeWidth="1.5"
+                  stroke="currentColor"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z"
+                  />
+                </svg>
+              </div>
+
+              {/* Content */}
+              <div className="text-center">
+                <h3 className="text-lg font-semibold text-gray-900 mb-2">
+                  Delete Journey
+                </h3>
+                <p className="text-sm text-gray-500 mb-6">
+                  Are you sure you want to delete this journey? This will also delete all related delivery data. This action cannot be undone.
+                </p>
+              </div>
+
+              {/* Buttons */}
+              <div className="flex gap-3 justify-end">
+                <button
+                  onClick={cancelDelete}
+                  className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={confirmDelete}
+                  className="px-4 py-2 text-sm font-medium text-white bg-red-600 border border-transparent rounded-md hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 transition-colors"
+                >
+                  Delete Journey
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       <Nav />
     </div>
