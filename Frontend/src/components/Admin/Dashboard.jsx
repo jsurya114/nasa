@@ -468,16 +468,16 @@ export default function Dashboard() {
               
               <button
                 onClick={() => handleDataTypeChange("daily")}
-                disabled={!availableDataTypes.daily}
-                className={`data-type-tab ${selectedDataType === "daily" ? "active" : ""} ${!availableDataTypes.daily ? "disabled" : ""}`}
+               
+                className={`data-type-tab ${selectedDataType === "daily" ? "active" : ""} `}
               >
                 📅 SPEEDX
               </button>
               
               <button
                 onClick={() => handleDataTypeChange("weekly")}
-                disabled={!availableDataTypes.weekly}
-                className={`data-type-tab ${selectedDataType === "weekly" ? "active" : ""} ${!availableDataTypes.weekly ? "disabled" : ""}`}
+                
+                className={`data-type-tab ${selectedDataType === "weekly" ? "active" : ""}`}
               >
                 📆 GOFO
               </button>
