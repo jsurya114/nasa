@@ -454,42 +454,48 @@ export default function Dashboard() {
         </section>
 
         {/* ✅ Data Type Tabs - Show only when driver is selected */}
-        {shouldShowDataTypeTabs && (
-          <section className="bg-white border border-gray-200 rounded-xl shadow-sm mb-4 p-4">
-            <div className="flex items-center gap-2 flex-wrap">
-              <span className="text-sm font-semibold text-gray-700 mr-2">View:</span>
-              
-              <button
-                onClick={() => handleDataTypeChange("all")}
-                className={`data-type-tab ${selectedDataType === "all" ? "active" : ""}`}
-              >
-                📊 All Data
-              </button>
-              
-              <button
-                onClick={() => handleDataTypeChange("daily")}
-               
-                className={`data-type-tab ${selectedDataType === "daily" ? "active" : ""} `}
-              >
-                📅 SPEEDX
-              </button>
-              
-              <button
-                onClick={() => handleDataTypeChange("weekly")}
-                
-                className={`data-type-tab ${selectedDataType === "weekly" ? "active" : ""}`}
-              >
-                📆 GOFO
-              </button>
-              
-              <span className="ml-auto text-xs text-gray-500">
-                {selectedDataType === "all" && "Showing all records"}
-                {selectedDataType === "daily" && "Showing daily records only"}
-                {selectedDataType === "weekly" && "Showing weekly records only"}
-              </span>
-            </div>
-          </section>
-        )}
+       {shouldShowDataTypeTabs && (
+  <section className="bg-white border border-gray-200 rounded-xl shadow-sm mb-4 p-4">
+    <div className="flex items-center gap-2 flex-wrap">
+      <span className="text-sm font-semibold text-gray-700 mr-2">View:</span>
+
+      {/* ✅ Always show All */}
+      <button
+        onClick={() => handleDataTypeChange("all")}
+        className={`data-type-tab ${selectedDataType === "all" ? "active" : ""}`}
+      >
+        📊 All Data
+      </button>
+
+      {/* ✅ Show Daily only if daily exists */}
+      {availableDataTypes.daily && (
+        <button
+          onClick={() => handleDataTypeChange("daily")}
+          className={`data-type-tab ${selectedDataType === "daily" ? "active" : ""}`}
+        >
+          📅 SPEEDX
+        </button>
+      )}
+
+      {/* ✅ Show Weekly only if weekly exists */}
+      {availableDataTypes.weekly && (
+        <button
+          onClick={() => handleDataTypeChange("weekly")}
+          className={`data-type-tab ${selectedDataType === "weekly" ? "active" : ""}`}
+        >
+          📆 GOFO
+        </button>
+      )}
+
+      <span className="ml-auto text-xs text-gray-500">
+        {selectedDataType === "all" && "Showing all records"}
+        {selectedDataType === "daily" && "Showing daily records only"}
+        {selectedDataType === "weekly" && "Showing weekly records only"}
+      </span>
+    </div>
+  </section>
+)}
+
 
         {/* ✅ Show message when no data is displayed */}
         {!isFiltered && (
