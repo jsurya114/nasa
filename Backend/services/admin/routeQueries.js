@@ -32,7 +32,7 @@ export const insertRoute = async (data) => {
     }
   }
 
-  console.log("Inserting route with data:", { ...data, ...prices });
+ 
   const result = await pool.query(
     `INSERT INTO routes 
       (name, job, company_route_price, driver_route_price, company_doublestop_price, driver_doublestop_price, route_code_in_string, enabled) 
@@ -49,7 +49,7 @@ export const insertRoute = async (data) => {
     ]
   );
 
-  console.log("Inserted route:", result.rows[0]);
+ 
   return result.rows[0];
 };
 
@@ -61,7 +61,7 @@ export const getAllRoutes = async () => {
 
 // Get routes for specific admin based on assigned cities
 export const getRoutesForAdmin = async (adminId) => {
-  console.log('Fetching routes for admin:', adminId);
+
   const result = await pool.query(`
     SELECT DISTINCT r.* 
     FROM routes r
@@ -72,7 +72,7 @@ export const getRoutesForAdmin = async (adminId) => {
     ORDER BY r.id ASC
   `, [adminId]);
   
-  console.log('Routes found for admin:', result.rows.length);
+
   return result.rows;
 };
 
@@ -136,7 +136,7 @@ export const updateRouteQuery = async (id, data) => {
     }
   }
 
-  console.log(`Updating route id: ${id} with data:`, { ...data, ...prices });
+
   const result = await pool.query(
     `UPDATE routes 
      SET name=$1, job=$2, company_route_price=$3, driver_route_price=$4, 
@@ -155,13 +155,13 @@ export const updateRouteQuery = async (id, data) => {
     ]
   );
 
-  console.log("Updated route:", result.rows[0] || null);
+
   return result.rows[0];
 };
 
 // Toggle route status
 export const toggleRouteStatusQuery = async (id) => {
-  console.log(`Toggling status for route id: ${id}`);
+
   const route = await getRouteByIdQuery(id);
   if (!route) {
    
@@ -171,23 +171,21 @@ export const toggleRouteStatusQuery = async (id) => {
     "UPDATE routes SET enabled = NOT enabled WHERE id=$1 RETURNING *",
     [id]
   );
-  console.log("Toggled route:", result.rows[0]);
+ 
   return result.rows[0];
 };
 
 // Delete route
 export const deleteRouteQuery = async (id) => {
-  console.log(`Deleting route id: ${id}`);
+
   const result = await pool.query("DELETE FROM routes WHERE id=$1 RETURNING *", [id]);
-  console.log("Deleted route:", result.rows[0] || null);
+
   return result.rows[0];
 };
 
-// Paginated routes with role-based filtering
-export const routePagination = async (page, limit, search = "", isSuperAdmin = false, adminId = null) => {
+// ✅ ENHANCED: Paginated routes with city filter
+export const routePagination = async (page, limit, search = "", cityFilter = "", isSuperAdmin = false, adminId = null) => {
   try {
-   
-    
     const offset = (page - 1) * limit;
     let routeQuery;
     let countQuery;
@@ -195,8 +193,21 @@ export const routePagination = async (page, limit, search = "", isSuperAdmin = f
 
     if (isSuperAdmin) {
       // Superadmin sees all routes
-   
-      if (search) {
+      if (search && cityFilter) {
+        // Both search and city filter
+        routeQuery = `
+          SELECT * FROM routes
+          WHERE (job ILIKE $1 OR name ILIKE $1)
+            AND job = $2
+          ORDER BY id ASC
+          LIMIT $3 OFFSET $4`;
+        values = [`%${search}%`, cityFilter, limit, offset];
+        countQuery = `
+          SELECT COUNT(*) FROM routes
+          WHERE (job ILIKE $1 OR name ILIKE $1)
+            AND job = $2`;
+      } else if (search) {
+        // Only search
         routeQuery = `
           SELECT * FROM routes
           WHERE job ILIKE $1 OR name ILIKE $1
@@ -206,7 +217,19 @@ export const routePagination = async (page, limit, search = "", isSuperAdmin = f
         countQuery = `
           SELECT COUNT(*) FROM routes
           WHERE job ILIKE $1 OR name ILIKE $1`;
+      } else if (cityFilter) {
+        // Only city filter
+        routeQuery = `
+          SELECT * FROM routes
+          WHERE job = $1
+          ORDER BY id ASC
+          LIMIT $2 OFFSET $3`;
+        values = [cityFilter, limit, offset];
+        countQuery = `
+          SELECT COUNT(*) FROM routes
+          WHERE job = $1`;
       } else {
+        // No filters
         routeQuery = `
           SELECT * FROM routes
           ORDER BY id ASC
@@ -216,8 +239,33 @@ export const routePagination = async (page, limit, search = "", isSuperAdmin = f
       }
     } else {
       // Normal admin sees only routes for their assigned cities
-
-      if (search) {
+      if (search && cityFilter) {
+        // Both search and city filter
+        routeQuery = `
+          SELECT DISTINCT r.* 
+          FROM routes r
+          INNER JOIN city c ON r.job = c.job
+          INNER JOIN admin_city_ref acr ON c.id = acr.city_id
+          WHERE acr.admin_id = $1
+            AND (r.job ILIKE $2 OR r.name ILIKE $2)
+            AND r.job = $3
+            AND r.enabled = true
+            AND c.enabled = true
+          ORDER BY r.id ASC
+          LIMIT $4 OFFSET $5`;
+        values = [adminId, `%${search}%`, cityFilter, limit, offset];
+        countQuery = `
+          SELECT COUNT(DISTINCT r.id) 
+          FROM routes r
+          INNER JOIN city c ON r.job = c.job
+          INNER JOIN admin_city_ref acr ON c.id = acr.city_id
+          WHERE acr.admin_id = $1
+            AND (r.job ILIKE $2 OR r.name ILIKE $2)
+            AND r.job = $3
+            AND r.enabled = true
+            AND c.enabled = true`;
+      } else if (search) {
+        // Only search
         routeQuery = `
           SELECT DISTINCT r.* 
           FROM routes r
@@ -239,7 +287,31 @@ export const routePagination = async (page, limit, search = "", isSuperAdmin = f
             AND (r.job ILIKE $2 OR r.name ILIKE $2)
             AND r.enabled = true
             AND c.enabled = true`;
+      } else if (cityFilter) {
+        // Only city filter
+        routeQuery = `
+          SELECT DISTINCT r.* 
+          FROM routes r
+          INNER JOIN city c ON r.job = c.job
+          INNER JOIN admin_city_ref acr ON c.id = acr.city_id
+          WHERE acr.admin_id = $1
+            AND r.job = $2
+            AND r.enabled = true
+            AND c.enabled = true
+          ORDER BY r.id ASC
+          LIMIT $3 OFFSET $4`;
+        values = [adminId, cityFilter, limit, offset];
+        countQuery = `
+          SELECT COUNT(DISTINCT r.id) 
+          FROM routes r
+          INNER JOIN city c ON r.job = c.job
+          INNER JOIN admin_city_ref acr ON c.id = acr.city_id
+          WHERE acr.admin_id = $1
+            AND r.job = $2
+            AND r.enabled = true
+            AND c.enabled = true`;
       } else {
+        // No filters
         routeQuery = `
           SELECT DISTINCT r.* 
           FROM routes r
@@ -262,13 +334,33 @@ export const routePagination = async (page, limit, search = "", isSuperAdmin = f
       }
     }
 
-
     const routes = await pool.query(routeQuery, values);
-    const total = search
-      ? await pool.query(countQuery, isSuperAdmin ? [`%${search}%`] : [adminId, `%${search}%`])
-      : await pool.query(countQuery, isSuperAdmin ? [] : [adminId]);
+    
+    // Build count query values based on filters
+    let countValues;
+    if (isSuperAdmin) {
+      if (search && cityFilter) {
+        countValues = [`%${search}%`, cityFilter];
+      } else if (search) {
+        countValues = [`%${search}%`];
+      } else if (cityFilter) {
+        countValues = [cityFilter];
+      } else {
+        countValues = [];
+      }
+    } else {
+      if (search && cityFilter) {
+        countValues = [adminId, `%${search}%`, cityFilter];
+      } else if (search) {
+        countValues = [adminId, `%${search}%`];
+      } else if (cityFilter) {
+        countValues = [adminId, cityFilter];
+      } else {
+        countValues = [adminId];
+      }
+    }
 
-  
+    const total = await pool.query(countQuery, countValues);
 
     return {
       routes: routes.rows,
@@ -277,6 +369,27 @@ export const routePagination = async (page, limit, search = "", isSuperAdmin = f
   } catch (error) {
     console.error("routePagination error:", error.message);
     console.error("Stack:", error.stack);
+    throw error;
+  }
+};
+
+export const getRoutesByDriverCity = async (driverId) => {
+  try {
+    const result = await pool.query(`
+      SELECT DISTINCT r.* 
+      FROM routes r
+      INNER JOIN city c ON r.job = c.job
+      INNER JOIN drivers d ON d.city_id = c.id
+      WHERE d.id = $1
+        AND r.enabled = true
+        AND c.enabled = true
+      ORDER BY r.id ASC
+    `, [driverId]);
+    
+  
+    return result.rows;
+  } catch (error) {
+    console.error("getRoutesByDriverCity error:", error.message);
     throw error;
   }
 };

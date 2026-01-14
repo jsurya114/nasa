@@ -34,16 +34,10 @@ export const fetchRoutes = createAsyncThunk(
       console.error("fetchRoutes error:", error);
       return rejectWithValue(error.message);
     }
-  },
-  {
-    condition: (_, { getState }) => {
-      const { journey } = getState();
-      return journey.routesStatus !== 'loading' && journey.routesStatus !== 'succeeded';
-    },
   }
 );
 
-// Fetch routes for admin panel with request cancellation
+// ✅ FIXED: Removed condition check to allow fetching on every call
 export const fetchAdminRoutes = createAsyncThunk(
   "routes/fetchAdminRoutes", 
   async (_, { signal, rejectWithValue }) => {
@@ -67,12 +61,6 @@ export const fetchAdminRoutes = createAsyncThunk(
       console.error("fetchAdminRoutes error:", error);
       return rejectWithValue(error.message);
     }
-  },
-  {
-    condition: (_, { getState }) => {
-      const { journey } = getState();
-      return journey.routesStatus !== 'loading' && journey.routesStatus !== 'succeeded';
-    },
   }
 );
 
@@ -158,7 +146,7 @@ export const fetchAllJourneys = createAsyncThunk(
   }
 );
 
-// ✅ Updated: Fetch paginated journeys with filters (admin)
+// ✅ Fetch paginated journeys with filters (admin)
 export const fetchPaginatedJourneys = createAsyncThunk(
   "journeys/fetchPaginatedJourneys",
   async ({ page = 1, limit = 10, route_id, driver_name, journey_date } = {}, { signal, rejectWithValue }) => {
@@ -233,9 +221,57 @@ export const addJourney = createAsyncThunk(
   }
 );
 
-// Fetch all drivers with caching
+// Update journey (admin)
+export const updateJourney = createAsyncThunk(
+  "journeys/updateJourney",
+  async ({ id, data }, { rejectWithValue }) => {
+    try {
+      const res = await fetch(`${API_BASE_URL}/admin/journey/${id}`, {
+        method: "PUT",
+        headers: getAuthHeaders(),
+        body: JSON.stringify(data),
+      });
+      
+      const result = await res.json();
+      
+      if (!res.ok) {
+        return rejectWithValue(result);
+      }
+      
+      return result.data;
+    } catch (error) {
+      console.error("updateJourney error:", error);
+      return rejectWithValue({ message: error.message });
+    }
+  }
+);
+
+// Delete journey (admin)
+export const deleteJourney = createAsyncThunk(
+  "journeys/deleteJourney",
+  async (id, { rejectWithValue }) => {
+    try {
+      const res = await fetch(`${API_BASE_URL}/admin/journey/${id}`, {
+        method: "DELETE",
+        headers: getAuthHeaders(),
+      });
+      
+      if (!res.ok) {
+        const data = await res.json();
+        return rejectWithValue(data);
+      }
+      
+      return id;
+    } catch (error) {
+      console.error("deleteJourney error:", error);
+      return rejectWithValue({ message: error.message });
+    }
+  }
+);
+
+// ✅ FIXED: Removed condition check to allow fetching on every call
 export const fetchAllDrivers = createAsyncThunk(
-  "drivers/fetchAll",
+  "drivers/fetchAllDrivers",
   async (_, { signal, rejectWithValue }) => {
     try {
       const res = await fetch(`${API_BASE_URL}/admin/drivers`, { 
@@ -256,111 +292,101 @@ export const fetchAllDrivers = createAsyncThunk(
       console.error("fetchAllDrivers error:", error);
       return rejectWithValue(error.message);
     }
-  },
-  {
-    condition: (_, { getState }) => {
-      const { journey } = getState();
-      return journey.driversStatus !== 'loading' && journey.driversStatus !== 'succeeded';
-    },
   }
 );
 
-// Update journey (admin)
-export const updateJourney = createAsyncThunk(
-  "journeys/updateJourney",
-  async ({ journey_id, ...journeyData }, { rejectWithValue }) => {
+// ✅ Fetch routes filtered by driver's city
+export const fetchRoutesByDriver = createAsyncThunk(
+  "routes/fetchRoutesByDriver",
+  async (driverId, { signal, rejectWithValue }) => {
     try {
-      const res = await fetch(`${API_BASE_URL}/admin/journey/${journey_id}`, {
-        method: "PUT",
-        headers: getAuthHeaders(),
-        body: JSON.stringify(journeyData),
-      });
-      
-      const data = await res.json();
+      if (!driverId) {
+        return rejectWithValue("Driver ID is required");
+      }
+
+      const res = await fetch(
+        `${API_BASE_URL}/admin/routes-by-driver/${driverId}`, 
+        { 
+          signal, 
+          headers: getAuthHeaders() 
+        }
+      );
       
       if (!res.ok) {
-        return rejectWithValue(data);
+        const error = await res.json().catch(() => ({}));
+        return rejectWithValue(error.message || "Failed to fetch routes for driver");
       }
       
-      return data.data;
+      const data = await res.json();
+      return data.data || data.routes || [];
     } catch (error) {
-      console.error("updateJourney error:", error);
-      return rejectWithValue({ message: error.message });
+      if (error.name === 'AbortError') {
+        return rejectWithValue('Request cancelled');
+      }
+      console.error("fetchRoutesByDriver error:", error);
+      return rejectWithValue(error.message);
     }
   }
 );
 
-// Delete journey (admin)
-export const deleteJourney = createAsyncThunk(
-  "journeys/deleteJourney",
-  async (journey_id, { rejectWithValue }) => {
-    try {
-      const res = await fetch(`${API_BASE_URL}/admin/journey/${journey_id}`, {
-        method: "DELETE",
-        headers: getAuthHeaders(),
-      });
-      
-      const data = await res.json();
-      
-      if (!res.ok) {
-        return rejectWithValue(data);
-      }
-      
-      return journey_id;
-    } catch (error) {
-      console.error("deleteJourney error:", error);
-      return rejectWithValue({ message: error.message });
-    }
+const initialState = {
+  routes: [],
+  routesStatus: "idle",
+  routesError: null,
+  journeys: [],
+  journeyStatus: "idle",
+  journeyError: null,
+  adminJourneys: [],
+  adminStatus: "idle",
+  adminError: null,
+  paginatedJourneys: [],
+  paginatedStatus: "idle",
+  paginatedError: null,
+  drivers: [],
+  driversStatus: "idle",
+  driversError: null,
+  pagination: {
+    total: 0,
+    page: 1,
+    limit: 10,
+    totalPages: 1
   }
-);
+};
 
 const journeySlice = createSlice({
   name: "journey",
-  initialState: {
-    routes: [],
-    journeys: [],
-    adminJourneys: [],
-    paginatedJourneys: [],
-    drivers: [],
-    routesStatus: "idle",
-    journeyStatus: "idle",
-    adminStatus: "idle",
-    paginatedStatus: "idle",
-    driversStatus: "idle",
-    routesError: null,
-    journeyError: null,
-    adminError: null,
-    paginatedError: null,
-    driversError: null,
-    pagination: {
-      total: 0,
-      page: 1,
-      limit: 10,
-      totalPages: 1
-    }
-  },
+  initialState,
   reducers: {
-    clearRoutesError(state) {
+    clearRoutesError: (state) => {
       state.routesError = null;
     },
-    clearJourneyError(state) {
+    clearJourneyError: (state) => {
       state.journeyError = null;
+      state.adminError = null;
       state.paginatedError = null;
+      state.driversError = null;
     },
-    resetRoutesStatus(state) {
+    resetRoutesStatus: (state) => {
       state.routesStatus = "idle";
+      state.routesError = null;
     },
-    resetJourneyStatus(state) {
+    resetJourneyStatus: (state) => {
       state.journeyStatus = "idle";
+      state.journeyError = null;
     },
-    resetAllStatus(state) {
+    resetAllStatus: (state) => {
       state.routesStatus = "idle";
       state.journeyStatus = "idle";
       state.adminStatus = "idle";
       state.paginatedStatus = "idle";
       state.driversStatus = "idle";
+      state.routesError = null;
+      state.journeyError = null;
+      state.adminError = null;
+      state.paginatedError = null;
+      state.driversError = null;
     },
-    clearAllData(state) {
+    clearAllData: (state) => {
       state.routes = [];
       state.journeys = [];
       state.adminJourneys = [];
@@ -399,6 +425,8 @@ const journeySlice = createSlice({
         }
       });
 
+
+      
     // ============ ADMIN ROUTES ============
     builder
       .addCase(fetchAdminRoutes.pending, (state) => {
@@ -568,6 +596,25 @@ const journeySlice = createSlice({
         if (action.payload !== 'Request cancelled') {
           state.driversStatus = "failed";
           state.driversError = action.payload || action.error.message;
+        }
+      });
+      
+    // ============ ROUTES BY DRIVER ============
+    builder
+      .addCase(fetchRoutesByDriver.pending, (state) => {
+        state.routesStatus = "loading";
+        state.routesError = null;
+      })
+      .addCase(fetchRoutesByDriver.fulfilled, (state, action) => {
+        state.routesStatus = "succeeded";
+        const routesData = action.payload || [];
+        state.routes = Array.isArray(routesData) ? routesData : [];
+        state.routesError = null;
+      })
+      .addCase(fetchRoutesByDriver.rejected, (state, action) => {
+        if (action.payload !== 'Request cancelled') {
+          state.routesStatus = "failed";
+          state.routesError = action.payload || action.error.message;
         }
       });
   },

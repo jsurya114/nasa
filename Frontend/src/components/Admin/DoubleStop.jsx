@@ -272,11 +272,11 @@ const DoubleStop = () => {
         )}
 
         {/* Analytics Section - Only show for the current view */}
-        {activeView === "weekly" && (
+        {/* {activeView === "weekly" && (
           <div className="mb-3">
             <Analystic viewType="weekly" />
           </div>
-        )}
+        )} */}
 
         {activeView === "daily" && (
           <div className="mb-3">

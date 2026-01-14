@@ -8,7 +8,8 @@ import {
   toggleRouteStatusQuery,
   routePagination,
   getAllRoutesOfDriver,
-  getRoutesForAdmin
+  getRoutesForAdmin,
+  getRoutesByDriverCity
 } from "../../services/admin/routeQueries.js";
 import HttpStatus from "../../utils/statusCodes.js";
 
@@ -16,6 +17,7 @@ import HttpStatus from "../../utils/statusCodes.js";
 const mapRoute = (r) => ({
   id: r.id,
   route: r.name,
+  name: r.name, // Add both for compatibility
   job: r.job,
   companyRoutePrice: parseFloat(r.company_route_price),
   driverRoutePrice: parseFloat(r.driver_route_price),
@@ -70,20 +72,21 @@ export const createRoute = async (req, res) => {
   }
 };
 
-// Fetch paginated routes with role-based filtering
+// ✅ ENHANCED: Fetch paginated routes with city filter
 export const fetchPaginatedRoutes = async (req, res) => {
   try {
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 4;
     const search = req.query.search || "";
+    const cityFilter = req.query.city || ""; // ✅ NEW: City filter parameter
     
     // Get user role and ID from middleware
     const isSuperAdmin = req.user?.role === 'superadmin';
     const adminId = req.user?.id;
     
+    console.log('Fetching routes with filters:', { page, limit, search, cityFilter, isSuperAdmin, adminId });
     
-    
-    const { routes, total } = await routePagination(page, limit, search, isSuperAdmin, adminId);
+    const { routes, total } = await routePagination(page, limit, search, cityFilter, isSuperAdmin, adminId);
 
     res.status(HttpStatus.OK).json({
       success: true,
@@ -227,5 +230,32 @@ export const deleteRoute = async (req, res) => {
   } catch (err) {
     console.error("❌ deleteRoute error:", err.message);
     res.status(500).json({ error: `Failed to delete route: ${err.message}` });
+  }
+};
+
+export const getRoutesByDriver = async (req, res) => {
+  try {
+    const { driverId } = req.params;
+    
+    if (!driverId) {
+      return res.status(400).json({ 
+        success: false, 
+        error: "Driver ID is required" 
+      });
+    }
+    
+    const routesDb = await getRoutesByDriverCity(driverId);
+    const routes = routesDb.map(mapRoute);
+    
+    res.json({ 
+      success: true,
+      routes 
+    });
+  } catch (err) {
+    console.error("❌ getRoutesByDriver error:", err.message);
+    res.status(500).json({ 
+      success: false,
+      error: err.message 
+    });
   }
 };

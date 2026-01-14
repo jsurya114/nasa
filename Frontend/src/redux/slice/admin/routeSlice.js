@@ -10,12 +10,27 @@ const getAuthHeaders = () => {
   };
 };
 
-// Fetch all routes
-export const fetchRoutes = createAsyncThunk("routes/fetchRoutes", async ({ page, limit, search = "" }) => {
+// ✅ ENHANCED: Fetch routes with city filter
+export const fetchRoutes = createAsyncThunk("routes/fetchRoutes", async ({ page, limit, search = "", city = "" }) => {
   try {
-    console.log("Fetching routes from", API_BASE_URL, "/admin/routes..."); // Debug log
+    console.log("Fetching routes with filters:", { page, limit, search, city });
+    
+    // Build query parameters
+    const params = new URLSearchParams({
+      page: page.toString(),
+      limit: limit.toString()
+    });
+    
+    if (search) {
+      params.append('search', search);
+    }
+    
+    if (city) {
+      params.append('city', city);
+    }
+    
     const res = await fetch(
-      `${API_BASE_URL}/admin/routes?page=${page}&limit=${limit}&search=${search}`,
+      `${API_BASE_URL}/admin/routes?${params.toString()}`,
       { headers: getAuthHeaders() }
     );
 
@@ -24,10 +39,10 @@ export const fetchRoutes = createAsyncThunk("routes/fetchRoutes", async ({ page,
       throw new Error(error.error || "Failed to fetch routes");
     }
     const data = await res.json();
-    console.log("Fetched routes:", data); // Debug log
+    console.log("Fetched routes:", data);
     return data;
   } catch (error) {
-    console.error("fetchRoutes error:", error.message); // Debug log
+    console.error("fetchRoutes error:", error.message);
     throw error;
   }
 });
@@ -35,7 +50,7 @@ export const fetchRoutes = createAsyncThunk("routes/fetchRoutes", async ({ page,
 // Add a route
 export const addRoute = createAsyncThunk("routes/addRoute", async (routeData) => {
   try {
-    console.log("Adding route:", routeData); // Debug log
+    console.log("Adding route:", routeData);
     const res = await fetch(`${API_BASE_URL}/admin/routes`, {
       method: "POST",
       headers: getAuthHeaders(),
@@ -47,10 +62,10 @@ export const addRoute = createAsyncThunk("routes/addRoute", async (routeData) =>
       throw new Error(error.error || "Failed to add route");
     }
     const data = await res.json();
-    console.log("Added route:", data); // Debug log
+    console.log("Added route:", data);
     return data;
   } catch (error) {
-    console.error("addRoute error:", error.message); // Debug log
+    console.error("addRoute error:", error.message);
     throw error;
   }
 });
@@ -58,7 +73,7 @@ export const addRoute = createAsyncThunk("routes/addRoute", async (routeData) =>
 // Toggle route status
 export const toggleRouteStatus = createAsyncThunk("routes/toggleRouteStatus", async (id) => {
   try {
-    console.log(`Toggling status for route id: ${id}`); // Debug log
+    console.log(`Toggling status for route id: ${id}`);
     const res = await fetch(`${API_BASE_URL}/admin/routes/${id}/status`, { 
       method: "PATCH", 
       headers: getAuthHeaders() 
@@ -69,10 +84,10 @@ export const toggleRouteStatus = createAsyncThunk("routes/toggleRouteStatus", as
       throw new Error(error.error || "Failed to toggle route status");
     }
     const data = await res.json();
-    console.log("Toggled route:", data); // Debug log
+    console.log("Toggled route:", data);
     return data;
   } catch (error) {
-    console.error("toggleRouteStatus error:", error.message); // Debug log
+    console.error("toggleRouteStatus error:", error.message);
     throw error;
   }
 });
@@ -80,7 +95,7 @@ export const toggleRouteStatus = createAsyncThunk("routes/toggleRouteStatus", as
 // Delete a route
 export const deleteRoute = createAsyncThunk("routes/deleteRoute", async (id) => {
   try {
-    console.log(`Deleting route id: ${id}`); // Debug log
+    console.log(`Deleting route id: ${id}`);
     const res = await fetch(`${API_BASE_URL}/admin/routes/${id}`, { 
       method: "DELETE", 
       headers: getAuthHeaders() 
@@ -90,10 +105,10 @@ export const deleteRoute = createAsyncThunk("routes/deleteRoute", async (id) => 
       const error = await res.json();
       throw new Error(error.error || "Failed to delete route");
     }
-    console.log("Deleted route id:", id); // Debug log
+    console.log("Deleted route id:", id);
     return id;
   } catch (error) {
-    console.error("deleteRoute error:", error.message); // Debug log
+    console.error("deleteRoute error:", error.message);
     throw error;
   }
 });
@@ -128,16 +143,26 @@ const routeSlice = createSlice({
     page: 1,
     total: 0,
     totalPages: 0,
-    limit: 4
+    limit: 4,
+    cityFilter: "" // ✅ NEW: Track current city filter
   },
-  reducers: {},
+  reducers: {
+    // ✅ NEW: Action to update city filter
+    setCityFilter: (state, action) => {
+      state.cityFilter = action.payload;
+    },
+    // ✅ NEW: Action to clear city filter
+    clearCityFilter: (state) => {
+      state.cityFilter = "";
+    }
+  },
   extraReducers: (builder) => {
     builder
       // Fetch routes
       .addCase(fetchRoutes.pending, (state) => {
         state.status = "loading";
         state.error = null;
-        console.log("fetchRoutes: Status set to loading"); // Debug log
+        console.log("fetchRoutes: Status set to loading");
       })
       .addCase(fetchRoutes.fulfilled, (state, action) => {
         state.status = "succeeded";
@@ -145,28 +170,28 @@ const routeSlice = createSlice({
         state.total = action.payload.total;
         state.page = action.payload.page;
         state.totalPages = action.payload.totalPages;
-        console.log("fetchRoutes: Routes state updated:", action.payload); // Debug log
+        console.log("fetchRoutes: Routes state updated:", action.payload);
       })
       .addCase(fetchRoutes.rejected, (state, action) => {
         state.status = "failed";
         state.error = action.error.message;
-        console.error("fetchRoutes: Failed:", action.error.message); // Debug log
+        console.error("fetchRoutes: Failed:", action.error.message);
       })
       // Add route
       .addCase(addRoute.pending, (state) => {
         state.status = "loading";
         state.error = null;
-        console.log("addRoute: Status set to loading"); // Debug log
+        console.log("addRoute: Status set to loading");
       })
       .addCase(addRoute.fulfilled, (state, action) => {
         state.status = "succeeded";
         state.routes.push(action.payload);
-        console.log("addRoute: Route added:", action.payload); // Debug log
+        console.log("addRoute: Route added:", action.payload);
       })
       .addCase(addRoute.rejected, (state, action) => {
         state.status = "failed";
         state.error = action.error.message;
-        console.error("addRoute: Failed:", action.error.message); // Debug log
+        console.error("addRoute: Failed:", action.error.message);
       })
       //update Route
       .addCase(updateRoute.pending, (state) => {
@@ -191,38 +216,39 @@ const routeSlice = createSlice({
       .addCase(toggleRouteStatus.pending, (state) => {
         state.status = "loading";
         state.error = null;
-        console.log("toggleRouteStatus: Status set to loading"); // Debug log
+        console.log("toggleRouteStatus: Status set to loading");
       })
       .addCase(toggleRouteStatus.fulfilled, (state, action) => {
         state.status = "succeeded";
         const index = state.routes.findIndex((r) => r.id === action.payload.id);
         if (index !== -1) {
           state.routes[index] = action.payload;
-          console.log("toggleRouteStatus: Route updated:", action.payload); // Debug log
+          console.log("toggleRouteStatus: Route updated:", action.payload);
         }
       })
       .addCase(toggleRouteStatus.rejected, (state, action) => {
         state.status = "failed";
         state.error = action.error.message;
-        console.error("toggleRouteStatus: Failed:", action.error.message); // Debug log
+        console.error("toggleRouteStatus: Failed:", action.error.message);
       })
       // Delete route
       .addCase(deleteRoute.pending, (state) => {
         state.status = "loading";
         state.error = null;
-        console.log("deleteRoute: Status set to loading"); // Debug log
+        console.log("deleteRoute: Status set to loading");
       })
       .addCase(deleteRoute.fulfilled, (state, action) => {
         state.status = "succeeded";
         state.routes = state.routes.filter((r) => r.id !== action.payload);
-        console.log("deleteRoute: Route deleted:", action.payload); // Debug log
+        console.log("deleteRoute: Route deleted:", action.payload);
       })
       .addCase(deleteRoute.rejected, (state, action) => {
         state.status = "failed";
         state.error = action.error.message;
-        console.error("deleteRoute: Failed:", action.error.message); // Debug log
+        console.error("deleteRoute: Failed:", action.error.message);
       });
   },
 });
 
+export const { setCityFilter, clearCityFilter } = routeSlice.actions;
 export default routeSlice.reducer

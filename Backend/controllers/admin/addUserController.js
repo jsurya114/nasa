@@ -80,7 +80,19 @@ export const changeStatusUser = async (req, res) => {
 export const updateUser = async (req, res) => {
     try {
         const id = req.params.id;
-        const { name, email, city, enabled, phoneNumber, password,driver_code } = req.body;
+        const { name, email, city, enabled, phoneNumber, password, driver_code } = req.body;
+
+        // Check if driver_code is being changed and if it already exists for another driver
+        if (driver_code) {
+            const existingDriver = await dbService.getDriverByCode(driver_code);
+            
+            // Only return error if the code exists AND belongs to a different driver
+            if (existingDriver && existingDriver.id !== parseInt(id)) {
+                return res.status(409).json({
+                    message: "Driver code already exists"
+                });
+            }
+        }
 
         const updateData = {
             name,
@@ -89,21 +101,12 @@ export const updateUser = async (req, res) => {
             enabled,
             phoneNumber,
             driver_code
-
         };
 
         // Only include password if it's provided (not empty)
         if (password && password.trim()) {
             updateData.password = password;
         }
-        if (driver_code) {
-  
-    return res.status(409).json({
-      message: "Driver code already exists"
-    });
-  
-}
-
 
         const updatedUser = await dbService.updateDriver(id, updateData);
 

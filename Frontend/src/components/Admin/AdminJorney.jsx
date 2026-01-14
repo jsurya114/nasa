@@ -7,7 +7,8 @@ import {
   fetchAdminRoutes,
   fetchAllDrivers,
   clearJourneyError,
-  deleteJourney
+  deleteJourney,
+  fetchRoutesByDriver
 } from "../../redux/slice/driver/journeySlice.js";
 import { toast } from "react-toastify";
 import Header from "../../reuse/Header.jsx";
@@ -30,6 +31,7 @@ const AdminJourney = () => {
     pagination 
   } = useSelector((state) => state.journey);
 const [isAdding, setIsAdding] = useState(false);
+const [selectedDriverForRoutes, setSelectedDriverForRoutes] = useState(null);
 
   const [editableJourneyId, setEditableJourneyId] = useState(null);
   const [formData, setFormData] = useState({});
@@ -63,15 +65,17 @@ const [isAdding, setIsAdding] = useState(false);
     }));
   }, [dispatch, currentPage, itemsPerPage, filters]);
 
-  // ✅ Fetch routes and drivers only once
+  // ✅ FIXED: Always fetch routes and drivers on mount if data is empty
   useEffect(() => {
-    if (routesStatus === "idle" || (routesStatus === "failed" && routes.length === 0)) {
+    // Only fetch if not currently loading and data is empty
+    if (routesStatus !== "loading" && routes.length === 0) {
       dispatch(fetchAdminRoutes());
     }
-    if (driversStatus === "idle" || (driversStatus === "failed" && drivers.length === 0)) {
+    
+    if (driversStatus !== "loading" && drivers.length === 0) {
       dispatch(fetchAllDrivers());
     }
-  }, [dispatch, routesStatus, driversStatus, routes.length, drivers.length]);
+  }, [dispatch, routes.length, drivers.length, routesStatus, driversStatus]);
 
   // ✅ Auto-clear validation errors after 5 seconds
   useEffect(() => {
@@ -99,6 +103,28 @@ const [isAdding, setIsAdding] = useState(false);
     };
   }, [errorTimeout]);
 
+  useEffect(() => {
+  if (newJourneyData.driver_id) {
+    // Fetch routes specific to this driver
+    dispatch(fetchRoutesByDriver(newJourneyData.driver_id));
+    setSelectedDriverForRoutes(newJourneyData.driver_id);
+  } else {
+    // No driver selected - show all routes
+    dispatch(fetchAdminRoutes());
+    setSelectedDriverForRoutes(null);
+  }
+}, [newJourneyData.driver_id, dispatch]);
+useEffect(() => {
+  if (editableJourneyId && formData.driver_id) {
+    const currentJourney = paginatedJourneys.find(j => j.id === editableJourneyId);
+    if (currentJourney && formData.driver_id !== currentJourney.driver_id) {
+      // Driver changed during edit - fetch new routes
+      dispatch(fetchRoutesByDriver(formData.driver_id));
+    }
+  }
+}, [editableJourneyId, formData.driver_id, dispatch, paginatedJourneys]);
+
+
   // ✅ Handle errors without causing re-renders
   useEffect(() => {
     if (paginatedError) {
@@ -115,6 +141,8 @@ const [isAdding, setIsAdding] = useState(false);
     }));
     setCurrentPage(1); // Reset to first page when filter changes
   }, []);
+
+  
 
   // ✅ NEW: Clear all filters
   const handleClearFilters = useCallback(() => {
@@ -152,33 +180,42 @@ const [isAdding, setIsAdding] = useState(false);
   }, []);
 
   const handleChange = useCallback((e) => {
-    const { name, value } = e.target;
-    
-    if ((name === 'start_seq' || name === 'end_seq') && value !== '') {
-      const numValue = parseInt(value);
-      if (numValue < 1) {
-        return;
-      }
+  const { name, value } = e.target;
+  
+  if ((name === 'start_seq' || name === 'end_seq') && value !== '') {
+    const numValue = parseInt(value);
+    if (numValue < 1) {
+      return;
     }
-    
+  }
+  
+  // If driver changes during edit, clear the route
+  if (name === 'driver_id') {
+    setFormData((prev) => ({ 
+      ...prev, 
+      [name]: value,
+      route_id: '' // Clear route when driver changes
+    }));
+  } else {
     setFormData((prev) => ({ ...prev, [name]: value }));
-    
-    if (editValidationErrors[name]) {
-      setEditValidationErrors((prev) => {
-        const newErrors = { ...prev };
-        delete newErrors[name];
-        return newErrors;
-      });
-    }
-    
-    if (editValidationErrors.general) {
-      setEditValidationErrors((prev) => {
-        const newErrors = { ...prev };
-        delete newErrors.general;
-        return newErrors;
-      });
-    }
-  }, [editValidationErrors]);
+  }
+  
+  if (editValidationErrors[name]) {
+    setEditValidationErrors((prev) => {
+      const newErrors = { ...prev };
+      delete newErrors[name];
+      return newErrors;
+    });
+  }
+  
+  if (editValidationErrors.general) {
+    setEditValidationErrors((prev) => {
+      const newErrors = { ...prev };
+      delete newErrors.general;
+      return newErrors;
+    });
+  }
+}, [editValidationErrors]);
 
   const validateSequenceOverlap = useCallback((driver_id, routeId, startSeq, endSeq, journeyDate, excludeJourneyId = null) => {
     const start = parseInt(startSeq);
@@ -285,98 +322,115 @@ const [isAdding, setIsAdding] = useState(false);
   );
 
   const handleNewJourneyChange = useCallback((e) => {
-    const { name, value } = e.target;
+  const { name, value } = e.target;
+  
+  // If driver changes, clear the selected route
+  if (name === 'driver_id') {
+    setNewJourneyData((prev) => ({ 
+      ...prev, 
+      [name]: value,
+      route_id: "" // Clear route selection when driver changes
+    }));
+  } else {
     setNewJourneyData((prev) => ({ ...prev, [name]: value }));
-    
-    if (validationErrors[name]) {
-      setValidationErrors((prev) => {
-        const newErrors = { ...prev };
-        delete newErrors[name];
-        return newErrors;
-      });
-    }
-    
-    if (validationErrors.general) {
-      setValidationErrors((prev) => {
-        const newErrors = { ...prev };
-        delete newErrors.general;
-        return newErrors;
-      });
-    }
-  }, [validationErrors]);
+  }
+  
+  if (validationErrors[name]) {
+    setValidationErrors((prev) => {
+      const newErrors = { ...prev };
+      delete newErrors[name];
+      return newErrors;
+    });
+  }
+  
+  if (validationErrors.general) {
+    setValidationErrors((prev) => {
+      const newErrors = { ...prev };
+      delete newErrors.general;
+      return newErrors;
+    });
+  }
+}, [validationErrors]);
 
   const handleAddJourney = useCallback(
     async (e) => {
-
-    if (isAdding) return; // ⛔ prevent multiple calls
-
-    setIsAdding(true);
-
-
-      if (errorTimeout) {
-        clearTimeout(errorTimeout);
-        setErrorTimeout(null);
-      }
-
-      setValidationErrors({});
-
-      const errors = {};
-      if (!newJourneyData.driver_id) {
-        errors.driver_id = "Driver is required";
-      }
-      if (!newJourneyData.route_id) {
-        errors.route_id = "Route is required";
-      }
-      if (!newJourneyData.start_seq) {
-        errors.start_seq = "Start sequence is required";
-      } else {
-        const start = parseInt(newJourneyData.start_seq);
-        if (isNaN(start) || start <= 0) {
-          errors.start_seq = "Start sequence must be a positive number greater than 0";
-        }
-      }
-      if (!newJourneyData.end_seq) {
-        errors.end_seq = "End sequence is required";
-      } else {
-        const end = parseInt(newJourneyData.end_seq);
-        if (isNaN(end) || end <= 0) {
-          errors.end_seq = "End sequence must be a positive number greater than 0";
-        }
-      }
-      if (!newJourneyData.journey_date) {
-        errors.journey_date = "Journey date is required";
-      }
-
-      if (newJourneyData.start_seq && newJourneyData.end_seq && !errors.start_seq && !errors.end_seq) {
-        const start = parseInt(newJourneyData.start_seq);
-        const end = parseInt(newJourneyData.end_seq);
-        if (start >= end) {
-          errors.end_seq = "End sequence must be greater than start sequence";
-        }
-      }
-
-      if (Object.keys(errors).length > 0) {
-        setValidationErrors(errors);
+      // ✅ ENHANCED: Prevent multiple simultaneous submissions
+      if (isAdding) {
+        console.log("Already adding journey, ignoring duplicate click");
         return;
       }
 
-      const overlapping = validateSequenceOverlap(
-        newJourneyData.driver_id,
-        newJourneyData.route_id,
-        newJourneyData.start_seq,
-        newJourneyData.end_seq,
-        newJourneyData.journey_date
-      );
-
-      if (overlapping) {
-        setValidationErrors({
-          general: `Sequence overlap detected! This driver already has sequences ${overlapping.start_seq}-${overlapping.end_seq} on this route for this date.`
-        });
-        setIsAdding(false)
-        return;
-      }
+      setIsAdding(true);
 
       try {
+        if (errorTimeout) {
+          clearTimeout(errorTimeout);
+          setErrorTimeout(null);
+        }
+
+        setValidationErrors({});
+
+        // Validation checks
+        const errors = {};
+        if (!newJourneyData.driver_id) {
+          errors.driver_id = "Driver is required";
+        }
+        if (!newJourneyData.route_id) {
+          errors.route_id = "Route is required";
+        }
+        if (!newJourneyData.start_seq) {
+          errors.start_seq = "Start sequence is required";
+        } else {
+          const start = parseInt(newJourneyData.start_seq);
+          if (isNaN(start) || start <= 0) {
+            errors.start_seq = "Start sequence must be a positive number greater than 0";
+          }
+        }
+        if (!newJourneyData.end_seq) {
+          errors.end_seq = "End sequence is required";
+        } else {
+          const end = parseInt(newJourneyData.end_seq);
+          if (isNaN(end) || end <= 0) {
+            errors.end_seq = "End sequence must be a positive number greater than 0";
+          }
+        }
+        if (!newJourneyData.journey_date) {
+          errors.journey_date = "Journey date is required";
+        }
+
+        if (newJourneyData.start_seq && newJourneyData.end_seq && !errors.start_seq && !errors.end_seq) {
+          const start = parseInt(newJourneyData.start_seq);
+          const end = parseInt(newJourneyData.end_seq);
+          if (start >= end) {
+            errors.end_seq = "End sequence must be greater than start sequence";
+          }
+        }
+
+        // ✅ FIXED: Early return with proper cleanup
+        if (Object.keys(errors).length > 0) {
+          setValidationErrors(errors);
+          setIsAdding(false);
+          return;
+        }
+
+        // Check for overlapping sequences
+        const overlapping = validateSequenceOverlap(
+          newJourneyData.driver_id,
+          newJourneyData.route_id,
+          newJourneyData.start_seq,
+          newJourneyData.end_seq,
+          newJourneyData.journey_date
+        );
+
+        if (overlapping) {
+          setValidationErrors({
+            general: `Sequence overlap detected! This driver already has sequences ${overlapping.start_seq}-${overlapping.end_seq} on this route for this date.`
+          });
+          setIsAdding(false);
+          return;
+        }
+
+        // Add journey
         await dispatch(addJourney(newJourneyData)).unwrap();
         toast.success("Journey added successfully!");
         
@@ -387,6 +441,7 @@ const [isAdding, setIsAdding] = useState(false);
           ...filters 
         }));
         
+        // Reset form
         setNewJourneyData({
           driver_id: "",
           route_id: "",
@@ -395,15 +450,17 @@ const [isAdding, setIsAdding] = useState(false);
           journey_date: new Date().toLocaleDateString("en-CA"),
         });
         setValidationErrors({});
+        
       } catch (err) {
         setValidationErrors({
           general: err.message || "Failed to add journey"
         });
       } finally {
-      setIsAdding(false);
-    }
+        // ✅ Always reset the adding state
+        setIsAdding(false);
+      }
     },
-    [isAdding,dispatch, newJourneyData, validateSequenceOverlap, errorTimeout, currentPage, itemsPerPage, filters]
+    [isAdding, dispatch, newJourneyData, validateSequenceOverlap, errorTimeout, currentPage, itemsPerPage, filters]
   );
 
   const handleDelete = async (id) => {
@@ -1029,29 +1086,58 @@ const [isAdding, setIsAdding] = useState(false);
   type="button"
   onClick={handleAddJourney}
   disabled={isAdding}
-  className="
+  style={{ pointerEvents: isAdding ? 'none' : 'auto' }}
+  className={`
     bg-green-500 text-white px-6 py-2 rounded
     font-medium flex items-center gap-2
-    transition-colors
-    hover:bg-green-600
-    disabled:opacity-50
-    disabled:cursor-not-allowed
-    disabled:hover:bg-green-500
-  "
+    transition-all duration-200
+    ${isAdding 
+      ? 'opacity-50 cursor-not-allowed bg-green-500' 
+      : 'hover:bg-green-600 hover:shadow-lg active:scale-95'
+    }
+  `}
 >
-  <svg
-    xmlns="http://www.w3.org/2000/svg"
-    className="h-5 w-5 pointer-events-none"
-    viewBox="0 0 20 20"
-    fill="currentColor"
-  >
-    <path
-      fillRule="evenodd"
-      d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z"
-      clipRule="evenodd"
-    />
-  </svg>
-  {isAdding ? "Adding..." : "Add Journey"}
+  {isAdding ? (
+    <>
+      <svg
+        className="animate-spin h-5 w-5 pointer-events-none"
+        xmlns="http://www.w3.org/2000/svg"
+        fill="none"
+        viewBox="0 0 24 24"
+      >
+        <circle
+          className="opacity-25"
+          cx="12"
+          cy="12"
+          r="10"
+          stroke="currentColor"
+          strokeWidth="4"
+        ></circle>
+        <path
+          className="opacity-75"
+          fill="currentColor"
+          d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+        ></path>
+      </svg>
+      Adding...
+    </>
+  ) : (
+    <>
+      <svg
+        xmlns="http://www.w3.org/2000/svg"
+        className="h-5 w-5 pointer-events-none"
+        viewBox="0 0 20 20"
+        fill="currentColor"
+      >
+        <path
+          fillRule="evenodd"
+          d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z"
+          clipRule="evenodd"
+        />
+      </svg>
+      Add Journey
+    </>
+  )}
 </button>
 
           </div>

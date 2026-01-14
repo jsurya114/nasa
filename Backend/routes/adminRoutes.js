@@ -3,7 +3,7 @@ import { upload, uploadAccessCodeImages } from "../middlewares/multerConfig.js"
 const router = express.Router()
 import adminController from '../controllers/admin/adminController.js'
 import jobController from '../controllers/admin/jobController.js';
-import { createRoute,getRouteById, updateRoute, deleteRoute,toggleRouteStatus, fetchPaginatedRoutes, getAdminRoutes} from "../controllers/admin/routeController.js"
+import { createRoute,getRouteById, updateRoute, deleteRoute,toggleRouteStatus, fetchPaginatedRoutes, getAdminRoutes,getRoutesByDriver  } from "../controllers/admin/routeController.js"
 import { changeStatusUser, createUsers, getUsers,updateUser} from '../controllers/admin/addUserController.js';
 import { createAccessCode } from '../controllers/admin/accessCodeControllers.js';
 import {DailyExcelUpload, getUpdatedTempDashboardData} from '../controllers/admin/fileUploadsController.js';
@@ -36,6 +36,7 @@ router.get("/routes/:id", getRouteById);
 router.put("/routes/:id", updateRoute);
 router.patch("/routes/:id/status",toggleRouteStatus);
 router.delete("/routes/:id", deleteRoute);
+router.get("/routes-by-driver/:driverId", getRoutesByDriver);
 
 router.post('/create-users',createUsers);
 router.get('/get-users',getUsers);
