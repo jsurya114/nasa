@@ -150,8 +150,11 @@ export const weeklyExcelUpload = async (req, res) => {
             const delDate = moment(signingTime, ['MM/DD/YYYY HH:mm:ss', 'MM/DD/YYYY'])
               .format('YYYY-MM-DD');
 
-            // Determine address
-            const address = structuredAddress.toUpperCase() || stopPointDetails;
+            // Determine address based on structured address
+            // const address = structuredAddress;
+
+             // Determine map based on  stopPointDetails
+            const address = stopPointDetails;
             if (!address) {
              
               totalSkipped++;
@@ -170,15 +173,25 @@ export const weeklyExcelUpload = async (req, res) => {
                 total_deliveries: 0,
                 fs: 0,
                 ds: 0,
-                addresses: new Map(),
+                // addresses: new Map(),
+                addresses: new Map([["1",0]]),
               });
             }
 
             const entry = aggregatedData.get(key);
             entry.total_deliveries++;
             
-            if (!entry.addresses.has(address)) {
-              entry.addresses.set(address, 0);
+            //This is count of fs and ds based on structuredAddress 
+            // if (!entry.addresses.has(address)) {
+            //   entry.addresses.set(address, 0);
+            //   entry.fs++;
+            // } else {
+            //   entry.ds++;
+            // }
+
+            //This is coount of fs and ds based on stopPointDetails
+             if (entry.addresses.has(address)) {
+              // entry.addresses.set(address, 0);
               entry.fs++;
             } else {
               entry.ds++;
@@ -263,4 +276,3 @@ export const weeklyExcelUpload = async (req, res) => {
     });
   }
 };
-
