@@ -36,21 +36,31 @@ export default function DriverAvailability() {
   const [currentHour, setCurrentHour] = useState(0);
 
   const daysOfWeek = [
-    { key: "sunday", label: "Sunday", short: "Sun", index: 0 },
-    { key: "monday", label: "Monday", short: "Mon", index: 1 },
-    { key: "tuesday", label: "Tuesday", short: "Tue", index: 2 },
-    { key: "wednesday", label: "Wednesday", short: "Wed", index: 3 },
-    { key: "thursday", label: "Thursday", short: "Thu", index: 4 },
-    { key: "friday", label: "Friday", short: "Fri", index: 5 },
-    { key: "saturday", label: "Saturday", short: "Sat", index: 6 }
+    { key: "monday", label: "Monday", short: "Mon", index: 0 },
+    { key: "tuesday", label: "Tuesday", short: "Tue", index: 1 },
+    { key: "wednesday", label: "Wednesday", short: "Wed", index: 2 },
+    { key: "thursday", label: "Thursday", short: "Thu", index: 3 },
+    { key: "friday", label: "Friday", short: "Fri", index: 4 },
+    { key: "saturday", label: "Saturday", short: "Sat", index: 5 },
+    { key: "sunday", label: "Sunday", short: "Sun", index: 6 }
   ];
 
-  // Update current day and hour every minute
+  // Update current day and hour every minute (in CST timezone)
   useEffect(() => {
     const updateCurrentTime = () => {
       const now = new Date();
-      const dayIndex = now.getDay(); // 0 = Sunday, 1 = Monday, etc.
-      const hour = now.getHours(); // 0-23
+      
+      // Convert to UTC-6 (CST)
+      const utcOffset = now.getTimezoneOffset(); // Get current UTC offset in minutes
+      const cstOffset = -360; // UTC-6 = -360 minutes
+      const cstTime = new Date(now.getTime() + (cstOffset - utcOffset) * 60000);
+      
+      const dayIndexJS = cstTime.getDay(); // 0 = Sunday, 1 = Monday, etc.
+      const hour = cstTime.getHours(); // 0-23
+      
+      // Convert to Monday-based week (Monday = 0, Sunday = 6)
+      const dayIndex = dayIndexJS === 0 ? 6 : dayIndexJS - 1;
+      
       setCurrentDayIndex(dayIndex);
       setCurrentHour(hour);
     };
@@ -129,9 +139,9 @@ export default function DriverAvailability() {
       if (lockReason === "past") {
         toast.error(`Cannot update ${dayName}. That day has already ended. You can only update today and future days.`);
       } else if (lockReason === "today_cutoff") {
-        toast.error(`Cannot update today's availability after 7:00 PM.`);
+        toast.error(`Cannot update today's availability after 7:00 PM CST.`);
       } else if (lockReason === "tomorrow_cutoff") {
-        toast.error(`Cannot update ${dayName}. The 7:00 PM cutoff has passed for tomorrow's availability.`);
+        toast.error(`Cannot update ${dayName}. The 7:00 PM CST cutoff has passed for tomorrow's availability.`);
       }
       return;
     }
@@ -414,10 +424,10 @@ export default function DriverAvailability() {
                       <li>• Use the toggle switches to mark your availability</li>
                       <li>• Green = available, Gray = unavailable</li>
                       <li>• Your availability helps with shift scheduling</li>
-                      <li>• <strong>You can update future days anytime before 7:00 PM</strong></li>
-                      <li>• <strong>⏰ Today's and tomorrow's availability lock at 7:00 PM</strong></li>
+                      <li>• <strong>You can update future days anytime before 7:00 PM CST</strong></li>
+                      <li>• <strong>⏰ Today's and tomorrow's availability lock at 7:00 PM CST</strong></li>
                       <li>• <strong>Past days are locked and cannot be changed</strong></li>
-                      <li>• <strong>Resets every Sunday at 12:00 PM (noon)</strong></li>
+                      <li>• <strong>Week runs Monday to Sunday, resets every Sunday at 12:00 PM CST</strong></li>
                     </ul>
                   </div>
                 </div>

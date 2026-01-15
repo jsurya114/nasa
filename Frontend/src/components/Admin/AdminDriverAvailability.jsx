@@ -51,20 +51,30 @@ export default function AdminDriverAvailability() {
   };
 
   const dayIndexMap = {
-    sunday: 0,
-    monday: 1,
-    tuesday: 2,
-    wednesday: 3,
-    thursday: 4,
-    friday: 5,
-    saturday: 6
+    monday: 0,
+    tuesday: 1,
+    wednesday: 2,
+    thursday: 3,
+    friday: 4,
+    saturday: 5,
+    sunday: 6
   };
 
-  // Update current day index
+  // Update current day index (in CST timezone, Monday-based)
   useEffect(() => {
     const updateCurrentDay = () => {
       const now = new Date();
-      const dayIndex = now.getDay();
+      
+      // Convert to UTC-6 (CST)
+      const utcOffset = now.getTimezoneOffset();
+      const cstOffset = -360; // UTC-6 = -360 minutes
+      const cstTime = new Date(now.getTime() + (cstOffset - utcOffset) * 60000);
+      
+      const dayIndexJS = cstTime.getDay();
+      
+      // Convert to Monday-based week (Monday = 0, Sunday = 6)
+      const dayIndex = dayIndexJS === 0 ? 6 : dayIndexJS - 1;
+      
       setCurrentDayIndex(dayIndex);
     };
 

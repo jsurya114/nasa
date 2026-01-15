@@ -116,11 +116,24 @@ const adminAvailabilityController = {
 
       // Validate that admin is not trying to edit past days
       const now = new Date();
-      const currentDay = now.getDay(); // 0 = Sunday, 1 = Monday, ..., 6 = Saturday
-      const dayNames = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+      
+      // Convert to UTC-6 (CST)
+      const utcOffset = now.getTimezoneOffset(); // Get current UTC offset in minutes
+      const cstOffset = -360; // UTC-6 = -360 minutes
+      const cstTime = new Date(now.getTime() + (cstOffset - utcOffset) * 60000);
+      
+      const currentDayJS = cstTime.getDay(); // 0 = Sunday, 1 = Monday, ..., 6 = Saturday
+      
+      // Convert to Monday-based week (Monday = 0, Sunday = 6)
+      const currentDay = currentDayJS === 0 ? 6 : currentDayJS - 1;
+      
+      // Map day numbers to day names (Monday-based)
+      const dayNames = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
       const currentDayName = dayNames[currentDay];
 
-      console.log(`📅 Current day check: ${currentDayName} (index: ${currentDay})`);
+      console.log(`📅 Current day check (CST): ${currentDayName} (index: ${currentDay})`);
+      console.log(`📅 CST Time: ${cstTime.toISOString()}`);
+      console.log(`📅 Server Time: ${now.toISOString()}`);
 
       // Get current availability from database
       const currentAvailability = await availabilityService.getDriverAvailability(parseInt(driverId, 10));
@@ -129,7 +142,7 @@ const adminAvailabilityController = {
       for (const day of validDays) {
         const dayIndex = dayNames.indexOf(day);
         
-        // If trying to change a past day (before current day)
+        // If trying to change a past day (before current day in Monday-based week)
         if (dayIndex < currentDay) {
           // If the value for this past day is different from current, reject
           if (availability[day] !== currentAvailability.availability[day]) {
