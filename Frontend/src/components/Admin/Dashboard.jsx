@@ -51,16 +51,33 @@ export default function Dashboard() {
   const [showConfirmModal, setShowConfirmModal] = useState(false);
 
   // ✅ Calculate available data types based on filtered data
+  // Store original data types when selectedDataType is "all" to keep buttons enabled
+  const [originalDataTypes, setOriginalDataTypes] = useState({ daily: false, weekly: false });
+
+  useEffect(() => {
+    if (isFiltered && selectedDataType === "all" && filteredPaymentData.length > 0) {
+      const hasDaily = filteredPaymentData.some(row => row.data_type === 'daily');
+      const hasWeekly = filteredPaymentData.some(row => row.data_type === 'weekly');
+      setOriginalDataTypes({ daily: hasDaily, weekly: hasWeekly });
+    }
+  }, [filteredPaymentData, isFiltered, selectedDataType]);
+
   const availableDataTypes = useMemo(() => {
-    if (!isFiltered || filteredPaymentData.length === 0) {
+    if (!isFiltered) {
       return { daily: false, weekly: false };
     }
 
-    const hasDaily = filteredPaymentData.some(row => row.data_type === 'daily');
-    const hasWeekly = filteredPaymentData.some(row => row.data_type === 'weekly');
+    // If we're viewing "all", calculate from current data
+    if (selectedDataType === "all") {
+      const hasDaily = filteredPaymentData.some(row => row.data_type === 'daily');
+      const hasWeekly = filteredPaymentData.some(row => row.data_type === 'weekly');
+      return { daily: hasDaily, weekly: hasWeekly };
+    }
 
-    return { daily: hasDaily, weekly: hasWeekly };
-  }, [filteredPaymentData, isFiltered]);
+    // If we're viewing a specific type, use the stored original data types
+    // This keeps both buttons enabled even when viewing filtered data
+    return originalDataTypes;
+  }, [filteredPaymentData, isFiltered, selectedDataType, originalDataTypes]);
 
   // ✅ Show data type tabs only when driver is selected
   const shouldShowDataTypeTabs = useMemo(() => {
@@ -168,6 +185,7 @@ export default function Dashboard() {
     });
     setShowExtraFields(false);
     setCurrentPage(1);
+    setOriginalDataTypes({ daily: false, weekly: false });
     
     // ✅ Just clear data, don't fetch anything
     dispatch(clearFilteredData());
