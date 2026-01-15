@@ -29,8 +29,6 @@ export default function AdminDriverAvailability() {
   const [editAvailability, setEditAvailability] = useState({});
   const [isSaving, setIsSaving] = useState(false);
   const [currentDayIndex, setCurrentDayIndex] = useState(0);
-  const [lastUpdated, setLastUpdated] = useState(null);
-  const [autoRefresh, setAutoRefresh] = useState(false);
 
   const daysOfWeek = [
     "monday",
@@ -98,26 +96,7 @@ export default function AdminDriverAvailability() {
       searchQuery: searchQuery || null,
       filterCity: filterCity || null
     }));
-    setLastUpdated(new Date());
   }, [dispatch, currentPage, filterDay, itemsPerPage, searchQuery, filterCity]);
-
-  // Auto-refresh every 30 seconds if enabled
-  useEffect(() => {
-    if (!autoRefresh) return;
-
-    const interval = setInterval(() => {
-      dispatch(getAllDriversAvailability({
-        filterDay: filterDay || null,
-        page: currentPage,
-        limit: itemsPerPage,
-        searchQuery: searchQuery || null,
-        filterCity: filterCity || null
-      }));
-      setLastUpdated(new Date());
-    }, 30000); // 30 seconds
-
-    return () => clearInterval(interval);
-  }, [autoRefresh, dispatch, currentPage, filterDay, itemsPerPage, searchQuery, filterCity]);
 
   useEffect(() => {
     if (error) {
@@ -244,16 +223,6 @@ export default function AdminDriverAvailability() {
         toast.success("Availability updated successfully!");
         setEditingDriverId(null);
         setEditAvailability({});
-        
-        // Refetch the data with current filters to show updated results
-        dispatch(getAllDriversAvailability({
-          filterDay: filterDay || null,
-          page: currentPage,
-          limit: itemsPerPage,
-          searchQuery: searchQuery || null,
-          filterCity: filterCity || null
-        }));
-        setLastUpdated(new Date());
       } else {
         toast.error(res.error?.message || "Failed to update availability");
       }
@@ -280,7 +249,6 @@ export default function AdminDriverAvailability() {
           searchQuery: searchQuery || null,
           filterCity: filterCity || null
         }));
-        setLastUpdated(new Date());
       } catch (error) {
         toast.error(error || 'Failed to reset availability');
       }
@@ -292,28 +260,6 @@ export default function AdminDriverAvailability() {
     setFilterCity("");
     setSearchQuery("");
     setCurrentPage(1);
-  };
-
-  const handleRefresh = () => {
-    dispatch(getAllDriversAvailability({
-      filterDay: filterDay || null,
-      page: currentPage,
-      limit: itemsPerPage,
-      searchQuery: searchQuery || null,
-      filterCity: filterCity || null
-    }));
-    setLastUpdated(new Date());
-    toast.success("Data refreshed!");
-  };
-
-  const formatLastUpdated = () => {
-    if (!lastUpdated) return "";
-    const now = new Date();
-    const diff = Math.floor((now - lastUpdated) / 1000); // seconds
-    
-    if (diff < 60) return `${diff}s ago`;
-    if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
-    return lastUpdated.toLocaleTimeString();
   };
 
   const hasActiveFilters = filterDay || filterCity || searchQuery;
@@ -437,38 +383,6 @@ export default function AdminDriverAvailability() {
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
                     </svg>
                   </div>
-                </div>
-
-                {/* Refresh Controls */}
-                <div className="flex items-center justify-between gap-3 p-3 bg-gray-50 border border-gray-200 rounded-lg">
-                  <div className="flex items-center gap-3">
-                    <button
-                      onClick={handleRefresh}
-                      disabled={loading}
-                      className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-sm"
-                    >
-                      <svg className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                      </svg>
-                      Refresh
-                    </button>
-
-                    <label className="flex items-center gap-2 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={autoRefresh}
-                        onChange={(e) => setAutoRefresh(e.target.checked)}
-                        className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
-                      />
-                      <span className="text-sm text-gray-700 font-medium">Auto-refresh (30s)</span>
-                    </label>
-                  </div>
-
-                  {lastUpdated && (
-                    <div className="text-xs text-gray-500">
-                      Updated: {formatLastUpdated()}
-                    </div>
-                  )}
                 </div>
 
                 {/* Active Filters & Clear Button */}
