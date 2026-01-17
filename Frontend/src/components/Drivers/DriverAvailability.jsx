@@ -34,6 +34,7 @@ export default function DriverAvailability() {
   const [hasChanges, setHasChanges] = useState(false);
   const [currentDayIndex, setCurrentDayIndex] = useState(0);
   const [currentHour, setCurrentHour] = useState(0);
+  const [tomorrowDayIndex, setTomorrowDayIndex] = useState(1);
 
   const daysOfWeek = [
     { key: "monday", label: "Monday", short: "Mon", index: 0 },
@@ -45,7 +46,7 @@ export default function DriverAvailability() {
     { key: "sunday", label: "Sunday", short: "Sun", index: 6 }
   ];
 
-  // Update current day and hour every minute (in CST timezone)
+  // Update current day, hour, and tomorrow every minute (in CST timezone)
   useEffect(() => {
     const updateCurrentTime = () => {
       const now = new Date();
@@ -63,6 +64,7 @@ export default function DriverAvailability() {
       
       setCurrentDayIndex(dayIndex);
       setCurrentHour(hour);
+      setTomorrowDayIndex((dayIndex + 1) % 7);
     };
 
     updateCurrentTime();
@@ -94,19 +96,18 @@ export default function DriverAvailability() {
   }, [successMessage, error, dispatch]);
 
   const isDayLocked = (dayIndex) => {
-    // Days before current day are locked (they've already ended)
+    // Today is ALWAYS locked
+    if (dayIndex === currentDayIndex) {
+      return true;
+    }
+    
+    // Tomorrow is locked ONLY after 7 PM today
+    if (dayIndex === tomorrowDayIndex && currentHour >= 19) {
+      return true;
+    }
+    
+    // Past days are locked
     if (dayIndex < currentDayIndex) {
-      return true;
-    }
-    
-    // NEW: Today is locked after 7 PM
-    if (dayIndex === currentDayIndex && currentHour >= 19) {
-      return true;
-    }
-    
-    // NEW: Next day is locked after 7 PM today
-    const nextDayIndex = (currentDayIndex + 1) % 7;
-    if (dayIndex === nextDayIndex && currentHour >= 19) {
       return true;
     }
     
@@ -114,18 +115,16 @@ export default function DriverAvailability() {
   };
 
   const getLockReason = (dayIndex) => {
-    const nextDayIndex = (currentDayIndex + 1) % 7;
+    if (dayIndex === currentDayIndex) {
+      return "today";
+    }
+    
+    if (dayIndex === tomorrowDayIndex && currentHour >= 19) {
+      return "tomorrow_after_7pm";
+    }
     
     if (dayIndex < currentDayIndex) {
       return "past";
-    }
-    
-    if (dayIndex === currentDayIndex && currentHour >= 19) {
-      return "today_cutoff";
-    }
-    
-    if (dayIndex === nextDayIndex && currentHour >= 19) {
-      return "tomorrow_cutoff";
     }
     
     return null;
@@ -136,12 +135,12 @@ export default function DriverAvailability() {
       const dayName = daysOfWeek.find(d => d.index === dayIndex)?.label || day;
       const lockReason = getLockReason(dayIndex);
       
-      if (lockReason === "past") {
-        toast.error(`Cannot update ${dayName}. That day has already ended. You can only update today and future days.`);
-      } else if (lockReason === "today_cutoff") {
-        toast.error(`Cannot update today's availability after 7:00 PM CST.`);
-      } else if (lockReason === "tomorrow_cutoff") {
-        toast.error(`Cannot update ${dayName}. The 7:00 PM CST cutoff has passed for tomorrow's availability.`);
+      if (lockReason === "today") {
+        toast.error(`Cannot update today's availability. You can update availability starting from tomorrow (before 7 PM) or the day after tomorrow.`);
+      } else if (lockReason === "tomorrow_after_7pm") {
+        toast.error(`Cannot update tomorrow's availability after 7:00 PM CST. The cutoff time has passed.`);
+      } else if (lockReason === "past") {
+        toast.error(`Cannot update ${dayName}. That day has already passed.`);
       }
       return;
     }
@@ -181,84 +180,67 @@ export default function DriverAvailability() {
     return daysOfWeek.find(d => d.index === currentDayIndex)?.label || '';
   };
 
-  const getLockedDaysCount = () => {
-    return daysOfWeek.filter(d => isDayLocked(d.index)).length;
+  const getTomorrowDayName = () => {
+    return daysOfWeek.find(d => d.index === tomorrowDayIndex)?.label || '';
   };
 
   return (
     <>
-      <Header />
-
-      <div className="min-h-screen bg-gray-50 p-3 sm:p-4 md:p-6 pb-32">
-        <div className="max-w-4xl mx-auto">
-          {/* Header */}
-          <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 sm:p-6 mb-4 sm:mb-6">
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-0">
-              <div className="flex-1">
-                <h1 className="text-xl sm:text-2xl font-bold text-gray-900">
-                  My Weekly Availability
-                </h1>
-                <p className="text-xs sm:text-sm text-gray-600 mt-1">
-                  Set your weekly availability schedule
-                </p>
-                {updatedAt && (
-                  <p className="text-xs text-gray-500 mt-2 flex items-center gap-1">
-                    <svg className="w-3 h-3 sm:w-4 sm:h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                    </svg>
-                    <span className="hidden xs:inline">Last updated: {formatDate(updatedAt)}</span>
-                    <span className="xs:hidden">{formatDate(updatedAt)}</span>
-                  </p>
-                )}
-              </div>
-
-              <div className="text-center sm:text-right">
-                <div className="text-2xl sm:text-3xl font-bold text-blue-600">
-                  {getAvailableDaysCount()}/7
-                </div>
-                <div className="text-xs text-gray-600 mt-1">Days Available</div>
-              </div>
-            </div>
-          </div>
-
-          {/* Current Day Info with 7 PM Warning */}
-          <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 sm:p-4 mb-4 sm:mb-6">
-            <div className="flex items-start gap-2 sm:gap-3">
-              <svg className="w-5 h-5 sm:w-6 sm:h-6 text-blue-600 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-              </svg>
-              <div className="flex-1">
-                <div className="text-xs sm:text-sm font-semibold text-blue-900 mb-1">
-                  Today is {getCurrentDayName()}
-                </div>
-                <div className="text-xs text-blue-800">
-                  Current time: {new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}
-                </div>
-                {currentHour >= 19 && (
-                  <div className="mt-2 p-2 bg-amber-100 border border-amber-300 rounded text-xs text-amber-900">
-                    <strong>⏰ 7:00 PM Cutoff:</strong> You can no longer edit today's or tomorrow's availability.
-                  </div>
-                )}
-                {currentHour < 19 && (
-                  <div className="mt-2 text-xs text-blue-700">
-                    ⏰ Remember: Today's and tomorrow's availability lock at 7:00 PM today
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-
-          {loading && !hasChanges ? (
-            <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-8 text-center">
-              <div className="animate-spin rounded-full h-12 w-12 border-4 border-blue-500 border-t-transparent mx-auto"></div>
-              <p className="mt-4 text-gray-600">Loading availability...</p>
+      <Header title="My Availability" />
+      <div className="min-h-screen bg-gray-50 pb-20">
+        <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8">
+          {loading && !driverAvailability ? (
+            <div className="flex items-center justify-center h-64">
+              <div className="animate-spin rounded-full h-12 w-12 border-4 border-blue-500 border-t-transparent"></div>
             </div>
           ) : (
             <>
-              {/* Availability Cards */}
-              <div className="space-y-3 sm:space-y-4 mb-4 sm:mb-6">
+              {/* Summary Cards */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
+                <div className="bg-gradient-to-br from-blue-500 to-blue-600 rounded-lg shadow-lg p-5 text-white">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-blue-100 text-sm font-medium">Available Days</p>
+                      <p className="text-3xl font-bold mt-1">{getAvailableDaysCount()}</p>
+                      <p className="text-blue-100 text-xs mt-1">out of 7 days</p>
+                    </div>
+                    <svg className="w-12 h-12 text-blue-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                  </div>
+                </div>
+
+                <div className="bg-gradient-to-br from-green-500 to-green-600 rounded-lg shadow-lg p-5 text-white">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-green-100 text-sm font-medium">Current Day</p>
+                      <p className="text-2xl font-bold mt-1">{getCurrentDayName()}</p>
+                      <p className="text-green-100 text-xs mt-1">CST Timezone</p>
+                    </div>
+                    <svg className="w-12 h-12 text-green-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                    </svg>
+                  </div>
+                </div>
+
+                <div className="bg-gradient-to-br from-purple-500 to-purple-600 rounded-lg shadow-lg p-5 text-white">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-purple-100 text-sm font-medium">Last Updated</p>
+                      <p className="text-sm font-semibold mt-1">{formatDate(updatedAt)}</p>
+                    </div>
+                    <svg className="w-12 h-12 text-purple-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                  </div>
+                </div>
+              </div>
+
+              {/* Days Grid */}
+              <div className="space-y-3 mb-6">
                 {daysOfWeek.map(({ key, label, short, index }) => {
                   const isCurrentDay = index === currentDayIndex;
+                  const isTomorrow = index === tomorrowDayIndex;
                   const isLocked = isDayLocked(index);
                   const lockReason = getLockReason(index);
 
@@ -268,6 +250,8 @@ export default function DriverAvailability() {
                       className={`bg-white rounded-lg shadow-sm p-4 sm:p-5 transition-all duration-200 border-2 ${
                         isCurrentDay
                           ? 'border-blue-500 bg-blue-50/30'
+                          : isTomorrow
+                          ? 'border-yellow-500 bg-yellow-50/30'
                           : isLocked
                           ? 'border-gray-200 opacity-60'
                           : availability[key] 
@@ -280,6 +264,8 @@ export default function DriverAvailability() {
                           <div className={`flex-shrink-0 h-12 w-12 rounded-lg flex items-center justify-center font-bold text-sm ${
                             isCurrentDay
                               ? 'bg-blue-100 text-blue-700 ring-2 ring-blue-300'
+                              : isTomorrow
+                              ? 'bg-yellow-100 text-yellow-700 ring-2 ring-yellow-300'
                               : isLocked
                               ? 'bg-gray-100 text-gray-500'
                               : availability[key]
@@ -289,21 +275,32 @@ export default function DriverAvailability() {
                             {short.toUpperCase()}
                           </div>
                           <div className="flex-1">
-                            <div className="flex items-center gap-2">
+                            <div className="flex items-center gap-2 flex-wrap">
                               <div className="text-base font-semibold text-gray-900">
                                 {label}
                               </div>
                               {isCurrentDay && (
                                 <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800">
-                                  Today
+                                  Today - Locked
                                 </span>
                               )}
-                              {isLocked && (
+                              {isTomorrow && (
+                                currentHour >= 19 ? (
+                                  <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-red-100 text-red-800">
+                                    Tomorrow - Locked (After 7 PM)
+                                  </span>
+                                ) : (
+                                  <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800">
+                                    Tomorrow - Editable (Before 7 PM)
+                                  </span>
+                                )
+                              )}
+                              {isLocked && !isCurrentDay && !isTomorrow && (
                                 <span className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-600">
                                   <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
                                     <path fillRule="evenodd" d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z" clipRule="evenodd" />
                                   </svg>
-                                  {lockReason === "cutoff" ? " After 7PM" : " Past"}
+                                  {lockReason === "past" ? " Past" : " Locked"}
                                 </span>
                               )}
                             </div>
@@ -424,8 +421,9 @@ export default function DriverAvailability() {
                       <li>• Use the toggle switches to mark your availability</li>
                       <li>• Green = available, Gray = unavailable</li>
                       <li>• Your availability helps with shift scheduling</li>
-                      <li>• <strong>You can update future days anytime before 7:00 PM CST</strong></li>
-                      <li>• <strong>⏰ Today's and tomorrow's availability lock at 7:00 PM CST</strong></li>
+                      <li>• <strong>⚠️ Today ({getCurrentDayName()}) is ALWAYS LOCKED</strong></li>
+                      <li>• <strong>⏰ Tomorrow ({getTomorrowDayName()}) locks at 7:00 PM CST today</strong></li>
+                      <li>• <strong>✅ You can update from the day after tomorrow onwards anytime</strong></li>
                       <li>• <strong>Past days are locked and cannot be changed</strong></li>
                       <li>• <strong>Week runs Monday to Sunday, resets every Sunday at 12:00 PM CST</strong></li>
                     </ul>

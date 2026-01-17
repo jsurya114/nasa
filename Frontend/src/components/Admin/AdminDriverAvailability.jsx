@@ -338,7 +338,7 @@ export default function AdminDriverAvailability() {
                       <option value="">All Days</option>
                       {daysOfWeek.map((day) => (
                         <option key={day} value={day}>
-                          {day.charAt(0).toUpperCase() + day.slice(1)} ({availabilityCounts[day] || 0})
+                          {day.charAt(0).toUpperCase() + day.slice(1)} 
                         </option>
                       ))}
                     </select>

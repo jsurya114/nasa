@@ -31,10 +31,9 @@ const driverAvailabilityController = {
     updateAvailability: async (req, res) => {
         try {
             const driverId = req.driver.id;
-            const { availability, dayToUpdate } = req.body;
+            const { availability } = req.body;
 
             console.log(`✏️ Driver ${driverId} attempting to update availability`);
-            console.log(`   Day to update: ${dayToUpdate || 'all'}`);
             console.log(`   New availability:`, availability);
 
             // Get current date and time in UTC-6 (CST timezone)
@@ -59,32 +58,9 @@ const driverAvailabilityController = {
             console.log(`📅 CST Time: ${cstTime.toISOString()}`);
             console.log(`📅 Server Time: ${now.toISOString()}`);
             
-            // Calculate next day index
-            const nextDayIndex = (currentDay + 1) % 7;
-            const nextDayName = dayNames[nextDayIndex];
-            
-            // If dayToUpdate is provided, check if it's trying to update a past day
-            if (dayToUpdate) {
-                const dayIndex = dayNames.indexOf(dayToUpdate.toLowerCase());
-                
-                if (dayIndex === -1) {
-                    console.warn(`⚠️ Invalid day specified: ${dayToUpdate}`);
-                    return res.status(400).json({
-                        success: false,
-                        message: "Invalid day specified"
-                    });
-                }
-                
-                // Check if trying to update a day that has already passed
-                // Days before current day are locked (they've ended)
-                if (dayIndex < currentDay) {
-                    console.warn(`⚠️ Driver attempted to update past day: ${dayToUpdate}`);
-                    return res.status(403).json({
-                        success: false,
-                        message: `Cannot update availability for ${dayToUpdate}. That day has already ended. You can only update availability for today (${currentDayName}) and future days.`
-                    });
-                }
-            }
+            // Calculate tomorrow's day index
+            const tomorrowDayIndex = (currentDay + 1) % 7;
+            const tomorrowDayName = dayNames[tomorrowDayIndex];
 
             // Validate availability object
             const validDays = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
@@ -113,43 +89,44 @@ const driverAvailabilityController = {
             
             console.log(`📋 Current availability in DB:`, currentAvailability.availability);
             
-            // Additional validation: prevent updating past days and enforce 7 PM cutoff
-            // Check each day in the availability object
+            // VALIDATION RULES:
+            // 1. Today is ALWAYS locked
+            // 2. Tomorrow is locked ONLY after 7:00 PM CST today
+            // 3. Day after tomorrow onwards is always editable
+            // 4. Past days are always locked
+            
             for (const day of validDays) {
                 const dayIndex = dayNames.indexOf(day);
                 
-                // If trying to change a past day (before current day)
+                // Rule 1: Check if trying to modify TODAY (ALWAYS locked)
+                if (dayIndex === currentDay) {
+                    if (availability[day] !== currentAvailability.availability[day]) {
+                        console.warn(`⚠️ Driver attempted to modify today (${currentDayName})`);
+                        return res.status(403).json({
+                            success: false,
+                            message: `Cannot modify today's availability. You can update availability starting from tomorrow (before 7 PM) or the day after tomorrow.`
+                        });
+                    }
+                }
+                
+                // Rule 2: Check if trying to modify TOMORROW after 7 PM cutoff
+                if (dayIndex === tomorrowDayIndex && currentHour >= 19) {
+                    if (availability[day] !== currentAvailability.availability[day]) {
+                        console.warn(`⚠️ Driver attempted to modify tomorrow (${tomorrowDayName}) after 7 PM cutoff`);
+                        return res.status(403).json({
+                            success: false,
+                            message: `Cannot modify availability for ${tomorrowDayName} after 7:00 PM CST. The cutoff time has passed.`
+                        });
+                    }
+                }
+                
+                // Rule 4: Check if trying to modify PAST days (before current day)
                 if (dayIndex < currentDay) {
-                    // If the value for this past day is different from current, reject
                     if (availability[day] !== currentAvailability.availability[day]) {
                         console.warn(`⚠️ Driver attempted to modify past day: ${day}`);
                         return res.status(403).json({
                             success: false,
-                            message: `Cannot modify availability for ${day}. That day has already ended. You can only update today (${currentDayName}) and future days.`
-                        });
-                    }
-                }
-                
-                // Check if trying to modify today's availability after 7:00 PM CST
-                if (dayIndex === currentDay && currentHour >= 19) {
-                    // Check if driver is trying to change today's availability after 7 PM
-                    if (availability[day] !== currentAvailability.availability[day]) {
-                        console.warn(`⚠️ Driver attempted to modify today's availability after 7 PM cutoff`);
-                        return res.status(403).json({
-                            success: false,
-                            message: `Cannot modify today's availability after 7:00 PM CST.`
-                        });
-                    }
-                }
-                
-                // Check if trying to modify next day's availability after 7:00 PM CST today
-                if (dayIndex === nextDayIndex && currentHour >= 19) { // 19 = 7:00 PM in 24-hour format
-                    // Check if driver is trying to change tomorrow's availability after 7 PM
-                    if (availability[day] !== currentAvailability.availability[day]) {
-                        console.warn(`⚠️ Driver attempted to modify tomorrow's (${nextDayName}) availability after 7 PM cutoff`);
-                        return res.status(403).json({
-                            success: false,
-                            message: `Cannot modify availability for ${nextDayName} after 7:00 PM CST. The cutoff time has passed.`
+                            message: `Cannot modify availability for ${day}. That day has already passed.`
                         });
                     }
                 }
