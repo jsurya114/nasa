@@ -15,6 +15,7 @@ import journeyReducer from "../redux/slice/driver/journeySlice.js"
 import dashboardReducer from "../redux/slice/admin/dashSlice.js"
 import analyticsReducer from './slice/admin/analyticsSlice';
 import availabilityReducer from '../redux/slice/driver/availabilitySlice.js';
+import passwordReducer from "../redux/slice/driver/passwordSlice.js"
 
 export const store = configureStore({
     reducer: {
@@ -32,7 +33,8 @@ export const store = configureStore({
         delivery:DeliveryReducer,
        dash:dashboardReducer,
        analytics:analyticsReducer,
-       availability: availabilityReducer
+       availability: availabilityReducer,
+       password:passwordReducer
 
     
     }

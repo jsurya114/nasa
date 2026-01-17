@@ -9,6 +9,7 @@ import getDeliverySummary from "../controllers/driver/deliveryController.js";
 import driverAuth from '../middlewares/driverAuth.js';
 import validateCityType, { attachCityType } from '../middlewares/validateCityType.js';
 import driverAvailabilityController from "../controllers/driver/driveravailabilityController.js";
+import passwordController from "../controllers/driver/updatepasswordController.js";
 
 const router = express.Router()
 
@@ -32,6 +33,7 @@ router.post("/journey", validateCityType, saveJourney)
 // GET /journey/:driver_id - Fetch today's journey
 // ✅ Use attachCityType for read operations (doesn't block, just attaches info)
 router.get("/journey/:driver_id", attachCityType, fetchTodayJourney)
+router.post("/update-password", passwordController.updatePassword)
 
 // Routes list - attach city type info for filtering if needed
 router.get("/routes-list", attachCityType, getDriverRoutes)
