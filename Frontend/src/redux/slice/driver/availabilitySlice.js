@@ -5,16 +5,23 @@ import { API_BASE_URL } from "../../../config";
 // ================= AUTH HELPERS =================
 const getDriverAuthHeaders = () => {
   const token = localStorage.getItem("driverToken");
+  // Get user's timezone
+  const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  
   return {
     "Content-Type": "application/json",
+    "X-User-Timezone": timezone, // Send timezone in header
     ...(token && { Authorization: `Bearer ${token}` }),
   };
 };
 
 const getAdminAuthHeaders = () => {
   const token = localStorage.getItem("adminToken");
+  const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  
   return {
     "Content-Type": "application/json",
+    "X-User-Timezone": timezone,
     ...(token && { Authorization: `Bearer ${token}` }),
   };
 };
@@ -42,12 +49,17 @@ export const getDriverAvailability = createAsyncThunk(
 // Driver: Update own availability
 export const updateDriverAvailability = createAsyncThunk(
   "availability/updateDriverAvailability",
-  async (availability, { rejectWithValue }) => {
+  async ({ availability, timezone }, { rejectWithValue }) => {
     try {
       const response = await axios.post(
         `${API_BASE_URL}/driver/availability`,
         { availability },
-        { headers: getDriverAuthHeaders() }
+        { 
+          headers: {
+            ...getDriverAuthHeaders(),
+            "X-User-Timezone": timezone || Intl.DateTimeFormat().resolvedOptions().timeZone
+          }
+        }
       );
       return response.data.data;
     } catch (error) {
@@ -130,7 +142,7 @@ export const updateDriverAvailabilityByAdmin = createAsyncThunk(
   }
 );
 
-// NEW: Admin manual reset all drivers availability (Superadmin only)
+// Admin manual reset all drivers availability (Superadmin only)
 export const manualResetAllDriversAvailability = createAsyncThunk(
   "availability/manualResetAllDriversAvailability",
   async (_, { rejectWithValue }) => {
@@ -172,7 +184,7 @@ const availabilitySlice = createSlice({
     loading: false,
     updateLoading: false,
     citiesLoading: false,
-    resetLoading: false, // NEW: Loading state for manual reset
+    resetLoading: false,
     error: null,
     successMessage: null,
   },

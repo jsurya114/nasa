@@ -60,20 +60,28 @@ export default function AdminDriverAvailability() {
     sunday: 6
   };
 
-  // Update current day index (in CST timezone, Monday-based)
+  // Get user's timezone
+  const userTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+
+  // Update current day index (in USER'S LOCAL timezone, Monday-based)
   useEffect(() => {
     const updateCurrentDay = () => {
       const now = new Date();
       
-      // Convert to UTC-6 (CST)
-      const utcOffset = now.getTimezoneOffset();
-      const cstOffset = -360; // UTC-6 = -360 minutes
-      const cstTime = new Date(now.getTime() + (cstOffset - utcOffset) * 60000);
+      // Use Intl API to get time in user's timezone
+      const formatter = new Intl.DateTimeFormat('en-US', {
+        timeZone: userTimezone,
+        weekday: 'long',
+        hour: 'numeric',
+        hour12: false
+      });
       
-      const dayIndexJS = cstTime.getDay();
+      const parts = formatter.formatToParts(now);
+      const weekday = parts.find(p => p.type === 'weekday').value.toLowerCase();
       
-      // Convert to Monday-based week (Monday = 0, Sunday = 6)
-      const dayIndex = dayIndexJS === 0 ? 6 : dayIndexJS - 1;
+      // Map day name to index (Monday = 0)
+      const dayNames = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
+      const dayIndex = dayNames.indexOf(weekday);
       
       setCurrentDayIndex(dayIndex);
     };
@@ -81,7 +89,7 @@ export default function AdminDriverAvailability() {
     updateCurrentDay();
     const interval = setInterval(updateCurrentDay, 60000);
     return () => clearInterval(interval);
-  }, []);
+  }, [userTimezone]);
 
   // Fetch cities on mount
   useEffect(() => {
@@ -487,7 +495,6 @@ export default function AdminDriverAvailability() {
               </div>
             </div>
           </div>
-
           {loading ? (
             <div className="bg-white rounded-xl shadow-md border border-gray-200 p-12 text-center">
               <div className="animate-spin rounded-full h-16 w-16 border-4 border-blue-500 border-t-transparent mx-auto"></div>

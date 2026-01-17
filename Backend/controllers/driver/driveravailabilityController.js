@@ -1,4 +1,5 @@
 import { availabilityService } from "../../services/driver/availabilityQuery.js";
+import { validateAvailabilityUpdate, getCurrentTimeInTimezone, formatDateForTimezone } from "../../utils/timezoneUtils.js";
 
 const driverAvailabilityController = {
     // Get logged-in driver's availability
@@ -33,36 +34,24 @@ const driverAvailabilityController = {
             const driverId = req.driver.id;
             const { availability } = req.body;
 
+            // Get user's timezone from request header or default to UTC
+            // Frontend should send this in the request header
+            const userTimezone = req.headers['x-user-timezone'] || 'UTC';
+
             console.log(`✏️ Driver ${driverId} attempting to update availability`);
+            console.log(`   User timezone: ${userTimezone}`);
             console.log(`   New availability:`, availability);
 
-            // Get current date and time in UTC-6 (CST timezone)
-            const now = new Date();
+            // Get current time in user's timezone
+            const currentTime = getCurrentTimeInTimezone(userTimezone);
             
-            // Convert to UTC-6 (CST)
-            const utcOffset = now.getTimezoneOffset(); // Get current UTC offset in minutes
-            const cstOffset = -360; // UTC-6 = -360 minutes
-            const cstTime = new Date(now.getTime() + (cstOffset - utcOffset) * 60000);
-            
-            const currentDayJS = cstTime.getDay(); // 0 = Sunday, 1 = Monday, ..., 6 = Saturday
-            const currentHour = cstTime.getHours(); // 0-23
-            
-            // Convert to Monday-based week (Monday = 0, Sunday = 6)
-            const currentDay = currentDayJS === 0 ? 6 : currentDayJS - 1;
-            
-            // Map day numbers to day names (Monday-based)
-            const dayNames = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
-            const currentDayName = dayNames[currentDay];
-            
-            console.log(`📅 Current time check (CST): ${currentDayName} at ${currentHour}:00 (Day index: ${currentDay})`);
-            console.log(`📅 CST Time: ${cstTime.toISOString()}`);
-            console.log(`📅 Server Time: ${now.toISOString()}`);
-            
-            // Calculate tomorrow's day index
-            const tomorrowDayIndex = (currentDay + 1) % 7;
-            const tomorrowDayName = dayNames[tomorrowDayIndex];
+            console.log(`📅 Current time in ${userTimezone}:`, {
+                day: currentTime.dayName,
+                hour: currentTime.hour,
+                formatted: formatDateForTimezone(currentTime.date, userTimezone)
+            });
 
-            // Validate availability object
+            // Validate availability object structure
             const validDays = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
             
             if (!availability || typeof availability !== 'object') {
@@ -84,52 +73,25 @@ const driverAvailabilityController = {
                 }
             }
             
-            // Get current availability from database ONCE before validation
+            // Get current availability from database
             const currentAvailability = await availabilityService.getDriverAvailability(driverId);
             
             console.log(`📋 Current availability in DB:`, currentAvailability.availability);
             
-            // VALIDATION RULES:
-            // 1. Today is ALWAYS locked
-            // 2. Tomorrow is locked ONLY after 7:00 PM CST today
-            // 3. Day after tomorrow onwards is always editable
-            // 4. Past days are always locked
-            
-            for (const day of validDays) {
-                const dayIndex = dayNames.indexOf(day);
-                
-                // Rule 1: Check if trying to modify TODAY (ALWAYS locked)
-                if (dayIndex === currentDay) {
-                    if (availability[day] !== currentAvailability.availability[day]) {
-                        console.warn(`⚠️ Driver attempted to modify today (${currentDayName})`);
-                        return res.status(403).json({
-                            success: false,
-                            message: `Cannot modify today's availability. You can update availability starting from tomorrow (before 7 PM) or the day after tomorrow.`
-                        });
-                    }
-                }
-                
-                // Rule 2: Check if trying to modify TOMORROW after 7 PM cutoff
-                if (dayIndex === tomorrowDayIndex && currentHour >= 19) {
-                    if (availability[day] !== currentAvailability.availability[day]) {
-                        console.warn(`⚠️ Driver attempted to modify tomorrow (${tomorrowDayName}) after 7 PM cutoff`);
-                        return res.status(403).json({
-                            success: false,
-                            message: `Cannot modify availability for ${tomorrowDayName} after 7:00 PM CST. The cutoff time has passed.`
-                        });
-                    }
-                }
-                
-                // Rule 4: Check if trying to modify PAST days (before current day)
-                if (dayIndex < currentDay) {
-                    if (availability[day] !== currentAvailability.availability[day]) {
-                        console.warn(`⚠️ Driver attempted to modify past day: ${day}`);
-                        return res.status(403).json({
-                            success: false,
-                            message: `Cannot modify availability for ${day}. That day has already passed.`
-                        });
-                    }
-                }
+            // Validate the update using timezone-aware logic
+            const validation = validateAvailabilityUpdate(
+                availability,
+                currentAvailability,
+                userTimezone
+            );
+
+            if (!validation.isValid) {
+                console.warn(`⚠️ Validation failed:`, validation.errors);
+                return res.status(403).json({
+                    success: false,
+                    message: validation.errors[0], // Return first error
+                    errors: validation.errors
+                });
             }
 
             console.log(`✅ All validation checks passed. Updating availability for driver ${driverId}`);
