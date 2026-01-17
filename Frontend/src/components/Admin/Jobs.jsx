@@ -13,8 +13,6 @@ import {
   updateJob
 } from "../../redux/slice/admin/jobSlice";
 
-
-// --- Constants
 const DEBOUNCE_MS = 400;
 const ITEMS_PER_PAGE = 3;
 const FILTER = {
@@ -23,7 +21,6 @@ const FILTER = {
   DISABLED: 'disabled'
 };
 
-// --- Icons
 const IconRefresh = ({ spinning }) => (
   <svg className={`w-4 h-4 ${spinning ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
@@ -36,16 +33,28 @@ const IconClear = () => (
   </svg>
 );
 
-// --- Row Component
-const CityRow = React.memo(function CityRow({ serialNo,id, job, city_code, enabled, index, onToggle, onEdit, isSuperAdmin }) {
+const CityRow = React.memo(function CityRow({ 
+  serialNo, id, job, city_code, enabled, city_type, index, onToggle, onEdit, isSuperAdmin 
+}) {
   return (
     <tr className={index % 2 === 0 ? 'bg-gray-50' : 'bg-white'}>
       <td className="px-3 py-2 border-b border-gray-200">{serialNo}</td>
       <td className="px-3 py-2 border-b border-gray-200">{job}</td>
       <td className="px-3 py-2 border-b border-gray-200">{city_code}</td>
+      <td className="px-3 py-2 border-b border-gray-200">
+        <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+          city_type === 'WEEKLY' 
+            ? 'bg-blue-100 text-blue-700' 
+            : 'bg-green-100 text-green-700'
+        }`}>
+          {city_type || 'DAILY'}
+        </span>
+      </td>
       {isSuperAdmin && (
         <td className="px-3 py-2 border-b border-gray-200">
-          <span className={`px-2 py-1 rounded-full text-sm font-medium ${enabled ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+          <span className={`px-2 py-1 rounded-full text-sm font-medium ${
+            enabled ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
+          }`}>
             {enabled ? 'Enabled' : 'Disabled'}
           </span>
         </td>
@@ -54,13 +63,26 @@ const CityRow = React.memo(function CityRow({ serialNo,id, job, city_code, enabl
         <td className="px-3 py-2 border-b border-gray-200">
           <div className="flex items-center gap-4">
             <label className="relative inline-flex items-center cursor-pointer">
-              <input type="checkbox"  disabled={!isSuperAdmin} checked={enabled} onChange={() => onToggle(id)} className="sr-only" />
-              <div className={`w-11 h-6 rounded-full transition-colors duration-200 ${enabled ? 'bg-purple-600' : 'bg-gray-300'}`}>
-                <div className={`w-5 h-5 bg-white rounded-full shadow-lg transform transition-transform duration-200 ${enabled ? 'translate-x-5' : 'translate-x-0.5'} mt-0.5`} />
+              <input 
+                type="checkbox" 
+                disabled={!isSuperAdmin} 
+                checked={enabled} 
+                onChange={() => onToggle(id)} 
+                className="sr-only" 
+              />
+              <div className={`w-11 h-6 rounded-full transition-colors duration-200 ${
+                enabled ? 'bg-purple-600' : 'bg-gray-300'
+              }`}>
+                <div className={`w-5 h-5 bg-white rounded-full shadow-lg transform transition-transform duration-200 ${
+                  enabled ? 'translate-x-5' : 'translate-x-0.5'
+                } mt-0.5`} />
               </div>
             </label>
 
-            <button onClick={() => onEdit({ id, job, city_code, enabled })} className="group relative px-4 py-1.5 bg-gradient-to-r from-blue-500 to-blue-600 text-white text-xs font-medium rounded-md hover:from-blue-600 hover:to-blue-700 transition-all duration-200 shadow-sm hover:shadow-md flex items-center gap-1.5">
+            <button 
+              onClick={() => onEdit({ id, job, city_code, enabled, city_type })} 
+              className="group relative px-4 py-1.5 bg-gradient-to-r from-blue-500 to-blue-600 text-white text-xs font-medium rounded-md hover:from-blue-600 hover:to-blue-700 transition-all duration-200 shadow-sm hover:shadow-md flex items-center gap-1.5"
+            >
               <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
               </svg>
@@ -74,7 +96,6 @@ const CityRow = React.memo(function CityRow({ serialNo,id, job, city_code, enabl
 });
 CityRow.displayName = 'CityRow';
 
-// --- Loading & Empty Screens
 const Loading = () => (
   <div className="flex flex-col items-center gap-3">
     <div className="w-12 h-12 border-4 border-purple-200 border-t-purple-600 rounded-full animate-spin" />
@@ -98,24 +119,25 @@ const Empty = ({ hasFilters }) => (
   </div>
 );
 
-// --- Main Component
 export default function Jobs() {
   const dispatch = useDispatch();
   const { cities = [], page = 1, totalPages = 1, status = 'idle', isSuperAdmin = false } = useSelector(s => s.jobs || {});
 
-  // Form
-  const [form, setForm] = useState({ job: '', city_code: '', enabled: true });
+  const [form, setForm] = useState({ 
+    job: '', 
+    city_code: '', 
+    enabled: true,
+    city_type: 'DAILY' // Default to DAILY
+  });
   const [errors, setErrors] = useState({});
   const [editingId, setEditingId] = useState(null);
 
-  // UI
   const [search, setSearch] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
   const [filter, setFilter] = useState(FILTER.ALL);
   const [showDropdown, setShowDropdown] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
 
-  // Refs
   const mountedRef = useRef(false);
   const debounceRef = useRef(null);
   const abortRef = useRef(null);
@@ -124,22 +146,20 @@ export default function Jobs() {
   const isEditing = editingId !== null;
   const loading = status === 'loading' || isRefreshing;
 
-  // Reset form
   const resetForm = useCallback(() => {
-    setForm({ job: '', city_code: '', enabled: true });
+    setForm({ job: '', city_code: '', enabled: true, city_type: 'DAILY' });
     setErrors({});
     setEditingId(null);
   }, []);
 
-  // Validation
   const validate = useCallback(() => {
     const e = {};
     if (!form.job.trim()) e.job = 'Job name is required';
     if (!form.city_code.trim()) e.city_code = 'City code is required';
+    if (!['DAILY', 'WEEKLY'].includes(form.city_type)) e.city_type = 'Invalid city type';
     return e;
   }, [form]);
 
-  // Fetch Jobs
   const fetchJobs = useCallback(async ({ pageNum = 1, q = '', statusFilter = FILTER.ALL } = {}) => {
     if (abortRef.current) abortRef.current.abort();
     const controller = new AbortController();
@@ -167,7 +187,6 @@ export default function Jobs() {
     return () => abortRef.current && abortRef.current.abort();
   }, [fetchJobs, filter]);
 
-  // Debounced search/filter
   useEffect(() => {
     if (!mountedRef.current) return;
     if (debounceRef.current) clearTimeout(debounceRef.current);
@@ -180,13 +199,11 @@ export default function Jobs() {
     return () => clearTimeout(debounceRef.current);
   }, [search, filter, fetchJobs]);
 
-  // Page change
   useEffect(() => {
     if (!mountedRef.current) return;
     fetchJobs({ pageNum: currentPage, q: search, statusFilter: filter });
   }, [currentPage, fetchJobs]);
 
-  // Outside dropdown
   useEffect(() => {
     const handler = e => {
       if (dropdownRef.current && !dropdownRef.current.contains(e.target)) {
@@ -197,7 +214,6 @@ export default function Jobs() {
     return () => document.removeEventListener("mousedown", handler);
   }, []);
 
-  // Handlers
   const onChangeField = useCallback(e => {
     const { name, value, type, checked } = e.target;
     setForm(prev => ({ ...prev, [name]: type === 'checkbox' ? checked : value }));
@@ -205,7 +221,12 @@ export default function Jobs() {
   }, []);
 
   const onEdit = useCallback(payload => {
-    setForm({ job: payload.job, city_code: payload.city_code, enabled: payload.enabled });
+    setForm({ 
+      job: payload.job, 
+      city_code: payload.city_code, 
+      enabled: payload.enabled,
+      city_type: payload.city_type || 'DAILY'
+    });
     setEditingId(payload.id);
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }, []);
@@ -218,22 +239,34 @@ export default function Jobs() {
 
     try {
       if (isEditing) {
+        console.log('Updating city with data:', {
+          id: editingId,
+          job: form.job,
+          city_code: form.city_code,
+          city_type: form.city_type
+        });
+        
         const res = await dispatch(updateJob({
           id: editingId,
           job: form.job,
           city_code: form.city_code,
-          enabled: form.enabled
+          city_type: form.city_type
         }));
+        
         if (updateJob.fulfilled.match(res)) {
           toast.success("City updated");
           resetForm();
           fetchJobs({ pageNum: currentPage, q: search, statusFilter: filter });
+        } else {
+          console.error('Update failed:', res);
+          toast.error("Failed to update city");
         }
       } else {
         const res = await dispatch(addJob({
           job: form.job,
           city_code: form.city_code,
-          enabled: form.enabled
+          enabled: form.enabled,
+          city_type: form.city_type
         }));
         if (addJob.fulfilled.match(res)) {
           toast.success("City added");
@@ -242,7 +275,8 @@ export default function Jobs() {
           fetchJobs({ pageNum: 1, q: search, statusFilter: filter });
         }
       }
-    } catch {
+    } catch (error) {
+      console.error('Submit error:', error);
       toast.error("Failed to save city");
     }
   }, [validate, isEditing, editingId, form, dispatch, resetForm, fetchJobs, currentPage, search, filter]);
@@ -265,7 +299,7 @@ export default function Jobs() {
   }, [fetchJobs, currentPage, search, filter]);
 
   const headers = useMemo(() => {
-    const baseHeaders = ['ID', 'City', 'City Code'];
+    const baseHeaders = ['ID', 'City', 'City Code', 'Type'];
     if (isSuperAdmin) {
       return [...baseHeaders, 'Status', 'Actions'];
     }
@@ -280,7 +314,6 @@ export default function Jobs() {
       <Header />
       <main className="max-w-[1450px] mx-auto p-4 pb-40">
 
-        {/* Form - Only for Superadmin */}
         {isSuperAdmin && (
           <section className="bg-white border border-gray-200 rounded-xl shadow-sm mb-4 p-6">
             <h2 className="font-bold text-gray-900 bg-gray-50 border-b border-gray-200 px-4 py-3 -mx-6 -mt-6 rounded-t-xl">
@@ -312,16 +345,43 @@ export default function Jobs() {
                 {errors.city_code && <p className="text-red-500 text-sm mt-1">{errors.city_code}</p>}
               </div>
 
+              <div>
+                <label className="block mb-1 font-medium">City Type</label>
+                <select
+                  name="city_type"
+                  value={form.city_type}
+                  onChange={onChangeField}
+                  className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-purple-600 ${errors.city_type ? 'border-red-500' : 'border-gray-300'}`}
+                >
+                  <option value="DAILY">Daily</option>
+                  <option value="WEEKLY">Weekly</option>
+                </select>
+                {errors.city_type && <p className="text-red-500 text-sm mt-1">{errors.city_type}</p>}
+                <p className="text-xs text-gray-500 mt-1">
+                  {form.city_type === 'WEEKLY' 
+                    ? '⚠️ Weekly cities have predefined routes and drivers cannot create journeys manually' 
+                    : 'ℹ️ Daily cities allow manual journey creation by drivers'}
+                </p>
+              </div>
+
               {!isEditing && (
                 <div className="flex items-center space-x-2">
-                  <input type="checkbox" name="enabled" checked={form.enabled} onChange={onChangeField} className="w-4 h-4 text-purple-600" />
+                  <input 
+                    type="checkbox" 
+                    name="enabled" 
+                    checked={form.enabled} 
+                    onChange={onChangeField} 
+                    className="w-4 h-4 text-purple-600" 
+                  />
                   <label className="font-medium">Enabled</label>
                 </div>
               )}
 
               <div className="flex justify-end gap-2">
                 {isEditing && (
-                  <button onClick={onCancelEdit} className="px-6 py-2 bg-gray-500 text-white rounded-lg">Cancel</button>
+                  <button onClick={onCancelEdit} className="px-6 py-2 bg-gray-500 text-white rounded-lg">
+                    Cancel
+                  </button>
                 )}
                 <button onClick={onSubmit} className="px-6 py-2 bg-purple-700 text-white rounded-lg">
                   {isEditing ? 'Update City' : 'Add City'}
@@ -331,7 +391,6 @@ export default function Jobs() {
           </section>
         )}
 
-        {/* Table */}
         <section className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-x-auto">
           <div className="flex items-center justify-between bg-gray-50 border-b border-gray-200 px-4 py-3 rounded-t-xl">
             <h2 className="font-bold text-gray-900">
@@ -353,7 +412,6 @@ export default function Jobs() {
               <SearchBar value={search} onChange={e => setSearch(e.target.value)} placeholder="Search city..." />
             </div>
 
-            {/* Filter - Only for Superadmin */}
             {isSuperAdmin && (
               <div className="relative" ref={dropdownRef}>
                 <button
@@ -408,11 +466,12 @@ export default function Jobs() {
                   cities.map((c, idx) => (
                     <CityRow
                       key={c.id}
-                       serialNo={(currentPage - 1) * ITEMS_PER_PAGE + idx + 1}
+                      serialNo={(currentPage - 1) * ITEMS_PER_PAGE + idx + 1}
                       id={c.id}
                       job={c.job}
                       city_code={c.city_code}
                       enabled={c.enabled}
+                      city_type={c.city_type}
                       index={idx}
                       onToggle={onToggleStatus}
                       onEdit={onEdit}

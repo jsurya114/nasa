@@ -65,12 +65,14 @@ export const fetchJobs = createAsyncThunk(
 // Add a job
 export const addJob = createAsyncThunk(
   "jobs/addJob",
-  async ({ job, city_code, enabled }, { rejectWithValue }) => {
+  async ({ job, city_code, enabled, city_type }, { rejectWithValue }) => {
     try {
+      console.log('Adding job with city_type:', city_type);
+      
       const res = await fetch(`${API_BASE_URL}/admin/addjob`, {
         method: "POST",
         headers: getAuthHeaders(),
-        body: JSON.stringify({ job, city_code, enabled }),
+        body: JSON.stringify({ job, city_code, enabled, city_type: city_type || 'DAILY' }),
       });
 
       if (!res.ok) {
@@ -79,6 +81,7 @@ export const addJob = createAsyncThunk(
       }
 
       const data = await res.json();
+      console.log('Job added successfully:', data);
       return data;
     } catch (error) {
       console.error("addJob error:", error.message);
@@ -87,23 +90,36 @@ export const addJob = createAsyncThunk(
   }
 );
 
-// Update a job
+// Update a job - NOW INCLUDES CITY_TYPE
 export const updateJob = createAsyncThunk(
   "jobs/updateJob",
-  async ({ id, job, city_code }, { rejectWithValue }) => {
+  async ({ id, job, city_code, city_type }, { rejectWithValue }) => {
     try {
+      console.log('Updating job:', { id, job, city_code, city_type });
+      
+      const payload = { job, city_code };
+      
+      // Always include city_type if provided
+      if (city_type !== undefined && city_type !== null) {
+        payload.city_type = city_type;
+      }
+      
+      console.log('Update payload:', payload);
+      
       const res = await fetch(`${API_BASE_URL}/admin/updatejob/${id}`, {
         method: "PUT",
         headers: getAuthHeaders(),
-        body: JSON.stringify({ job, city_code }),
+        body: JSON.stringify(payload),
       });
 
       if (!res.ok) {
         const error = await res.json();
+        console.error('Update failed with error:', error);
         return rejectWithValue(error.error || "Failed to update job");
       }
 
       const data = await res.json();
+      console.log('Job updated successfully:', data);
       return data;
     } catch (error) {
       console.error("updateJob error:", error.message);
@@ -289,9 +305,11 @@ const jobSlice = createSlice({
         state.error = null;
       })
       .addCase(updateJob.fulfilled, (state, action) => {
+        console.log('Redux state update with:', action.payload);
         state.status = "succeeded";
         const index = state.cities.findIndex((c) => c.id === action.payload.id);
         if (index !== -1) {
+          console.log('Updating city at index:', index, 'with:', action.payload);
           state.cities[index] = action.payload;
         }
         // Also update in allCities if it exists there
@@ -304,6 +322,7 @@ const jobSlice = createSlice({
       .addCase(updateJob.rejected, (state, action) => {
         state.status = "failed";
         state.error = action.payload || action.error.message;
+        console.error('Update job rejected:', action.payload);
       })
 
       // Delete job - optimistic update

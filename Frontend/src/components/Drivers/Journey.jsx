@@ -9,6 +9,7 @@ import {
   fetchTodayJourney,
   saveJourney,
   clearJourneyError,
+  fetchDriverCityType,
 } from "../../redux/slice/driver/journeySlice.js";
 
 const Journey = () => {
@@ -16,17 +17,23 @@ const Journey = () => {
   const dispatch = useDispatch();
   const [errors, setErrors] = useState({});
   const [isJourneySaved, setIsJourneySaved] = useState(false);
+  const [showWeeklyRestriction, setShowWeeklyRestriction] = useState(false);
 
-  // ✅ Use refs to track if data has been fetched
   const routesFetchedRef = useRef(false);
   const journeyFetchedRef = useRef(false);
   const prevDriverIdRef = useRef(null);
 
-  const { routes, routesStatus, routesError, journeys, journeyStatus, journeyError } = useSelector(
-    (state) => state.journey
-  );
+  const { 
+    routes, 
+    routesStatus, 
+    routesError, 
+    journeys, 
+    journeyStatus, 
+    journeyError,
+    cityType,
+    cityTypeStatus 
+  } = useSelector((state) => state.journey);
 
-  // ✅ Memoize current date calculation (only once)
   const currentDate = useMemo(() => {
     const today = new Date();
     const year = today.getFullYear();
@@ -42,7 +49,11 @@ const Journey = () => {
     route: "",
   });
 
-  // ✅ Fetch routes only once
+  // Fetch city type on mount
+  useEffect(() => {
+    dispatch(fetchDriverCityType());
+  }, [dispatch]);
+
   useEffect(() => {
     if (!routesFetchedRef.current && routesStatus === 'idle') {
       dispatch(fetchRoutes());
@@ -50,7 +61,6 @@ const Journey = () => {
     }
   }, [dispatch, routesStatus]);
 
-  // ✅ Fetch journey only when driver changes or on mount
   useEffect(() => {
     if (!driver?.id) return;
 
@@ -72,7 +82,13 @@ const Journey = () => {
     }
   }, [dispatch, driver?.id]);
 
-  // ✅ Consolidated error handling with single effect
+  // Show error toast for city type fetch failure
+  useEffect(() => {
+    if (cityTypeStatus === 'failed') {
+      toast.error('Failed to load city information. Defaulting to daily mode.');
+    }
+  }, [cityTypeStatus]);
+
   useEffect(() => {
     if (routesError) {
       toast.error(routesError);
@@ -84,33 +100,28 @@ const Journey = () => {
     }
   }, [routesError, journeyError, dispatch]);
 
-  // ✅ Memoize error field mapping
   const fieldMap = useMemo(() => ({
     start_sequence: "start_seq",
     end_sequence: "end_seq",
     route: "route_id",
   }), []);
 
-  // ✅ Optimized handleChange with useCallback
   const handleChange = useCallback((e) => {
     const { name, value } = e.target;
     
     setFormData((prev) => {
-      // Avoid re-render if value hasn't changed
       if (prev[name] === value) return prev;
       return { ...prev, [name]: value };
     });
 
-    // Clear error for this field
     setErrors((prevErrors) => {
       const errorField = fieldMap[name] || name;
-      if (!prevErrors[errorField]) return prevErrors; // Avoid re-render if no error
+      if (!prevErrors[errorField]) return prevErrors;
       const { [errorField]: _, ...rest } = prevErrors;
       return rest;
     });
   }, [fieldMap]);
 
-  // ✅ Calculate packages in frontend for display only
   const calculatePackages = useCallback((journey) => {
     if (journey.end_seq && journey.start_seq) {
       return journey.end_seq - journey.start_seq + 1;
@@ -118,13 +129,13 @@ const Journey = () => {
     return journey.packages || 0;
   }, []);
 
-  // ✅ Optimized handleSubmit
   const handleSubmit = useCallback(async (e) => {
     e.preventDefault();
 
     if (isJourneySaved) return;
     
     setErrors({});
+    setShowWeeklyRestriction(false);
 
     const journeyData = {
       driver_id: driver?.id,
@@ -133,13 +144,11 @@ const Journey = () => {
       route_id: formData.route,
       start_seq: formData.start_sequence,
       end_seq: formData.end_sequence,
-      // Backend will calculate packages
     };
 
     try {
       await dispatch(saveJourney(journeyData)).unwrap();
       
-      // Fetch updated journey data
       await dispatch(fetchTodayJourney(driver.id)).unwrap();
       
       setIsJourneySaved(true);
@@ -149,7 +158,6 @@ const Journey = () => {
         autoClose: 3000,
       });
 
-      // Reset form fields
       setFormData((prev) => ({
         ...prev,
         start_sequence: "",
@@ -158,28 +166,39 @@ const Journey = () => {
       }));
     } catch (err) {
       setIsJourneySaved(false);
-      if (err.errors) {
+      
+      // ✅ ENHANCED: Handle middleware blocking response
+      if (err.error === 'WEEKLY_CITY_RESTRICTION') {
+        console.log('Weekly city restriction detected from backend');
+        setShowWeeklyRestriction(true);
+        
+        // Re-fetch city type to update local state
+        dispatch(fetchDriverCityType());
+        
+        toast.error(err.message || 'Journey creation is disabled for weekly-based routes.', {
+          position: "top-center",
+          autoClose: 5000,
+        });
+      } else if (err.errors) {
         setErrors(err.errors);
         if (err.errors['sequenceConflict']) {
           toast.error(err.errors['sequenceConflict']);
         }
       } else {
+        toast.error(err.message || "Failed to save journey");
         console.error(err.message || "Failed to save journey");
       }
     }
   }, [formData, driver, dispatch, isJourneySaved]);
 
-  // ✅ Memoize filtered routes
   const enabledRoutes = useMemo(
     () => routes.filter((route) => route.enabled),
     [routes]
   );
 
-  // ✅ Memoize loading states
   const isLoadingRoutes = routesStatus === 'loading';
   const isLoadingJourney = journeyStatus === 'loading';
 
-  // ✅ Memoize table rows to prevent re-renders
   const journeyRows = useMemo(() => {
     if (journeyStatus !== "succeeded" || !Array.isArray(journeys)) {
       return null;
@@ -209,12 +228,58 @@ const Journey = () => {
     ));
   }, [journeys, journeyStatus, driver?.name, calculatePackages]);
 
+  // Loading state
+  if (cityTypeStatus === 'loading') {
+    return (
+      <div className="min-h-screen bg-gray-50 text-gray-900 font-poppins flex items-center justify-center">
+        <div className="text-center">
+          <div className="w-16 h-16 border-4 border-blue-200 border-t-blue-600 rounded-full animate-spin mx-auto mb-4" />
+          <p className="text-gray-600">Loading...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // ✅ ENHANCED: Show restriction if detected from backend OR from initial city type
+  if (cityType === 'WEEKLY' || showWeeklyRestriction) {
+    return (
+      <div className="min-h-screen bg-gray-50 text-gray-900 font-poppins">
+        <Header />
+        <main className="max-w-5xl mx-auto mt-6 mb-24 px-6 pb-36">
+          <div className="bg-blue-50 border-2 border-blue-300 rounded-lg p-8 text-center shadow-md">
+            <div className="mb-4">
+              <svg className="w-20 h-20 mx-auto text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+            </div>
+            <h1 className="text-2xl font-bold text-gray-900 mb-2">Journey Creation Disabled</h1>
+            <p className="text-gray-700 mb-4">
+              Your city is configured for.
+            </p>
+            <p className="text-sm text-gray-600">
+              Route assignments are managed centrally.
+              Manual journey creation is not available for your location.
+            </p>
+            {showWeeklyRestriction && (
+              <div className="mt-4 p-3 bg-yellow-50 border border-yellow-200 rounded-md">
+                <p className="text-sm text-yellow-800">
+                  ⚠️ This setting was recently updated by your administrator.
+                </p>
+              </div>
+            )}
+          </div>
+        </main>
+        <Nav />
+      </div>
+    );
+  }
+
+  // Daily city - show normal journey page
   return (
     <div className="min-h-screen bg-gray-50 text-gray-900 font-poppins">
       <Header />
 
       <main className="max-w-5xl mx-auto mt-6 mb-24 px-6 pb-36">
-        {/* Form Card */}
         <div className="bg-white border border-gray-200 rounded-lg shadow-sm mb-8">
           <div className="px-6 py-4 border-b border-gray-200">
             <h1 className="text-lg font-semibold text-gray-900">
@@ -222,7 +287,7 @@ const Journey = () => {
             </h1>
           </div>
 
-          <form onSubmit={handleSubmit} className="p-6 space-y-4">
+          <div className="p-6 space-y-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 Date
@@ -296,7 +361,7 @@ const Journey = () => {
             </div>
 
             <button
-              type="submit"
+              onClick={handleSubmit}
               disabled={isJourneySaved || isLoadingJourney}
               className={`w-full py-2 px-4 rounded-md font-medium focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-colors ${
                 isJourneySaved || isLoadingJourney
@@ -310,10 +375,9 @@ const Journey = () => {
                 ? "Route Already Saved" 
                 : "Save Route"}
             </button>
-          </form>
+          </div>
         </div>
 
-        {/* Table Card */}
         <div className="bg-white border border-gray-200 rounded-lg shadow-sm">
           <div className="px-6 py-4 border-b border-gray-200">
             <h2 className="text-lg font-semibold text-gray-900">Records</h2>

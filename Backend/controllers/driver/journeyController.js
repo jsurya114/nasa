@@ -4,17 +4,24 @@ import {
   getTodayJourney,
   addRangeOfSqeunceToDeliveries,
   checkSequenceConflict,
-  // updateSeqRouteCodeToDeliveriesTable
 } from "../../services/driver/journeyQueries.js";
+import { jobService } from "../../services/admin/jobQueries.js";
 import HttpStatus from "../../utils/statusCodes.js";
 
 export const saveJourney = async (req, res) => {
   try {
     let { driver_id, route_id, packages, start_seq, end_seq, journey_date } = req.body;
 
+    // ✅ REMOVED: City type validation - now handled by middleware
+    // The validateCityType middleware blocks WEEKLY cities before reaching here
+    // This ensures we always check the LATEST city configuration from database
+    
+    // Note: req.cityType is available here (attached by middleware) if needed
+    // But we don't need to check it again since middleware already validated
+
     start_seq = Number(start_seq);
     end_seq = Number(end_seq);
-    packages = end_seq - start_seq + 1; // 
+    packages = end_seq - start_seq + 1;
 
     const errors = {};
     if (!driver_id) errors.driver_id = "Driver ID is required";
@@ -22,7 +29,7 @@ export const saveJourney = async (req, res) => {
     if (!start_seq || start_seq <= 0) errors.start_seq = "Start sequence must be greater than 0";
     if (!end_seq || end_seq < start_seq) errors.end_seq = "End sequence must be >= start sequence";
 
-    const conflictSequences = await checkSequenceConflict(route_id, start_seq, end_seq,journey_date);
+    const conflictSequences = await checkSequenceConflict(route_id, start_seq, end_seq, journey_date);
 
     if (conflictSequences.length > 0) {
       errors.sequenceConflict =
@@ -88,12 +95,17 @@ export const saveJourney = async (req, res) => {
   }
 };
 
-
 export const fetchTodayJourney = async (req, res) => {
   try {
     const driverId = req.params.driver_id;
     const journey = await getTodayJourney(driverId);
-    res.status(HttpStatus.OK).json({ success: true, data: journey });
+    
+    // ✅ Optionally include city type info in response
+    res.status(HttpStatus.OK).json({ 
+      success: true, 
+      data: journey,
+      cityType: req.cityType // Attached by middleware
+    });
   } catch (error) {
     res
       .status(HttpStatus.INTERNAL_SERVER_ERROR)

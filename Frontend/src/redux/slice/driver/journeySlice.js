@@ -329,6 +329,33 @@ export const fetchRoutesByDriver = createAsyncThunk(
   }
 );
 
+export const fetchDriverCityType = createAsyncThunk(
+  "journey/fetchDriverCityType",
+  async (_, { signal, rejectWithValue }) => {
+    try {
+      const res = await fetch(`${API_BASE_URL}/driver/city-type`, {
+        signal,
+        headers: getAuthHeaders(),
+      });
+
+      if (!res.ok) {
+        const error = await res.json().catch(() => ({}));
+        return rejectWithValue(error.message || "Failed to fetch city type");
+      }
+
+      const data = await res.json();
+      console.log('City type fetched:', data);
+      return data.cityType;
+    } catch (error) {
+      if (error.name === 'AbortError') {
+        return rejectWithValue('Request cancelled');
+      }
+      console.error("fetchDriverCityType error:", error.message);
+      return rejectWithValue(error.message);
+    }
+  }
+);
+
 const initialState = {
   routes: [],
   routesStatus: "idle",
@@ -345,6 +372,8 @@ const initialState = {
   drivers: [],
   driversStatus: "idle",
   driversError: null,
+  cityType: null,              // ADD THIS
+  cityTypeStatus: "idle",      // ADD THIS
   pagination: {
     total: 0,
     page: 1,
@@ -425,6 +454,22 @@ const journeySlice = createSlice({
         }
       });
 
+
+      builder
+      .addCase(fetchDriverCityType.pending, (state) => {
+        state.cityTypeStatus = "loading";
+      })
+      .addCase(fetchDriverCityType.fulfilled, (state, action) => {
+        state.cityTypeStatus = "succeeded";
+        state.cityType = action.payload;
+      })
+      .addCase(fetchDriverCityType.rejected, (state, action) => {
+        if (action.payload !== 'Request cancelled') {
+          state.cityTypeStatus = "failed";
+          // Default to DAILY if fetch fails so driver can still work
+          state.cityType = "DAILY";
+        }
+      });
 
       
     // ============ ADMIN ROUTES ============
