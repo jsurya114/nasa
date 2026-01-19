@@ -1,19 +1,14 @@
 /**
  * Timezone-Aware Availability Utilities
- * 
- * This module provides timezone-aware date/time calculations for driver availability.
- * All logic uses the user's local timezone to ensure consistent behavior globally.
+ * FIXED VERSION - Handles driver and admin permissions correctly
  */
 
 /**
  * Get the current day and time in the user's timezone
- * @param {string} timezone - IANA timezone string (e.g., 'America/Chicago', 'Asia/Kolkata')
- * @returns {Object} - { dayIndex: 0-6 (Mon-Sun), dayName: string, hour: 0-23, date: Date }
  */
 export const getCurrentTimeInTimezone = (timezone) => {
   const now = new Date();
   
-  // Get localized time in the user's timezone
   const formatter = new Intl.DateTimeFormat('en-US', {
     timeZone: timezone,
     weekday: 'long',
@@ -28,7 +23,6 @@ export const getCurrentTimeInTimezone = (timezone) => {
   const weekday = parts.find(p => p.type === 'weekday').value.toLowerCase();
   const hour = parseInt(parts.find(p => p.type === 'hour').value, 10);
   
-  // Map JavaScript day (Sunday=0) to our system (Monday=0)
   const dayNames = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
   const dayIndex = dayNames.indexOf(weekday);
   
@@ -42,9 +36,8 @@ export const getCurrentTimeInTimezone = (timezone) => {
 };
 
 /**
- * Calculate which days should be locked based on current time
- * @param {string} timezone - User's IANA timezone
- * @returns {Object} - Object with day names as keys and lock status as boolean values
+ * Calculate which days should be locked based on current time (DRIVER ONLY)
+ * Editing restrictions for past/current days
  */
 export const calculateDayLockStatus = (timezone) => {
   const { dayIndex, hour } = getCurrentTimeInTimezone(timezone);
@@ -53,19 +46,19 @@ export const calculateDayLockStatus = (timezone) => {
   const lockStatus = {};
   
   dayNames.forEach((day, index) => {
-    // Past days: Always locked
+    // Past days are locked
     if (index < dayIndex) {
       lockStatus[day] = true;
-    }
-    // Current day: Always locked
+    } 
+    // Current day is always locked
     else if (index === dayIndex) {
       lockStatus[day] = true;
-    }
-    // Next day: Locked if current time >= 7 PM (19:00)
+    } 
+    // Tomorrow is locked after 7 PM today
     else if (index === (dayIndex + 1) % 7) {
       lockStatus[day] = hour >= 19;
-    }
-    // Future days: Never locked
+    } 
+    // Future days are unlocked
     else {
       lockStatus[day] = false;
     }
@@ -75,10 +68,8 @@ export const calculateDayLockStatus = (timezone) => {
 };
 
 /**
- * Validate if a specific day can be modified given current time
- * @param {string} dayToUpdate - Day name to update
- * @param {string} timezone - User's IANA timezone
- * @returns {Object} - { canUpdate: boolean, reason: string }
+ * Validate if a specific day can be modified given current time (DRIVER ONLY)
+ * FIXED: Handles Sunday correctly - allows editing next week's days
  */
 export const canUpdateDay = (dayToUpdate, timezone) => {
   const { dayIndex, dayName, hour } = getCurrentTimeInTimezone(timezone);
@@ -90,7 +81,30 @@ export const canUpdateDay = (dayToUpdate, timezone) => {
     return { canUpdate: false, reason: 'Invalid day specified' };
   }
   
-  // Past days
+  // Special case: If today is Sunday (index 6)
+  if (dayIndex === 6) {
+    // Cannot update Sunday itself (today)
+    if (targetDayIndex === 6) {
+      return {
+        canUpdate: false,
+        reason: `Cannot update today's (Sunday) availability.`
+      };
+    }
+    
+    // Monday (next week's first day) locked after 7 PM on Sunday
+    if (targetDayIndex === 0 && hour >= 19) {
+      return {
+        canUpdate: false,
+        reason: `Cannot modify availability for Monday after 7:00 PM on Sunday. The cutoff time has passed.`
+      };
+    }
+    
+    // Tuesday-Saturday (next week) are all unlocked
+    return { canUpdate: true, reason: null };
+  }
+  
+  // For Monday-Saturday (regular week logic):
+  // Cannot update past days
   if (targetDayIndex < dayIndex) {
     return {
       canUpdate: false,
@@ -98,7 +112,7 @@ export const canUpdateDay = (dayToUpdate, timezone) => {
     };
   }
   
-  // Current day
+  // Cannot update today
   if (targetDayIndex === dayIndex) {
     return {
       canUpdate: false,
@@ -106,7 +120,7 @@ export const canUpdateDay = (dayToUpdate, timezone) => {
     };
   }
   
-  // Next day after 7 PM cutoff
+  // Cannot update tomorrow after 7 PM
   const nextDayIndex = (dayIndex + 1) % 7;
   if (targetDayIndex === nextDayIndex && hour >= 19) {
     return {
@@ -115,16 +129,13 @@ export const canUpdateDay = (dayToUpdate, timezone) => {
     };
   }
   
-  // Future days are always allowed
   return { canUpdate: true, reason: null };
 };
 
 /**
- * Validate all days in an availability object
- * @param {Object} availability - Availability object with day keys
- * @param {Object} currentAvailability - Current availability from database
- * @param {string} timezone - User's IANA timezone
- * @returns {Object} - { isValid: boolean, errors: Array<string> }
+ * Validate all days in an availability object (DRIVER ONLY)
+ * Only checks editing restrictions (past/today/tomorrow after 7pm)
+ * NO Sunday noon restriction since auto-reset handles the reset
  */
 export const validateAvailabilityUpdate = (availability, currentAvailability, timezone) => {
   const { dayIndex, dayName, hour } = getCurrentTimeInTimezone(timezone);
@@ -137,22 +148,20 @@ export const validateAvailabilityUpdate = (availability, currentAvailability, ti
   for (const day of dayNames) {
     const targetDayIndex = dayNames.indexOf(day);
     
-    // Skip if value hasn't changed
+    // Skip if no change
     if (availability[day] === currentAvailability.availability[day]) {
       continue;
     }
     
-    // Past days
+    // Cannot modify past days
     if (targetDayIndex < dayIndex) {
       errors.push(`Cannot modify availability for ${day}. That day has already ended.`);
-    }
-    
-    // Current day
+    } 
+    // Cannot modify today
     else if (targetDayIndex === dayIndex) {
       errors.push(`Cannot modify today's (${dayName}) availability.`);
-    }
-    
-    // Next day after 7 PM
+    } 
+    // Cannot modify tomorrow after 7 PM
     else if (targetDayIndex === nextDayIndex && hour >= 19) {
       errors.push(`Cannot modify availability for ${nextDayName} after 7:00 PM. The cutoff time has passed.`);
     }
@@ -165,53 +174,41 @@ export const validateAvailabilityUpdate = (availability, currentAvailability, ti
 };
 
 /**
- * Calculate the next Sunday 12:00 PM in a given timezone
- * Used for scheduling weekly resets
- * @param {string} timezone - IANA timezone
- * @returns {Date} - Next Sunday at 12:00 PM in that timezone
+ * NEW: Admin validation - much more permissive
+ * Admins can edit any day except days that have already passed
+ * Admins CAN edit:
+ * - Current day (today)
+ * - Tomorrow (even after 7 PM)
+ * - All future days
  */
-export const getNextSundayNoon = (timezone) => {
-  const now = new Date();
+export const validateAdminAvailabilityUpdate = (availability, currentAvailability, timezone) => {
+  const { dayIndex } = getCurrentTimeInTimezone(timezone);
+  const dayNames = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
+  const errors = [];
   
-  // Create a date formatter for the target timezone
-  const formatter = new Intl.DateTimeFormat('en-US', {
-    timeZone: timezone,
-    weekday: 'long',
-    year: 'numeric',
-    month: 'numeric',
-    day: 'numeric',
-    hour: 'numeric',
-    hour12: false
-  });
+  for (const day of dayNames) {
+    const targetDayIndex = dayNames.indexOf(day);
+    
+    // Skip if no change
+    if (availability[day] === currentAvailability.availability[day]) {
+      continue;
+    }
+    
+    // Admins can only NOT modify past days (days before today)
+    if (targetDayIndex < dayIndex) {
+      errors.push(`Cannot modify availability for ${day}. That day has already ended. You can only update today and future days.`);
+    }
+    // Admins CAN modify today and all future days - no other restrictions
+  }
   
-  // Find next Sunday
-  const daysOfWeek = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
-  const parts = formatter.formatToParts(now);
-  const currentDay = parts.find(p => p.type === 'weekday').value.toLowerCase();
-  const currentDayIndex = daysOfWeek.indexOf(currentDay);
-  
-  // Calculate days until next Sunday (0 = today is Sunday, need next week)
-  const daysUntilSunday = currentDayIndex === 0 ? 7 : (7 - currentDayIndex);
-  
-  // Create next Sunday at noon in local time
-  const nextSunday = new Date(now);
-  nextSunday.setDate(now.getDate() + daysUntilSunday);
-  
-  // Convert to target timezone noon
-  const year = parseInt(parts.find(p => p.type === 'year').value);
-  const month = parseInt(parts.find(p => p.type === 'month').value) - 1;
-  const day = parseInt(parts.find(p => p.type === 'day').value) + daysUntilSunday;
-  
-  const noonInTimezone = new Date(year, month, day, 12, 0, 0);
-  
-  return noonInTimezone;
+  return {
+    isValid: errors.length === 0,
+    errors
+  };
 };
 
 /**
  * Format a date/time for logging purposes
- * @param {Date} date - Date object
- * @param {string} timezone - IANA timezone
- * @returns {string} - Formatted string
  */
 export const formatDateForTimezone = (date, timezone) => {
   return new Intl.DateTimeFormat('en-US', {

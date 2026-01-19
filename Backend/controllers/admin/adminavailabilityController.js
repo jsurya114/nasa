@@ -1,5 +1,10 @@
 import { availabilityService } from "../../services/driver/availabilityQuery.js";
 import { manualResetAllAvailability } from "../../utils/availabilityCronJob.js";
+import { 
+  validateAdminAvailabilityUpdate, 
+  getCurrentTimeInTimezone 
+} from "../../utils/timezoneUtils.js";
+import pool from "../../config/db.js";
 
 const adminAvailabilityController = {
   getAllDriversAvailability: async (req, res) => {
@@ -114,46 +119,52 @@ const adminAvailabilityController = {
         }
       }
 
-      // Validate that admin is not trying to edit past days
-      const now = new Date();
-      
-      // Convert to UTC-6 (CST)
-      const utcOffset = now.getTimezoneOffset(); // Get current UTC offset in minutes
-      const cstOffset = -360; // UTC-6 = -360 minutes
-      const cstTime = new Date(now.getTime() + (cstOffset - utcOffset) * 60000);
-      
-      const currentDayJS = cstTime.getDay(); // 0 = Sunday, 1 = Monday, ..., 6 = Saturday
-      
-      // Convert to Monday-based week (Monday = 0, Sunday = 6)
-      const currentDay = currentDayJS === 0 ? 6 : currentDayJS - 1;
-      
-      // Map day numbers to day names (Monday-based)
-      const dayNames = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
-      const currentDayName = dayNames[currentDay];
+      // Get driver's timezone from database
+      const driverResult = await pool.query(
+        'SELECT timezone FROM drivers WHERE id = $1',
+        [parseInt(driverId, 10)]
+      );
 
-      console.log(`📅 Current day check (CST): ${currentDayName} (index: ${currentDay})`);
-      console.log(`📅 CST Time: ${cstTime.toISOString()}`);
-      console.log(`📅 Server Time: ${now.toISOString()}`);
+      if (driverResult.rows.length === 0) {
+        return res.status(404).json({
+          success: false,
+          message: "Driver not found"
+        });
+      }
+
+      const driverTimezone = driverResult.rows[0].timezone;
+      console.log(`   Driver timezone: ${driverTimezone}`);
+
+      // Get current time in driver's timezone
+      const currentTime = getCurrentTimeInTimezone(driverTimezone);
+      
+      console.log(`📅 Current time in ${driverTimezone}:`, {
+        day: currentTime.dayName,
+        hour: currentTime.hour,
+        dayIndex: currentTime.dayIndex
+      });
 
       // Get current availability from database
       const currentAvailability = await availabilityService.getDriverAvailability(parseInt(driverId, 10));
 
-      // Check each day to see if admin is trying to modify a past day
-      for (const day of validDays) {
-        const dayIndex = dayNames.indexOf(day);
-        
-        // If trying to change a past day (before current day in Monday-based week)
-        if (dayIndex < currentDay) {
-          // If the value for this past day is different from current, reject
-          if (availability[day] !== currentAvailability.availability[day]) {
-            console.warn(`⚠️ Admin attempted to modify past day: ${day}`);
-            return res.status(403).json({
-              success: false,
-              message: `Cannot modify availability for ${day}. That day has already ended. You can only update today (${currentDayName}) and future days.`
-            });
-          }
-        }
+      // ADMIN VALIDATION: Only prevent editing past days
+      // Admins CAN edit: today, tomorrow (even after 7PM), and all future days
+      const validation = validateAdminAvailabilityUpdate(
+        availability,
+        currentAvailability,
+        driverTimezone
+      );
+
+      if (!validation.isValid) {
+        console.warn(`⚠️ Admin validation failed:`, validation.errors);
+        return res.status(403).json({
+          success: false,
+          message: validation.errors[0],
+          errors: validation.errors
+        });
       }
+
+      console.log(`✅ Admin validation passed. Updating availability for driver ${driverId}`);
 
       const updated =
         await availabilityService.updateDriverAvailabilityByAdmin(

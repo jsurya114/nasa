@@ -5,7 +5,7 @@ import adminController from '../controllers/admin/adminController.js'
 import jobController from '../controllers/admin/jobController.js';
 import { createRoute,getRouteById, updateRoute, deleteRoute,toggleRouteStatus, fetchPaginatedRoutes, getAdminRoutes,getRoutesByDriver  } from "../controllers/admin/routeController.js"
 import { changeStatusUser, createUsers, getUsers,updateUser} from '../controllers/admin/addUserController.js';
-import { createAccessCode } from '../controllers/admin/accessCodeControllers.js';
+import { createAccessCode, deleteAccessCode } from '../controllers/admin/accessCodeControllers.js';
 import {DailyExcelUpload, getUpdatedTempDashboardData} from '../controllers/admin/fileUploadsController.js';
 import { getAccessCodes,updateAccessCode, } from '../controllers/admin/accessCodeControllers.js';
 import { changeRoleAdmin, changeStatusAdmin, createAdmins, getAdmins, updateAdmin, getAdminCities } from '../controllers/admin/addAdminController.js';
@@ -107,8 +107,10 @@ router.post('/logout',adminController.Logout);
 
 router.get('/access-admin',adminController.getUser);
 
+// Access Codes Routes - Available for both admin and superadmin
 router.post("/access-codes", uploadAccessCodeImages.array('images', 3), createAccessCode)
 router.get("/access-codes/list", getAccessCodes)
 router.put("/access-codes/:id", uploadAccessCodeImages.array('images', 3), updateAccessCode)
+router.delete("/access-codes/:id", deleteAccessCode) // Delete route added
 
 export default router;

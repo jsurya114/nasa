@@ -1,8 +1,12 @@
 import { availabilityService } from "../../services/driver/availabilityQuery.js";
-import { validateAvailabilityUpdate, getCurrentTimeInTimezone, formatDateForTimezone } from "../../utils/timezoneUtils.js";
+import { 
+  validateAvailabilityUpdate, 
+  getCurrentTimeInTimezone, 
+  formatDateForTimezone
+} from "../../utils/timezoneUtils.js";
+import pool from "../../config/db.js";
 
 const driverAvailabilityController = {
-    // Get logged-in driver's availability
     getAvailability: async (req, res) => {
         try {
             const driverId = req.driver.id;
@@ -28,27 +32,36 @@ const driverAvailabilityController = {
         }
     },
 
-    // Update logged-in driver's availability
     updateAvailability: async (req, res) => {
         try {
             const driverId = req.driver.id;
             const { availability } = req.body;
 
-            // Get user's timezone from request header or default to UTC
-            // Frontend should send this in the request header
-            const userTimezone = req.headers['x-user-timezone'] || 'UTC';
-
             console.log(`✏️ Driver ${driverId} attempting to update availability`);
-            console.log(`   User timezone: ${userTimezone}`);
-            console.log(`   New availability:`, availability);
 
-            // Get current time in user's timezone
-            const currentTime = getCurrentTimeInTimezone(userTimezone);
+            // Get driver's stored timezone from database
+            const driverResult = await pool.query(
+                'SELECT timezone FROM drivers WHERE id = $1',
+                [driverId]
+            );
+
+            if (driverResult.rows.length === 0) {
+                return res.status(404).json({
+                    success: false,
+                    message: "Driver not found"
+                });
+            }
+
+            const driverTimezone = driverResult.rows[0].timezone;
+            console.log(`   Driver timezone: ${driverTimezone}`);
+
+            // Get current time in driver's timezone
+            const currentTime = getCurrentTimeInTimezone(driverTimezone);
             
-            console.log(`📅 Current time in ${userTimezone}:`, {
+            console.log(`📅 Current time in ${driverTimezone}:`, {
                 day: currentTime.dayName,
                 hour: currentTime.hour,
-                formatted: formatDateForTimezone(currentTime.date, userTimezone)
+                formatted: formatDateForTimezone(currentTime.date, driverTimezone)
             });
 
             // Validate availability object structure
@@ -79,17 +92,19 @@ const driverAvailabilityController = {
             console.log(`📋 Current availability in DB:`, currentAvailability.availability);
             
             // Validate the update using timezone-aware logic
+            // This only checks past/today/tomorrow restrictions
+            // NO Sunday noon blocking since cron handles reset
             const validation = validateAvailabilityUpdate(
                 availability,
                 currentAvailability,
-                userTimezone
+                driverTimezone
             );
 
             if (!validation.isValid) {
                 console.warn(`⚠️ Validation failed:`, validation.errors);
                 return res.status(403).json({
                     success: false,
-                    message: validation.errors[0], // Return first error
+                    message: validation.errors[0],
                     errors: validation.errors
                 });
             }

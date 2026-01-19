@@ -1,16 +1,19 @@
 import HttpStatus from '../../utils/statusCodes.js';
 import { loginService } from "../../services/driver/loginQueries.js";
 import { generateToken, verifyToken } from '../../services/jwtservice.js';
-import { blackListToken } from '../../services/redis-jwt-service.js'
+import { blackListToken } from '../../services/redis-jwt-service.js';
+import pool from '../../config/db.js';
 
 const driverController = {
   Login: async (req, res) => {
     try {
-      const { email, password } = req.body;
+      const { email, password, timezone } = req.body; // ADD timezone
 
-      const errors = {}
+      const errors = {};
       if (!email) errors.email = "Email is required";
       if (!password) errors.password = "Password is required";
+      if (!timezone) errors.timezone = "Timezone is required";
+      
       if (Object.keys(errors).length > 0) {
         return res.status(HttpStatus.BAD_REQUEST).json({ errors });
       }
@@ -32,20 +35,29 @@ const driverController = {
         return res.status(HttpStatus.UNAUTHORIZED).json({ errors: { password: "Invalid password" } });
       }
 
+      // UPDATE: Save driver's timezone on login
+      await pool.query(
+        'UPDATE drivers SET timezone = $1 WHERE id = $2',
+        [timezone, driver.id]
+      );
+
+      console.log(`✅ Driver ${driver.id} timezone updated to: ${timezone}`);
+
       let token = generateToken({ id: driver.id, email: driver.email, name: driver.name });
       if (!token) {
         return res.status(HttpStatus.UNAUTHORIZED).json({ message: "UNAUTHORIZED" });
       }
 
-      // Return token in response body instead of cookie
+      // Return token in response body
       res.status(HttpStatus.OK).json({
         message: "Login Successful",
         driver: {
           id: driver.id,
           email: driver.email,
-          name: driver.name
+          name: driver.name,
+          timezone: timezone // Return timezone to frontend
         },
-        token // Send token to be stored in localStorage
+        token
       });
     } catch (error) {
       console.error(error.message);
@@ -55,7 +67,6 @@ const driverController = {
 
   getDriver: async (req, res) => {
     try {
-      // Get token from Authorization header instead of cookie
       const authHeader = req.headers.authorization;
       const token = authHeader && authHeader.startsWith('Bearer ')
         ? authHeader.substring(7)
@@ -92,17 +103,16 @@ const driverController = {
   },
 
   Logout: async (req, res) => {
-    // Get token from Authorization header instead of cookie
     const authHeader = req.headers.authorization;
     const token = authHeader && authHeader.startsWith('Bearer ')
       ? authHeader.substring(7)
       : null;
 
     if (token) {
-      blackListToken(token)
+      blackListToken(token);
     }
 
-    return res.status(HttpStatus.OK).json({ message: "Logged out successfully" })
+    return res.status(HttpStatus.OK).json({ message: "Logged out successfully" });
   }
 };
 
