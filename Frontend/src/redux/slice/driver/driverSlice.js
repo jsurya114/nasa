@@ -21,10 +21,17 @@ export const driverLogin = createAsyncThunk(
   "driver/login",
   async (credentials, { rejectWithValue }) => {
     try {
+      // AUTO-DETECT TIMEZONE
+      const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+      console.log("🌍 Detected timezone:", timezone);
+
       const res = await fetch(`${API_BASE_URL}/driver/login`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(credentials),
+        body: JSON.stringify({
+          ...credentials,
+          timezone // ADD TIMEZONE TO REQUEST
+        }),
       });
 
       const data = await res.json();
@@ -37,9 +44,10 @@ export const driverLogin = createAsyncThunk(
         return rejectWithValue({ message: "Invalid response from server" });
       }
 
-      // Store token in localStorage
+      // Store token and timezone in localStorage
       if (data.token) {
         localStorage.setItem('driverToken', data.token);
+        localStorage.setItem('driverTimezone', timezone);
       }
 
       return data;
@@ -64,6 +72,7 @@ export const accessDriver = createAsyncThunk(
         // If blocked or unauthorized, remove token
         if (data.reason === "Account has been disabled") {
           localStorage.removeItem('driverToken');
+          localStorage.removeItem('driverTimezone');
         }
         return rejectWithValue({
           message: data.message || "Unable to get Driver",
@@ -99,13 +108,15 @@ export const driverLogout = createAsyncThunk(
         });
       }
 
-      // Always remove token from localStorage
+      // Always remove token and timezone from localStorage
       localStorage.removeItem('driverToken');
+      localStorage.removeItem('driverTimezone');
 
       return data;
     } catch (error) {
-      // Even if logout fails, remove token
+      // Even if logout fails, remove token and timezone
       localStorage.removeItem('driverToken');
+      localStorage.removeItem('driverTimezone');
       return rejectWithValue({ message: error.message || "Network error" });
     }
   }
@@ -123,6 +134,7 @@ const driverSlice = createSlice({
       state.isAuthenticated = false;
       state.error = null;
       localStorage.removeItem('driverToken');
+      localStorage.removeItem('driverTimezone');
     },
     setDriver: (state, action) => {
       state.driver = action.payload;
@@ -187,8 +199,9 @@ const driverSlice = createSlice({
         state.loading = false;
         state.isAuthenticated = false;
         state.driver = null;
-        // Clear token on rejection
+        // Clear token and timezone on rejection
         localStorage.removeItem('driverToken');
+        localStorage.removeItem('driverTimezone');
 
         const isUnauthorized = action.payload?.status === 401 ||
           action.payload === "UNAUTHORIZED";

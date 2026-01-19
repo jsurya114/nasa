@@ -6,6 +6,7 @@ import {
   fetchAccessCodes,
   createAccessCode,
   updateAccessCode,
+  deleteAccessCode,
   clearError,
   setPage,
   setPageLimit,
@@ -201,6 +202,34 @@ export default function AddAccessCodePage() {
       setSelectedAC(null);
     } catch (err) {
       toast.error(err || "Failed to update access code", { position: "top-right", autoClose: 4000 });
+    }
+  };
+
+  const handleDelete = async (ac) => {
+    const result = await Swal.fire({
+      title: 'Delete Access Code?',
+      html: `
+        <div class="text-left">
+          <p class="mb-2"><strong>Address:</strong> ${ac.address}</p>
+          <p class="mb-2"><strong>Zip Code:</strong> ${ac.zip_code}</p>
+          <p class="mb-2"><strong>Access Code:</strong> ${ac.access_code}</p>
+        </div>
+      `,
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonColor: '#dc2626',
+      cancelButtonColor: '#6b7280',
+      confirmButtonText: 'Yes, delete it!',
+      cancelButtonText: 'Cancel'
+    });
+
+    if (result.isConfirmed) {
+      try {
+        await dispatch(deleteAccessCode(ac.id)).unwrap();
+        toast.success("Access code deleted successfully!", { position: "top-right", autoClose: 2000 });
+      } catch (err) {
+        toast.error(err || "Failed to delete access code", { position: "top-right", autoClose: 4000 });
+      }
     }
   };
 
@@ -608,25 +637,46 @@ export default function AddAccessCodePage() {
                               </span>
                             </td>
                             <td className="px-3 lg:px-4 py-3 sm:py-4">
-                              <button
-                                onClick={(e) => { e.stopPropagation(); handleEdit(ac); }}
-                                className="inline-flex items-center justify-center px-3 py-2 bg-[#8200db] text-white text-xs font-medium rounded-lg hover:bg-[#7300c4] transition-all whitespace-nowrap"
-                              >
-                                <svg
-                                  className="w-4 h-4 mr-1"
-                                  fill="none"
-                                  stroke="currentColor"
-                                  viewBox="0 0 24 24"
+                              <div className="flex items-center gap-2">
+                                <button
+                                  onClick={(e) => { e.stopPropagation(); handleEdit(ac); }}
+                                  className="inline-flex items-center justify-center px-3 py-2 bg-[#8200db] text-white text-xs font-medium rounded-lg hover:bg-[#7300c4] transition-all whitespace-nowrap"
                                 >
-                                  <path
-                                    strokeLinecap="round"
-                                    strokeLinejoin="round"
-                                    strokeWidth={2}
-                                    d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"
-                                  />
-                                </svg>
-                                Edit
-                              </button>
+                                  <svg
+                                    className="w-4 h-4 mr-1"
+                                    fill="none"
+                                    stroke="currentColor"
+                                    viewBox="0 0 24 24"
+                                  >
+                                    <path
+                                      strokeLinecap="round"
+                                      strokeLinejoin="round"
+                                      strokeWidth={2}
+                                      d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"
+                                    />
+                                  </svg>
+                                  Edit
+                                </button>
+                                <button
+                                  onClick={(e) => { e.stopPropagation(); handleDelete(ac); }}
+                                  className="inline-flex items-center justify-center px-3 py-2 bg-red-600 text-white text-xs font-medium rounded-lg hover:bg-red-700 transition-all whitespace-nowrap"
+                                >
+                                  <svg
+                                    className="w-4 h-4 mr-1"
+                                    fill="none"
+                                    stroke="currentColor"
+                                    viewBox="0 0 24 24"
+                                  >
+                                    <path
+                                      strokeLinecap="round"
+                                      strokeLinejoin="round"
+                                      strokeWidth={2}
+                                      d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+                                    />
+                                  </svg>
+                                  Delete
+                                </button>
+                              </div>
                             </td>
                           </tr>
                         ))}
@@ -678,27 +728,48 @@ export default function AddAccessCodePage() {
                         </div>
                       </div>
 
-                      {/* Edit Button - Always visible at bottom */}
+                      {/* Action Buttons - Always visible at bottom */}
                       <div className="pt-3 border-t border-gray-100">
-                        <button
-                          onClick={(e) => { e.stopPropagation(); handleEdit(ac); }}
-                          className="w-full inline-flex items-center justify-center px-4 py-2.5 bg-gradient-to-r from-[#8200db] to-[#9d00ff] text-white text-sm font-semibold rounded-lg hover:from-[#7300c4] hover:to-[#8a00e6] transition-all shadow-md hover:shadow-lg"
-                        >
-                          <svg
-                            className="w-4 h-4 mr-2"
-                            fill="none"
-                            stroke="currentColor"
-                            viewBox="0 0 24 24"
+                        <div className="grid grid-cols-2 gap-2">
+                          <button
+                            onClick={(e) => { e.stopPropagation(); handleEdit(ac); }}
+                            className="inline-flex items-center justify-center px-3 py-2.5 bg-gradient-to-r from-[#8200db] to-[#9d00ff] text-white text-sm font-semibold rounded-lg hover:from-[#7300c4] hover:to-[#8a00e6] transition-all shadow-md hover:shadow-lg"
                           >
-                            <path
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                              strokeWidth={2}
-                              d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"
-                            />
-                          </svg>
-                          Edit Access Code
-                        </button>
+                            <svg
+                              className="w-4 h-4 mr-1.5"
+                              fill="none"
+                              stroke="currentColor"
+                              viewBox="0 0 24 24"
+                            >
+                              <path
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                strokeWidth={2}
+                                d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"
+                              />
+                            </svg>
+                            Edit
+                          </button>
+                          <button
+                            onClick={(e) => { e.stopPropagation(); handleDelete(ac); }}
+                            className="inline-flex items-center justify-center px-3 py-2.5 bg-gradient-to-r from-red-600 to-red-700 text-white text-sm font-semibold rounded-lg hover:from-red-700 hover:to-red-800 transition-all shadow-md hover:shadow-lg"
+                          >
+                            <svg
+                              className="w-4 h-4 mr-1.5"
+                              fill="none"
+                              stroke="currentColor"
+                              viewBox="0 0 24 24"
+                            >
+                              <path
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                strokeWidth={2}
+                                d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+                              />
+                            </svg>
+                            Delete
+                          </button>
+                        </div>
                       </div>
                     </div>
                   ))}

@@ -22,6 +22,7 @@ export default function AdminDriverAvailability() {
 
   const [filterDay, setFilterDay] = useState("");
   const [filterCity, setFilterCity] = useState("");
+  const [filterAvailabilityStatus, setFilterAvailabilityStatus] = useState(""); // New: "available", "unavailable", or ""
   const [searchQuery, setSearchQuery] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(10);
@@ -123,12 +124,42 @@ export default function AdminDriverAvailability() {
     setCurrentPage(1);
   };
 
+  const handleAvailabilityStatusChange = (status) => {
+    setFilterAvailabilityStatus(status);
+    setCurrentPage(1);
+  };
+
   const handleItemsPerPageChange = (newLimit) => {
     setItemsPerPage(newLimit);
     setCurrentPage(1);
   };
 
-  const filteredDrivers = allDriversAvailability;
+  const filteredDrivers = allDriversAvailability.filter((driver) => {
+    // Apply availability status filter if set (works independently)
+    if (filterAvailabilityStatus && filterDay) {
+      // If both day and status are selected, filter by that day's availability
+      const isAvailableOnDay = driver.availability?.[filterDay] === true;
+      
+      if (filterAvailabilityStatus === "available") {
+        return isAvailableOnDay;
+      } else if (filterAvailabilityStatus === "unavailable") {
+        return !isAvailableOnDay;
+      }
+    } else if (filterAvailabilityStatus && !filterDay) {
+      // If only status is selected (no day), filter by overall availability
+      // "available" = has at least one day available
+      // "unavailable" = has no days available (all days are false)
+      const hasAnyDayAvailable = Object.values(driver.availability || {}).some(day => day === true);
+      
+      if (filterAvailabilityStatus === "available") {
+        return hasAnyDayAvailable;
+      } else if (filterAvailabilityStatus === "unavailable") {
+        return !hasAnyDayAvailable;
+      }
+    }
+    
+    return true; // Show all if no status filter
+  });
 
   const getAvailabilityCount = (drivers) => {
     const counts = {};
@@ -141,6 +172,37 @@ export default function AdminDriverAvailability() {
   };
 
   const availabilityCounts = getAvailabilityCount(allDriversAvailability);
+
+  // Get counts for the selected day OR overall counts
+  const getSelectedDayCounts = () => {
+    if (filterDay) {
+      // If a day is selected, show counts for that specific day
+      const available = allDriversAvailability.filter(
+        (d) => d.availability?.[filterDay] === true
+      ).length;
+
+      const unavailable = allDriversAvailability.filter(
+        (d) => d.availability?.[filterDay] === false
+      ).length;
+
+      return { available, unavailable };
+    } else {
+      // If no day selected, show overall availability counts
+      // "available" = has at least one day available
+      // "unavailable" = has no days available (all days false)
+      const available = allDriversAvailability.filter((d) => 
+        Object.values(d.availability || {}).some(day => day === true)
+      ).length;
+
+      const unavailable = allDriversAvailability.filter((d) => 
+        !Object.values(d.availability || {}).some(day => day === true)
+      ).length;
+
+      return { available, unavailable };
+    }
+  };
+
+  const selectedDayCounts = getSelectedDayCounts();
 
   const totalPages = pagination?.totalPages || 0;
   const totalRecords = pagination?.totalRecords || 0;
@@ -189,8 +251,26 @@ export default function AdminDriverAvailability() {
     return Object.values(availability).filter(Boolean).length;
   };
 
+  /**
+   * FIXED: Admin day locking logic
+   * Admins can edit today and future days
+   * Admins CANNOT edit past days (days before today)
+   * SPECIAL HANDLING FOR SUNDAY: When today is Sunday, the week display shows next week
+   */
   const isDayLocked = (dayKey) => {
     const dayIndex = dayIndexMap[dayKey];
+    
+    // Special case: If today is Sunday (index 6)
+    if (currentDayIndex === 6) {
+      // All days in the availability table represent:
+      // - Sunday = today (can edit)
+      // - Monday-Saturday = next week (can edit all)
+      // So nothing is locked on Sundays
+      return false;
+    }
+    
+    // For Monday-Saturday (currentDayIndex 0-5):
+    // Only lock past days (days that have already occurred this week)
     return dayIndex < currentDayIndex;
   };
 
@@ -266,11 +346,12 @@ export default function AdminDriverAvailability() {
   const clearFilters = () => {
     setFilterDay("");
     setFilterCity("");
+    setFilterAvailabilityStatus("");
     setSearchQuery("");
     setCurrentPage(1);
   };
 
-  const hasActiveFilters = filterDay || filterCity || searchQuery;
+  const hasActiveFilters = filterDay || filterCity || searchQuery || filterAvailabilityStatus;
 
   return (
     <>
@@ -335,7 +416,7 @@ export default function AdminDriverAvailability() {
                 </div>
 
                 {/* Filter Dropdowns */}
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
                   {/* Day Filter */}
                   <div className="relative">
                     <select
@@ -346,9 +427,29 @@ export default function AdminDriverAvailability() {
                       <option value="">All Days</option>
                       {daysOfWeek.map((day) => (
                         <option key={day} value={day}>
-                          {day.charAt(0).toUpperCase() + day.slice(1)} 
+                          {day.charAt(0).toUpperCase() + day.slice(1)} ({availabilityCounts[day] || 0} available)
                         </option>
                       ))}
+                    </select>
+                    <svg className="absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                    </svg>
+                  </div>
+
+                  {/* Availability Status Filter - INDEPENDENT */}
+                  <div className="relative">
+                    <select
+                      value={filterAvailabilityStatus}
+                      onChange={(e) => handleAvailabilityStatusChange(e.target.value)}
+                      className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm appearance-none bg-white cursor-pointer transition-all"
+                    >
+                      <option value="">All Drivers</option>
+                      <option value="available">
+                        ✓ Available {filterDay ? `on ${filterDay.charAt(0).toUpperCase() + filterDay.slice(1)}` : '(any day)'} ({selectedDayCounts.available})
+                      </option>
+                      <option value="unavailable">
+                        ✕ Unavailable {filterDay ? `on ${filterDay.charAt(0).toUpperCase() + filterDay.slice(1)}` : '(all days)'} ({selectedDayCounts.unavailable})
+                      </option>
                     </select>
                     <svg className="absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
@@ -360,8 +461,8 @@ export default function AdminDriverAvailability() {
                     <select
                       value={filterCity}
                       onChange={(e) => handleCityFilterChange(e.target.value)}
+                      className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm appearance-none bg-white cursor-pointer transition-all"
                       disabled={citiesLoading}
-                      className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm appearance-none bg-white cursor-pointer transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                       <option value="">All Cities</option>
                       {availableCities.map((city) => (
@@ -382,10 +483,11 @@ export default function AdminDriverAvailability() {
                       onChange={(e) => handleItemsPerPageChange(parseInt(e.target.value))}
                       className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm appearance-none bg-white cursor-pointer transition-all"
                     >
-                      <option value={10}>10 per page</option>
-                      <option value={25}>25 per page</option>
-                      <option value={50}>50 per page</option>
-                      <option value={100}>100 per page</option>
+                      <option value="5">5 per page</option>
+                      <option value="10">10 per page</option>
+                      <option value="20">20 per page</option>
+                      <option value="50">50 per page</option>
+                      <option value="100">100 per page</option>
                     </select>
                     <svg className="absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
@@ -393,123 +495,136 @@ export default function AdminDriverAvailability() {
                   </div>
                 </div>
 
-                {/* Active Filters & Clear Button */}
+                {/* Clear Filters Button */}
                 {hasActiveFilters && (
-                  <div className="flex items-center justify-between p-3 bg-blue-50 border border-blue-200 rounded-lg">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="text-xs font-medium text-blue-900">Active Filters:</span>
-                      {filterDay && (
-                        <span className="inline-flex items-center gap-1 px-2 py-1 bg-white rounded text-xs font-medium text-blue-700 border border-blue-200">
-                          Day: {filterDay}
-                          <button onClick={() => handleFilterChange("")} className="hover:text-blue-900">
-                            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                            </svg>
-                          </button>
-                        </span>
-                      )}
-                      {filterCity && (
-                        <span className="inline-flex items-center gap-1 px-2 py-1 bg-white rounded text-xs font-medium text-blue-700 border border-blue-200">
-                          City: {filterCity}
-                          <button onClick={() => handleCityFilterChange("")} className="hover:text-blue-900">
-                            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                            </svg>
-                          </button>
-                        </span>
-                      )}
-                      {searchQuery && (
-                        <span className="inline-flex items-center gap-1 px-2 py-1 bg-white rounded text-xs font-medium text-blue-700 border border-blue-200">
-                          Search: "{searchQuery}"
-                          <button onClick={() => setSearchQuery("")} className="hover:text-blue-900">
-                            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                            </svg>
-                          </button>
-                        </span>
+                  <button
+                    onClick={clearFilters}
+                    className="w-full sm:w-auto px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors text-sm font-medium flex items-center justify-center gap-2"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                    Clear All Filters
+                  </button>
+                )}
+              </div>
+
+              {/* Manual Reset Button (Superadmin only) */}
+              {admin?.role === "superadmin" && (
+                <div className="pt-3 border-t border-gray-200">
+                  <button
+                    onClick={handleManualReset}
+                    disabled={resetLoading}
+                    className={`w-full sm:w-auto px-6 py-2.5 rounded-lg font-semibold transition-all flex items-center justify-center gap-2 text-sm ${
+                      resetLoading
+                        ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                        : 'bg-red-600 text-white hover:bg-red-700 shadow-lg hover:shadow-xl active:scale-95'
+                    }`}
+                  >
+                    {resetLoading ? (
+                      <>
+                        <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent"></div>
+                        <span>Resetting...</span>
+                      </>
+                    ) : (
+                      <>
+                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                        </svg>
+                        <span>Manual Reset All Drivers</span>
+                      </>
+                    )}
+                  </button>
+                  <p className="text-xs text-gray-500 mt-2">
+                    ⚠️ This will reset availability for ALL drivers (enabled & disabled) to unavailable
+                  </p>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Availability Summary Cards */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2 sm:gap-3 mb-4 sm:mb-6">
+            {daysOfWeek.map((day, index) => {
+              const isCurrentDay = index === currentDayIndex;
+              const count = availabilityCounts[day] || 0;
+              
+              return (
+                <div
+                  key={day}
+                  className={`bg-white rounded-lg shadow-sm border-2 p-3 sm:p-4 transition-all ${
+                    isCurrentDay
+                      ? 'border-blue-500 bg-blue-50'
+                      : filterDay === day
+                      ? 'border-green-500 bg-green-50'
+                      : 'border-gray-200'
+                  }`}
+                >
+                  <div className="text-center">
+                    <div className={`text-xs font-semibold mb-1 ${isCurrentDay ? 'text-blue-700' : 'text-gray-600'}`}>
+                      {daysShort[day]}
+                      {isCurrentDay && (
+                        <span className="block text-[10px] text-blue-600">Today</span>
                       )}
                     </div>
-                    <button
-                      onClick={clearFilters}
-                      className="text-xs font-medium text-blue-700 hover:text-blue-900 underline whitespace-nowrap"
-                    >
-                      Clear All
-                    </button>
+                    <div className={`text-2xl font-bold ${count > 0 ? 'text-green-600' : 'text-gray-400'}`}>
+                      {count}
+                    </div>
+                    <div className="text-[10px] text-gray-500 mt-1">available</div>
                   </div>
-                )}
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Admin Info Banner */}
+          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
+            <div className="flex items-start gap-3">
+              <svg className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              <div className="flex-1">
+                <h3 className="text-sm font-semibold text-blue-900 mb-1">Admin Permissions & Filters</h3>
+                <ul className="text-xs text-blue-800 space-y-1">
+                  <li>• ✅ <strong>You can edit availability for TODAY and all future days</strong></li>
+                  <li>• ❌ Past days (before today) cannot be edited</li>
+                  <li>• 🔄 Availability resets every Sunday at 12:00 PM in each driver's timezone</li>
+                  
+                  {/* Show filter status */}
+                  {filterAvailabilityStatus && (
+                    <li className="mt-2 pt-2 border-t border-blue-300">
+                      • 🔍 <strong>Active Filter:</strong> Showing <strong className={filterAvailabilityStatus === 'available' ? 'text-green-700' : 'text-red-700'}>
+                        {filterAvailabilityStatus === 'available' ? 'AVAILABLE' : 'UNAVAILABLE'}
+                      </strong> drivers
+                      {filterDay ? (
+                        <> for <strong>{filterDay.charAt(0).toUpperCase() + filterDay.slice(1)}</strong> ({filterAvailabilityStatus === 'available' ? selectedDayCounts.available : selectedDayCounts.unavailable} drivers)</>
+                      ) : (
+                        <> {filterAvailabilityStatus === 'available' ? '(have at least one day available)' : '(not available any day)'} ({filterAvailabilityStatus === 'available' ? selectedDayCounts.available : selectedDayCounts.unavailable} drivers)</>
+                      )}
+                    </li>
+                  )}
+                </ul>
               </div>
             </div>
           </div>
 
-          {/* Manual Reset Button (Superadmin Only) */}
-          {admin?.role === "superadmin" && (
-            <div className="bg-gradient-to-r from-red-50 to-orange-50 border border-red-200 rounded-xl p-4 mb-4 sm:mb-6 shadow-sm">
-              <div className="flex items-center justify-between gap-4">
-                <div className="flex items-start gap-3 flex-1">
-                  <svg className="w-6 h-6 text-red-600 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-                  </svg>
-                  <div className="flex-1">
-                    <h3 className="text-sm font-semibold text-red-900">Superadmin Action</h3>
-                    <p className="text-xs text-red-700 mt-1">
-                      Reset all drivers' availability to unavailable. This action affects all enabled and disabled drivers.
-                    </p>
-                  </div>
-                </div>
-                <button
-                  onClick={handleManualReset}
-                  disabled={resetLoading}
-                  className="px-4 py-2 bg-red-600 text-white text-sm font-semibold rounded-lg hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-sm flex items-center gap-2 whitespace-nowrap"
-                >
-                  {resetLoading ? (
-                    <>
-                      <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
-                        <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" className="opacity-25" />
-                        <path fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" className="opacity-75" />
-                      </svg>
-                      Resetting...
-                    </>
-                  ) : (
-                    <>
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                      </svg>
-                      Reset All Availability
-                    </>
-                  )}
-                </button>
-              </div>
-            </div>
-          )}
-          {/* Info about locked days */}
-          <div className="bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-200 rounded-xl p-3 sm:p-4 mb-4 sm:mb-6 shadow-sm">
-            <div className="flex items-start gap-2">
-              <svg className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-              </svg>
-              <div>
-                <p className="text-xs sm:text-sm font-semibold text-amber-900">Editing Restrictions</p>
-                <p className="text-xs text-amber-700 mt-1">
-                  Past days (before today) cannot be edited to maintain historical accuracy. Days with 🔒 icon are locked. Drivers have a 7:00 PM cutoff for editing today and tomorrow.
-                </p>
-              </div>
-            </div>
-          </div>
+          {/* Drivers Table */}
           {loading ? (
-            <div className="bg-white rounded-xl shadow-md border border-gray-200 p-12 text-center">
-              <div className="animate-spin rounded-full h-16 w-16 border-4 border-blue-500 border-t-transparent mx-auto"></div>
-              <p className="mt-4 text-gray-600 font-medium">Loading drivers...</p>
+            <div className="bg-white rounded-xl shadow-md border border-gray-200 p-8 sm:p-12 flex flex-col items-center justify-center">
+              <div className="animate-spin rounded-full h-12 w-12 border-4 border-blue-600 border-t-transparent mb-4"></div>
+              <p className="text-gray-600 text-sm">Loading drivers...</p>
             </div>
           ) : filteredDrivers.length === 0 ? (
-            <div className="bg-white rounded-xl shadow-md border border-gray-200 p-12 text-center">
-              <svg className="w-20 h-20 text-gray-300 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4" />
+            <div className="bg-white rounded-xl shadow-md border border-gray-200 p-8 sm:p-12 text-center">
+              <svg className="w-16 h-16 mx-auto text-gray-400 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4" />
               </svg>
               <h3 className="text-lg font-semibold text-gray-900 mb-2">No Drivers Found</h3>
-              <p className="text-gray-600 mb-4">
-                {hasActiveFilters
-                  ? "No drivers match your current filters"
-                  : "No drivers available"}
+              <p className="text-sm text-gray-600 mb-4">
+                {hasActiveFilters 
+                  ? "No drivers match your current filters. Try adjusting or clearing your filters."
+                  : "No drivers available in the system."
+                }
               </p>
               {hasActiveFilters && (
                 <button
@@ -521,427 +636,370 @@ export default function AdminDriverAvailability() {
               )}
             </div>
           ) : (
-            <div className="bg-white rounded-xl shadow-md border border-gray-200 overflow-hidden">
+            <>
               {/* Desktop Table */}
-              <div className="hidden md:block overflow-x-auto">
-                <table className="w-full">
-                  <thead className="bg-gradient-to-r from-gray-50 to-gray-100 border-b-2 border-gray-200">
-                    <tr>
-                      <th className="px-6 py-4 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">
-                        Driver Info
-                      </th>
-                      {daysOfWeek.map((day) => (
-                        <th
-                          key={day}
-                          className="px-3 py-4 text-center text-xs font-bold text-gray-700 uppercase tracking-wider"
-                        >
-                          <div className="flex flex-col items-center gap-1">
-                            <span>{daysShort[day]}</span>
-                            {isDayLocked(day) && (
-                              <svg className="w-3 h-3 text-gray-400" fill="currentColor" viewBox="0 0 20 20">
-                                <path fillRule="evenodd" d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z" clipRule="evenodd" />
-                              </svg>
-                            )}
-                          </div>
+              <div className="hidden lg:block bg-white rounded-xl shadow-md border border-gray-200 overflow-hidden">
+                <div className="overflow-x-auto">
+                  <table className="w-full">
+                    <thead className="bg-gradient-to-r from-blue-50 to-blue-100 border-b border-gray-200">
+                      <tr>
+                        <th className="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
+                          Driver Info
                         </th>
-                      ))}
-                      <th className="px-6 py-4 text-center text-xs font-bold text-gray-700 uppercase tracking-wider">
-                        Actions
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-200">
-                    {filteredDrivers.map((driver) => {
-                      const isEditing = editingDriverId === driver.id;
-                      const displayAvailability = isEditing ? editAvailability : driver.availability;
-
-                      return (
-                        <tr key={driver.id} className="hover:bg-gray-50 transition-colors">
-                          <td className="px-6 py-4">
-                            <div>
-                              <div className="flex items-center gap-2">
-                                <div className="text-sm font-semibold text-gray-900">
-                                  {driver.name}
+                        <th className="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
+                          City
+                        </th>
+                        <th className="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
+                          Status
+                        </th>
+                        <th className="px-6 py-4 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider" colSpan={7}>
+                          Weekly Availability
+                        </th>
+                        <th className="px-6 py-4 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider">
+                          Actions
+                        </th>
+                      </tr>
+                      <tr className="bg-gray-50 border-t border-gray-200">
+                        <th colSpan={3}></th>
+                        {daysOfWeek.map((day, index) => {
+                          const isCurrentDay = index === currentDayIndex;
+                          return (
+                            <th
+                              key={day}
+                              className={`px-2 py-2 text-center text-xs font-semibold ${
+                                isCurrentDay ? 'text-blue-700 bg-blue-50' : 'text-gray-600'
+                              }`}
+                            >
+                              {daysShort[day]}
+                              {isCurrentDay && <div className="text-[10px] text-blue-600">Today</div>}
+                            </th>
+                          );
+                        })}
+                        <th></th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-200">
+                      {filteredDrivers.map((driver, driverIndex) => {
+                        const isEditing = editingDriverId === driver.id;
+                        const displayAvailability = isEditing ? editAvailability : driver.availability;
+                        const availableDaysCount = getAvailableDays(displayAvailability);
+                        
+                        return (
+                          <tr
+                            key={driver.id}
+                            className={`hover:bg-gray-50 transition-colors ${
+                              driverIndex % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'
+                            } ${isEditing ? 'ring-2 ring-blue-500' : ''}`}
+                          >
+                            <td className="px-6 py-4 whitespace-nowrap">
+                              <div className="flex items-center gap-3">
+                                <div className="flex-shrink-0 h-10 w-10 rounded-full bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center text-white font-bold">
+                                  {driver.name.charAt(0).toUpperCase()}
                                 </div>
-                                {!driver.enabled && (
-                                  <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-red-100 text-red-800">
-                                    Disabled
-                                  </span>
-                                )}
+                                <div>
+                                  <div className="text-sm font-semibold text-gray-900">{driver.name}</div>
+                                  <div className="text-xs text-gray-500">#{driver.driver_code}</div>
+                                </div>
                               </div>
-                              <div className="text-xs text-gray-500 mt-0.5">
-                                {driver.email}
-                              </div>
-                              <div className="flex items-center gap-2 mt-1">
-                                <span className="text-xs text-gray-500">
-                                  Code: {driver.driver_code}
-                                </span>
-                                <span className="text-xs text-blue-600 font-medium">
-                                  • {driver.city}
-                                </span>
-                              </div>
-                            </div>
-                          </td>
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap">
+                              <div className="text-sm text-gray-900">{driver.city}</div>
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap">
+                              <span
+                                className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold ${
+                                  driver.enabled
+                                    ? 'bg-green-100 text-green-800'
+                                    : 'bg-gray-100 text-gray-800'
+                                }`}
+                              >
+                                {driver.enabled ? '✓ Enabled' : '○ Disabled'}
+                              </span>
+                            </td>
 
-                          {daysOfWeek.map((day) => {
-                            const isAvailable = displayAvailability?.[day];
-                            const isLocked = isDayLocked(day);
-
-                            return (
-                              <td key={day} className="px-3 py-4 text-center">
-                                {isEditing ? (
+                            {/* Day toggles */}
+                            {daysOfWeek.map((day, dayIdx) => {
+                              const isAvailable = displayAvailability[day];
+                              const isLocked = isDayLocked(day);
+                              const isDayToday = dayIdx === currentDayIndex;
+                              
+                              return (
+                                <td key={day} className={`px-2 py-4 text-center ${isDayToday ? 'bg-blue-50' : ''}`}>
                                   <button
-                                    onClick={() => toggleDay(day)}
-                                    disabled={isLocked}
-                                    className={`w-10 h-10 rounded-lg transition-all flex items-center justify-center mx-auto ${
-                                      isLocked
-                                        ? 'bg-gray-100 opacity-50 cursor-not-allowed'
-                                        : isAvailable
-                                        ? 'bg-green-100 hover:bg-green-200 ring-2 ring-green-300'
-                                        : 'bg-red-100 hover:bg-red-200 ring-2 ring-red-300'
+                                    onClick={() => isEditing && toggleDay(day)}
+                                    disabled={!isEditing || isLocked}
+                                    className={`w-10 h-10 rounded-full flex items-center justify-center font-bold transition-all ${
+                                      isAvailable
+                                        ? 'bg-green-500 text-white hover:bg-green-600'
+                                        : 'bg-gray-200 text-gray-500 hover:bg-gray-300'
+                                    } ${
+                                      !isEditing || isLocked
+                                        ? 'cursor-not-allowed opacity-50'
+                                        : 'cursor-pointer hover:scale-110 active:scale-95'
                                     }`}
-                                    title={isLocked ? `${day} is locked (past day)` : `Toggle ${day}`}
+                                    title={
+                                      isLocked
+                                        ? `Cannot edit ${day} - day has already passed`
+                                        : isAvailable
+                                        ? 'Available'
+                                        : 'Unavailable'
+                                    }
                                   >
-                                    {isLocked ? (
-                                      <svg className="w-4 h-4 text-gray-500" fill="currentColor" viewBox="0 0 20 20">
-                                        <path fillRule="evenodd" d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z" clipRule="evenodd" />
-                                      </svg>
-                                    ) : isAvailable ? (
-                                      <svg className="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
-                                      </svg>
+                                    {isAvailable ? '✓' : '✕'}
+                                  </button>
+                                </td>
+                              );
+                            })}
+
+                            <td className="px-6 py-4 whitespace-nowrap text-center">
+                              {isEditing ? (
+                                <div className="flex items-center justify-center gap-2">
+                                  <button
+                                    onClick={() => saveAvailability(driver.id)}
+                                    disabled={isSaving}
+                                    className="px-3 py-1.5 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-sm font-medium flex items-center gap-1 disabled:opacity-50 disabled:cursor-not-allowed"
+                                  >
+                                    {isSaving ? (
+                                      <>
+                                        <div className="animate-spin rounded-full h-3 w-3 border-2 border-white border-t-transparent"></div>
+                                        <span>Saving...</span>
+                                      </>
                                     ) : (
-                                      <svg className="w-5 h-5 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M6 18L18 6M6 6l12 12" />
-                                      </svg>
+                                      <>
+                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                                        </svg>
+                                        <span>Save</span>
+                                      </>
                                     )}
                                   </button>
-                                ) : (
-                                  <div className={`w-10 h-10 rounded-lg flex items-center justify-center mx-auto ${
-                                    isAvailable ? 'bg-green-100' : 'bg-red-100'
-                                  }`}>
-                                    {isAvailable ? (
-                                      <svg className="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
-                                      </svg>
-                                    ) : (
-                                      <svg className="w-5 h-5 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M6 18L18 6M6 6l12 12" />
-                                      </svg>
-                                    )}
-                                  </div>
-                                )}
-                              </td>
-                            );
-                          })}
-
-                          <td className="px-6 py-4 text-center">
-                            {isEditing ? (
-                              <div className="flex justify-center gap-2">
+                                  <button
+                                    onClick={cancelEdit}
+                                    disabled={isSaving}
+                                    className="px-3 py-1.5 bg-gray-500 text-white rounded-lg hover:bg-gray-600 transition-colors text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                                  >
+                                    Cancel
+                                  </button>
+                                </div>
+                              ) : (
                                 <button
-                                  onClick={() => saveAvailability(driver.id)}
-                                  disabled={isSaving}
-                                  className="px-3 py-1.5 bg-green-600 text-white text-xs font-medium rounded-lg hover:bg-green-700 transition-all shadow-sm disabled:opacity-50 flex items-center gap-1"
+                                  onClick={() => startEdit(driver)}
+                                  className="px-3 py-1.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium flex items-center gap-1 mx-auto"
                                 >
-                                  {isSaving ? (
-                                    <>
-                                      <svg className="animate-spin h-3 w-3" viewBox="0 0 24 24">
-                                        <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" className="opacity-25" />
-                                        <path fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" className="opacity-75" />
-                                      </svg>
-                                      Save
-                                    </>
-                                  ) : (
-                                    <>
-                                      <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                                      </svg>
-                                      Save
-                                    </>
-                                  )}
-                                </button>
-                                <button
-                                  onClick={cancelEdit}
-                                  disabled={isSaving}
-                                  className="px-3 py-1.5 bg-gray-500 text-white text-xs font-medium rounded-lg hover:bg-gray-600 transition-all shadow-sm disabled:opacity-50 flex items-center gap-1"
-                                >
-                                  <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
                                   </svg>
-                                  Cancel
+                                  <span>Edit</span>
                                 </button>
-                              </div>
-                            ) : (
-                              <button
-                                onClick={() => startEdit(driver)}
-                                className="px-3 py-1.5 bg-blue-600 text-white text-xs font-medium rounded-lg hover:bg-blue-700 transition-all shadow-sm flex items-center gap-1 mx-auto"
-                              >
-                                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                                </svg>
-                                Edit
-                              </button>
-                            )}
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
               </div>
 
               {/* Mobile Cards */}
-              <div className="md:hidden divide-y divide-gray-200">
+              <div className="lg:hidden space-y-4">
                 {filteredDrivers.map((driver) => {
                   const isEditing = editingDriverId === driver.id;
                   const displayAvailability = isEditing ? editAvailability : driver.availability;
-
+                  const availableDaysCount = getAvailableDays(displayAvailability);
+                  
                   return (
-                    <div key={driver.id} className="p-4 hover:bg-gray-50 transition-colors">
-                      <div className="flex items-start justify-between mb-3">
-                        <div className="flex-1">
-                          <div className="flex items-center gap-2 mb-1">
-                            <h3 className="text-sm font-semibold text-gray-900">
-                              {driver.name}
-                            </h3>
-                            {!driver.enabled && (
-                              <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-red-100 text-red-800">
-                                Disabled
-                              </span>
-                            )}
+                    <div
+                      key={driver.id}
+                      className={`bg-white rounded-xl shadow-md border-2 p-4 transition-all ${
+                        isEditing ? 'border-blue-500 ring-2 ring-blue-200' : 'border-gray-200'
+                      }`}
+                    >
+                      {/* Driver Header */}
+                      <div className="flex items-start justify-between mb-4">
+                        <div className="flex items-center gap-3">
+                          <div className="flex-shrink-0 h-12 w-12 rounded-full bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center text-white font-bold text-lg">
+                            {driver.name.charAt(0).toUpperCase()}
                           </div>
-                          <p className="text-xs text-gray-600">{driver.email}</p>
-                          <div className="flex items-center gap-2 mt-1">
-                            <span className="text-[10px] text-gray-500">
-                              Code: {driver.driver_code}
-                            </span>
-                            <span className="text-[10px] text-blue-600 font-medium">
-                              • {driver.city}
-                            </span>
+                          <div>
+                            <div className="text-sm font-semibold text-gray-900">{driver.name}</div>
+                            <div className="text-xs text-gray-500">#{driver.driver_code}</div>
+                            <div className="text-xs text-gray-600 mt-1">{driver.city}</div>
                           </div>
                         </div>
-                        <div className="text-right">
-                          <div className="text-lg font-bold text-blue-600">
-                            {getAvailableDays(displayAvailability)}/7
-                          </div>
-                          <div className="text-[9px] text-gray-500">Available</div>
-                        </div>
+                        <span
+                          className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-semibold ${
+                            driver.enabled
+                              ? 'bg-green-100 text-green-800'
+                              : 'bg-gray-100 text-gray-800'
+                          }`}
+                        >
+                          {driver.enabled ? '✓ Enabled' : '○ Disabled'}
+                        </span>
                       </div>
 
-                      <div className="mt-3">
-                        <div className="grid grid-cols-7 gap-1.5">
-                          {daysOfWeek.map((day) => {
-                            const isAvailable = displayAvailability?.[day];
-                            const isLocked = isDayLocked(day);
-                            
-                            return (
-                              <div
-                                key={day}
-                                onClick={() => {
-                                  if (isEditing && !isLocked) {
-                                    toggleDay(day);
-                                  }
-                                }}
-                                className={`aspect-square rounded-lg flex flex-col items-center justify-center transition-all ${
-                                  isLocked
-                                    ? 'bg-gray-100 opacity-60'
-                                    : isAvailable
-                                    ? 'bg-green-100'
-                                    : 'bg-red-100'
-                                } ${
-                                  isEditing && !isLocked
-                                    ? 'cursor-pointer active:scale-95 shadow-sm'
-                                    : ''
-                                }`}
-                              >
-                                {isLocked ? (
-                                  <svg className="w-3 h-3 text-gray-500" fill="currentColor" viewBox="0 0 20 20">
-                                    <path fillRule="evenodd" d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z" clipRule="evenodd" />
-                                  </svg>
-                                ) : isAvailable ? (
-                                  <svg className="w-4 h-4 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
-                                  </svg>
-                                ) : (
-                                  <svg className="w-4 h-4 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M6 18L18 6M6 6l12 12" />
-                                  </svg>
-                                )}
-                                <span className="text-[9px] font-medium text-gray-600 mt-0.5">
-                                  {daysShort[day]}
-                                </span>
+                      {/* Availability Grid */}
+                      <div className="grid grid-cols-7 gap-2 mb-4">
+                        {daysOfWeek.map((day, dayIdx) => {
+                          const isAvailable = displayAvailability[day];
+                          const isLocked = isDayLocked(day);
+                          const isDayToday = dayIdx === currentDayIndex;
+                          
+                          return (
+                            <div key={day} className="text-center">
+                              <div className={`text-[10px] font-semibold mb-1 ${isDayToday ? 'text-blue-700' : 'text-gray-600'}`}>
+                                {daysShort[day]}
                               </div>
-                            );
-                          })}
-                        </div>
+                              <button
+                                onClick={() => isEditing && toggleDay(day)}
+                                disabled={!isEditing || isLocked}
+                                className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm transition-all ${
+                                  isAvailable
+                                    ? 'bg-green-500 text-white'
+                                    : 'bg-gray-200 text-gray-500'
+                                } ${
+                                  !isEditing || isLocked
+                                    ? 'cursor-not-allowed opacity-50'
+                                    : 'cursor-pointer hover:scale-110 active:scale-95'
+                                } ${isDayToday ? 'ring-2 ring-blue-400' : ''}`}
+                                title={
+                                  isLocked
+                                    ? `Cannot edit ${day} - day has already passed`
+                                    : isAvailable
+                                    ? 'Available'
+                                    : 'Unavailable'
+                                }
+                              >
+                                {isAvailable ? '✓' : '✕'}
+                              </button>
+                            </div>
+                          );
+                        })}
                       </div>
 
-                      <div className="pt-3 border-t border-gray-200 mt-3">
-                        {editingDriverId === driver.id ? (
-                          <div className="flex gap-2">
-                            <button
-                              onClick={() => saveAvailability(driver.id)}
-                              disabled={isSaving}
-                              className="flex-1 px-4 py-2 bg-green-600 text-white text-sm font-medium rounded-lg hover:bg-green-700 transition-all shadow-sm flex items-center justify-center gap-2 disabled:opacity-50"
-                            >
-                              {isSaving ? (
-                                <>
-                                  <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
-                                    <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" className="opacity-25" />
-                                    <path fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" className="opacity-75" />
-                                  </svg>
-                                  Saving...
-                                </>
-                              ) : (
-                                <>
-                                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                                  </svg>
-                                  Save
-                                </>
-                              )}
-                            </button>
-                            <button
-                              onClick={cancelEdit}
-                              disabled={isSaving}
-                              className="flex-1 px-4 py-2 bg-gray-500 text-white text-sm font-medium rounded-lg hover:bg-gray-600 transition-all shadow-sm flex items-center justify-center gap-2 disabled:opacity-50"
-                            >
-                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                              </svg>
-                              Cancel
-                            </button>
-                          </div>
-                        ) : (
+                      {/* Action Buttons */}
+                      {isEditing ? (
+                        <div className="flex gap-2">
                           <button
-                            onClick={() => startEdit(driver)}
-                            className="w-full px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-all shadow-sm flex items-center justify-center gap-2"
+                            onClick={() => saveAvailability(driver.id)}
+                            disabled={isSaving}
+                            className="flex-1 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-sm font-medium flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
                           >
-                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                            </svg>
-                            Edit Availability
+                            {isSaving ? (
+                              <>
+                                <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent"></div>
+                                <span>Saving...</span>
+                              </>
+                            ) : (
+                              <>
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                                </svg>
+                                <span>Save Changes</span>
+                              </>
+                            )}
                           </button>
-                        )}
-                      </div>
+                          <button
+                            onClick={cancelEdit}
+                            disabled={isSaving}
+                            className="px-4 py-2 bg-gray-500 text-white rounded-lg hover:bg-gray-600 transition-colors text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      ) : (
+                        <button
+                          onClick={() => startEdit(driver)}
+                          className="w-full px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium flex items-center justify-center gap-2"
+                        >
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                          </svg>
+                          <span>Edit Availability</span>
+                        </button>
+                      )}
                     </div>
                   );
                 })}
               </div>
 
-              {/* Enhanced Pagination Footer */}
-              <div className="px-4 sm:px-6 py-4 sm:py-6 bg-gradient-to-r from-gray-50 to-gray-100 border-t-2 border-gray-200">
-                <div className="flex flex-col gap-4">
-                  {/* Info and Stats */}
-                  <div className="flex flex-col sm:flex-row items-center justify-between gap-3 sm:gap-4">
-                    <div className="text-xs sm:text-sm text-gray-700 font-medium">
-                      Showing <span className="font-bold text-blue-600">{(currentPage - 1) * itemsPerPage + 1}</span> to{' '}
-                      <span className="font-bold text-blue-600">{Math.min(currentPage * itemsPerPage, totalRecords)}</span> of{' '}
-                      <span className="font-bold text-blue-600">{totalRecords}</span> drivers
+              {/* Pagination */}
+              {totalPages > 1 && (
+                <div className="bg-white rounded-xl shadow-md border border-gray-200 p-4 mt-6">
+                  <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
+                    <div className="text-sm text-gray-700">
+                      Showing <span className="font-semibold">{((currentPage - 1) * itemsPerPage) + 1}</span> to{' '}
+                      <span className="font-semibold">
+                        {Math.min(currentPage * itemsPerPage, totalRecords)}
+                      </span>{' '}
+                      of <span className="font-semibold">{totalRecords}</span> drivers
                     </div>
 
-                    <div className="flex items-center gap-4 sm:gap-6">
-                      <div className="flex items-center gap-2">
-                        <div className="w-4 h-4 bg-green-100 rounded-md flex items-center justify-center ring-1 ring-green-300">
-                          <svg className="w-3 h-3 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
-                          </svg>
-                        </div>
-                        <span className="text-xs text-gray-600 font-medium">Available</span>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <div className="w-4 h-4 bg-red-100 rounded-md flex items-center justify-center ring-1 ring-red-300">
-                          <svg className="w-3 h-3 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M6 18L18 6M6 6l12 12" />
-                          </svg>
-                        </div>
-                        <span className="text-xs text-gray-600 font-medium">Unavailable</span>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Enhanced Pagination Controls */}
-                  {totalPages > 1 && (
-                    <div className="flex items-center justify-center gap-2">
-                      {/* First Page */}
+                    <div className="flex items-center gap-2">
                       <button
                         onClick={goToFirstPage}
-                        disabled={!hasPreviousPage || loading}
-                        className="p-2 border-2 border-gray-300 rounded-lg hover:bg-gray-200 hover:border-gray-400 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:hover:border-gray-300 transition-all"
-                        title="First Page"
+                        disabled={!hasPreviousPage}
+                        className="px-3 py-2 rounded-lg border border-gray-300 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50 transition-colors"
                       >
-                        <svg className="w-4 h-4 text-gray-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <svg className="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 19l-7-7 7-7m8 14l-7-7 7-7" />
                         </svg>
                       </button>
-                      
-                      {/* Previous */}
+
                       <button
                         onClick={goToPreviousPage}
-                        disabled={!hasPreviousPage || loading}
-                        className="p-2 border-2 border-gray-300 rounded-lg hover:bg-gray-200 hover:border-gray-400 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:hover:border-gray-300 transition-all"
-                        title="Previous"
+                        disabled={!hasPreviousPage}
+                        className="px-3 py-2 rounded-lg border border-gray-300 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50 transition-colors"
                       >
-                        <svg className="w-4 h-4 text-gray-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <svg className="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
                         </svg>
                       </button>
 
-                      {/* Page Numbers */}
-                      <div className="hidden sm:flex items-center gap-1">
-                        {getPageNumbers().map((page, idx) => (
-                          page === '...' ? (
-                            <span key={`ellipsis-${idx}`} className="px-3 py-2 text-sm text-gray-500 font-medium">...</span>
+                      <div className="flex items-center gap-1">
+                        {getPageNumbers().map((pageNum, idx) => (
+                          pageNum === '...' ? (
+                            <span key={`ellipsis-${idx}`} className="px-3 py-2 text-gray-500">...</span>
                           ) : (
                             <button
-                              key={page}
-                              onClick={() => goToPage(page)}
-                              disabled={loading}
-                              className={`min-w-[2.5rem] px-3 py-2 text-sm font-bold border-2 rounded-lg transition-all disabled:opacity-50 ${
-                                currentPage === page
-                                  ? 'bg-blue-600 text-white border-blue-600 shadow-lg scale-105'
-                                  : 'border-gray-300 text-gray-700 hover:bg-gray-200 hover:border-gray-400'
+                              key={pageNum}
+                              onClick={() => goToPage(pageNum)}
+                              className={`px-4 py-2 rounded-lg font-medium transition-all ${
+                                currentPage === pageNum
+                                  ? 'bg-blue-600 text-white shadow-lg'
+                                  : 'bg-white text-gray-700 border border-gray-300 hover:bg-gray-50'
                               }`}
                             >
-                              {page}
+                              {pageNum}
                             </button>
                           )
                         ))}
                       </div>
 
-                      {/* Mobile Page Indicator */}
-                      <div className="sm:hidden px-4 py-2 bg-white border-2 border-gray-300 rounded-lg text-sm font-bold text-gray-700">
-                        {currentPage} / {totalPages}
-                      </div>
-
-                      {/* Next */}
                       <button
                         onClick={goToNextPage}
-                        disabled={!hasNextPage || loading}
-                        className="p-2 border-2 border-gray-300 rounded-lg hover:bg-gray-200 hover:border-gray-400 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:hover:border-gray-300 transition-all"
-                        title="Next"
+                        disabled={!hasNextPage}
+                        className="px-3 py-2 rounded-lg border border-gray-300 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50 transition-colors"
                       >
-                        <svg className="w-4 h-4 text-gray-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <svg className="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
                         </svg>
                       </button>
 
-                      {/* Last Page */}
                       <button
                         onClick={goToLastPage}
-                        disabled={!hasNextPage || loading}
-                        className="p-2 border-2 border-gray-300 rounded-lg hover:bg-gray-200 hover:border-gray-400 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:hover:border-gray-300 transition-all"
-                        title="Last Page"
+                        disabled={!hasNextPage}
+                        className="px-3 py-2 rounded-lg border border-gray-300 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50 transition-colors"
                       >
-                        <svg className="w-4 h-4 text-gray-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <svg className="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 5l7 7-7 7M5 5l7 7-7 7" />
                         </svg>
                       </button>
                     </div>
-                  )}
+                  </div>
                 </div>
-              </div>
-            </div>
+              )}
+            </>
           )}
         </div>
       </div>

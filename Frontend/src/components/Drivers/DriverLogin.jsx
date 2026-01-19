@@ -1,25 +1,29 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import logo from "../../assets/logo.png";
-
 import { useDispatch, useSelector } from "react-redux";
 import { driverLogin, clearError } from "../../redux/slice/driver/driverSlice.js";
 import { useNavigate } from "react-router-dom";
-import { useEffect } from "react";
 import { toast } from "react-toastify";
 import { AiOutlineEye, AiOutlineEyeInvisible } from "react-icons/ai";
-
 
 const DriverLogin = () => {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [fieldErrors, setFieldErrors] = useState({ email: "", password: "" });
   const [showPassword, setShowPassword] = useState(false);
-
+  const [detectedTimezone, setDetectedTimezone] = useState("");
 
   const dispatch = useDispatch();
   const navigate = useNavigate();
 
   const { loading, error, isAuthenticated } = useSelector((state) => state.driver);
+
+  // DETECT TIMEZONE ON COMPONENT MOUNT
+  useEffect(() => {
+    const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    setDetectedTimezone(timezone);
+    console.log("🌍 Detected timezone:", timezone);
+  }, []);
 
   useEffect(() => {
     if (email && fieldErrors.email) {
@@ -48,7 +52,7 @@ const DriverLogin = () => {
     try {
       const res = await dispatch(driverLogin({ email, password })).unwrap();
 
-      toast.success("Login successful!", {
+      toast.success(`Login successful! Timezone: ${detectedTimezone}`, {
         position: "top-right",
         autoClose: 3000,
         pauseOnHover: true,
@@ -109,31 +113,38 @@ const DriverLogin = () => {
             </div>
 
             <div className="text-left mb-4 relative">
-  <label htmlFor="password">Password</label>
+              <label htmlFor="password" className="block text-gray-700 mb-1 font-medium">
+                Password
+              </label>
 
-  <input
-    type={showPassword ? "text" : "password"}
-    id="password"
-    value={password}
-    onChange={(e) => {
-      setPassword(e.target.value);
-      setFieldErrors((prev) => ({ ...prev, password: "" }));
-    }}
-    className="w-full px-4 py-3 pr-12 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-600"
-  />
+              <input
+                type={showPassword ? "text" : "password"}
+                id="password"
+                value={password}
+                onChange={(e) => {
+                  setPassword(e.target.value);
+                  setFieldErrors((prev) => ({ ...prev, password: "" }));
+                }}
+                placeholder="Enter your password"
+                className={`w-full px-4 py-3 pr-12 border rounded-lg focus:outline-none focus:ring-2
+                  ${
+                    fieldErrors.password
+                      ? "border-red-500 focus:ring-red-500"
+                      : "border-gray-300 focus:ring-purple-600"
+                  }`}
+              />
 
-  <span
-    onClick={() => setShowPassword(!showPassword)}
-    className="absolute right-4 top-10 cursor-pointer text-gray-600"
-  >
-    {showPassword ? <AiOutlineEyeInvisible size={22} /> : <AiOutlineEye size={22} />}
-  </span>
+              <span
+                onClick={() => setShowPassword(!showPassword)}
+                className="absolute right-4 top-10 cursor-pointer text-gray-600"
+              >
+                {showPassword ? <AiOutlineEyeInvisible size={22} /> : <AiOutlineEye size={22} />}
+              </span>
 
-  {fieldErrors.password && (
-    <p className="text-red-600 text-sm">{fieldErrors.password}</p>
-  )}
-</div>
-
+              {fieldErrors.password && (
+                <p className="text-red-600 text-sm mt-1">{fieldErrors.password}</p>
+              )}
+            </div>
 
             <button
               type="submit"
@@ -169,6 +180,17 @@ const DriverLogin = () => {
               )}
             </button>
           </form>
+
+          {/* SHOW DETECTED TIMEZONE */}
+          {detectedTimezone && (
+            <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+              <p className="text-xs text-gray-600">
+                🌍 Your timezone: <span className="font-semibold text-blue-800">
+                  {detectedTimezone}
+                </span>
+              </p>
+            </div>
+          )}
         </div>
       </div>
     </div>
