@@ -108,16 +108,16 @@ const [selectedDriverForRoutes, setSelectedDriverForRoutes] = useState(null);
   }, [errorTimeout]);
 
   useEffect(() => {
-  if (newJourneyData.driver_id) {
+  // if (newJourneyData.driver_id) {
     // Fetch routes specific to this driver
-    dispatch(fetchRoutesByDriver(newJourneyData.driver_id));
-    setSelectedDriverForRoutes(newJourneyData.driver_id);
-  } else {
+    // dispatch(fetchRoutesByDriver(newJourneyData.driver_id));
+    // setSelectedDriverForRoutes(newJourneyData.driver_id);
+  // } else {
     // No driver selected - show all routes
     dispatch(fetchAdminRoutes());
-    setSelectedDriverForRoutes(null);
-  }
-}, [newJourneyData.driver_id, dispatch]);
+    // setSelectedDriverForRoutes(null);
+  // }
+}, [ dispatch]);
 useEffect(() => {
   if (editableJourneyId && formData.driver_id) {
     const currentJourney = paginatedJourneys.find(j => j.id === editableJourneyId);
