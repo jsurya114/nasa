@@ -47,11 +47,11 @@ export const createAccessCode = async (req, res) => {
     return res.status(400).json({ message: "Invalid zip code format" });
   }
 
- if (!/^[a-zA-Z0-9 ]+$/.test(access_code)) {
-  return res
-    .status(400)
-    .json({ message: "Access code must be alphanumeric and spaces only" });
-}
+//  if (!/^[a-zA-Z0-9 ]+$/.test(access_code)) {
+//   return res
+//     .status(400)
+//     .json({ message: "Access code must be alphanumeric and spaces only" });
+// }
 
 
   try {

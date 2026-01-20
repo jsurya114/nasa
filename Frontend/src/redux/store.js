@@ -16,6 +16,7 @@ import dashboardReducer from "../redux/slice/admin/dashSlice.js"
 import analyticsReducer from './slice/admin/analyticsSlice';
 import availabilityReducer from '../redux/slice/driver/availabilitySlice.js';
 import passwordReducer from "../redux/slice/driver/passwordSlice.js"
+import languageReducer from "../redux/slice/languageSlice.js"
 
 export const store = configureStore({
     reducer: {
@@ -34,8 +35,8 @@ export const store = configureStore({
        dash:dashboardReducer,
        analytics:analyticsReducer,
        availability: availabilityReducer,
-       password:passwordReducer
-
+       password:passwordReducer,
+      language:languageReducer
     
     }
 })
