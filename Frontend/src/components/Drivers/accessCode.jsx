@@ -77,7 +77,6 @@ export default function DriverAccessCodePage() {
       case "accessCode":
         if (!value.trim()) {
           error = "Access code is required";
-        
         } else if (value.length < 4) {
           error = "Access code must be at least 4 characters";
         }

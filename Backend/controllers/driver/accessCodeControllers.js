@@ -42,11 +42,11 @@ export const createAccessCode = async (req, res) => {
     });
   }
 
-  if (!/^[a-zA-Z0-9]+$/.test(access_code)) {
-    return res.status(400).json({ 
-      message: "Access code must be alphanumeric (letters and numbers only)" 
-    });
-  }
+  // if (!/^[a-zA-Z0-9]+$/.test(access_code)) {
+  //   return res.status(400).json({ 
+  //     message: "Access code must be alphanumeric (letters and numbers only)" 
+  //   });
+  // }
 
   try {
     // ✅ FIXED: Use Cloudinary URLs from f.path instead of local paths
