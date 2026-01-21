@@ -10,6 +10,7 @@ import driverAuth from '../middlewares/driverAuth.js';
 import validateCityType, { attachCityType } from '../middlewares/validateCityType.js';
 import driverAvailabilityController from "../controllers/driver/driveravailabilityController.js";
 import passwordController from "../controllers/driver/updatepasswordController.js";
+import languageController from "../controllers/driver/languageController.js";
 
 const router = express.Router()
 
@@ -47,5 +48,8 @@ router.get("/access-codes/list", getAccessCodes)
 // Driver Availability Management
 router.get("/availability", driverAvailabilityController.getAvailability)
 router.post("/availability", driverAvailabilityController.updateAvailability)
+
+router.get("/language/:driverId", languageController.getDriverLanguage);
+router.put("/language", languageController.updateDriverLanguage);
 
 export default router;

@@ -4,6 +4,7 @@ import { useNavigate } from "react-router-dom";
 import { toast } from "react-toastify";
 import Header from "../../reuse/driver/Header";
 import Nav from "../../reuse/driver/Nav";
+import useTranslation from "../../hooks/useTranslation.js";
 import {
   updatePassword,
   clearErrors,
@@ -12,6 +13,7 @@ import {
 } from "../../redux/slice/driver/passwordSlice";
 
 const UpdatePassword = () => {
+  const { t } = useTranslation();
   const dispatch = useDispatch();
   const navigate = useNavigate();
   const { driver } = useSelector((state) => state.driver);
@@ -142,9 +144,9 @@ const UpdatePassword = () => {
                 />
               </svg>
               <div>
-                <h1 className="text-xl font-bold text-white">Update Password</h1>
+                <h1 className="text-xl font-bold text-white">{t('updatePassword')}</h1>
                 <p className="text-blue-100 text-sm mt-1">
-                  Change your account password securely
+                  {t('changePasswordSecurely')}
                 </p>
               </div>
             </div>
@@ -153,10 +155,10 @@ const UpdatePassword = () => {
           {/* Driver Info */}
           <div className="bg-blue-50 px-6 py-3 border-b border-blue-100">
             <p className="text-sm text-gray-700">
-              <span className="font-semibold">Driver:</span> {driver?.name || "N/A"}
+              <span className="font-semibold">{t('driver')}:</span> {driver?.name || "N/A"}
             </p>
             <p className="text-sm text-gray-700">
-              <span className="font-semibold">Email:</span> {driver?.email || "N/A"}
+              <span className="font-semibold">{t('email')}:</span> {driver?.email || "N/A"}
             </p>
           </div>
 
@@ -165,7 +167,7 @@ const UpdatePassword = () => {
             {/* Current Password */}
             <div className="space-y-2">
               <label htmlFor="oldPassword" className="block text-sm font-semibold text-gray-700">
-                Current Password <span className="text-red-500">*</span>
+                {t('currentPassword')} <span className="text-red-500">*</span>
               </label>
               <div className="relative">
                 <input
@@ -175,7 +177,7 @@ const UpdatePassword = () => {
                   value={formData.oldPassword}
                   onChange={handleChange}
                   onBlur={() => handleBlur("oldPassword")}
-                  placeholder="Enter your current password"
+                  placeholder={t('enterCurrentPassword')}
                   className={`w-full px-4 py-3 pr-12 border-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors ${
                     touched.oldPassword && errors.oldPassword
                       ? "border-red-500 focus:ring-red-500"
@@ -233,7 +235,7 @@ const UpdatePassword = () => {
             {/* New Password */}
             <div className="space-y-2">
               <label htmlFor="newPassword" className="block text-sm font-semibold text-gray-700">
-                New Password <span className="text-red-500">*</span>
+                {t('newPassword')} <span className="text-red-500">*</span>
               </label>
               <div className="relative">
                 <input
@@ -243,7 +245,7 @@ const UpdatePassword = () => {
                   value={formData.newPassword}
                   onChange={handleChange}
                   onBlur={() => handleBlur("newPassword")}
-                  placeholder="Enter your new password"
+                  placeholder={t('enterNewPassword')}
                   className={`w-full px-4 py-3 pr-12 border-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors ${
                     touched.newPassword && errors.newPassword
                       ? "border-red-500 focus:ring-red-500"
@@ -296,13 +298,13 @@ const UpdatePassword = () => {
                   {errors.newPassword}
                 </p>
               )}
-              <p className="text-xs text-gray-500">Minimum 6 characters required</p>
+              <p className="text-xs text-gray-500">{t('minimumChars')}</p>
             </div>
 
             {/* Confirm Password */}
             <div className="space-y-2">
               <label htmlFor="confirmPassword" className="block text-sm font-semibold text-gray-700">
-                Confirm New Password <span className="text-red-500">*</span>
+                {t('confirmNewPassword')} <span className="text-red-500">*</span>
               </label>
               <div className="relative">
                 <input
@@ -312,7 +314,7 @@ const UpdatePassword = () => {
                   value={formData.confirmPassword}
                   onChange={handleChange}
                   onBlur={() => handleBlur("confirmPassword")}
-                  placeholder="Re-enter your new password"
+                  placeholder={t('reEnterNewPassword')}
                   className={`w-full px-4 py-3 pr-12 border-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors ${
                     touched.confirmPassword && errors.confirmPassword
                       ? "border-red-500 focus:ring-red-500"
@@ -384,11 +386,11 @@ const UpdatePassword = () => {
                   />
                 </svg>
                 <div className="text-sm text-blue-800">
-                  <p className="font-semibold mb-1">Security Tips:</p>
+                  <p className="font-semibold mb-1">{t('securityTips')}:</p>
                   <ul className="list-disc list-inside space-y-1">
-                    <li>Use a strong password with letters, numbers, and symbols</li>
-                    <li>Don't reuse passwords from other accounts</li>
-                    <li>Keep your password confidential</li>
+                    <li>{t('securityTip1')}</li>
+                    <li>{t('securityTip2')}</li>
+                    <li>{t('securityTip3')}</li>
                   </ul>
                 </div>
               </div>
@@ -402,7 +404,7 @@ const UpdatePassword = () => {
                 className="flex-1 px-6 py-3 bg-gray-200 text-gray-700 rounded-lg font-semibold hover:bg-gray-300 focus:outline-none focus:ring-2 focus:ring-gray-400 transition-colors"
                 disabled={isLoading}
               >
-                Cancel
+                {t('cancel')}
               </button>
               <button
                 type="submit"
@@ -434,10 +436,10 @@ const UpdatePassword = () => {
                         d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
                       ></path>
                     </svg>
-                    Updating...
+                    {t('updating')}
                   </span>
                 ) : (
-                  "Update Password"
+                  t('updatePasswordButton')
                 )}
               </button>
             </div>

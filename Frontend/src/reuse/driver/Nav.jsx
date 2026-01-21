@@ -1,13 +1,16 @@
 import React from "react";
 import { NavLink } from "react-router-dom";
+import useTranslation from "../../hooks/useTranslation.js";
 
 function Nav() {
+  const { t } = useTranslation();
+  
   const links = [
-    { to: "/driver/dashboard", icon: "📊", label: "Dashboard" },
-    { to: "/driver/access-codes", icon: "🔑", label: "Access Codes" },
-    { to: "/driver/delivery", icon: "🚛", label: "Deliveries" },
-    { to: "/driver/availability", icon: "📅", label: "Availability" },
-    { to: "/driver/update-password", icon: "👤", label: "Password" },
+    { to: "/driver/dashboard", icon: "📊", label: t('dashboard') },
+    { to: "/driver/access-codes", icon: "🔑", label: t('accessCodes') },
+    { to: "/driver/delivery", icon: "🚛", label: t('deliveries') },
+    { to: "/driver/availability", icon: "📅", label: t('availability') },
+    { to: "/driver/update-password", icon: "💤", label: t('password') },
   ];
 
   return (

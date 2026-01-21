@@ -15,9 +15,11 @@ import {
 import Header from "../../reuse/driver/Header";
 import Nav from "../../reuse/driver/Nav";
 import { toast } from "react-toastify";
+import useTranslation from "../../hooks/useTranslation.js";
 import AccessCodeDetailsDialog from "../AccessCodeDetailsDialog.jsx";
 
 export default function DriverAccessCodePage() {
+  const { t } = useTranslation();
   const dispatch = useDispatch();
   const {
     accessCodes = [],
@@ -62,23 +64,23 @@ export default function DriverAccessCodePage() {
     switch (name) {
       case "zipCode":
         if (!value.trim()) {
-          error = "Zip code is required";
+          error = t('zipCodeRequired');
         } else if (!/^\d{5}(-\d{4})?$/.test(value.trim())) {
-          error = "Please enter a valid zip code (5 digits or 5+4 format)";
+          error = t('zipCodeInvalid');
         }
         break;
       case "address":
         if (!value.trim()) {
-          error = "Address is required";
+          error = t('addressRequired');
         } else if (value.trim().length < 5) {
-          error = "Address must be at least 5 characters";
+          error = t('addressMinLength');
         }
         break;
       case "accessCode":
         if (!value.trim()) {
-          error = "Access code is required";
+          error = t('accessCodeRequired');
         } else if (value.length < 4) {
-          error = "Access code must be at least 4 characters";
+          error = t('accessCodeMinLength');
         }
         break;
       default:
@@ -123,7 +125,7 @@ export default function DriverAccessCodePage() {
     setTouched({ zipCode: true, address: true, accessCode: true });
 
     if (Object.values(newErrors).some((error) => error !== "")) {
-      toast.error("Please fix all validation errors", { position: "top-right" });
+      toast.error(t('fixValidationErrors'), { position: "top-right" });
       return;
     }
 
@@ -132,7 +134,7 @@ export default function DriverAccessCodePage() {
         createAccessCode({ zip_code: zipCode.trim(), address: address.trim(), access_code: accessCode.trim(), images: newImages }),
       ).unwrap();
 
-      toast.success("Access code created successfully!", { position: "top-right", autoClose: 3000 });
+      toast.success(t('accessCodeCreated'), { position: "top-right", autoClose: 3000 });
 
       setAddress("");
       setAccessCode("");
@@ -143,7 +145,7 @@ export default function DriverAccessCodePage() {
       setFileError("");
       setFileInfo("");
     } catch (err) {
-      toast.error(err || "Failed to create access code", { position: "top-right", autoClose: 4000 });
+      toast.error(err || t('createFailed'), { position: "top-right", autoClose: 4000 });
     }
   };
 
@@ -152,7 +154,7 @@ export default function DriverAccessCodePage() {
     const allowed = ["image/jpeg", "image/png", "image/webp", "image/jpg"];
     const invalids = files.filter((f) => !allowed.includes(f.type));
     if (invalids.length > 0) {
-      setFileError("Only JPEG, PNG, or WEBP images are allowed");
+      setFileError(t('invalidImageFormat'));
       return;
     }
     setFileError("");
@@ -161,7 +163,7 @@ export default function DriverAccessCodePage() {
     let selected = files;
     if (files.length > 3) {
       selected = files.slice(0, 3);
-      setFileInfo("You can add only 3 images. Extra file(s) ignored.");
+      setFileInfo(t('maxImagesWarning'));
     }
     setNewImages(selected);
   };
@@ -259,10 +261,10 @@ export default function DriverAccessCodePage() {
             </div>
             <div>
               <h1 className="text-xl sm:text-2xl lg:text-3xl font-bold bg-gradient-to-r from-gray-900 to-gray-600 bg-clip-text text-transparent">
-                Add New Access Code
+                {t('addNewAccessCode')}
               </h1>
               <p className="text-gray-600 mt-1 text-sm sm:text-base">
-                Create secure access codes for specific zip codes and addresses
+                {t('createAccessCodeDesc')}
               </p>
             </div>
           </div>
@@ -271,12 +273,12 @@ export default function DriverAccessCodePage() {
             {/* Zip Code Input */}
             <div className="space-y-2">
               <label htmlFor="zipCode" className="block text-sm font-semibold text-gray-800 mb-2">
-                Zip Code <span className="text-red-500">*</span>
+                {t('zipCode')} <span className="text-red-500">*</span>
               </label>
               <input
                 id="zipCode"
                 type="text"
-                placeholder="Enter zip code (e.g., 12345 or 12345-6789)"
+                placeholder={t('zipCodePlaceholder')}
                 value={zipCode}
                 onChange={(e) => handleFieldChange("zipCode", e.target.value)}
                 onBlur={() => handleBlur("zipCode")}
@@ -297,18 +299,18 @@ export default function DriverAccessCodePage() {
                   {errors.zipCode}
                 </p>
               )}
-              <p className="text-xs text-gray-500 mt-1">Enter 5-digit zip code or 5+4 format (e.g., 12345-6789)</p>
+              <p className="text-xs text-gray-500 mt-1">{t('enterZipCodeFormat')}</p>
             </div>
 
             {/* Address Input */}
             <div className="space-y-2">
               <label htmlFor="address" className="block text-sm font-semibold text-gray-800 mb-2">
-                Address <span className="text-red-500">*</span>
+                {t('address')} <span className="text-red-500">*</span>
               </label>
               <input
                 id="address"
                 type="text"
-                placeholder="Enter the complete address..."
+                placeholder={t('addressPlaceholder')}
                 value={address}
                 onChange={(e) => handleFieldChange("address", e.target.value)}
                 onBlur={() => handleBlur("address")}
@@ -334,12 +336,12 @@ export default function DriverAccessCodePage() {
             {/* Access Code Input */}
             <div className="space-y-2">
               <label htmlFor="accessCode" className="block text-sm font-semibold text-gray-800 mb-2">
-                Access Code <span className="text-red-500">*</span>
+                {t('accessCode')} <span className="text-red-500">*</span>
               </label>
               <input
                 id="accessCode"
                 type="text"
-                placeholder="Enter alphanumeric access code..."
+                placeholder={t('accessCodePlaceholder')}
                 value={accessCode}
                 onChange={(e) => handleFieldChange("accessCode", e.target.value)}
                 onBlur={() => handleBlur("accessCode")}
@@ -360,14 +362,14 @@ export default function DriverAccessCodePage() {
                   {errors.accessCode}
                 </p>
               )}
-              <p className="text-xs text-gray-500 mt-1">Only letters and numbers, minimum 4 characters</p>
+              <p className="text-xs text-gray-500 mt-1">{t('onlyLettersNumbers')}</p>
             </div>
 
             {/* Images Upload (Max 3) */}
             <div className="space-y-2">
               <div className="flex items-center justify-between">
-                <label className="block text-sm font-semibold text-gray-800">Images</label>
-                <span className="text-xs text-gray-500">Max 3 images</span>
+                <label className="block text-sm font-semibold text-gray-800">{t('images')}</label>
+                <span className="text-xs text-gray-500">{t('maxImages')}</span>
               </div>
               <input
                 type="file"
@@ -399,7 +401,7 @@ export default function DriverAccessCodePage() {
                 }`}
                 disabled={status === "loading"}
               >
-                {status === "loading" ? "Saving..." : "Save Access Code"}
+                {status === "loading" ? t('saving') : t('saveAccessCode')}
               </button>
             </div>
           </form>
@@ -422,15 +424,15 @@ export default function DriverAccessCodePage() {
                 </div>
                 <div>
                   <h2 className="text-xl sm:text-2xl lg:text-3xl font-bold bg-gradient-to-r from-gray-900 to-gray-600 bg-clip-text text-transparent">
-                    Saved Access Codes
+                    {t('savedAccessCodes')}
                   </h2>
-                  <p className="text-gray-600 mt-1 text-sm sm:text-base">Total: {totalItems} codes</p>
+                  <p className="text-gray-600 mt-1 text-sm sm:text-base">{t('total')}: {totalItems} {t('codes')}</p>
                 </div>
               </div>
 
               {/* Items per page */}
               <div className="flex items-center justify-center lg:justify-end space-x-2">
-                <label className="text-sm text-gray-600 whitespace-nowrap">Show:</label>
+                <label className="text-sm text-gray-600 whitespace-nowrap">{t('show')}:</label>
                 <select
                   value={pageLimit}
                   onChange={(e) => handleLimitChange(Number(e.target.value))}
@@ -452,7 +454,7 @@ export default function DriverAccessCodePage() {
                 <div className="relative">
                   <input
                     type="text"
-                    placeholder="Search by address or code..."
+                    placeholder={t('searchPlaceholder')}
                     value={localSearch}
                     onChange={(e) => setLocalSearch(e.target.value)}
                     onKeyPress={(e) => e.key === "Enter" && handleSearch()}
@@ -477,7 +479,7 @@ export default function DriverAccessCodePage() {
               <div className="w-full md:w-48">
                 <input
                   type="text"
-                  placeholder="Filter by zip code..."
+                  placeholder={t('filterByZipCode')}
                   value={localZipCodeFilter}
                   onChange={(e) => handleFilterChange(e.target.value)}
                   className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 text-sm"
@@ -505,7 +507,7 @@ export default function DriverAccessCodePage() {
                     className="opacity-75"
                   ></path>
                 </svg>
-                <p className="text-gray-600">Loading access codes...</p>
+                <p className="text-gray-600">{t('loading')}</p>
               </div>
             ) : accessCodes.length === 0 ? (
               <div className="text-center py-16">
@@ -519,11 +521,11 @@ export default function DriverAccessCodePage() {
                     />
                   </svg>
                 </div>
-                <h3 className="text-xl font-semibold text-gray-900 mb-2">No access codes found</h3>
+                <h3 className="text-xl font-semibold text-gray-900 mb-2">{t('noData')}</h3>
                 <p className="text-gray-600">
                   {searchTerm || zipCodeFilter
-                    ? "Try adjusting your filters"
-                    : "Create your first access code using the form above"}
+                    ? t('error')
+                    : t('createAccessCodeDesc')}
                 </p>
               </div>
             ) : (
@@ -535,19 +537,19 @@ export default function DriverAccessCodePage() {
                       <thead className="bg-gradient-to-r from-gray-50 to-gray-100">
                         <tr>
                           <th className="px-3 lg:px-4 py-3 sm:py-4 text-left text-xs font-bold text-gray-600 uppercase tracking-wider whitespace-nowrap">
-                            Zip Code
+                            {t('zipCode')}
                           </th>
                           <th className="px-3 lg:px-4 py-3 sm:py-4 text-left text-xs font-bold text-gray-600 uppercase tracking-wider min-w-[150px]">
-                            Address
+                            {t('address')}
                           </th>
                           <th className="px-3 lg:px-4 py-3 sm:py-4 text-left text-xs font-bold text-gray-600 uppercase tracking-wider whitespace-nowrap">
-                            Access Code
+                            {t('accessCode')}
                           </th>
                           <th className="px-3 lg:px-4 py-3 sm:py-4 text-left text-xs font-bold text-gray-600 uppercase tracking-wider whitespace-nowrap">
-                            Images
+                            {t('images')}
                           </th>
                           <th className="px-3 lg:px-4 py-3 sm:py-4 text-left text-xs font-bold text-gray-600 uppercase tracking-wider whitespace-nowrap">
-                            Created At
+                            {t('createdAt')}
                           </th>
                         </tr>
                       </thead>
@@ -608,17 +610,19 @@ export default function DriverAccessCodePage() {
                         </span>
                       </div>
 
+                      // Complete accessCode.jsx continues...
+
                       {/* Address */}
                       <div className="mb-3">
-                        <p className="text-xs font-semibold text-gray-500 uppercase mb-1">Address</p>
+                        <p className="text-xs font-semibold text-gray-500 uppercase mb-1">{t('address')}</p>
                         <p className="text-sm text-gray-900 break-words">{ac.address}</p>
                       </div>
 
                       {/* Access Code */}
                       <div className="mb-3">
-                        <p className="text-xs font-semibold text-gray-500 uppercase mb-1">Access Code</p>
+                        <p className="text-xs font-semibold text-gray-500 uppercase mb-1">{t('accessCode')}</p>
                         <span className="inline-flex items-center px-3 py-1.5 rounded-lg text-sm font-medium bg-indigo-50 text-indigo-800 border border-indigo-200 break-all">
-                          🔑 {ac.access_code}
+                          🔒 {ac.access_code}
                         </span>
                       </div>
 
@@ -628,7 +632,7 @@ export default function DriverAccessCodePage() {
                           <svg className="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20">
                             <path fillRule="evenodd" d="M6 2a1 1 0 00-1 1v1H4a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V6a2 2 0 00-2-2h-1V3a1 1 0 10-2 0v1H7V3a1 1 0 00-1-1zm0 5a1 1 0 000 2h8a1 1 0 100-2H6z" clipRule="evenodd" />
                           </svg>
-                          Created: {new Date(ac.created_at).toLocaleDateString()}
+                          {t('createdAt')}: {new Date(ac.created_at).toLocaleDateString()}
                         </p>
                       </div>
 
@@ -639,7 +643,7 @@ export default function DriverAccessCodePage() {
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
                           </svg>
-                          Tap to view details
+                          {t('tapToViewDetails')}
                         </p>
                       </div>
                     </div>
@@ -669,8 +673,8 @@ export default function DriverAccessCodePage() {
                           clipRule="evenodd"
                         />
                       </svg>
-                      <span className="hidden sm:inline">Previous</span>
-                      <span className="sm:hidden">Prev</span>
+                      <span className="hidden sm:inline">{t('previous')}</span>
+                      <span className="sm:hidden">{t('prev')}</span>
                     </button>
 
                     {/* Page Numbers */}
@@ -721,8 +725,8 @@ export default function DriverAccessCodePage() {
                         }
                       `}
                     >
-                      <span className="hidden sm:inline">Next</span>
-                      <span className="sm:hidden">Next</span>
+                      <span className="hidden sm:inline">{t('next')}</span>
+                      <span className="sm:hidden">{t('next')}</span>
                       <svg className="w-3 h-3 sm:w-4 sm:h-4 sm:ml-2 transition-transform duration-200 group-hover:translate-x-0.5" fill="currentColor" viewBox="0 0 20 20">
                         <path
                           fillRule="evenodd"

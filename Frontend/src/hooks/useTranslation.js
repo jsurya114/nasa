@@ -1,7 +1,5 @@
-// File: hooks/useTranslation.js
-
 import { useSelector } from 'react-redux';
-import { getTranslation } from './translation.js';
+import { getTranslation } from './translation';
 
 const useTranslation = () => {
   const { currentLanguage } = useSelector((state) => state.language);

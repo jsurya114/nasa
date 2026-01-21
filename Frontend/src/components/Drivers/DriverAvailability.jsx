@@ -6,11 +6,13 @@ import {
   clearMessages
 } from "../../redux/slice/driver/availabilitySlice.js";
 import { toast } from "react-toastify";
+import useTranslation from "../../hooks/useTranslation.js";
 
 import Header from "../../reuse/driver/Header";
 import Nav from "../../reuse/driver/Nav";
 
 export default function DriverAvailability() {
+  const { t } = useTranslation();
   const dispatch = useDispatch();
 
   const {
@@ -39,13 +41,13 @@ export default function DriverAvailability() {
   const userTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
 
   const daysOfWeek = [
-    { key: "monday", label: "Monday", short: "Mon", index: 0 },
-    { key: "tuesday", label: "Tuesday", short: "Tue", index: 1 },
-    { key: "wednesday", label: "Wednesday", short: "Wed", index: 2 },
-    { key: "thursday", label: "Thursday", short: "Thu", index: 3 },
-    { key: "friday", label: "Friday", short: "Fri", index: 4 },
-    { key: "saturday", label: "Saturday", short: "Sat", index: 5 },
-    { key: "sunday", label: "Sunday", short: "Sun", index: 6 }
+    { key: "monday", label: t('monday'), short: t('mon'), index: 0 },
+    { key: "tuesday", label: t('tuesday'), short: t('tue'), index: 1 },
+    { key: "wednesday", label: t('wednesday'), short: t('wed'), index: 2 },
+    { key: "thursday", label: t('thursday'), short: t('thu'), index: 3 },
+    { key: "friday", label: t('friday'), short: t('fri'), index: 4 },
+    { key: "saturday", label: t('saturday'), short: t('sat'), index: 5 },
+    { key: "sunday", label: t('sunday'), short: t('sun'), index: 6 }
   ];
 
   // Update current day and hour every minute (in USER'S LOCAL timezone)
@@ -173,11 +175,11 @@ export default function DriverAvailability() {
       const lockReason = getLockReason(dayIndex);
       
       if (lockReason === "past") {
-        toast.error(`Cannot update ${dayName}. That day has already ended. You can only update future days.`);
+        toast.error(t('thatDayHasEnded'));
       } else if (lockReason === "today") {
-        toast.error(`Cannot update today's availability.`);
+        toast.error(t('cannotUpdateToday'));
       } else if (lockReason === "tomorrow_cutoff") {
-        toast.error(`Cannot update ${dayName}. The 7:00 PM cutoff has passed for tomorrow's availability.`);
+        toast.error(t('cutoffPassed'));
       }
       return;
     }
@@ -203,7 +205,7 @@ export default function DriverAvailability() {
   };
 
   const formatDate = (dateString) => {
-    if (!dateString) return "Never updated";
+    if (!dateString) return t('neverUpdated');
     return new Date(dateString).toLocaleString('en-US', {
       month: 'short',
       day: 'numeric',
@@ -231,24 +233,24 @@ export default function DriverAvailability() {
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between">
               <div>
                 <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">
-                  My Availability
+                  {t('myAvailability')}
                 </h1>
                 <p className="mt-1 text-sm text-gray-600">
-                  Manage your weekly availability schedule
+                  {t('manageWeeklySchedule')}
                 </p>
               </div>
               <div className="mt-4 sm:mt-0 flex flex-col items-start sm:items-end gap-1">
                 <div className="flex items-center gap-2 text-sm">
                   <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
                   <span className="text-gray-600">
-                    Today: <span className="font-semibold text-gray-900">{getCurrentDayName()}</span>
+                    {t('today')}: <span className="font-semibold text-gray-900">{getCurrentDayName()}</span>
                   </span>
                 </div>
                 <div className="text-xs text-gray-500">
-                  Last updated: {formatDate(updatedAt)}
+                  
                 </div>
                 <div className="text-xs text-blue-600 font-medium">
-                  🌍 Timezone: {userTimezone}
+                  🌍 {t('timezone')}: {userTimezone}
                 </div>
               </div>
             </div>
@@ -261,12 +263,12 @@ export default function DriverAvailability() {
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
               </svg>
               <div className="flex-1">
-                <h3 className="text-sm sm:text-base font-bold text-blue-900">🔄 Automatic Weekly Reset</h3>
+                <h3 className="text-sm sm:text-base font-bold text-blue-900">🔄 {t('autoWeeklyReset')}</h3>
                 <p className="text-sm text-blue-700 mt-1 font-semibold">
-                  Your availability automatically resets to unavailable every Sunday at 12:00 PM in your timezone ({userTimezone}).
+                  {t('autoResetDesc')} ({userTimezone}).
                 </p>
                 <p className="text-xs sm:text-sm text-blue-600 mt-2">
-                  After the reset, you can update your availability for the upcoming week. Make sure to set your availability before the week begins!
+                  {t('autoResetNote')}
                 </p>
               </div>
             </div>
@@ -279,9 +281,9 @@ export default function DriverAvailability() {
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
               </svg>
               <div>
-                <p className="text-xs sm:text-sm font-semibold text-amber-900">Editing Restrictions</p>
+                <p className="text-xs sm:text-sm font-semibold text-amber-900">{t('editingRestrictions')}</p>
                 <p className="text-xs text-amber-700 mt-1">
-                  Past days (before today) cannot be edited to maintain historical accuracy. Days with 🔒 icon are locked. Drivers have a 7:00 PM cutoff for editing tomorrow's availability.
+                  {t('editingRestrictionsDesc')}
                 </p>
               </div>
             </div>
@@ -298,7 +300,7 @@ export default function DriverAvailability() {
                 </div>
                 <div>
                   <div className="text-xl sm:text-2xl font-bold text-gray-900">{getAvailableDaysCount()}</div>
-                  <div className="text-xs sm:text-sm text-gray-600">Days Available</div>
+                  <div className="text-xs sm:text-sm text-gray-600">{t('daysAvailable')}</div>
                 </div>
               </div>
             </div>
@@ -311,7 +313,7 @@ export default function DriverAvailability() {
                 </div>
                 <div>
                   <div className="text-xl sm:text-2xl font-bold text-gray-900">7</div>
-                  <div className="text-xs sm:text-sm text-gray-600">Days per Week</div>
+                  <div className="text-xs sm:text-sm text-gray-600">{t('daysPerWeek')}</div>
                 </div>
               </div>
             </div>
@@ -322,7 +324,7 @@ export default function DriverAvailability() {
             <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-8 sm:p-12">
               <div className="flex flex-col items-center justify-center gap-4">
                 <div className="animate-spin rounded-full h-12 w-12 sm:h-16 sm:w-16 border-4 border-blue-500 border-t-transparent"></div>
-                <p className="text-sm sm:text-base text-gray-600 font-medium">Loading your availability...</p>
+                <p className="text-sm sm:text-base text-gray-600 font-medium">{t('loadingAvailability')}</p>
               </div>
             </div>
           ) : (
@@ -367,7 +369,7 @@ export default function DriverAvailability() {
                               </div>
                               {isCurrentDay && (
                                 <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800">
-                                  Today
+                                  {t('today')}
                                 </span>
                               )}
                               {isLocked && (
@@ -375,7 +377,7 @@ export default function DriverAvailability() {
                                   <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
                                     <path fillRule="evenodd" d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z" clipRule="evenodd" />
                                   </svg>
-                                  {lockReason === "tomorrow_cutoff" ? " After 7PM" : " Locked"}
+                                  {lockReason === "tomorrow_cutoff" ? ` ${t('after7PM')}` : ` ${t('locked')}`}
                                 </span>
                               )}
                             </div>
@@ -385,14 +387,14 @@ export default function DriverAvailability() {
                                   <svg className="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
                                   </svg>
-                                  Available
+                                  {t('available')}
                                 </span>
                               ) : (
                                 <span className="inline-flex items-center text-xs font-semibold text-red-700">
                                   <svg className="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12" />
                                   </svg>
-                                  Unavailable
+                                  {t('unavailable')}
                                 </span>
                               )}
                             </div>
@@ -439,14 +441,14 @@ export default function DriverAvailability() {
                     {loading ? (
                       <>
                         <div className="animate-spin rounded-full h-4 w-4 sm:h-5 sm:w-5 border-2 border-white border-t-transparent"></div>
-                        <span>Saving...</span>
+                        <span>{t('saving')}</span>
                       </>
                     ) : (
                       <>
                         <svg className="w-4 h-4 sm:w-5 sm:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
                         </svg>
-                        <span>Save Changes</span>
+                        <span>{t('saveChanges')}</span>
                       </>
                     )}
                   </button>
@@ -463,7 +465,7 @@ export default function DriverAvailability() {
                     <svg className="w-4 h-4 sm:w-5 sm:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
                     </svg>
-                    <span>Reset</span>
+                    <span>{t('reset')}</span>
                   </button>
                 </div>
 
@@ -474,8 +476,8 @@ export default function DriverAvailability() {
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
                       </svg>
                       <div>
-                        <p className="text-xs sm:text-sm font-semibold text-amber-900">Unsaved Changes</p>
-                        <p className="text-xs text-amber-700 mt-1">Don't forget to save your availability changes before leaving this page</p>
+                        <p className="text-xs sm:text-sm font-semibold text-amber-900">{t('unsavedChanges')}</p>
+                        <p className="text-xs text-amber-700 mt-1">{t('unsavedChangesDesc')}</p>
                       </div>
                     </div>
                   </div>
@@ -491,17 +493,17 @@ export default function DriverAvailability() {
                     </svg>
                   </div>
                   <div>
-                    <h3 className="text-xs sm:text-sm font-semibold text-blue-900 mb-2">Important Information</h3>
+                    <h3 className="text-xs sm:text-sm font-semibold text-blue-900 mb-2">{t('importantInfo')}</h3>
                     <ul className="text-xs sm:text-sm text-blue-800 space-y-1">
-                      <li>• Use the toggle switches to mark your availability</li>
-                      <li>• Green = available, Gray = unavailable</li>
-                      <li>• Your availability helps with shift scheduling</li>
-                      <li>• <strong>Today is always locked and cannot be changed</strong></li>
-                      <li>• <strong>⏰ Tomorrow's availability locks at 7:00 PM today</strong></li>
-                      <li>• <strong>Past days are locked and cannot be changed</strong></li>
-                      <li>• <strong>Future days can be updated anytime before 7:00 PM the day before</strong></li>
-                      <li>• <strong>🔄 Availability automatically resets to unavailable every Sunday at 12:00 PM in your timezone</strong></li>
-                      <li>• <strong>Week runs Monday to Sunday</strong></li>
+                      <li>• {t('infoToggle')}</li>
+                      <li>• {t('infoColors')}</li>
+                      <li>• {t('infoScheduling')}</li>
+                      <li>• <strong>{t('infoTodayLocked')}</strong></li>
+                      <li>• <strong>⏰ {t('infoTomorrowCutoff')}</strong></li>
+                      <li>• <strong>{t('infoPastLocked')}</strong></li>
+                      <li>• <strong>{t('infoFutureUpdate')}</strong></li>
+                      <li>• <strong>🔄 {t('infoAutoReset')}</strong></li>
+                      <li>• <strong>{t('infoWeekRun')}</strong></li>
                     </ul>
                   </div>
                 </div>

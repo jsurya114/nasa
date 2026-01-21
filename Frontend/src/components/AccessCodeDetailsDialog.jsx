@@ -1,8 +1,11 @@
 import React from "react";
 import { Dialog, DialogBackdrop, DialogPanel, DialogTitle } from "@headlessui/react";
 import { API_BASE_URL } from "../config";
+import useTranslation from "../hooks/useTranslation.js";
 
 export default function AccessCodeDetailsDialog({ open, onClose, accessCode }) {
+  const { t } = useTranslation();
+  
   return (
     <Dialog open={open} onClose={onClose} className="relative z-50">
       <DialogBackdrop
@@ -20,28 +23,28 @@ export default function AccessCodeDetailsDialog({ open, onClose, accessCode }) {
               <div className="sm:flex sm:items-start">
                 <div className="mt-3 text-center sm:mt-0 sm:ml-4 sm:text-left w-full">
                   <DialogTitle as="h3" className="text-lg font-semibold text-gray-900">
-                    Access Code Details
+                    {t('accessCodeDetails')}
                   </DialogTitle>
                   {accessCode && (
                     <div className="mt-4 space-y-3 text-sm text-gray-700">
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                         <div>
-                          <span className="text-gray-500">Zip Code: </span>
+                          <span className="text-gray-500">{t('zipCode')}: </span>
                           <span className="font-medium text-gray-900">{accessCode.zip_code}</span>
                         </div>
                         <div>
-                          <span className="text-gray-500">Access Code: </span>
+                          <span className="text-gray-500">{t('accessCode')}: </span>
                           <span className="font-medium text-gray-900">{accessCode.access_code}</span>
                         </div>
                         <div className="sm:col-span-2">
-                          <span className="text-gray-500">Address: </span>
+                          <span className="text-gray-500">{t('address')}: </span>
                           <span className="font-medium text-gray-900">{accessCode.address}</span>
                         </div>
                       </div>
                       <div>
-                        <h4 className="text-sm font-semibold text-gray-800 mb-2">Images</h4>
+                        <h4 className="text-sm font-semibold text-gray-800 mb-2">{t('images')}</h4>
                         {([accessCode.image_url1, accessCode.image_url2, accessCode.image_url3].filter(Boolean).length === 0) ? (
-                          <p className="text-sm text-gray-500">No images uploaded for this access code.</p>
+                          <p className="text-sm text-gray-500">{t('noImagesUploaded')}</p>
                         ) : (
                           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                             {[accessCode.image_url1, accessCode.image_url2, accessCode.image_url3]
@@ -50,7 +53,7 @@ export default function AccessCodeDetailsDialog({ open, onClose, accessCode }) {
                                 <div key={idx} className="rounded-lg overflow-hidden border">
                                   <img
                                     src={`${u}`}
-                                    alt={`Access code image ${idx + 1}`}
+                                    alt={`${t('accessCodeImage')} ${idx + 1}`}
                                     className="w-full h-40 object-cover"
                                   />
                                 </div>
@@ -69,7 +72,7 @@ export default function AccessCodeDetailsDialog({ open, onClose, accessCode }) {
                 onClick={onClose}
                 className="inline-flex w-full justify-center rounded-md bg-[#8200db] px-4 py-2 text-sm font-semibold text-white hover:bg-[#7300c4] sm:ml-3 sm:w-auto"
               >
-                Close
+                {t('close')}
               </button>
             </div>
           </DialogPanel>

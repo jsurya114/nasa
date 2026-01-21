@@ -5,11 +5,13 @@ import { useDispatch, useSelector } from "react-redux";
 import { fetchDeliverySummary, resetDeliveries, setDeliveriesFromCache } from "../../redux/slice/driver/deliverySlice.js";
 import { accessDriver } from "../../redux/slice/driver/driverSlice.js";
 import { ToastContainer, toast } from "react-toastify";
+import useTranslation from "../../hooks/useTranslation.js";
 import "react-toastify/dist/ReactToastify.css";
 
 const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes cache
 
 const Deliveries = () => {
+  const { t } = useTranslation();
   const dispatch = useDispatch();
   const { deliveries, status, error } = useSelector((state) => state.delivery);
   const driver = useSelector((state) => state.driver?.driver);
@@ -25,7 +27,7 @@ const Deliveries = () => {
   const lastErrorToast = useRef(0);
   const initialLoadDone = useRef(false);
 
-  // ✅ Check if both data types exist in the deliveries
+  // Check if both data types exist in the deliveries
   const availableDataTypes = useMemo(() => {
     if (!deliveries || deliveries.length === 0) return { daily: false, weekly: false };
     
@@ -35,7 +37,7 @@ const Deliveries = () => {
     return { daily: hasDaily, weekly: hasWeekly };
   }, [deliveries]);
 
-  // ✅ Filter deliveries based on selected data type
+  // Filter deliveries based on selected data type
   const filteredDeliveries = useMemo(() => {
     if (!deliveries || deliveries.length === 0) return [];
     
@@ -44,13 +46,13 @@ const Deliveries = () => {
     return deliveries.filter(d => d.data_type === selectedDataType);
   }, [deliveries, selectedDataType]);
 
-  // ✅ Determine current data type being displayed
+  // Determine current data type being displayed
   const currentDataType = useMemo(() => {
     if (!filteredDeliveries || filteredDeliveries.length === 0) return null;
     return filteredDeliveries[0]?.data_type || 'daily';
   }, [filteredDeliveries]);
 
-  // ✅ Memoized summary calculation based on filtered deliveries
+  // Memoized summary calculation based on filtered deliveries
   const summary = useMemo(() => {
     if (!filteredDeliveries || filteredDeliveries.length === 0) return null;
     return filteredDeliveries.reduce(
@@ -69,7 +71,7 @@ const Deliveries = () => {
     );
   }, [filteredDeliveries]);
 
-  // ✅ Load from localStorage ONCE with cache validation
+  // Load from localStorage ONCE with cache validation
   useEffect(() => {
     if (initialLoadDone.current) return;
     initialLoadDone.current = true;
@@ -109,21 +111,21 @@ const Deliveries = () => {
     }
   }, [dispatch]);
 
-  // ✅ Fetch driver data once
+  // Fetch driver data once
   useEffect(() => {
     if (!driver && isAuthenticated !== false) {
       dispatch(accessDriver());
     }
   }, [dispatch, driver, isAuthenticated]);
 
-  // ✅ Cleanup on unmount
+  // Cleanup on unmount
   useEffect(() => {
     return () => {
       dispatch(resetDeliveries());
     };
   }, [dispatch]);
 
-  // ✅ Success toast with debouncing
+  // Success toast with debouncing
   useEffect(() => {
     if (status === "succeeded" && hasFiltered && deliveries?.length > 0) {
       const now = Date.now();
@@ -134,16 +136,17 @@ const Deliveries = () => {
         localStorage.setItem("deliveryTimestamp", Date.now().toString());
         localStorage.setItem("deliveryDataType", selectedDataType);
 
+        const recordText = deliveries.length === 1 ? t('deliveryRecord') : t('deliveryRecords');
         toast.success(
-          `Successfully fetched ${deliveries.length} delivery record${deliveries.length === 1 ? "" : "s"}!`,
+          `${t('successfullyFetched')} ${deliveries.length} ${recordText}!`,
           { position: "top-right", autoClose: 3000, toastId: "delivery-success" }
         );
         lastSuccessToast.current = now;
       }
     }
-  }, [status, hasFiltered, deliveries, filters, selectedDataType]);
+  }, [status, hasFiltered, deliveries, filters, selectedDataType, t]);
 
-  // ✅ Error toast with debouncing
+  // Error toast with debouncing
   useEffect(() => {
     if (status === "failed" && error) {
       const now = Date.now();
@@ -159,7 +162,7 @@ const Deliveries = () => {
     }
   }, [status, error]);
 
-  // ✅ Memoized handlers
+  // Memoized handlers
   const handleChange = useCallback((e) => {
     const { name, value } = e.target;
     setFilters((prev) => ({ ...prev, [name]: value }));
@@ -170,25 +173,25 @@ const Deliveries = () => {
     e.preventDefault();
 
     if (!filters.from_date || !filters.to_date) {
-      setValidationError("Please select both From and To dates");
+      setValidationError(t('pleaseSelectDateRange'));
       return;
     }
 
     if (new Date(filters.from_date) > new Date(filters.to_date)) {
-      setValidationError("From Date cannot be after To Date");
+      setValidationError(t('error'));
       return;
     }
 
     if (!driver?.id) {
-      setValidationError("Driver ID missing. Please log in again.");
+      setValidationError(t('error'));
       return;
     }
 
     setValidationError("");
     setHasFiltered(true);
-    setSelectedDataType("all"); // Reset to show all data types
+    setSelectedDataType("all");
     dispatch(fetchDeliverySummary({ driverId: driver.id, ...filters }));
-  }, [dispatch, filters, driver]);
+  }, [dispatch, filters, driver, t]);
 
   const handleReset = useCallback(() => {
     setFilters({ from_date: "", to_date: "" });
@@ -209,39 +212,39 @@ const Deliveries = () => {
     return new Date(dateString + 'T00:00:00').toLocaleDateString('en-CA');
   }, []);
 
-  // ✅ Dynamic table headers based on current data type
+  // Dynamic table headers based on current data type
   const tableHeaders = useMemo(() => {
     if (currentDataType === 'weekly') {
-      return ["Date", "Route", "Packages", "First Stop", "Double Stop", "Delivered", "Closed", "Earning", "Paid"];
+      return [t('journeyDate'), t('routeName'), t('packages'), t('firstStop'), t('doubleStop'), t('delivered'), t('closed'), t('earning'), t('paid')];
     } else {
       return [
-        "Date", "Route", "Start Seq", "End Seq", "Packages", 
-        "Not Scanned", "Failed", "Double Stop", "Delivered", "Closed", "Earning", "Paid"
+        t('journeyDate'), t('routeName'), t('startSeq'), t('endSeq'), t('packages'), 
+        t('notScanned'), t('failed'), t('doubleStop'), t('delivered'), t('closed'), t('earning'), t('paid')
       ];
     }
-  }, [currentDataType]);
+  }, [currentDataType, t]);
 
-  // ✅ Dynamic summary labels based on current data type
+  // Dynamic summary labels based on current data type
   const summaryLabels = useMemo(() => {
     if (currentDataType === 'weekly') {
       return {
-        "Total Packages": summary?.packages,
-        "First Stop": summary?.first_stop,
-        "Double Stop": summary?.double_stop,
-        "Delivered": summary?.delivered,
-        "Total Earning": summary ? `$${summary.earning.toFixed(2)}` : "$0.00",
+        [t('totalPackages')]: summary?.packages,
+        [t('firstStop')]: summary?.first_stop,
+        [t('doubleStop')]: summary?.double_stop,
+        [t('delivered')]: summary?.delivered,
+        [t('totalEarning')]: summary ? `$${summary.earning.toFixed(2)}` : "$0.00",
       };
     } else {
       return {
-        "Total Packages": summary?.packages,
-        "Delivered": summary?.delivered,
-        "Failed": summary?.failed_attempt,
-        "Not Scanned": summary?.no_scanned,
-        "Double Stop": summary?.double_stop,
-        "Total Earning": summary ? `$${summary.earning.toFixed(2)}` : "$0.00",
+        [t('totalPackages')]: summary?.packages,
+        [t('delivered')]: summary?.delivered,
+        [t('failed')]: summary?.failed_attempt,
+        [t('notScanned')]: summary?.no_scanned,
+        [t('doubleStop')]: summary?.double_stop,
+        [t('totalEarning')]: summary ? `$${summary.earning.toFixed(2)}` : "$0.00",
       };
     }
-  }, [summary, currentDataType]);
+  }, [summary, currentDataType, t]);
 
   return (
     <div className="min-h-screen bg-gray-50 text-gray-900 font-poppins">
@@ -252,15 +255,15 @@ const Deliveries = () => {
           <div className="p-6 border-b border-gray-200">
             <div className="flex items-center justify-between">
               <div>
-                <h2 className="text-xl font-semibold text-gray-800">Delivery Summary</h2>
-                <p className="text-sm text-gray-500 mt-1">Filter deliveries by date range</p>
+                <h2 className="text-xl font-semibold text-gray-800">{t('deliverySummary')}</h2>
+                <p className="text-sm text-gray-500 mt-1">{t('filterDeliveries')}</p>
               </div>
             </div>
           </div>
 
           <div className="p-6 grid grid-cols-1 sm:grid-cols-4 gap-4">
             <div>
-              <label className="block text-sm font-medium mb-2 text-gray-700">From Date</label>
+              <label className="block text-sm font-medium mb-2 text-gray-700">{t('fromDate')}</label>
               <input
                 type="date"
                 name="from_date"
@@ -272,7 +275,7 @@ const Deliveries = () => {
             </div>
 
             <div>
-              <label className="block text-sm font-medium mb-2 text-gray-700">To Date</label>
+              <label className="block text-sm font-medium mb-2 text-gray-700">{t('toDate')}</label>
               <input
                 type="date"
                 name="to_date"
@@ -289,7 +292,7 @@ const Deliveries = () => {
                 className="w-full px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition disabled:bg-gray-400"
                 disabled={status === "loading"}
               >
-                {status === "loading" ? "Loading..." : "Filter"}
+                {status === "loading" ? t('loading') : t('filter')}
               </button>
             </div>
 
@@ -299,7 +302,7 @@ const Deliveries = () => {
                 className="w-full px-4 py-2 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300 transition"
                 disabled={status === "loading"}
               >
-                Reset
+                {t('reset')}
               </button>
             </div>
 
@@ -308,12 +311,12 @@ const Deliveries = () => {
             )}
           </div>
 
-          {/* ✅ Data Type Filter Buttons - Show only when both types exist */}
+          {/* Data Type Filter Buttons */}
           {hasFiltered && deliveries && deliveries.length > 0 && 
            availableDataTypes.daily && availableDataTypes.weekly && (
             <div className="px-6 pb-4">
               <div className="flex items-center gap-3">
-                <span className="text-sm font-medium text-gray-700">View:</span>
+                <span className="text-sm font-medium text-gray-700">{t('view')}:</span>
                 <div className="flex gap-2">
                   <button
                     onClick={() => setSelectedDataType("all")}
@@ -323,7 +326,7 @@ const Deliveries = () => {
                         : "bg-gray-100 text-gray-700 hover:bg-gray-200"
                     }`}
                   >
-                    All ({deliveries.length})
+                    {t('all')} ({deliveries.length})
                   </button>
                   <button
                     onClick={() => setSelectedDataType("daily")}
@@ -333,7 +336,7 @@ const Deliveries = () => {
                         : "bg-gray-100 text-gray-700 hover:bg-gray-200"
                     }`}
                   >
-                    📊 SPEEDX ({deliveries.filter(d => d.data_type === 'daily').length})
+                    {t('showDaily')} ({deliveries.filter(d => d.data_type === 'daily').length})
                   </button>
                   <button
                     onClick={() => setSelectedDataType("weekly")}
@@ -343,14 +346,14 @@ const Deliveries = () => {
                         : "bg-gray-100 text-gray-700 hover:bg-gray-200"
                     }`}
                   >
-                    📅 GOFO ({deliveries.filter(d => d.data_type === 'weekly').length})
+                    {t('showWeekly')} ({deliveries.filter(d => d.data_type === 'weekly').length})
                   </button>
                 </div>
               </div>
             </div>
           )}
 
-          {/* ✅ Current Data Type Badge */}
+          {/* Current Data Type Badge */}
           {currentDataType && filteredDeliveries.length > 0 && (
             <div className="px-6 pb-4">
               <div className={`inline-flex px-4 py-2 rounded-full font-semibold text-sm ${
@@ -358,7 +361,7 @@ const Deliveries = () => {
                   ? 'bg-purple-100 text-purple-700 border border-purple-300' 
                   : 'bg-blue-100 text-blue-700 border border-blue-300'
               }`}>
-                {currentDataType === 'weekly' ? '📅 Showing GOFO data' : '📊 Showing SPEEDX data'}
+                {currentDataType === 'weekly' ? t('showingGofoData') : t('showingSpeedxData')}
               </div>
             </div>
           )}
@@ -367,7 +370,7 @@ const Deliveries = () => {
           {summary && (
             <div className="px-6 pb-6">
               <div className="bg-gradient-to-r from-blue-50 to-indigo-50 p-4 rounded-lg mb-4">
-                <h3 className="text-sm font-semibold text-gray-700 mb-3">Summary Statistics</h3>
+                <h3 className="text-sm font-semibold text-gray-700 mb-3">{t('summaryStatistics')}</h3>
                 <div className={`grid gap-3 ${currentDataType === 'weekly' ? 'grid-cols-2 sm:grid-cols-4' : 'grid-cols-2 sm:grid-cols-3 md:grid-cols-6'}`}>
                   {Object.entries(summaryLabels).map(([label, value]) => (
                     <div key={label}>
@@ -388,7 +391,7 @@ const Deliveries = () => {
           {/* Messages */}
           {hasFiltered && status === "succeeded" && (!filteredDeliveries || filteredDeliveries.length === 0) && (
             <div className="px-6 pb-6 text-center text-yellow-700 bg-yellow-50 border border-yellow-200 rounded-md p-4">
-              <p>No {selectedDataType !== "all" ? selectedDataType : ""} deliveries found for {formatDate(filters.from_date)} to {formatDate(filters.to_date)}</p>
+              <p>{t('noDeliveriesFound')} {selectedDataType !== "all" ? selectedDataType : ""} {t('deliveriesFoundFor')} {formatDate(filters.from_date)} {t('to')} {formatDate(filters.to_date)}</p>
             </div>
           )}
 
@@ -400,7 +403,7 @@ const Deliveries = () => {
 
           {!hasFiltered && status === "idle" && (
             <div className="px-6 pb-6 text-center text-blue-700 bg-blue-50 border border-blue-200 rounded-md p-4">
-              <p>Please select a date range and click "Filter" to view delivery records</p>
+              <p>{t('pleaseSelectDateRange')}</p>
             </div>
           )}
         </div>
@@ -439,20 +442,20 @@ const Deliveries = () => {
                           </div>
                           <div className="space-y-1.5 border-t border-gray-600 pt-2">
                             <div className="flex justify-between items-center">
-                              <span className="text-gray-300">Route Price (First Stop):</span>
+                              <span className="text-gray-300">{t('routePrice')}:</span>
                               <span className="font-bold text-green-400">
                                 {d.driver_route_price != null && d.driver_route_price > 0 
                                   ? `${parseFloat(d.driver_route_price).toFixed(2)}`
-                                  : <span className="text-red-400">Not Set</span>
+                                  : <span className="text-red-400">{t('notSet')}</span>
                                 }
                               </span>
                             </div>
                             <div className="flex justify-between items-center">
-                              <span className="text-gray-300">Double Stop Price:</span>
+                              <span className="text-gray-300">{t('doubleStopPrice')}:</span>
                               <span className="font-bold text-yellow-400">
                                 {d.driver_doublestop_price != null && d.driver_doublestop_price > 0
                                   ? `${parseFloat(d.driver_doublestop_price).toFixed(2)}`
-                                  : <span className="text-red-400">Not Set</span>
+                                  : <span className="text-red-400">{t('notSet')}</span>
                                 }
                               </span>
                             </div>
@@ -470,7 +473,7 @@ const Deliveries = () => {
                           <td className={`px-4 py-3 text-sm font-semibold text-center ${
                             d.closed ? "text-green-600" : "text-red-600"
                           }`}>
-                            {d.closed ? "Yes" : "No"}
+                            {d.closed ? t('yes') : t('no')}
                           </td>
                           <td className="px-4 py-3 text-sm text-indigo-600 font-semibold">
                             ${parseFloat(d.earning || 0).toFixed(2)}
@@ -478,7 +481,7 @@ const Deliveries = () => {
                           <td className={`px-4 py-3 text-sm font-semibold text-center ${
                             d.paid ? "text-green-600" : "text-red-600"
                           }`}>
-                            {d.paid ? "Yes" : "No"}
+                            {d.paid ? t('yes') : t('no')}
                           </td>
                         </>
                       ) : (
@@ -493,7 +496,7 @@ const Deliveries = () => {
                           <td className={`px-4 py-3 text-sm font-semibold text-center ${
                             d.closed ? "text-green-600" : "text-red-600"
                           }`}>
-                            {d.closed ? "Yes" : "No"}
+                            {d.closed ? t('yes') : t('no')}
                           </td>
                           <td className="px-4 py-3 text-sm text-indigo-600 font-semibold">
                             ${parseFloat(d.earning || 0).toFixed(2)}
@@ -501,7 +504,7 @@ const Deliveries = () => {
                           <td className={`px-4 py-3 text-sm font-semibold text-center ${
                             d.paid ? "text-green-600" : "text-red-600"
                           }`}>
-                            {d.paid ? "Yes" : "No"}
+                            {d.paid ? t('yes') : t('no')}
                           </td>
                         </>
                       )}

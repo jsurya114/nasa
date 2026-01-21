@@ -3,6 +3,7 @@ import Header from "../../reuse/driver/Header";
 import Nav from "../../reuse/driver/Nav";
 import { useSelector, useDispatch } from "react-redux";
 import { toast } from "react-toastify";
+import useTranslation from "../../hooks/useTranslation.js";
 import {
   fetchRoutes,
   clearRoutesError,
@@ -13,6 +14,7 @@ import {
 } from "../../redux/slice/driver/journeySlice.js";
 
 const Journey = () => {
+  const { t } = useTranslation();
   const { driver } = useSelector((state) => state.driver);
   const dispatch = useDispatch();
   const [errors, setErrors] = useState({});
@@ -85,9 +87,9 @@ const Journey = () => {
   // Show error toast for city type fetch failure
   useEffect(() => {
     if (cityTypeStatus === 'failed') {
-      toast.error('Failed to load city information. Defaulting to daily mode.');
+      toast.error(t('failedLoadCityInfo'));
     }
-  }, [cityTypeStatus]);
+  }, [cityTypeStatus, t]);
 
   useEffect(() => {
     if (routesError) {
@@ -153,7 +155,7 @@ const Journey = () => {
       
       setIsJourneySaved(true);
       
-      toast.success("Journey saved successfully!", {
+      toast.success(t('journeySaved'), {
         position: "bottom-center",
         autoClose: 3000,
       });
@@ -167,15 +169,13 @@ const Journey = () => {
     } catch (err) {
       setIsJourneySaved(false);
       
-      // ✅ ENHANCED: Handle middleware blocking response
       if (err.error === 'WEEKLY_CITY_RESTRICTION') {
         console.log('Weekly city restriction detected from backend');
         setShowWeeklyRestriction(true);
         
-        // Re-fetch city type to update local state
         dispatch(fetchDriverCityType());
         
-        toast.error(err.message || 'Journey creation is disabled for weekly-based routes.', {
+        toast.error(err.message || t('weeklyRestriction'), {
           position: "top-center",
           autoClose: 5000,
         });
@@ -185,11 +185,11 @@ const Journey = () => {
           toast.error(err.errors['sequenceConflict']);
         }
       } else {
-        toast.error(err.message || "Failed to save journey");
-        console.error(err.message || "Failed to save journey");
+        toast.error(err.message || t('failedSaveJourney'));
+        console.error(err.message || t('failedSaveJourney'));
       }
     }
-  }, [formData, driver, dispatch, isJourneySaved]);
+  }, [formData, driver, dispatch, isJourneySaved, t]);
 
   const enabledRoutes = useMemo(
     () => routes.filter((route) => route.enabled),
@@ -234,13 +234,13 @@ const Journey = () => {
       <div className="min-h-screen bg-gray-50 text-gray-900 font-poppins flex items-center justify-center">
         <div className="text-center">
           <div className="w-16 h-16 border-4 border-blue-200 border-t-blue-600 rounded-full animate-spin mx-auto mb-4" />
-          <p className="text-gray-600">Loading...</p>
+          <p className="text-gray-600">{t('loading')}</p>
         </div>
       </div>
     );
   }
 
-  // ✅ ENHANCED: Show restriction if detected from backend OR from initial city type
+  // Weekly restriction view
   if (cityType === 'WEEKLY' || showWeeklyRestriction) {
     return (
       <div className="min-h-screen bg-gray-50 text-gray-900 font-poppins">
@@ -252,18 +252,17 @@ const Journey = () => {
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
               </svg>
             </div>
-            <h1 className="text-2xl font-bold text-gray-900 mb-2">Journey Creation Disabled</h1>
+            <h1 className="text-2xl font-bold text-gray-900 mb-2">{t('journeyDisabled')}</h1>
             <p className="text-gray-700 mb-4">
-              Your city is configured for.
+              {t('weeklyConfigured')}
             </p>
             <p className="text-sm text-gray-600">
-              Route assignments are managed centrally.
-              Manual journey creation is not available for your location.
+              {t('centrallyManaged')}
             </p>
             {showWeeklyRestriction && (
               <div className="mt-4 p-3 bg-yellow-50 border border-yellow-200 rounded-md">
                 <p className="text-sm text-yellow-800">
-                  ⚠️ This setting was recently updated by your administrator.
+                  ⚠️ {t('recentlyUpdated')}
                 </p>
               </div>
             )}
@@ -283,14 +282,14 @@ const Journey = () => {
         <div className="bg-white border border-gray-200 rounded-lg shadow-sm mb-8">
           <div className="px-6 py-4 border-b border-gray-200">
             <h1 className="text-lg font-semibold text-gray-900">
-              Start Your Journey
+              {t('startYourJourney')}
             </h1>
           </div>
 
           <div className="p-6 space-y-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
-                Date
+                {t('date')}
               </label>
               <input
                 type="date"
@@ -303,7 +302,7 @@ const Journey = () => {
 
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
-                Start Sequence
+                {t('startSequence')}
               </label>
               <input
                 type="number"
@@ -320,7 +319,7 @@ const Journey = () => {
 
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
-                End Sequence
+                {t('endSequence')}
               </label>
               <input
                 type="number"
@@ -337,7 +336,7 @@ const Journey = () => {
 
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
-                Route
+                {t('route')}
               </label>
               <select
                 name="route"
@@ -347,7 +346,7 @@ const Journey = () => {
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-100 disabled:cursor-not-allowed"
               >
                 <option value="">
-                  {isLoadingRoutes ? "Loading routes..." : "Select Route"}
+                  {isLoadingRoutes ? t('loadingRoutes') : t('selectRoute')}
                 </option>
                 {enabledRoutes.map((r) => (
                   <option key={r.id} value={r.id}>
@@ -370,17 +369,17 @@ const Journey = () => {
               }`}
             >
               {isLoadingJourney 
-                ? "Saving..." 
+                ? t('saving')
                 : isJourneySaved 
-                ? "Route Already Saved" 
-                : "Save Route"}
+                ? t('routeAlreadySaved')
+                : t('saveRoute')}
             </button>
           </div>
         </div>
 
         <div className="bg-white border border-gray-200 rounded-lg shadow-sm">
           <div className="px-6 py-4 border-b border-gray-200">
-            <h2 className="text-lg font-semibold text-gray-900">Records</h2>
+            <h2 className="text-lg font-semibold text-gray-900">{t('records')}</h2>
           </div>
 
           <div className="overflow-x-auto">
@@ -388,22 +387,22 @@ const Journey = () => {
               <thead className="bg-gray-50">
                 <tr>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Driver
+                    {t('driver')}
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Date
+                    {t('date')}
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Route
+                    {t('route')}
                   </th>
                   <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Start Seq
+                    {t('startSeq')}
                   </th>
                   <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    End Seq
+                    {t('endSeq')}
                   </th>
                   <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Packages
+                    {t('packages')}
                   </th>
                 </tr>
               </thead>
@@ -413,12 +412,12 @@ const Journey = () => {
             </table>
             {journeyStatus === 'loading' && (
               <div className="text-center py-8 text-gray-500">
-                Loading journeys...
+                {t('loadingJourneys')}
               </div>
             )}
             {journeyStatus === 'succeeded' && journeys.length === 0 && (
               <div className="text-center py-8 text-gray-500">
-                No journeys found for today
+                {t('noJourneysToday')}
               </div>
             )}
           </div>
