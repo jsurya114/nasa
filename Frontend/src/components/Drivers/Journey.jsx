@@ -10,7 +10,7 @@ import {
   fetchTodayJourney,
   saveJourney,
   clearJourneyError,
-  fetchDriverCityType,
+  // fetchDriverCityType,
 } from "../../redux/slice/driver/journeySlice.js";
 
 const Journey = () => {
@@ -52,9 +52,9 @@ const Journey = () => {
   });
 
   // Fetch city type on mount
-  useEffect(() => {
-    dispatch(fetchDriverCityType());
-  }, [dispatch]);
+  // useEffect(() => {
+  //   dispatch(fetchDriverCityType());
+  // }, [dispatch]);
 
   useEffect(() => {
     if (!routesFetchedRef.current && routesStatus === 'idle') {
@@ -173,7 +173,7 @@ const Journey = () => {
         console.log('Weekly city restriction detected from backend');
         setShowWeeklyRestriction(true);
         
-        dispatch(fetchDriverCityType());
+        // dispatch(fetchDriverCityType());
         
         toast.error(err.message || t('weeklyRestriction'), {
           position: "top-center",

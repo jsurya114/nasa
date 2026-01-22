@@ -1,15 +1,22 @@
 import pool from '../../config/db.js';
 import HttpStatus from '../../utils/statusCodes.js';
+import { translateError } from "../../utils/backendI18n.js";
+
+// Helper to get language from request
+const getLang = (req) => {
+  return req.headers['x-language'] || req.query?.lang || 'en';
+};
 
 const languageController = {
   // Get driver's preferred language
   getDriverLanguage: async (req, res) => {
     try {
+      const lang = getLang(req);
       const { driverId } = req.params;
 
       if (!driverId) {
         return res.status(HttpStatus.BAD_REQUEST).json({
-          message: 'Driver ID is required'
+          message: translateError(lang, 'driver.driverIdRequired')
         });
       }
 
@@ -20,7 +27,7 @@ const languageController = {
 
       if (result.rows.length === 0) {
         return res.status(HttpStatus.NOT_FOUND).json({
-          message: 'Driver not found'
+          message: translateError(lang, 'driver.driverNotFound')
         });
       }
 
@@ -28,9 +35,10 @@ const languageController = {
         preferredLanguage: result.rows[0].preferred_language || 'en'
       });
     } catch (error) {
+      const lang = getLang(req);
       console.error('Error fetching driver language:', error);
       return res.status(HttpStatus.INTERNAL_SERVER_ERROR).json({
-        message: 'Server error'
+        message: translateError(lang, 'common.serverError')
       });
     }
   },
@@ -38,18 +46,19 @@ const languageController = {
   // Update driver's preferred language
   updateDriverLanguage: async (req, res) => {
     try {
+      const lang = getLang(req);
       const { driverId, language } = req.body;
 
       if (!driverId || !language) {
         return res.status(HttpStatus.BAD_REQUEST).json({
-          message: 'Driver ID and language are required'
+          message: translateError(lang, 'language.driverIdAndLanguageRequired')
         });
       }
 
       // Validate language code
       if (!['en', 'es'].includes(language)) {
         return res.status(HttpStatus.BAD_REQUEST).json({
-          message: 'Invalid language code. Must be "en" or "es"'
+          message: translateError(lang, 'language.invalidLanguageCode')
         });
       }
 
@@ -60,20 +69,21 @@ const languageController = {
 
       if (result.rows.length === 0) {
         return res.status(HttpStatus.NOT_FOUND).json({
-          message: 'Driver not found'
+          message: translateError(lang, 'driver.driverNotFound')
         });
       }
 
-      console.log(`✅ Driver ${driverId} language updated to: ${language}`);
+      console.log(`✅ ${translateError(lang, 'language.driverLanguageUpdated')}: ${language} (Driver ${driverId})`);
 
       return res.status(HttpStatus.OK).json({
-        message: 'Language preference updated successfully',
+        message: translateError(lang, 'language.updatedSuccessfully'),
         preferredLanguage: result.rows[0].preferred_language
       });
     } catch (error) {
+      const lang = getLang(req);
       console.error('Error updating driver language:', error);
       return res.status(HttpStatus.INTERNAL_SERVER_ERROR).json({
-        message: 'Server error'
+        message: translateError(lang, 'common.serverError')
       });
     }
   }

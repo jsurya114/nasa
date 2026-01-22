@@ -1,8 +1,15 @@
 // controllers/driver/accessCodeControllers.js
 import accessCodeQueries from "../../services/driver/accessCodeQueries.js";
+import { translateError } from "../../utils/backendI18n.js";
+
+// Helper to get language from request
+const getLang = (req) => {
+  return req.headers['x-language'] || req.query?.lang || 'en';
+};
 
 export const getAccessCodes = async (req, res) => {
   try {
+    const lang = getLang(req);
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 10;
     const search = req.query.search || '';
@@ -20,31 +27,33 @@ export const getAccessCodes = async (req, res) => {
 
     res.json(result);
   } catch (err) {
+    const lang = getLang(req);
     console.error("Driver Controller error in getAccessCodes:", err);
     res.status(500).json({ message: err.message });
   }
 };
 
 export const createAccessCode = async (req, res) => {
+  const lang = getLang(req);
   const { zip_code, address, access_code } = req.body;
   const files = Array.isArray(req.files) ? req.files : [];
 
   // Validation
   if (!zip_code || !address || !access_code) {
     return res.status(400).json({ 
-      message: "All fields (zip_code, address, access_code) are required" 
+      message: translateError(lang, 'accessCode.allFieldsRequired')
     });
   }
 
   if (!/^\d{5}(-\d{4})?$/.test(zip_code)) {
     return res.status(400).json({ 
-      message: "Please enter a valid zip code (5 digits or 5+4 format)" 
+      message: translateError(lang, 'accessCode.invalidZipCode')
     });
   }
 
   // if (!/^[a-zA-Z0-9]+$/.test(access_code)) {
   //   return res.status(400).json({ 
-  //     message: "Access code must be alphanumeric (letters and numbers only)" 
+  //     message: translateError(lang, 'accessCode.accessCodeMustBeAlphanumeric')
   //   });
   // }
 
@@ -58,11 +67,11 @@ export const createAccessCode = async (req, res) => {
     if (failedUploads.length > 0) {
       console.error('Failed to upload images to Cloudinary:', failedUploads);
       return res.status(500).json({ 
-        message: "Some images failed to upload. Please try again." 
+        message: translateError(lang, 'accessCode.imageUploadFailed')
       });
     }
 
-    console.log('✅ Images uploaded to Cloudinary:', imageUrls);
+    console.log('✅ ' + translateError(lang, 'accessCode.imagesUploaded') + ':', imageUrls);
 
     const newAccessCode = await accessCodeQueries.createAccessCode(
       zip_code, 
@@ -81,14 +90,14 @@ export const createAccessCode = async (req, res) => {
     }));
 
     res.status(201).json({ 
-      message: "Access code saved successfully", 
+      message: translateError(lang, 'accessCode.savedSuccessfully'), 
       data: newAccessCode, 
       images: imageFiles 
     });
   } catch (err) {
     console.error("Driver Controller error in createAccessCode:", err);
     if (err.message === "Access code already exists") {
-      res.status(409).json({ message: err.message });
+      res.status(409).json({ message: translateError(lang, 'accessCode.alreadyExists') });
     } else {
       res.status(500).json({ message: err.message });
     }

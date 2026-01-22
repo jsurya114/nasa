@@ -1,6 +1,12 @@
 // controllers/driver/passwordController.js
 import updatepasswordQueries from "../../services/driver/updatepasswordQueries.js";
 import HttpStatus from "../../utils/statusCodes.js";
+import { translateError } from "../../utils/backendI18n.js";
+
+// Helper to get language from request
+const getLang = (req) => {
+  return req.headers['x-language'] || req.query?.lang || 'en';
+};
 
 const passwordController = {
   /**
@@ -10,6 +16,7 @@ const passwordController = {
    */
   updatePassword: async (req, res) => {
     try {
+      const lang = getLang(req);
       const driverId = req.driver.id; // From driverAuth middleware
       const { oldPassword, newPassword, confirmPassword } = req.body;
 
@@ -17,33 +24,33 @@ const passwordController = {
       const errors = {};
 
       if (!oldPassword || !oldPassword.trim()) {
-        errors.oldPassword = 'Current password is required';
+        errors.oldPassword = translateError(lang, 'password.currentPasswordRequired');
       }
 
       if (!newPassword || !newPassword.trim()) {
-        errors.newPassword = 'New password is required';
+        errors.newPassword = translateError(lang, 'password.newPasswordRequired');
       } else if (newPassword.length < 6) {
-        errors.newPassword = 'New password must be at least 6 characters';
+        errors.newPassword = translateError(lang, 'password.minLength');
       } else if (newPassword.length > 50) {
-        errors.newPassword = 'New password must not exceed 50 characters';
+        errors.newPassword = translateError(lang, 'password.maxLength');
       }
 
       if (!confirmPassword || !confirmPassword.trim()) {
-        errors.confirmPassword = 'Please confirm your new password';
+        errors.confirmPassword = translateError(lang, 'password.confirmRequired');
       } else if (newPassword !== confirmPassword) {
-        errors.confirmPassword = 'Passwords do not match';
+        errors.confirmPassword = translateError(lang, 'password.passwordsDoNotMatch');
       }
 
       // Check if new password is same as old password
       if (oldPassword && newPassword && oldPassword === newPassword) {
-        errors.newPassword = 'New password must be different from current password';
+        errors.newPassword = translateError(lang, 'password.mustBeDifferent');
       }
 
       // If validation errors exist, return them
       if (Object.keys(errors).length > 0) {
         return res.status(HttpStatus.BAD_REQUEST).json({
           success: false,
-          message: 'Validation failed',
+          message: translateError(lang, 'password.validationFailed'),
           errors
         });
       }
@@ -57,7 +64,7 @@ const passwordController = {
 
       return res.status(HttpStatus.OK).json({
         success: true,
-        message: 'Password updated successfully',
+        message: translateError(lang, 'password.updatedSuccessfully'),
         data: {
           driverId: result.driver.id,
           driverName: result.driver.name,
@@ -66,15 +73,16 @@ const passwordController = {
       });
 
     } catch (error) {
-      console.error('Password update error:', error);
+      const lang = getLang(req);
+      console.error(translateError(lang, 'password.updateError') + ':', error);
 
       // Handle specific error cases
       if (error.message === 'Current password is incorrect') {
         return res.status(HttpStatus.UNAUTHORIZED).json({
           success: false,
-          message: 'Current password is incorrect',
+          message: translateError(lang, 'password.incorrectCurrent'),
           errors: {
-            oldPassword: 'Current password is incorrect'
+            oldPassword: translateError(lang, 'password.incorrectCurrent')
           }
         });
       }
@@ -82,14 +90,14 @@ const passwordController = {
       if (error.message === 'Driver not found') {
         return res.status(HttpStatus.NOT_FOUND).json({
           success: false,
-          message: 'Driver not found'
+          message: translateError(lang, 'driver.driverNotFound')
         });
       }
 
       // Generic error
       return res.status(HttpStatus.INTERNAL_SERVER_ERROR).json({
         success: false,
-        message: 'Failed to update password. Please try again.',
+        message: translateError(lang, 'password.failedToUpdate'),
         error: process.env.NODE_ENV === 'development' ? error.message : undefined
       });
     }

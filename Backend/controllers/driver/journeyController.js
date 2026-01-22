@@ -7,9 +7,16 @@ import {
 } from "../../services/driver/journeyQueries.js";
 import { jobService } from "../../services/admin/jobQueries.js";
 import HttpStatus from "../../utils/statusCodes.js";
+import { translateError } from "../../utils/backendI18n.js";
+
+// Helper to get language from request
+const getLang = (req) => {
+  return req.headers['x-language'] || req.query?.lang || 'en';
+};
 
 export const saveJourney = async (req, res) => {
   try {
+    const lang = getLang(req);
     let { driver_id, route_id, packages, start_seq, end_seq, journey_date } = req.body;
 
     // ✅ REMOVED: City type validation - now handled by middleware
@@ -24,16 +31,15 @@ export const saveJourney = async (req, res) => {
     packages = end_seq - start_seq + 1;
 
     const errors = {};
-    if (!driver_id) errors.driver_id = "Driver ID is required";
-    if (!route_id) errors.route_id = "Route is required";
-    if (!start_seq || start_seq <= 0) errors.start_seq = "Start sequence must be greater than 0";
-    if (!end_seq || end_seq < start_seq) errors.end_seq = "End sequence must be >= start sequence";
+    if (!driver_id) errors.driver_id = translateError(lang, 'driver.driverIdRequired');
+    if (!route_id) errors.route_id = translateError(lang, 'journey.routeRequired');
+    if (!start_seq || start_seq <= 0) errors.start_seq = translateError(lang, 'journey.startSeqInvalid');
+    if (!end_seq || end_seq < start_seq) errors.end_seq = translateError(lang, 'journey.endSeqInvalid');
 
     const conflictSequences = await checkSequenceConflict(route_id, start_seq, end_seq, journey_date);
 
     if (conflictSequences.length > 0) {
-      errors.sequenceConflict =
-        "Some packages in this sequence range are already taken by another driver";
+      errors.sequenceConflict = translateError(lang, 'journey.sequenceConflict');
     }
 
     if (Object.keys(errors).length > 0) {
@@ -46,7 +52,7 @@ export const saveJourney = async (req, res) => {
     if (existingJourney.length > 0) {
       return res.status(400).json({
         success: false,
-        message: "Journey for today is already saved",
+        message: translateError(lang, 'journey.alreadySaved'),
       });
     }
 
@@ -79,17 +85,18 @@ export const saveJourney = async (req, res) => {
     if (sequence.success === false) {
       return res.status(500).json({
         success: false,
-        message: "Journey saved but failed to add delivery sequences",
+        message: translateError(lang, 'journey.savedButSeqFailed'),
         error: sequence.error,
       });
     }
 
     return res.status(201).json({ success: true, data: journey });
   } catch (error) {
+    const lang = getLang(req);
     console.error("saveJourney error:", error);
     return res.status(500).json({
       success: false,
-      message: "Error inserting journey",
+      message: translateError(lang, 'journey.errorInserting'),
       error: error.message,
     });
   }
@@ -97,6 +104,7 @@ export const saveJourney = async (req, res) => {
 
 export const fetchTodayJourney = async (req, res) => {
   try {
+    const lang = getLang(req);
     const driverId = req.params.driver_id;
     const journey = await getTodayJourney(driverId);
     
@@ -107,8 +115,12 @@ export const fetchTodayJourney = async (req, res) => {
       cityType: req.cityType // Attached by middleware
     });
   } catch (error) {
+    const lang = getLang(req);
     res
       .status(HttpStatus.INTERNAL_SERVER_ERROR)
-      .json({ success: false, message: "Error fetching journey" });
+      .json({ 
+        success: false, 
+        message: translateError(lang, 'journey.errorFetching')
+      });
   }
 };

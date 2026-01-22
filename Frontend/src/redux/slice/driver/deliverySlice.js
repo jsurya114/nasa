@@ -1,32 +1,41 @@
 import { createSlice, createAsyncThunk } from "@reduxjs/toolkit";
 import { API_BASE_URL } from "../../../config";
+import { translateError } from "../../../hooks/backendI18n.js";
+
+// Get current language from localStorage or default to 'en'
+const getCurrentLanguage = () => {
+  return localStorage.getItem('preferredLanguage') || 'en';
+};
 
 // Fetch deliveries for driver with request cancellation support
 export const fetchDeliverySummary = createAsyncThunk(
   "delivery/fetchDeliverySummary",
   async ({ driverId, from_date, to_date }, { signal, rejectWithValue }) => {
     try {
+      const lang = getCurrentLanguage();
+
       // Input validation
       if (!driverId) {
-        return rejectWithValue("Driver ID is required");
+        return rejectWithValue(translateError(lang, 'driver.driverIdRequired'));
       }
 
       if (!from_date || !to_date) {
-        return rejectWithValue("Both from_date and to_date are required");
+        return rejectWithValue(translateError(lang, 'delivery.bothDatesRequiredShort'));
       }
 
       // ✅ Get token from localStorage
       const token = localStorage.getItem('driverToken');
 
       if (!token) {
-        return rejectWithValue("No authentication token found");
+        return rejectWithValue(translateError(lang, 'delivery.noAuthToken'));
       }
 
       const res = await fetch(
         `${API_BASE_URL}/driver/deliveries/${driverId}?from_date=${encodeURIComponent(from_date)}&to_date=${encodeURIComponent(to_date)}`,
         {
           headers: {
-            "Authorization": `Bearer ${token}`, // ✅ Send token in header
+            "Authorization": `Bearer ${token}`,
+            "X-Language": lang, // Send language header
           },
           signal, // Support request cancellation
         }
@@ -39,18 +48,19 @@ export const fetchDeliverySummary = createAsyncThunk(
         }
         
         const errorData = await res.json().catch(() => ({}));
-        return rejectWithValue(errorData.message || errorData.error || "Failed to fetch deliveries");
+        return rejectWithValue(errorData.message || errorData.error || translateError(lang, 'delivery.failedToFetch'));
       }
 
       const data = await res.json();
       return Array.isArray(data) ? data : [];
     } catch (err) {
+      const lang = getCurrentLanguage();
       // Don't log cancellation errors
       if (err.name === 'AbortError') {
-        return rejectWithValue('Request cancelled');
+        return rejectWithValue(translateError(lang, 'delivery.requestCancelled'));
       }
       console.error("fetchDeliverySummary error:", err);
-      return rejectWithValue(err.message || "Error fetching deliveries");
+      return rejectWithValue(err.message || translateError(lang, 'delivery.errorFetching'));
     }
   }
 );
@@ -99,10 +109,11 @@ const deliverySlice = createSlice({
         state.lastFetch = Date.now();
       })
       .addCase(fetchDeliverySummary.rejected, (state, action) => {
+        const lang = getCurrentLanguage();
         // Don't set error state for cancelled requests
-        if (action.payload !== 'Request cancelled') {
+        if (action.payload !== translateError(lang, 'delivery.requestCancelled')) {
           state.status = "failed";
-          state.error = action.payload || "Failed to fetch deliveries";
+          state.error = action.payload || translateError(lang, 'delivery.failedToFetch');
           state.deliveries = []; // Clear deliveries on error
         }
       });

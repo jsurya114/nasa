@@ -1,12 +1,20 @@
 // redux/slice/driver/passwordSlice.js
 import { createSlice, createAsyncThunk } from "@reduxjs/toolkit";
 import { API_BASE_URL } from "../../../config";
+import { translateError } from "../../../hooks/backendI18n.js";
+
+// Get current language from localStorage or default to 'en'
+const getCurrentLanguage = () => {
+  return localStorage.getItem('preferredLanguage') || 'en';
+};
 
 // Helper function to get auth headers
 const getAuthHeaders = () => {
   const token = localStorage.getItem('driverToken');
+  const lang = getCurrentLanguage();
   return {
     "Content-Type": "application/json",
+    "X-Language": lang, // Add language header
     ...(token && { "Authorization": `Bearer ${token}` })
   };
 };
@@ -34,10 +42,11 @@ export const updatePassword = createAsyncThunk(
 
       return data;
     } catch (error) {
+      const lang = getCurrentLanguage();
       console.error("updatePassword error:", error);
       return rejectWithValue({
         success: false,
-        message: error.message || "Network error. Please check your connection.",
+        message: error.message || translateError(lang, 'auth.networkError'),
       });
     }
   }
@@ -85,18 +94,20 @@ const passwordSlice = createSlice({
         state.status = "succeeded";
         state.error = null;
         state.errors = {};
-        state.successMessage = action.payload.message || "Password updated successfully";
+        const lang = getCurrentLanguage();
+        state.successMessage = action.payload.message || translateError(lang, 'password.updatedSuccessfully');
       })
       // Update password - rejected
       .addCase(updatePassword.rejected, (state, action) => {
         state.status = "failed";
+        const lang = getCurrentLanguage();
         
         // Handle validation errors
         if (action.payload?.errors) {
           state.errors = action.payload.errors;
-          state.error = action.payload.message || "Please fix the errors below";
+          state.error = action.payload.message || translateError(lang, 'password.validationFailed');
         } else {
-          state.error = action.payload?.message || "Failed to update password";
+          state.error = action.payload?.message || translateError(lang, 'password.failedToUpdate');
           state.errors = {};
         }
         

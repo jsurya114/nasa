@@ -1,16 +1,23 @@
 import { createSlice, createAsyncThunk } from "@reduxjs/toolkit";
 import axios from "axios";
 import { API_BASE_URL } from "../../../config";
+import { translateError } from "../../../hooks/backendI18n.js";
+
+// Get current language from localStorage or default to 'en'
+const getCurrentLanguage = () => {
+  return localStorage.getItem('preferredLanguage') || 'en';
+};
 
 // ================= AUTH HELPERS =================
 const getDriverAuthHeaders = () => {
   const token = localStorage.getItem("driverToken");
-  // Get user's timezone
   const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  const language = getCurrentLanguage();
   
   return {
     "Content-Type": "application/json",
-    "X-User-Timezone": timezone, // Send timezone in header
+    "X-User-Timezone": timezone,
+    "X-Language": language, // Add language header
     ...(token && { Authorization: `Bearer ${token}` }),
   };
 };
@@ -18,10 +25,12 @@ const getDriverAuthHeaders = () => {
 const getAdminAuthHeaders = () => {
   const token = localStorage.getItem("adminToken");
   const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  const language = getCurrentLanguage();
   
   return {
     "Content-Type": "application/json",
     "X-User-Timezone": timezone,
+    "X-Language": language, // Add language header
     ...(token && { Authorization: `Bearer ${token}` }),
   };
 };
@@ -39,8 +48,9 @@ export const getDriverAvailability = createAsyncThunk(
       );
       return response.data.data;
     } catch (error) {
+      const lang = getCurrentLanguage();
       return rejectWithValue(
-        error.response?.data?.message || "Failed to fetch availability"
+        error.response?.data?.message || translateError(lang, 'availability.failedToFetch')
       );
     }
   }
@@ -63,8 +73,9 @@ export const updateDriverAvailability = createAsyncThunk(
       );
       return response.data.data;
     } catch (error) {
+      const lang = getCurrentLanguage();
       return rejectWithValue(
-        error.response?.data?.message || "Failed to update availability"
+        error.response?.data?.message || translateError(lang, 'availability.failedToUpdate')
       );
     }
   }
@@ -94,9 +105,9 @@ export const getAllDriversAvailability = createAsyncThunk(
         pagination: response.data.pagination,
       };
     } catch (error) {
+      const lang = getCurrentLanguage();
       return rejectWithValue(
-        error.response?.data?.message ||
-          "Failed to fetch drivers availability"
+        error.response?.data?.message || translateError(lang, 'availability.failedToFetchDrivers')
       );
     }
   }
@@ -114,8 +125,9 @@ export const getAvailableCities = createAsyncThunk(
 
       return response.data.data;
     } catch (error) {
+      const lang = getCurrentLanguage();
       return rejectWithValue(
-        error.response?.data?.message || "Failed to fetch cities"
+        error.response?.data?.message || translateError(lang, 'availability.failedToFetchCities')
       );
     }
   }
@@ -134,9 +146,9 @@ export const updateDriverAvailabilityByAdmin = createAsyncThunk(
 
       return response.data.data;
     } catch (error) {
+      const lang = getCurrentLanguage();
       return rejectWithValue(
-        error.response?.data?.message ||
-          "Failed to update driver availability"
+        error.response?.data?.message || translateError(lang, 'availability.failedToUpdateDriver')
       );
     }
   }
@@ -155,9 +167,9 @@ export const manualResetAllDriversAvailability = createAsyncThunk(
 
       return response.data.data;
     } catch (error) {
+      const lang = getCurrentLanguage();
       return rejectWithValue(
-        error.response?.data?.message ||
-          "Failed to reset all drivers availability"
+        error.response?.data?.message || translateError(lang, 'availability.failedToResetAll')
       );
     }
   }
@@ -230,7 +242,8 @@ const availabilitySlice = createSlice({
         state.loading = false;
         state.driverAvailability = action.payload.availability;
         state.updatedAt = action.payload.availability_updated_at;
-        state.successMessage = "Availability updated successfully";
+        const lang = getCurrentLanguage();
+        state.successMessage = translateError(lang, 'availability.updatedSuccessfully');
       })
       .addCase(updateDriverAvailability.rejected, (state, action) => {
         state.loading = false;
@@ -270,7 +283,8 @@ const availabilitySlice = createSlice({
       })
       .addCase(updateDriverAvailabilityByAdmin.fulfilled, (state, action) => {
         state.updateLoading = false;
-        state.successMessage = "Driver availability updated successfully";
+        const lang = getCurrentLanguage();
+        state.successMessage = translateError(lang, 'availability.driverAvailabilityUpdated');
 
         const index = state.allDriversAvailability.findIndex(
           (driver) => driver.id === action.payload.id
@@ -295,7 +309,12 @@ const availabilitySlice = createSlice({
       })
       .addCase(manualResetAllDriversAvailability.fulfilled, (state, action) => {
         state.resetLoading = false;
-        state.successMessage = `Successfully reset ${action.payload.totalDriversReset} drivers (${action.payload.enabledDriversReset} enabled, ${action.payload.disabledDriversReset} disabled)`;
+        const lang = getCurrentLanguage();
+        state.successMessage = translateError(lang, 'availability.resetSuccess', {
+          total: action.payload.totalDriversReset,
+          enabled: action.payload.enabledDriversReset,
+          disabled: action.payload.disabledDriversReset
+        });
 
         // Reset all drivers in the current list to have all days = false
         state.allDriversAvailability = state.allDriversAvailability.map(

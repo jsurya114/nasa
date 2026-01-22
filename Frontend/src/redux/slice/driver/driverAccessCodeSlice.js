@@ -1,16 +1,26 @@
 // redux/slice/driver/accessCodeSlice.js
 import { createSlice, createAsyncThunk } from "@reduxjs/toolkit";
 import { API_BASE_URL } from "../../../config";
+import { translateError } from "../../../hooks/backendI18n.js";
+
+// Get current language from localStorage or default to 'en'
+const getCurrentLanguage = () => {
+  return localStorage.getItem('preferredLanguage') || 'en';
+};
 
 // Helper function to get auth headers for file uploads
 const getAuthHeaders = (isFormData = false) => {
   const token = localStorage.getItem('driverToken');
+  const lang = getCurrentLanguage();
   const headers = {};
 
   // Don't set Content-Type for FormData - browser will set it with boundary
   if (!isFormData) {
     headers['Content-Type'] = 'application/json';
   }
+
+  // Add language header
+  headers['X-Language'] = lang;
 
   if (token) {
     headers['Authorization'] = `Bearer ${token}`;
@@ -24,6 +34,7 @@ export const fetchAccessCodes = createAsyncThunk(
   "driverAccessCodes/fetchAccessCodes",
   async ({ page = 1, limit = 10, search = '', zipCodeFilter = '' } = {}, { rejectWithValue }) => {
     try {
+      const lang = getCurrentLanguage();
       const params = new URLSearchParams({
         page: page.toString(),
         limit: limit.toString(),
@@ -44,7 +55,8 @@ export const fetchAccessCodes = createAsyncThunk(
       const data = await res.json();
       return data;
     } catch (error) {
-      return rejectWithValue(error.message);
+      const lang = getCurrentLanguage();
+      return rejectWithValue(error.message || translateError(lang, 'accessCode.failedToFetch'));
     }
   }
 );
@@ -54,6 +66,7 @@ export const createAccessCode = createAsyncThunk(
   "driverAccessCodes/createAccessCode",
   async (accessCodeData, { rejectWithValue, dispatch, getState }) => {
     try {
+      const lang = getCurrentLanguage();
       let body;
       if (typeof FormData !== 'undefined' && accessCodeData instanceof FormData) {
         body = accessCodeData; // browser will set multipart boundaries
@@ -77,7 +90,7 @@ export const createAccessCode = createAsyncThunk(
 
       if (!res.ok) {
         const error = await res.json();
-        throw new Error(error.message || `HTTP ${res.status}: Failed to create access code`);
+        throw new Error(error.message || `HTTP ${res.status}: ${translateError(lang, 'accessCode.failedToCreate')}`);
       }
 
       const data = await res.json();
@@ -93,7 +106,8 @@ export const createAccessCode = createAsyncThunk(
 
       return data.data;
     } catch (error) {
-      return rejectWithValue(error.message);
+      const lang = getCurrentLanguage();
+      return rejectWithValue(error.message || translateError(lang, 'accessCode.failedToCreate'));
     }
   }
 );
@@ -152,7 +166,8 @@ const driverAccessCodeSlice = createSlice({
       })
       .addCase(fetchAccessCodes.rejected, (state, action) => {
         state.status = "failed";
-        state.error = action.payload || action.error.message || "Failed to fetch access codes";
+        const lang = getCurrentLanguage();
+        state.error = action.payload || action.error.message || translateError(lang, 'accessCode.failedToFetch');
       })
       // Create access code
       .addCase(createAccessCode.pending, (state) => {
@@ -165,7 +180,8 @@ const driverAccessCodeSlice = createSlice({
       })
       .addCase(createAccessCode.rejected, (state, action) => {
         state.status = "failed";
-        state.error = action.payload || action.error.message || "Failed to create access code";
+        const lang = getCurrentLanguage();
+        state.error = action.payload || action.error.message || translateError(lang, 'accessCode.failedToCreate');
       });
   },
 });

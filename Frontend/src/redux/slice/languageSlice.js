@@ -1,28 +1,46 @@
 import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
 import axios from 'axios';
-
 import { API_BASE_URL } from '../../config';
+import { translateError } from "../../hooks/backendI18n.js"
+
+// Get current language from localStorage or default to 'en'
+const getCurrentLanguage = () => {
+  return localStorage.getItem('preferredLanguage') || 'en';
+};
 
 // Load driver's preferred language from backend
 export const loadDriverLanguage = createAsyncThunk(
   'language/loadDriverLanguage',
   async (driverId, { rejectWithValue }) => {
     if (!driverId) {
-  throw new Error("Driver ID missing");
-}
-
+      const lang = getCurrentLanguage();
+      return rejectWithValue(translateError(lang, 'driver.driverIdMissing'));
+    }
 
     try {
-    const token = localStorage.getItem('driverToken');
-if (!token) {
-  return rejectWithValue("Authentication token missing");
-}
+      const token = localStorage.getItem('driverToken');
+      const lang = getCurrentLanguage();
+      
+      if (!token) {
+        return rejectWithValue(translateError(lang, 'auth.authTokenMissing'));
+      }
+      
       const response = await axios.get(`${API_BASE_URL}/driver/language/${driverId}`, {
-        headers: { Authorization: `Bearer ${token}` }
+        headers: { 
+          Authorization: `Bearer ${token}`,
+          'X-Language': lang
+        }
       });
-      return response.data.preferredLanguage || 'en';
+      
+      const preferredLanguage = response.data.preferredLanguage || 'en';
+      
+      // Store in localStorage for immediate access
+      localStorage.setItem('preferredLanguage', preferredLanguage);
+      
+      return preferredLanguage;
     } catch (error) {
-      return rejectWithValue(error.response?.data?.message || 'Failed to load language');
+      const lang = getCurrentLanguage();
+      return rejectWithValue(error.response?.data?.message || translateError(lang, 'language.failedToLoad'));
     }
   }
 );
@@ -32,29 +50,42 @@ export const saveDriverLanguage = createAsyncThunk(
   'language/saveDriverLanguage',
   async ({ driverId, language }, { rejectWithValue }) => {
     if (!driverId) {
-  throw new Error("Driver ID missing");
-}
-
+      const lang = getCurrentLanguage();
+      return rejectWithValue(translateError(lang, 'driver.driverIdMissing'));
+    }
 
     try {
-   const token = localStorage.getItem('driverToken');
-if (!token) {
-  return rejectWithValue("Authentication token missing");
-}
+      const token = localStorage.getItem('driverToken');
+      const currentLang = getCurrentLanguage();
+      
+      if (!token) {
+        return rejectWithValue(translateError(currentLang, 'auth.authTokenMissing'));
+      }
+      
       await axios.put(
         `${API_BASE_URL}/driver/language`,
         { driverId, language },
-        { headers: { Authorization: `Bearer ${token}` } }
+        { 
+          headers: { 
+            Authorization: `Bearer ${token}`,
+            'X-Language': currentLang
+          } 
+        }
       );
+      
+      // Store in localStorage for immediate access
+      localStorage.setItem('preferredLanguage', language);
+      
       return language;
     } catch (error) {
-      return rejectWithValue(error.response?.data?.message || 'Failed to save language');
+      const lang = getCurrentLanguage();
+      return rejectWithValue(error.response?.data?.message || translateError(lang, 'language.failedToSave'));
     }
   }
 );
 
 const initialState = {
-  currentLanguage: 'en', // Default before driver logs in
+  currentLanguage: getCurrentLanguage(), // Load from localStorage on init
   loading: false,
   error: null,
 };
@@ -63,12 +94,20 @@ const languageSlice = createSlice({
   name: 'language',
   initialState,
   reducers: {
+    // Set language locally (for immediate UI updates)
     setLanguageLocal: (state, action) => {
       state.currentLanguage = action.payload;
+      localStorage.setItem('preferredLanguage', action.payload);
     },
+    // Reset language to default
     resetLanguage: (state) => {
       state.currentLanguage = 'en';
       state.loading = false;
+      state.error = null;
+      localStorage.setItem('preferredLanguage', 'en');
+    },
+    // Clear error
+    clearLanguageError: (state) => {
       state.error = null;
     },
   },
@@ -87,6 +126,7 @@ const languageSlice = createSlice({
         state.loading = false;
         state.error = action.payload;
         state.currentLanguage = 'en'; // Fallback to English on error
+        localStorage.setItem('preferredLanguage', 'en');
       })
       // Save driver language
       .addCase(saveDriverLanguage.pending, (state) => {
@@ -103,5 +143,5 @@ const languageSlice = createSlice({
   },
 });
 
-export const { setLanguageLocal, resetLanguage } = languageSlice.actions;
+export const { setLanguageLocal, resetLanguage, clearLanguageError } = languageSlice.actions;
 export default languageSlice.reducer;
