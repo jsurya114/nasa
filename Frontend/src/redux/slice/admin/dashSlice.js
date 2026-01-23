@@ -25,7 +25,24 @@ export const fetchDashboardData = createAsyncThunk(
   }
 );
 
-// ✅ NEW: Fetch summary data for all matching records
+// ✅ NEW: Fetch drivers filtered by city
+export const fetchDriversByCity = createAsyncThunk(
+  "dashboard/fetchDriversByCity",
+  async (cityJob, { rejectWithValue }) => {
+    try {
+      const params = cityJob && cityJob !== "All" ? { cityJob } : {};
+      const res = await axios.get(`${API_BASE_URL}/admin/dashboard/drivers-by-city`, {
+        params,
+        headers: getAuthHeaders()
+      });
+      if (!res.data.success) throw new Error(res.data.message);
+      return res.data.data;
+    } catch (err) {
+      return rejectWithValue(err.response?.data?.message || err.message);
+    }
+  }
+);
+
 export const fetchSummaryData = createAsyncThunk(
   "dashboard/fetchSummaryData",
   async (filters, { rejectWithValue }) => {
@@ -106,7 +123,7 @@ const dashboardSlice = createSlice({
     routes: [],
     filteredPaymentData: [],
     allPaymentData: [],
-    summaryData: null, // ✅ NEW: Store summary data
+    summaryData: null,
     filters: {},
     selectedDataType: "all",
     pagination: {
@@ -118,11 +135,11 @@ const dashboardSlice = createSlice({
     loading: false,
     paymentLoading: false,
     allPaymentLoading: false,
-    summaryLoading: false, // ✅ NEW: Loading state for summary
+    summaryLoading: false,
     paymentProcessing: false,
     error: null,
     paymentError: null,
-    summaryError: null, // ✅ NEW: Error state for summary
+    summaryError: null,
     isFiltered: false,
   },
   reducers: {
@@ -131,7 +148,7 @@ const dashboardSlice = createSlice({
       state.isFiltered = false;
       state.filters = {};
       state.selectedDataType = "all";
-      state.summaryData = null; // ✅ Clear summary data
+      state.summaryData = null;
       state.pagination = {
         total: 0,
         page: 1,
@@ -159,7 +176,19 @@ const dashboardSlice = createSlice({
         state.loading = false;
         state.error = action.payload;
       })
-      // ✅ NEW: Handle summary data fetch
+      // ✅ NEW: Handle driver filter by city
+      .addCase(fetchDriversByCity.pending, (state) => {
+        state.loading = true;
+        state.error = null;
+      })
+      .addCase(fetchDriversByCity.fulfilled, (state, action) => {
+        state.loading = false;
+        state.drivers = action.payload || [];
+      })
+      .addCase(fetchDriversByCity.rejected, (state, action) => {
+        state.loading = false;
+        state.error = action.payload;
+      })
       .addCase(fetchSummaryData.pending, (state) => {
         state.summaryLoading = true;
         state.summaryError = null;

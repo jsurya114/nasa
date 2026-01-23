@@ -13,7 +13,7 @@ import { getPaymentDashboardData, getAllPaymentDashboardData, updatePaymentData,
 import adminJourneyController from '../controllers/admin/adminJourneyController.js';
 import adminAuth from '../middlewares/adminAuth.js';
 import superAdminAuth from '../middlewares/superAdminAuth.js';
-import { getAllData } from '../controllers/admin/dashController.js';
+import { getAllData, getFilteredDriversByCity } from '../controllers/admin/dashController.js';
 import { getWeeklyTempData, weeklyExcelUpload } from '../controllers/admin/weeklyUploadsController.js';
 import { getAnalyticsData } from '../controllers/admin/analyticsController.js';
 import adminAvailabilityController from '../controllers/admin/adminavailabilityController.js';
@@ -63,6 +63,7 @@ router.delete("/journey/:journey_id", adminJourneyController.deleteJourney);
 router.get("/drivers",adminJourneyController.fetchAllDrivers)
 
 router.get('/dashboard/data', getAllData)
+router.get('/dashboard/drivers-by-city', getFilteredDriversByCity) // ✅ NEW: Driver filter endpoint
 router.get('/dashboard/paymentTable', getPaymentDashboardData)
 router.get('/dashboard/paymentTableAll', getAllPaymentDashboardData)
 

@@ -240,14 +240,15 @@ export const addJourney = createAsyncThunk(
 );
 
 // Update journey (admin)
+// Update journey (admin)
 export const updateJourney = createAsyncThunk(
   "journeys/updateJourney",
-  async ({ id, data }, { rejectWithValue }) => {
+  async ({ journey_id, ...data }, { rejectWithValue }) => {  // ✅ Changed to accept journey_id
     try {
-      const res = await fetch(`${API_BASE_URL}/admin/journey/${id}`, {
+      const res = await fetch(`${API_BASE_URL}/admin/journey/${journey_id}`, {  // ✅ Use journey_id
         method: "PUT",
         headers: getAuthHeaders(),
-        body: JSON.stringify(data),
+        body: JSON.stringify(data),  // ✅ Send the rest of the data
       });
       
       const responseData = await res.json();

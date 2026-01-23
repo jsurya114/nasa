@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useCallback, useEffect } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import { useNavigate } from "react-router-dom";
-import { fetchDashboardData, fetchFilteredPaymentData, fetchSummaryData, clearFilteredData, payDriver, setDataType } from "../../redux/slice/admin/dashSlice.js";
+import { fetchDashboardData, fetchDriversByCity, fetchFilteredPaymentData, fetchSummaryData, clearFilteredData, payDriver, setDataType } from "../../redux/slice/admin/dashSlice.js";
 import Header from "../../reuse/Header.jsx";
 import Nav from "../../reuse/Nav.jsx";
 import PaymentDashboardTable from "./DashboardTable.jsx"; 
@@ -50,8 +50,7 @@ export default function Dashboard() {
   const [showExtraFields, setShowExtraFields] = useState(false);
   const [showConfirmModal, setShowConfirmModal] = useState(false);
 
-  // ✅ Calculate available data types based on filtered data
-  // Store original data types when selectedDataType is "all" to keep buttons enabled
+  // Calculate available data types based on filtered data
   const [originalDataTypes, setOriginalDataTypes] = useState({ daily: false, weekly: false });
 
   useEffect(() => {
@@ -67,19 +66,15 @@ export default function Dashboard() {
       return { daily: false, weekly: false };
     }
 
-    // If we're viewing "all", calculate from current data
     if (selectedDataType === "all") {
       const hasDaily = filteredPaymentData.some(row => row.data_type === 'daily');
       const hasWeekly = filteredPaymentData.some(row => row.data_type === 'weekly');
       return { daily: hasDaily, weekly: hasWeekly };
     }
 
-    // If we're viewing a specific type, use the stored original data types
-    // This keeps both buttons enabled even when viewing filtered data
     return originalDataTypes;
   }, [filteredPaymentData, isFiltered, selectedDataType, originalDataTypes]);
 
-  // ✅ Show data type tabs only when driver is selected
   const shouldShowDataTypeTabs = useMemo(() => {
     return isFiltered && 
            reduxFilters.driver && 
@@ -98,7 +93,6 @@ export default function Dashboard() {
     );
   }, [isFiltered, reduxFilters.driver, reduxFilters.paymentStatus, filteredPaymentData]);
 
-  // ✅ Use summaryData from Redux instead of calculating from paginated data
   const extraFieldsData = useMemo(() => {
     if (!isFiltered || !summaryData) {
       return {
@@ -125,18 +119,42 @@ export default function Dashboard() {
     };
   }, [summaryData, isFiltered]);
 
-  // ✅ Only fetch dropdown data on mount, don't fetch payment data
+  // Only fetch dropdown data on mount, don't fetch payment data
   useEffect(() => {
     dispatch(fetchDashboardData());
   }, [dispatch]);
 
+  // ✅ NEW: Handle job city change to fetch filtered drivers
+  const handleJobChange = useCallback((value) => {
+    setLocalFilters((prev) => ({
+      ...prev,
+      job: value,
+      driver: "All", // Reset driver when city changes
+    }));
+    
+    // Fetch drivers filtered by selected city
+    if (value && value !== "All") {
+      dispatch(fetchDriversByCity(value));
+    } else {
+      // Fetch all drivers when "All" is selected
+      dispatch(fetchDriversByCity("All"));
+    }
+  }, [dispatch]);
+
   const handleFilterChange = useCallback((e) => {
     const { name, value, type, checked } = e.target;
+    
+    // ✅ Special handling for job field
+    if (name === "job") {
+      handleJobChange(value);
+      return;
+    }
+    
     setLocalFilters((prev) => ({
       ...prev,
       [name]: type === "checkbox" ? checked : value,
     }));
-  }, []);
+  }, [handleJobChange]);
 
   const handleFilterClick = () => {
     setShowExtraFields(isSuperAdmin && localFilters.companyEarnings);
@@ -144,10 +162,9 @@ export default function Dashboard() {
     const filterParams = {
       page: 1,
       limit: itemsPerPage,
-      dataType: "all" // Reset to all when filtering
+      dataType: "all"
     };
     
-    // Reset data type selection
     dispatch(setDataType("all"));
     
     if (localFilters.job !== "All") filterParams.job = localFilters.job;
@@ -160,10 +177,8 @@ export default function Dashboard() {
     
     setCurrentPage(1);
     
-    // ✅ Fetch both paginated data AND summary data
     dispatch(fetchFilteredPaymentData(filterParams));
     
-    // ✅ Fetch summary data if company earnings is enabled
     if (isSuperAdmin && localFilters.companyEarnings) {
       const summaryParams = { ...filterParams };
       delete summaryParams.page;
@@ -187,12 +202,12 @@ export default function Dashboard() {
     setCurrentPage(1);
     setOriginalDataTypes({ daily: false, weekly: false });
     
-    // ✅ Just clear data, don't fetch anything
+    // Reset drivers to show all
+    dispatch(fetchDriversByCity("All"));
     dispatch(clearFilteredData());
     dispatch(setDataType("all"));
   };
 
-  // ✅ Handle data type tab change
   const handleDataTypeChange = (dataType) => {
     dispatch(setDataType(dataType));
     
@@ -205,10 +220,8 @@ export default function Dashboard() {
     
     setCurrentPage(1);
     
-    // ✅ Fetch both paginated data AND summary data
     dispatch(fetchFilteredPaymentData(filterParams));
     
-    // ✅ Update summary data for the selected data type
     if (isSuperAdmin && showExtraFields) {
       const summaryParams = { ...filterParams };
       delete summaryParams.page;
@@ -248,7 +261,6 @@ export default function Dashboard() {
       
       dispatch(fetchFilteredPaymentData(filterParams));
       
-      // ✅ Refetch summary data
       if (isSuperAdmin && showExtraFields) {
         const summaryParams = { ...filterParams };
         delete summaryParams.page;
@@ -262,7 +274,6 @@ export default function Dashboard() {
   const handleAddDelivery = useCallback(() => {
     navigate("/admin/journeys");
   }, [navigate]);
-
   const filterOptions = useMemo(
     () => [
       {
@@ -471,7 +482,6 @@ export default function Dashboard() {
           </div>
         </section>
 
-        {/* ✅ Data Type Tabs - Show only when driver is selected */}
         {shouldShowDataTypeTabs && (
           <section className="bg-white border border-gray-200 rounded-xl shadow-sm mb-4 p-4">
             <div className="flex items-center gap-2 flex-wrap">
@@ -509,7 +519,6 @@ export default function Dashboard() {
           </section>
         )}
 
-        {/* ✅ Show message when no data is displayed */}
         {!isFiltered && (
           <section className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-x-auto p-8 text-center">
             <div className="flex flex-col items-center gap-4">

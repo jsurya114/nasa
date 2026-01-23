@@ -49,18 +49,15 @@ const [selectedDriverForRoutes, setSelectedDriverForRoutes] = useState(null);
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(10);
 
-  // ✅ NEW: Delete modal state
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [journeyToDelete, setJourneyToDelete] = useState(null);
 
-  // ✅ NEW: Filter states
   const [filters, setFilters] = useState({
     route_id: "",
     driver_name: "",
     journey_date: ""
   });
 
-  // ✅ Fetch paginated data with filters on mount and when page/limit/filters change
   useEffect(() => {
     dispatch(fetchPaginatedJourneys({ 
       page: currentPage, 
@@ -69,9 +66,7 @@ const [selectedDriverForRoutes, setSelectedDriverForRoutes] = useState(null);
     }));
   }, [dispatch, currentPage, itemsPerPage, filters]);
 
-  // ✅ FIXED: Always fetch routes and drivers on mount if data is empty
   useEffect(() => {
-    // Only fetch if not currently loading and data is empty
     if (routesStatus !== "loading" && routes.length === 0) {
       dispatch(fetchAdminRoutes());
     }
@@ -81,7 +76,6 @@ const [selectedDriverForRoutes, setSelectedDriverForRoutes] = useState(null);
     }
   }, [dispatch, routes.length, drivers.length, routesStatus, driversStatus]);
 
-  // ✅ Auto-clear validation errors after 5 seconds
   useEffect(() => {
     if (Object.keys(validationErrors).length > 0) {
       if (errorTimeout) {
@@ -100,7 +94,6 @@ const [selectedDriverForRoutes, setSelectedDriverForRoutes] = useState(null);
     }
   }, [validationErrors]);
 
-  // ✅ Cleanup timeout on unmount
   useEffect(() => {
     return () => {
       if (errorTimeout) clearTimeout(errorTimeout);
@@ -108,28 +101,18 @@ const [selectedDriverForRoutes, setSelectedDriverForRoutes] = useState(null);
   }, [errorTimeout]);
 
   useEffect(() => {
-  // if (newJourneyData.driver_id) {
-    // Fetch routes specific to this driver
-    // dispatch(fetchRoutesByDriver(newJourneyData.driver_id));
-    // setSelectedDriverForRoutes(newJourneyData.driver_id);
-  // } else {
-    // No driver selected - show all routes
     dispatch(fetchAdminRoutes());
-    // setSelectedDriverForRoutes(null);
-  // }
 }, [ dispatch]);
+
 useEffect(() => {
   if (editableJourneyId && formData.driver_id) {
     const currentJourney = paginatedJourneys.find(j => j.id === editableJourneyId);
     if (currentJourney && formData.driver_id !== currentJourney.driver_id) {
-      // Driver changed during edit - fetch new routes
       dispatch(fetchRoutesByDriver(formData.driver_id));
     }
   }
 }, [editableJourneyId, formData.driver_id, dispatch, paginatedJourneys]);
 
-
-  // ✅ Handle errors without causing re-renders
   useEffect(() => {
     if (paginatedError) {
       toast.error(paginatedError);
@@ -137,18 +120,14 @@ useEffect(() => {
     }
   }, [paginatedError, dispatch]);
 
-  // ✅ NEW: Handle filter changes
   const handleFilterChange = useCallback((filterName, value) => {
     setFilters(prev => ({
       ...prev,
       [filterName]: value
     }));
-    setCurrentPage(1); // Reset to first page when filter changes
+    setCurrentPage(1);
   }, []);
 
-  
-
-  // ✅ NEW: Clear all filters
   const handleClearFilters = useCallback(() => {
     setFilters({
       route_id: "",
@@ -193,16 +172,7 @@ useEffect(() => {
     }
   }
   
-  // If driver changes during edit, clear the route
-  if (name === 'driver_id') {
-    setFormData((prev) => ({ 
-      ...prev, 
-      [name]: value,
-      route_id: '' // Clear route when driver changes
-    }));
-  } else {
-    setFormData((prev) => ({ ...prev, [name]: value }));
-  }
+  setFormData((prev) => ({ ...prev, [name]: value }));
   
   if (editValidationErrors[name]) {
     setEditValidationErrors((prev) => {
@@ -324,16 +294,14 @@ useEffect(() => {
     },
     [dispatch, formData, validateSequenceOverlap, paginatedJourneys, currentPage, itemsPerPage, filters]
   );
-
   const handleNewJourneyChange = useCallback((e) => {
   const { name, value } = e.target;
   
-  // If driver changes, clear the selected route
   if (name === 'driver_id') {
     setNewJourneyData((prev) => ({ 
       ...prev, 
       [name]: value,
-      route_id: "" // Clear route selection when driver changes
+      route_id: ""
     }));
   } else {
     setNewJourneyData((prev) => ({ ...prev, [name]: value }));
@@ -358,7 +326,6 @@ useEffect(() => {
 
   const handleAddJourney = useCallback(
     async (e) => {
-      // ✅ ENHANCED: Prevent multiple simultaneous submissions
       if (isAdding) {
         console.log("Already adding journey, ignoring duplicate click");
         return;
@@ -374,7 +341,6 @@ useEffect(() => {
 
         setValidationErrors({});
 
-        // Validation checks
         const errors = {};
         if (!newJourneyData.driver_id) {
           errors.driver_id = "Driver is required";
@@ -410,14 +376,12 @@ useEffect(() => {
           }
         }
 
-        // ✅ FIXED: Early return with proper cleanup
         if (Object.keys(errors).length > 0) {
           setValidationErrors(errors);
           setIsAdding(false);
           return;
         }
 
-        // Check for overlapping sequences
         const overlapping = validateSequenceOverlap(
           newJourneyData.driver_id,
           newJourneyData.route_id,
@@ -434,18 +398,15 @@ useEffect(() => {
           return;
         }
 
-        // Add journey
         await dispatch(addJourney(newJourneyData)).unwrap();
         toast.success("Journey added successfully!");
         
-        // Refresh with current pagination and filters
         dispatch(fetchPaginatedJourneys({ 
           page: currentPage, 
           limit: itemsPerPage,
           ...filters 
         }));
         
-        // Reset form
         setNewJourneyData({
           driver_id: "",
           route_id: "",
@@ -460,7 +421,6 @@ useEffect(() => {
           general: err.message || "Failed to add journey"
         });
       } finally {
-        // ✅ Always reset the adding state
         setIsAdding(false);
       }
     },
@@ -468,12 +428,10 @@ useEffect(() => {
   );
 
   const handleDelete = async (id) => {
-    // ✅ NEW: Open modal instead of browser alert
     setJourneyToDelete(id);
     setShowDeleteModal(true);
   };
 
-  // ✅ NEW: Confirm delete from modal
   const confirmDelete = async () => {
     if (!journeyToDelete) return;
 
@@ -493,13 +451,11 @@ useEffect(() => {
     }
   };
 
-  // ✅ NEW: Cancel delete
   const cancelDelete = () => {
     setShowDeleteModal(false);
     setJourneyToDelete(null);
   };
 
-  // ✅ Pagination Controls
   const handlePageChange = (newPage) => {
     if (newPage >= 1 && newPage <= pagination.totalPages) {
       setCurrentPage(newPage);
@@ -511,36 +467,29 @@ useEffect(() => {
     setCurrentPage(1);
   };
 
-  // Calculate page numbers to display
   const getPageNumbers = () => {
     const totalPages = pagination.totalPages;
     const current = currentPage;
-    const delta = 2; // Number of pages to show on each side of current page
+    const delta = 2;
     const pages = [];
 
-    // Always show first page
     pages.push(1);
 
-    // Calculate range around current page
     const rangeStart = Math.max(2, current - delta);
     const rangeEnd = Math.min(totalPages - 1, current + delta);
 
-    // Add dots if there's a gap after first page
     if (rangeStart > 2) {
       pages.push('...');
     }
 
-    // Add pages around current
     for (let i = rangeStart; i <= rangeEnd; i++) {
       pages.push(i);
     }
 
-    // Add dots if there's a gap before last page
     if (rangeEnd < totalPages - 1) {
       pages.push('...');
     }
 
-    // Always show last page (if more than 1 page exists)
     if (totalPages > 1) {
       pages.push(totalPages);
     }
@@ -557,102 +506,16 @@ useEffect(() => {
           key={journey.id}
           className="border-b hover:bg-blue-50 transition-colors duration-200"
         >
-          {/* Driver Cell */}
           <td className="px-4 py-3">
-            {isEditing ? (
-              <Select
-                name="driver_id"
-                options={drivers.map((driver) => ({
-                  value: driver.id,
-                  label: driver.name,
-                }))}
-                value={
-                  drivers.find(d => d.id === formData.driver_id)
-                    ? {
-                        value: formData.driver_id,
-                        label: drivers.find(d => d.id === formData.driver_id).name,
-                      }
-                    : null
-                }
-                onChange={(selectedOption) =>
-                  setFormData(prev => ({ ...prev, driver_id: selectedOption?.value || '' }))
-                }
-                placeholder="Select driver..."
-                isClearable
-                isSearchable
-                classNamePrefix="react-select"
-                styles={{
-                  control: (base, state) => ({
-                    ...base,
-                    borderColor: editValidationErrors.driver_id ? '#ef4444' : '#3b82f6',
-                    boxShadow: state.isFocused ? '0 0 0 1px #3b82f6' : base.boxShadow,
-                    minHeight: '38px',
-                    borderRadius: '0.375rem',
-                  }),
-                  menu: base => ({
-                    ...base,
-                    zIndex: 9999,
-                  }),
-                }}
-              />
-            ) : (
-              <span className="font-medium text-gray-800">{journey.driver_name}</span>
-            )}
-            {isEditing && editValidationErrors.driver_id && (
-              <p className="text-xs text-red-500 mt-1">{editValidationErrors.driver_id}</p>
-            )}
+            <span className="font-medium text-gray-800">{journey.driver_name}</span>
           </td>
 
-          {/* Date Cell */}
           <td className="px-4 py-3 text-gray-700">{journey.journey_date}</td>
 
-          {/* Route Cell */}
           <td className="px-4 py-3">
-            {isEditing ? (
-              <Select
-                name="route_id"
-                options={routes.map((route) => ({
-                  value: route.id,
-                  label: route.route || route.name || `Route ${route.id}`,
-                }))}
-                value={
-                  routes.find(r => r.id === formData.route_id)
-                    ? {
-                        value: formData.route_id,
-                        label: routes.find(r => r.id === formData.route_id).route || routes.find(r => r.id === formData.route_id).name,
-                      }
-                    : null
-                }
-                onChange={(selectedOption) =>
-                  setFormData(prev => ({ ...prev, route_id: selectedOption?.value || '' }))
-                }
-                placeholder="Select route..."
-                isClearable
-                isSearchable
-                classNamePrefix="react-select"
-                styles={{
-                  control: (base, state) => ({
-                    ...base,
-                    borderColor: editValidationErrors.route_id ? '#ef4444' : '#3b82f6',
-                    boxShadow: state.isFocused ? '0 0 0 1px #3b82f6' : base.boxShadow,
-                    minHeight: '38px',
-                    borderRadius: '0.375rem',
-                  }),
-                  menu: base => ({
-                    ...base,
-                    zIndex: 9999,
-                  }),
-                }}
-              />
-            ) : (
-              <span className="font-medium text-gray-800">{journey.route_name}</span>
-            )}
-            {isEditing && editValidationErrors.route_id && (
-              <p className="text-xs text-red-500 mt-1">{editValidationErrors.route_id}</p>
-            )}
+            <span className="font-medium text-gray-800">{journey.route_name}</span>
           </td>
 
-          {/* Start Seq Cell */}
           <td className="px-4 py-3 text-center">
             {isEditing ? (
               <>
@@ -679,7 +542,6 @@ useEffect(() => {
             )}
           </td>
 
-          {/* End Seq Cell */}
           <td className="px-4 py-3 text-center">
             {isEditing ? (
               <>
@@ -706,14 +568,12 @@ useEffect(() => {
             )}
           </td>
 
-          {/* Packages Cell */}
           <td className="px-4 py-3 text-center">
             <span className="inline-block bg-purple-100 text-purple-800 px-3 py-1 rounded-full font-semibold">
               {journey.packages}
             </span>
           </td>
 
-          {/* Actions Cell */}
           <td className="px-4 py-3 text-center">
             {isEditing ? (
               <div className="flex justify-center gap-2">
@@ -797,8 +657,7 @@ useEffect(() => {
         </tr>
       );
     });
-  }, [paginatedJourneys, editableJourneyId, formData, handleEdit, handleCancel, handleSave, handleChange, handleDelete, editValidationErrors, drivers, routes]);
-
+  }, [paginatedJourneys, editableJourneyId, formData, handleEdit, handleCancel, handleSave, handleChange, handleDelete, editValidationErrors]);
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-purple-50">
       <Header />
@@ -851,7 +710,6 @@ useEffect(() => {
           </div>
         </div>
 
-        {/* ✅ NEW: Filter Section */}
         <div className="bg-white rounded-xl shadow-sm p-6 mb-4 border-2 border-blue-200">
           <div className="flex justify-between items-center mb-4">
             <h2 className="text-lg font-semibold text-blue-700">Filter Journeys</h2>
@@ -942,7 +800,6 @@ useEffect(() => {
           </div>
         </div>
 
-        {/* Add Journey Form */}
         <div className="bg-white rounded-xl shadow-sm p-6 mb-4 border-2 border-green-200">
           <h2 className="text-lg font-semibold mb-4 text-green-700">Add New Journey</h2>
           
@@ -1159,11 +1016,9 @@ useEffect(() => {
     </>
   )}
 </button>
-
           </div>
         </div>
 
-        {/* Journey Table */}
         <div className="bg-white rounded-xl shadow-sm overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full table-auto border-collapse text-sm">
@@ -1209,14 +1064,10 @@ useEffect(() => {
               </tbody>
             </table>
           </div>
-
-          {/* Enhanced Pagination Controls */}
           {paginatedStatus === "succeeded" && paginatedJourneys.length > 0 && (
             <div className="bg-gradient-to-r from-gray-50 to-gray-100 border-t-2 border-gray-200">
               <div className="px-6 py-4">
-                {/* Top Row: Items per page and info */}
                 <div className="flex flex-col sm:flex-row justify-between items-center gap-4 mb-4">
-                  {/* Items per page */}
                   <div className="flex items-center gap-3">
                     <span className="text-sm font-medium text-gray-700">Rows per page:</span>
                     <select
@@ -1232,7 +1083,6 @@ useEffect(() => {
                     </select>
                   </div>
 
-                  {/* Page info */}
                   <div className="text-sm font-medium text-gray-700">
                     Showing <span className="font-bold text-blue-600">{((currentPage - 1) * itemsPerPage) + 1}</span> to{' '}
                     <span className="font-bold text-blue-600">
@@ -1242,9 +1092,7 @@ useEffect(() => {
                   </div>
                 </div>
 
-                {/* Bottom Row: Page navigation */}
                 <div className="flex justify-center items-center gap-1">
-                  {/* First and Previous Buttons */}
                   <button
                     onClick={() => handlePageChange(1)}
                     disabled={currentPage === 1}
@@ -1267,7 +1115,6 @@ useEffect(() => {
                     </svg>
                   </button>
 
-                  {/* Page Numbers */}
                   <div className="flex items-center gap-1 mx-2">
                     {getPageNumbers().map((pageNum, index) => (
                       pageNum === '...' ? (
@@ -1290,7 +1137,6 @@ useEffect(() => {
                     ))}
                   </div>
 
-                  {/* Next and Last Buttons */}
                   <button
                     onClick={() => handlePageChange(currentPage + 1)}
                     disabled={currentPage === pagination.totalPages}
@@ -1319,19 +1165,15 @@ useEffect(() => {
         </div>
       </main>
 
-      {/* ✅ DELETE CONFIRMATION MODAL */}
       {showDeleteModal && (
         <div className="fixed inset-0 z-50 overflow-y-auto">
-          {/* Backdrop */}
           <div 
             className="fixed inset-0 bg-black bg-opacity-50 transition-opacity"
             onClick={cancelDelete}
           ></div>
           
-          {/* Modal */}
           <div className="flex min-h-full items-center justify-center p-4">
             <div className="relative bg-white rounded-lg shadow-xl max-w-md w-full p-6 transform transition-all">
-              {/* Icon */}
               <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-red-100 mb-4">
                 <svg
                   className="h-6 w-6 text-red-600"
@@ -1348,7 +1190,6 @@ useEffect(() => {
                 </svg>
               </div>
 
-              {/* Content */}
               <div className="text-center">
                 <h3 className="text-lg font-semibold text-gray-900 mb-2">
                   Delete Journey
@@ -1358,7 +1199,6 @@ useEffect(() => {
                 </p>
               </div>
 
-              {/* Buttons */}
               <div className="flex gap-3 justify-end">
                 <button
                   onClick={cancelDelete}
