@@ -81,6 +81,39 @@ const adminAvailabilityController = {
     }
   },
 
+  // NEW: Get global availability counts across all drivers (not paginated)
+  getGlobalAvailabilityCounts: async (req, res) => {
+    try {
+      const { id: adminId, role: adminRole } = req.admin;
+      const { searchQuery = "", city = "" } = req.query;
+
+      console.log(`📊 Admin ${adminId} (${adminRole}) fetching global availability counts`);
+      console.log(`   Filters - City: ${city || 'all'}, Search: ${searchQuery || 'none'}`);
+
+      const counts = await availabilityService.getGlobalAvailabilityCounts(
+        adminId,
+        adminRole,
+        searchQuery.trim(),
+        city || null
+      );
+
+      console.log(`✅ Global counts fetched:`, counts);
+
+      res.status(200).json({
+        success: true,
+        data: counts
+      });
+    } catch (err) {
+      console.error("❌ getGlobalAvailabilityCounts error:", err.message);
+      console.error("Error stack:", err.stack);
+      res.status(500).json({
+        success: false,
+        message: "Failed to fetch global availability counts",
+        error: err.message
+      });
+    }
+  },
+
   updateDriverAvailability: async (req, res) => {
     try {
       const { id: adminId, role: adminRole } = req.admin;

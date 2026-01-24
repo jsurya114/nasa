@@ -74,16 +74,15 @@ export const driverLogout = createAsyncThunk(
   "driver/logout",
   async (_, { rejectWithValue }) => {
     try {
-      const res = await axios.post(`/driver/logout`);
-
-      // Always remove tokens and timezone from localStorage
+      // Optimistic cleanup: remove tokens immediately
       localStorage.removeItem('driverToken');
       localStorage.removeItem('driverRefreshToken');
       localStorage.removeItem('driverTimezone');
 
+      const res = await axios.post(`/driver/logout`);
       return res.data;
     } catch (error) {
-      // Even if logout fails, remove tokens and timezone
+      // Ensure tokens are removed even on error
       localStorage.removeItem('driverToken');
       localStorage.removeItem('driverRefreshToken');
       localStorage.removeItem('driverTimezone');
@@ -140,6 +139,8 @@ const driverSlice = createSlice({
       // ===== Driver Logout =====
       .addCase(driverLogout.pending, (state) => {
         state.loading = true;
+        state.isAuthenticated = false;
+        state.driver = null;
         state.error = null;
       })
       .addCase(driverLogout.fulfilled, (state) => {

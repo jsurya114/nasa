@@ -254,6 +254,70 @@ export const availabilityService = {
     };
   },
 
+  // NEW: Get global availability counts across ALL drivers (respects city/search filters, but NOT pagination or day filters)
+  getGlobalAvailabilityCounts: async (
+    adminId,
+    adminRole,
+    searchQuery = "",
+    filterCity = null
+  ) => {
+    const searchPattern = searchQuery ? `${searchQuery}%` : "%";
+
+    let query = `
+      SELECT
+        COUNT(CASE WHEN d.monday = true THEN 1 END) AS monday_count,
+        COUNT(CASE WHEN d.tuesday = true THEN 1 END) AS tuesday_count,
+        COUNT(CASE WHEN d.wednesday = true THEN 1 END) AS wednesday_count,
+        COUNT(CASE WHEN d.thursday = true THEN 1 END) AS thursday_count,
+        COUNT(CASE WHEN d.friday = true THEN 1 END) AS friday_count,
+        COUNT(CASE WHEN d.saturday = true THEN 1 END) AS saturday_count,
+        COUNT(CASE WHEN d.sunday = true THEN 1 END) AS sunday_count
+      FROM drivers d
+      JOIN city c ON d.city_id = c.id
+    `;
+
+    let params = [];
+
+    if (adminRole === "admin") {
+      query += `
+        JOIN admin_city_ref acr ON acr.city_id = c.id
+        WHERE acr.admin_id = $1
+        AND d.name ILIKE $2
+      `;
+      params = [adminId, searchPattern];
+      
+      if (filterCity) {
+        query += ` AND c.job = $3`;
+        params.push(filterCity);
+      }
+    } else if (adminRole === "superadmin") {
+      query += `
+        WHERE d.name ILIKE $1
+      `;
+      params = [searchPattern];
+      
+      if (filterCity) {
+        query += ` AND c.job = $2`;
+        params.push(filterCity);
+      }
+    } else {
+      throw new Error("Unauthorized role");
+    }
+
+    const result = await pool.query(query, params);
+    const row = result.rows[0];
+
+    return {
+      monday: parseInt(row.monday_count, 10),
+      tuesday: parseInt(row.tuesday_count, 10),
+      wednesday: parseInt(row.wednesday_count, 10),
+      thursday: parseInt(row.thursday_count, 10),
+      friday: parseInt(row.friday_count, 10),
+      saturday: parseInt(row.saturday_count, 10),
+      sunday: parseInt(row.sunday_count, 10)
+    };
+  },
+
   // Get unique cities for filter dropdown
   getAvailableCities: async (adminId, adminRole) => {
     let query;

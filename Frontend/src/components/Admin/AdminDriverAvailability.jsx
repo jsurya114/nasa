@@ -3,6 +3,7 @@ import { useDispatch, useSelector } from "react-redux";
 import {
   getAllDriversAvailability,
   getAvailableCities,
+  getGlobalAvailabilityCounts,
   updateDriverAvailabilityByAdmin,
   manualResetAllDriversAvailability,
   clearMessages
@@ -15,7 +16,7 @@ import Nav from "../../reuse/Nav";
 export default function AdminDriverAvailability() {
   const dispatch = useDispatch();
 
-  const { allDriversAvailability, availableCities, pagination, loading, citiesLoading, resetLoading, error } = useSelector(
+  const { allDriversAvailability, availableCities, globalCounts, pagination, loading, citiesLoading, resetLoading, error } = useSelector(
     (state) => state.availability
   );
   const { admin } = useSelector((state) => state.admin);
@@ -107,6 +108,14 @@ export default function AdminDriverAvailability() {
     }));
   }, [dispatch, currentPage, filterDay, itemsPerPage, searchQuery, filterCity]);
 
+  // Fetch global availability counts (NOT affected by pagination or day filter)
+  useEffect(() => {
+    dispatch(getGlobalAvailabilityCounts({
+      searchQuery: searchQuery || null,
+      filterCity: filterCity || null
+    }));
+  }, [dispatch, searchQuery, filterCity]);
+
   useEffect(() => {
     if (error) {
       toast.error(error);
@@ -161,29 +170,24 @@ export default function AdminDriverAvailability() {
     return true; // Show all if no status filter
   });
 
-  const getAvailabilityCount = (drivers) => {
-    const counts = {};
-    daysOfWeek.forEach((day) => {
-      counts[day] = drivers.filter(
-        (d) => d.availability?.[day] === true
-      ).length;
-    });
-    return counts;
+  // Use globalCounts from Redux instead of calculating from current page
+  const availabilityCounts = globalCounts || {
+    monday: 0,
+    tuesday: 0,
+    wednesday: 0,
+    thursday: 0,
+    friday: 0,
+    saturday: 0,
+    sunday: 0
   };
-
-  const availabilityCounts = getAvailabilityCount(allDriversAvailability);
 
   // Get counts for the selected day OR overall counts
   const getSelectedDayCounts = () => {
     if (filterDay) {
-      // If a day is selected, show counts for that specific day
-      const available = allDriversAvailability.filter(
-        (d) => d.availability?.[filterDay] === true
-      ).length;
-
-      const unavailable = allDriversAvailability.filter(
-        (d) => d.availability?.[filterDay] === false
-      ).length;
+      // Use global counts for the selected day
+      const available = globalCounts?.[filterDay] || 0;
+      const totalDrivers = pagination?.totalRecords || 0;
+      const unavailable = totalDrivers - available;
 
       return { available, unavailable };
     } else {
@@ -311,6 +315,12 @@ export default function AdminDriverAvailability() {
         toast.success("Availability updated successfully!");
         setEditingDriverId(null);
         setEditAvailability({});
+        
+        // Refresh global counts after update
+        dispatch(getGlobalAvailabilityCounts({
+          searchQuery: searchQuery || null,
+          filterCity: filterCity || null
+        }));
       } else {
         toast.error(res.error?.message || "Failed to update availability");
       }
@@ -334,6 +344,12 @@ export default function AdminDriverAvailability() {
           filterDay: filterDay || null,
           page: currentPage,
           limit: itemsPerPage,
+          searchQuery: searchQuery || null,
+          filterCity: filterCity || null
+        }));
+        
+        // Refresh global counts
+        dispatch(getGlobalAvailabilityCounts({
           searchQuery: searchQuery || null,
           filterCity: filterCity || null
         }));

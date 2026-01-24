@@ -102,6 +102,29 @@ export const getAvailableCities = createAsyncThunk(
   }
 );
 
+// NEW: Admin: Get global availability counts (across all pages)
+export const getGlobalAvailabilityCounts = createAsyncThunk(
+  "availability/getGlobalAvailabilityCounts",
+  async ({ searchQuery = null, filterCity = null }, { rejectWithValue }) => {
+    try {
+      const lang = getCurrentLanguage();
+      const params = { searchQuery };
+      if (filterCity) params.city = filterCity;
+
+      const response = await axios.get(`/admin/drivers/availability/counts`, {
+        params,
+        headers: { "X-Language": lang }
+      });
+      return response.data.data;
+    } catch (error) {
+      const lang = getCurrentLanguage();
+      return rejectWithValue(
+        error.response?.data?.message || translateError(lang, 'availability.failedToFetchCounts')
+      );
+    }
+  }
+);
+
 // Admin update specific driver's availability
 export const updateDriverAvailabilityByAdmin = createAsyncThunk(
   "availability/updateDriverAvailabilityByAdmin",
@@ -157,11 +180,21 @@ const availabilitySlice = createSlice({
     },
     allDriversAvailability: [],
     availableCities: [],
+    globalCounts: {
+      monday: 0,
+      tuesday: 0,
+      wednesday: 0,
+      thursday: 0,
+      friday: 0,
+      saturday: 0,
+      sunday: 0
+    },
     pagination: null,
     updatedAt: null,
     loading: false,
     updateLoading: false,
     citiesLoading: false,
+    countsLoading: false,
     resetLoading: false,
     error: null,
     successMessage: null,
@@ -243,6 +276,19 @@ const availabilitySlice = createSlice({
         state.error = action.payload;
       })
 
+      // ===== ADMIN GET GLOBAL COUNTS =====
+      .addCase(getGlobalAvailabilityCounts.pending, (state) => {
+        state.countsLoading = true;
+      })
+      .addCase(getGlobalAvailabilityCounts.fulfilled, (state, action) => {
+        state.countsLoading = false;
+        state.globalCounts = action.payload;
+      })
+      .addCase(getGlobalAvailabilityCounts.rejected, (state, action) => {
+        state.countsLoading = false;
+        state.error = action.payload;
+      })
+
       // ===== ADMIN UPDATE DRIVER AVAILABILITY =====
       .addCase(updateDriverAvailabilityByAdmin.pending, (state) => {
         state.updateLoading = true;
@@ -298,6 +344,17 @@ const availabilitySlice = createSlice({
             availability_updated_at: action.payload.resetTimestamp,
           })
         );
+
+        // Reset global counts to 0
+        state.globalCounts = {
+          monday: 0,
+          tuesday: 0,
+          wednesday: 0,
+          thursday: 0,
+          friday: 0,
+          saturday: 0,
+          sunday: 0
+        };
 
         // Also reset driver's own availability if they're viewing it
         state.driverAvailability = {

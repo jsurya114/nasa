@@ -52,15 +52,14 @@ export const adminLogout = createAsyncThunk(
     "admin/logout",
     async (_, { rejectWithValue }) => {
         try {
-            const res = await axios.post(`/admin/logout`);
-
-            // Always remove tokens from localStorage
+            // Optimistic cleanup: remove tokens immediately
             localStorage.removeItem('adminToken');
             localStorage.removeItem('adminRefreshToken');
 
+            const res = await axios.post(`/admin/logout`);
             return res.data;
         } catch (error) {
-            // Even if logout fails, remove tokens
+            // Ensure tokens are removed even on error
             localStorage.removeItem('adminToken');
             localStorage.removeItem('adminRefreshToken');
             return rejectWithValue(error.response?.data?.message || error.message)
@@ -105,8 +104,11 @@ const adminSlice = createSlice({
                 }
             })
             .addCase(adminLogout.pending, (state) => {
-                state.loading = true
-                state.error = null
+                state.loading = true;
+                state.isAuthenticated = false;
+                state.admin = null;
+                state.isSuperAdmin = false;
+                state.error = null;
             })
             .addCase(adminLogout.fulfilled, (state) => {
                 state.loading = false;

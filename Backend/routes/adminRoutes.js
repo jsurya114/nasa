@@ -91,6 +91,9 @@ router.get("/drivers/availability", adminAvailabilityController.getAllDriversAva
 // Get available cities for filter dropdown
 router.get("/drivers/availability/cities", adminAvailabilityController.getAvailableCities);
 
+// NEW: Get global availability counts (across all pages)
+router.get("/drivers/availability/counts", adminAvailabilityController.getGlobalAvailabilityCounts);
+
 // Update specific driver's availability (Admin/Superadmin)
 router.put(
   "/drivers/availability/:driverId",
