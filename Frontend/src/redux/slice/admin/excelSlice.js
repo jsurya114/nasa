@@ -1,41 +1,17 @@
 import { createSlice, createAsyncThunk } from "@reduxjs/toolkit"
-import { API_BASE_URL } from "../../../config"
-
-// Helper function to get auth headers for file uploads
-const getAuthHeaders = (isFormData = false) => {
-  const token = localStorage.getItem('adminToken');
-  const headers = {};
-  
-  // Don't set Content-Type for FormData - browser will set it with boundary
-  if (!isFormData) {
-    headers['Content-Type'] = 'application/json';
-  }
-  
-  if (token) {
-    headers['Authorization'] = `Bearer ${token}`;
-  }
-  
-  return headers;
-};
+import axios from "../axiosInstance"
 
 // Async thunk for daily file upload
 export const excelDailyFileUpload = createAsyncThunk(
   'admin/uploadExcel',
   async (formData, { rejectWithValue }) => {
     try {
-      const res = await fetch(`${API_BASE_URL}/admin/doubleStop/dailyFileUpload`, {
-        method: 'POST',
-        body: formData,
-        headers: getAuthHeaders(true), // true = FormData, don't set Content-Type
-      })
-      const data = await res.json()
-   
-      if (!res.ok) {
-        return rejectWithValue(data.message || 'Excel file upload failed')
-      }
-      return data
+      const res = await axios.post(`/admin/doubleStop/dailyFileUpload`, formData, {
+        headers: { 'Content-Type': 'multipart/form-data' }
+      });
+      return res.data;
     } catch (error) {
-      return rejectWithValue(error.message)
+      return rejectWithValue(error.response?.data?.message || 'Excel file upload failed');
     }
   }
 )
@@ -45,23 +21,12 @@ export const excelWeeklyFileUpload = createAsyncThunk(
   "excel/uploadWeekly",
   async (formData, { rejectWithValue }) => {
     try {
-      
-      const res = await fetch(`${API_BASE_URL}/admin/doubleStop/weekly-upload`, {
-        method: "POST",
-        body: formData,
-        headers: getAuthHeaders(true), // true = FormData, don't set Content-Type
+      const res = await axios.post(`/admin/doubleStop/weekly-upload`, formData, {
+        headers: { 'Content-Type': 'multipart/form-data' }
       });
-      
-      if (!res.ok) {
-        const error = await res.json();
-        return rejectWithValue(error.message || "Weekly upload failed");
-      }
-      
-      let data = await res.json();
-     
-      return data;
+      return res.data;
     } catch (error) {
-      return rejectWithValue(error.message);
+      return rejectWithValue(error.response?.data?.message || "Weekly upload failed");
     }
   }
 );
@@ -116,7 +81,6 @@ const excelSlice = createSlice({
         state.weekly.success = false;
       })
       .addCase(excelWeeklyFileUpload.fulfilled, (state, action) => {
-        
         state.weekly.loading = false;
         state.weekly.success = action.payload.message;
         state.weekly.message = action.payload.message;

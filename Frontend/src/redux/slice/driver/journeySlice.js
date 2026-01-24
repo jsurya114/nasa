@@ -1,5 +1,5 @@
 import { createSlice, createAsyncThunk } from "@reduxjs/toolkit";
-import { API_BASE_URL } from "../../../config";
+import axios from "../axiosInstance";
 import { translateError } from "../../../hooks/backendI18n.js";
 
 // Get current language from localStorage or default to 'en'
@@ -7,71 +7,46 @@ const getCurrentLanguage = () => {
   return localStorage.getItem('preferredLanguage') || 'en';
 };
 
-// Helper function to get auth headers
-const getAuthHeaders = () => {
-  const token = localStorage.getItem('adminToken') || localStorage.getItem('driverToken');
-  const lang = getCurrentLanguage();
-  return {
-    "Content-Type": "application/json",
-    "X-Language": lang, // Add language header
-    ...(token && { "Authorization": `Bearer ${token}` })
-  };
-};
-
 // Fetch all routes (for driver app) with request cancellation
 export const fetchRoutes = createAsyncThunk(
-  "routes/fetchRoutes", 
+  "routes/fetchRoutes",
   async (_, { signal, rejectWithValue }) => {
     try {
       const lang = getCurrentLanguage();
-      const res = await fetch(`${API_BASE_URL}/driver/routes-list`, { 
-        signal, 
-        headers: getAuthHeaders() 
+      const res = await axios.get(`/driver/routes-list`, {
+        signal,
+        headers: { 'X-Language': lang }
       });
-      
-      if (!res.ok) {
-        const error = await res.json().catch(() => ({}));
-        return rejectWithValue(error.error || translateError(lang, 'common.failed'));
-      }
-      
-      const data = await res.json();
-      return data;
+      return res.data;
     } catch (error) {
       const lang = getCurrentLanguage();
-      if (error.name === 'AbortError') {
+      if (error.name === 'AbortError' || axios.isCancel(error)) {
         return rejectWithValue(translateError(lang, 'delivery.requestCancelled'));
       }
       console.error("fetchRoutes error:", error);
-      return rejectWithValue(error.message);
+      return rejectWithValue(error.response?.data?.message || error.message);
     }
   }
 );
 
-// ✅ FIXED: Removed condition check to allow fetching on every call
 export const fetchAdminRoutes = createAsyncThunk(
-  "routes/fetchAdminRoutes", 
+  "routes/fetchAdminRoutes",
   async (_, { signal, rejectWithValue }) => {
     try {
       const lang = getCurrentLanguage();
-      const res = await fetch(`${API_BASE_URL}/admin/routes-list`, { 
-        signal, 
-        headers: getAuthHeaders() 
+      const res = await axios.get(`/admin/routes-list`, {
+        signal,
+        headers: { 'X-Language': lang }
       });
-      
-      if (!res.ok) {
-        const error = await res.json().catch(() => ({}));
-        return rejectWithValue(error.error || translateError(lang, 'common.failed'));
-      }
-      
-      const data = await res.json();
+      const data = res.data;
       return data.routes || data.data || data || [];
     } catch (error) {
       const lang = getCurrentLanguage();
-      if (error.name === 'AbortError') {
+      if (error.name === 'AbortError' || axios.isCancel(error)) {
         return rejectWithValue(translateError(lang, 'delivery.requestCancelled'));
       }
       console.error("fetchAdminRoutes error:", error);
-      return rejectWithValue(error.message);
+      return rejectWithValue(error.response?.data?.message || error.message);
     }
   }
 );
@@ -86,25 +61,18 @@ export const fetchTodayJourney = createAsyncThunk(
         return rejectWithValue(translateError(lang, 'driver.driverIdRequired'));
       }
 
-      const res = await fetch(`${API_BASE_URL}/driver/journey/${driver_id}`, { 
-        signal, 
-        headers: getAuthHeaders() 
+      const res = await axios.get(`/driver/journey/${driver_id}`, {
+        signal,
+        headers: { 'X-Language': lang }
       });
-      
-      if (!res.ok) {
-        const error = await res.json().catch(() => ({}));
-        return rejectWithValue(error.message || translateError(lang, 'journey.errorFetching'));
-      }
-      
-      const data = await res.json();
-      return data.data || [];
+      return res.data.data || [];
     } catch (error) {
       const lang = getCurrentLanguage();
-      if (error.name === 'AbortError') {
+      if (error.name === 'AbortError' || axios.isCancel(error)) {
         return rejectWithValue(translateError(lang, 'delivery.requestCancelled'));
       }
       console.error("fetchTodayJourney error:", error);
-      return rejectWithValue(error.message);
+      return rejectWithValue(error.response?.data?.message || translateError(lang, 'journey.errorFetching'));
     }
   }
 );
@@ -114,22 +82,11 @@ export const saveJourney = createAsyncThunk(
   "journeys/saveJourney",
   async (journeyData, { rejectWithValue }) => {
     try {
-      const res = await fetch(`${API_BASE_URL}/driver/journey`, {
-        method: "POST",
-        headers: getAuthHeaders(),
-        body: JSON.stringify(journeyData),
-      });
-      
-      const data = await res.json();
-      
-      if (!res.ok) {
-        return rejectWithValue(data);
-      }
-      
-      return data.data;
+      const res = await axios.post(`/driver/journey`, journeyData);
+      return res.data.data;
     } catch (error) {
       console.error("saveJourney error:", error);
-      return rejectWithValue({ message: error.message });
+      return rejectWithValue(error.response?.data || { message: error.message });
     }
   }
 );
@@ -140,24 +97,18 @@ export const fetchAllJourneys = createAsyncThunk(
   async (_, { signal, rejectWithValue }) => {
     try {
       const lang = getCurrentLanguage();
-      const res = await fetch(`${API_BASE_URL}/admin/journeys`, { 
-        signal, 
-        headers: getAuthHeaders() 
+      const res = await axios.get(`/admin/journeys`, {
+        signal,
+        headers: { 'X-Language': lang }
       });
-      
-      if (!res.ok) {
-        return rejectWithValue(translateError(lang, 'journey.errorFetching'));
-      }
-      
-      const data = await res.json();
-      return data.data || [];
+      return res.data.data || [];
     } catch (error) {
       const lang = getCurrentLanguage();
-      if (error.name === 'AbortError') {
+      if (error.name === 'AbortError' || axios.isCancel(error)) {
         return rejectWithValue(translateError(lang, 'delivery.requestCancelled'));
       }
       console.error("fetchAllJourneys error:", error);
-      return rejectWithValue(error.message);
+      return rejectWithValue(error.response?.data?.message || translateError(lang, 'journey.errorFetching'));
     }
   }
 );
@@ -168,48 +119,24 @@ export const fetchPaginatedJourneys = createAsyncThunk(
   async ({ page = 1, limit = 10, route_id, driver_name, journey_date } = {}, { signal, rejectWithValue }) => {
     try {
       const lang = getCurrentLanguage();
-      // ✅ Build query params with filters
-      const params = new URLSearchParams({
-        page: page.toString(),
-        limit: limit.toString()
+      const res = await axios.get(`/admin/journeys/paginated`, {
+        signal,
+        params: { page, limit, route_id, driver_name, journey_date },
+        headers: { 'X-Language': lang }
       });
 
-      if (route_id) {
-        params.append('route_id', route_id.toString());
-      }
-
-      if (driver_name && driver_name.trim() !== '') {
-        params.append('driver_name', driver_name.trim());
-      }
-
-      if (journey_date && journey_date.trim() !== '') {
-        params.append('journey_date', journey_date.trim());
-      }
-
-      const res = await fetch(
-        `${API_BASE_URL}/admin/journeys/paginated?${params.toString()}`, 
-        { 
-          signal, 
-          headers: getAuthHeaders() 
-        }
-      );
-      
-      if (!res.ok) {
-        return rejectWithValue(translateError(lang, 'journey.errorFetching'));
-      }
-      
-      const data = await res.json();
+      const data = res.data;
       return {
         journeys: data.data || [],
         pagination: data.pagination || { total: 0, page: 1, limit: 10, totalPages: 1 }
       };
     } catch (error) {
       const lang = getCurrentLanguage();
-      if (error.name === 'AbortError') {
+      if (error.name === 'AbortError' || axios.isCancel(error)) {
         return rejectWithValue(translateError(lang, 'delivery.requestCancelled'));
       }
       console.error("fetchPaginatedJourneys error:", error);
-      return rejectWithValue(error.message);
+      return rejectWithValue(error.response?.data?.message || translateError(lang, 'journey.errorFetching'));
     }
   }
 );
@@ -219,48 +146,25 @@ export const addJourney = createAsyncThunk(
   "journeys/addJourney",
   async (journeyData, { rejectWithValue }) => {
     try {
-      const res = await fetch(`${API_BASE_URL}/admin/journey`, {
-        method: "POST",
-        headers: getAuthHeaders(),
-        body: JSON.stringify(journeyData),
-      });
-      
-      const data = await res.json();
-      
-      if (!res.ok) {
-        return rejectWithValue(data);
-      }
-      
-      return data.data;
+      const res = await axios.post(`/admin/journey`, journeyData);
+      return res.data.data;
     } catch (error) {
       console.error("addJourney error:", error);
-      return rejectWithValue({ message: error.message });
+      return rejectWithValue(error.response?.data || { message: error.message });
     }
   }
 );
 
 // Update journey (admin)
-// Update journey (admin)
 export const updateJourney = createAsyncThunk(
   "journeys/updateJourney",
-  async ({ journey_id, ...data }, { rejectWithValue }) => {  // ✅ Changed to accept journey_id
+  async ({ journey_id, ...data }, { rejectWithValue }) => {
     try {
-      const res = await fetch(`${API_BASE_URL}/admin/journey/${journey_id}`, {  // ✅ Use journey_id
-        method: "PUT",
-        headers: getAuthHeaders(),
-        body: JSON.stringify(data),  // ✅ Send the rest of the data
-      });
-      
-      const responseData = await res.json();
-      
-      if (!res.ok) {
-        return rejectWithValue(responseData);
-      }
-      
-      return responseData.data;
+      const res = await axios.put(`/admin/journey/${journey_id}`, data);
+      return res.data.data;
     } catch (error) {
       console.error("updateJourney error:", error);
-      return rejectWithValue({ message: error.message });
+      return rejectWithValue(error.response?.data || { message: error.message });
     }
   }
 );
@@ -270,21 +174,11 @@ export const deleteJourney = createAsyncThunk(
   "journeys/deleteJourney",
   async (id, { rejectWithValue }) => {
     try {
-      const res = await fetch(`${API_BASE_URL}/admin/journey/${id}`, {
-        method: "DELETE",
-        headers: getAuthHeaders(),
-      });
-      
-      const data = await res.json();
-      
-      if (!res.ok) {
-        return rejectWithValue(data);
-      }
-      
+      await axios.delete(`/admin/journey/${id}`);
       return id;
     } catch (error) {
       console.error("deleteJourney error:", error);
-      return rejectWithValue({ message: error.message });
+      return rejectWithValue(error.response?.data || { message: error.message });
     }
   }
 );
@@ -295,24 +189,18 @@ export const fetchAllDrivers = createAsyncThunk(
   async (_, { signal, rejectWithValue }) => {
     try {
       const lang = getCurrentLanguage();
-      const res = await fetch(`${API_BASE_URL}/admin/drivers`, { 
-        signal, 
-        headers: getAuthHeaders() 
+      const res = await axios.get(`/admin/drivers`, {
+        signal,
+        headers: { 'X-Language': lang }
       });
-      
-      if (!res.ok) {
-        return rejectWithValue(translateError(lang, 'common.failed'));
-      }
-      
-      const data = await res.json();
-      return data.data || [];
+      return res.data.data || [];
     } catch (error) {
       const lang = getCurrentLanguage();
-      if (error.name === 'AbortError') {
+      if (error.name === 'AbortError' || axios.isCancel(error)) {
         return rejectWithValue(translateError(lang, 'delivery.requestCancelled'));
       }
       console.error("fetchAllDrivers error:", error);
-      return rejectWithValue(error.message);
+      return rejectWithValue(error.response?.data?.message || translateError(lang, 'common.failed'));
     }
   }
 );
@@ -327,24 +215,18 @@ export const fetchRoutesByDriver = createAsyncThunk(
         return rejectWithValue(translateError(lang, 'driver.driverIdRequired'));
       }
 
-      const res = await fetch(`${API_BASE_URL}/admin/routes-by-driver/${driverId}`, { 
-        signal, 
-        headers: getAuthHeaders() 
+      const res = await axios.get(`/admin/routes-by-driver/${driverId}`, {
+        signal,
+        headers: { 'X-Language': lang }
       });
-      
-      if (!res.ok) {
-        return rejectWithValue(translateError(lang, 'common.failed'));
-      }
-      
-      const data = await res.json();
-      return data.data || [];
+      return res.data.data || [];
     } catch (error) {
       const lang = getCurrentLanguage();
-      if (error.name === 'AbortError') {
+      if (error.name === 'AbortError' || axios.isCancel(error)) {
         return rejectWithValue(translateError(lang, 'delivery.requestCancelled'));
       }
       console.error("fetchRoutesByDriver error:", error);
-      return rejectWithValue(error.message);
+      return rejectWithValue(error.response?.data?.message || translateError(lang, 'common.failed'));
     }
   }
 );
@@ -359,24 +241,18 @@ export const fetchDriverCityType = createAsyncThunk(
         return rejectWithValue(translateError(lang, 'driver.driverIdRequired'));
       }
 
-      const res = await fetch(`${API_BASE_URL}/driver/city-type/${driverId}`, { 
-        signal, 
-        headers: getAuthHeaders() 
+      const res = await axios.get(`/driver/city-type/${driverId}`, {
+        signal,
+        headers: { 'X-Language': lang }
       });
-      
-      if (!res.ok) {
-        return rejectWithValue(translateError(lang, 'common.failed'));
-      }
-      
-      const data = await res.json();
-      return data.cityType || "DAILY";
+      return res.data.cityType || "DAILY";
     } catch (error) {
       const lang = getCurrentLanguage();
-      if (error.name === 'AbortError') {
+      if (error.name === 'AbortError' || axios.isCancel(error)) {
         return rejectWithValue(translateError(lang, 'delivery.requestCancelled'));
       }
       console.error("fetchDriverCityType error:", error);
-      return rejectWithValue(error.message);
+      return rejectWithValue(error.response?.data?.message || translateError(lang, 'common.failed'));
     }
   }
 );
@@ -388,17 +264,17 @@ const journeySlice = createSlice({
     routes: [],
     routesStatus: "idle",
     routesError: null,
-    
+
     // Journey state (driver)
     journeys: [],
     journeyStatus: "idle",
     journeyError: null,
-    
+
     // Admin journeys state (non-paginated)
     adminJourneys: [],
     adminStatus: "idle",
     adminError: null,
-    
+
     // Paginated journeys state (admin)
     paginatedJourneys: [],
     paginatedStatus: "idle",
@@ -409,12 +285,12 @@ const journeySlice = createSlice({
       limit: 10,
       totalPages: 1
     },
-    
+
     // Drivers state (admin)
     drivers: [],
     driversStatus: "idle",
     driversError: null,
-    
+
     // City type state
     cityType: "DAILY", // Default
     cityTypeStatus: "idle",
@@ -475,7 +351,7 @@ const journeySlice = createSlice({
       });
 
 
-      builder
+    builder
       .addCase(fetchDriverCityType.pending, (state) => {
         state.cityTypeStatus = "loading";
       })
@@ -492,7 +368,7 @@ const journeySlice = createSlice({
         }
       });
 
-      
+
     // ============ ADMIN ROUTES ============
     builder
       .addCase(fetchAdminRoutes.pending, (state) => {
@@ -604,7 +480,7 @@ const journeySlice = createSlice({
       })
       .addCase(addJourney.rejected, (state, action) => {
         const isValidationError = action.payload?.errors && Object.keys(action.payload.errors).length > 0;
-        state.paginatedStatus = isValidationError ? "succeeded" : "failed"; 
+        state.paginatedStatus = isValidationError ? "succeeded" : "failed";
         const lang = getCurrentLanguage();
         state.paginatedError = action.payload?.message || translateError(lang, 'journey.errorInserting');
       });
@@ -672,7 +548,7 @@ const journeySlice = createSlice({
           state.driversError = action.payload || action.error.message;
         }
       });
-      
+
     // ============ ROUTES BY DRIVER ============
     builder
       .addCase(fetchRoutesByDriver.pending, (state) => {

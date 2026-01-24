@@ -29,8 +29,10 @@ import DProtectRoutes from "./routes/driver/DProtectedRoutes.jsx";
 import { ToastContainer } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
 import UpdatePassword from "./components/Drivers/UpdatePassword.jsx";
+import useInactivityLogout from "./hooks/useInactivityLogout";
 
 function App() {
+  useInactivityLogout();
   return (
     <>
       <Router>
@@ -64,7 +66,7 @@ function App() {
               <Route path="/driver/access-codes" element={<DriverAccessCodePage />} />
               <Route path="/driver/delivery" element={<Devlivery />} />
               <Route path="/driver/availability" element={<DriverAvailability />} />
-              <Route path="/driver/update-password" element={<UpdatePassword/>}/>
+              <Route path="/driver/update-password" element={<UpdatePassword />} />
             </Route>
 
             {/* Catch-all 404 route */}

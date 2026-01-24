@@ -1,22 +1,12 @@
 import { createSlice, createAsyncThunk } from "@reduxjs/toolkit";
-import axios from "axios";
-import { API_BASE_URL } from "../../../config";
+import axios from "../axiosInstance";
 import { toast } from "react-toastify";
-
-const getAuthHeaders = () => {
-  const token = localStorage.getItem('adminToken');
-  return {
-    ...(token && { "Authorization": `Bearer ${token}` })
-  };
-};
 
 export const fetchDashboardData = createAsyncThunk(
   "dashboard/fetchDashboardData",
   async (_, { rejectWithValue }) => {
     try {
-      const res = await axios.get(`${API_BASE_URL}/admin/dashboard/data`, {
-        headers: getAuthHeaders()
-      });
+      const res = await axios.get(`/admin/dashboard/data`);
       if (!res.data.success) throw new Error(res.data.message);
       return res.data.data;
     } catch (err) {
@@ -31,10 +21,7 @@ export const fetchDriversByCity = createAsyncThunk(
   async (cityJob, { rejectWithValue }) => {
     try {
       const params = cityJob && cityJob !== "All" ? { cityJob } : {};
-      const res = await axios.get(`${API_BASE_URL}/admin/dashboard/drivers-by-city`, {
-        params,
-        headers: getAuthHeaders()
-      });
+      const res = await axios.get(`/admin/dashboard/drivers-by-city`, { params });
       if (!res.data.success) throw new Error(res.data.message);
       return res.data.data;
     } catch (err) {
@@ -47,10 +34,7 @@ export const fetchSummaryData = createAsyncThunk(
   "dashboard/fetchSummaryData",
   async (filters, { rejectWithValue }) => {
     try {
-      const res = await axios.get(`${API_BASE_URL}/admin/dashboard/summary`, {
-        params: filters,
-        headers: getAuthHeaders()
-      });
+      const res = await axios.get(`/admin/dashboard/summary`, { params: filters });
       if (!res.data.success) throw new Error(res.data.message);
       return res.data.data;
     } catch (err) {
@@ -63,15 +47,12 @@ export const fetchFilteredPaymentData = createAsyncThunk(
   "dashboard/fetchFilteredPaymentData",
   async (filters, { rejectWithValue }) => {
     try {
-      const res = await axios.get(`${API_BASE_URL}/admin/dashboard/paymentTable`, {
-        params: filters,
-        headers: getAuthHeaders()
-      });
+      const res = await axios.get(`/admin/dashboard/paymentTable`, { params: filters });
       if (!res.data.success) throw new Error(res.data.message);
-      return { 
-        data: res.data.data, 
+      return {
+        data: res.data.data,
         pagination: res.data.pagination,
-        filters 
+        filters
       };
     } catch (err) {
       return rejectWithValue(err.response?.data?.message || err.message);
@@ -84,17 +65,16 @@ export const fetchTodayPaymentData = createAsyncThunk(
   "dashboard/fetchTodayPaymentData",
   async ({ page = 1, limit = 10 }, { rejectWithValue }) => {
     try {
-      const res = await axios.get(`${API_BASE_URL}/admin/dashboard/paymentTable`, {
-        params: { 
+      const res = await axios.get(`/admin/dashboard/paymentTable`, {
+        params: {
           defaultToday: "true",
           page,
           limit
-        },
-        headers: getAuthHeaders()
+        }
       });
       if (!res.data.success) throw new Error(res.data.message);
-      return { 
-        data: res.data.data, 
+      return {
+        data: res.data.data,
         pagination: res.data.pagination,
         filters: { defaultToday: true }
       };
@@ -108,10 +88,7 @@ export const fetchAllPaymentData = createAsyncThunk(
   "dashboard/fetchAllPaymentData",
   async (filters, { rejectWithValue }) => {
     try {
-      const res = await axios.get(`${API_BASE_URL}/admin/dashboard/paymentTableAll`, {
-        params: filters,
-        headers: getAuthHeaders()
-      });
+      const res = await axios.get(`/admin/dashboard/paymentTableAll`, { params: filters });
       if (!res.data.success) throw new Error(res.data.message);
       return res.data.data;
     } catch (err) {
@@ -124,11 +101,7 @@ export const payDriver = createAsyncThunk(
   "dashboard/payDriver",
   async ({ driverName, startDate, endDate }, { rejectWithValue }) => {
     try {
-      const res = await axios.post(
-        `${API_BASE_URL}/admin/dashboard/payDriver`,
-        { driverName, startDate, endDate },
-        { headers: getAuthHeaders() }
-      );
+      const res = await axios.post(`/admin/dashboard/payDriver`, { driverName, startDate, endDate });
       if (!res.data.success) throw new Error(res.data.message);
       toast.success(res.data.message);
       return res.data;

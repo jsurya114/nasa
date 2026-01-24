@@ -1,49 +1,17 @@
 import { createSlice, createAsyncThunk } from "@reduxjs/toolkit";
-import { API_BASE_URL } from "../../../config";
-
-// Helper function to get auth headers
-const getAuthHeaders = (isFormData = false) => {
-  const token = localStorage.getItem('adminToken');
-  const headers = {};
-  
-  // Don't set Content-Type for FormData - browser will set it with boundary
-  if (!isFormData) {
-    headers['Content-Type'] = 'application/json';
-  }
-  
-  if (token) {
-    headers['Authorization'] = `Bearer ${token}`;
-  }
-  
-  return headers;
-};
+import axios from "../axiosInstance";
 
 // Fetch paginated access codes
 export const fetchAccessCodes = createAsyncThunk(
   "accessCodes/fetchAccessCodes",
   async ({ page = 1, limit = 10, search = '', zipCodeFilter = '' } = {}, { rejectWithValue }) => {
     try {
-      const params = new URLSearchParams({
-        page: page.toString(),
-        limit: limit.toString(),
-        ...(search && { search }),
-        ...(zipCodeFilter && { zip_code: zipCodeFilter })
+      const res = await axios.get(`/admin/access-codes/list`, {
+        params: { page, limit, search, zip_code: zipCodeFilter }
       });
-
-      const res = await fetch(`${API_BASE_URL}/admin/access-codes/list?${params}`, {
-        method: 'GET',
-        headers: getAuthHeaders(),
-      });
-
-      if (!res.ok) {
-        const errorText = await res.text();
-        throw new Error(`HTTP ${res.status}: ${errorText}`);
-      }
-
-      const data = await res.json();
-      return data;
+      return res.data;
     } catch (error) {
-      return rejectWithValue(error.message);
+      return rejectWithValue(error.response?.data?.message || error.message);
     }
   }
 );
@@ -54,31 +22,24 @@ export const createAccessCode = createAsyncThunk(
   async (accessCodeData, { rejectWithValue, dispatch, getState }) => {
     try {
       const isFormData = typeof FormData !== 'undefined' && accessCodeData instanceof FormData;
-      const res = await fetch(`${API_BASE_URL}/admin/access-codes`, {
-        method: "POST",
-        headers: getAuthHeaders(isFormData),
-        body: isFormData ? accessCodeData : JSON.stringify(accessCodeData),
+      const res = await axios.post(`/admin/access-codes`, accessCodeData, {
+        headers: {
+          'Content-Type': isFormData ? 'multipart/form-data' : 'application/json'
+        }
       });
-      
-      if (!res.ok) {
-        const error = await res.json();
-        throw new Error(error.message || `HTTP ${res.status}: Failed to create access code`);
-      }
-      
-      const data = await res.json();
-      
+
       // Refetch with current pagination settings
       const { currentPage, pageLimit, searchTerm, zipCodeFilter } = getState().accessCodes;
-      dispatch(fetchAccessCodes({ 
-        page: currentPage, 
-        limit: pageLimit, 
-        search: searchTerm, 
-        zipCodeFilter 
+      dispatch(fetchAccessCodes({
+        page: currentPage,
+        limit: pageLimit,
+        search: searchTerm,
+        zipCodeFilter
       }));
-      
-      return data;
+
+      return res.data;
     } catch (error) {
-      return rejectWithValue(error.message);
+      return rejectWithValue(error.response?.data?.message || error.message);
     }
   }
 );
@@ -92,35 +53,24 @@ export const updateAccessCode = createAsyncThunk(
       const id = isFormData ? payload.get('id') : payload.id;
       if (!id) throw new Error('Missing id for updating access code');
 
-      const res = await fetch(`${API_BASE_URL}/admin/access-codes/${id}`, {
-        method: "PUT",
-        headers: getAuthHeaders(isFormData),
-        body: isFormData ? payload : JSON.stringify({
-          zip_code: payload.zip_code,
-          address: payload.address,
-          access_code: payload.access_code,
-        }),
+      const res = await axios.put(`/admin/access-codes/${id}`, payload, {
+        headers: {
+          'Content-Type': isFormData ? 'multipart/form-data' : 'application/json'
+        }
       });
-      
-      if (!res.ok) {
-        const error = await res.json();
-        throw new Error(error.message || `HTTP ${res.status}: Failed to update access code`);
-      }
-      
-      const data = await res.json();
-      
+
       // Refetch with current pagination settings
       const { currentPage, pageLimit, searchTerm, zipCodeFilter } = getState().accessCodes;
-      dispatch(fetchAccessCodes({ 
-        page: currentPage, 
-        limit: pageLimit, 
-        search: searchTerm, 
-        zipCodeFilter 
+      dispatch(fetchAccessCodes({
+        page: currentPage,
+        limit: pageLimit,
+        search: searchTerm,
+        zipCodeFilter
       }));
-      
-      return data.data;
+
+      return res.data.data;
     } catch (error) {
-      return rejectWithValue(error.message);
+      return rejectWithValue(error.response?.data?.message || error.message);
     }
   }
 );
@@ -130,28 +80,20 @@ export const deleteAccessCode = createAsyncThunk(
   "accessCodes/deleteAccessCode",
   async (id, { rejectWithValue, dispatch, getState }) => {
     try {
-      const res = await fetch(`${API_BASE_URL}/admin/access-codes/${id}`, {
-        method: "DELETE",
-        headers: getAuthHeaders(),
-      });
-      
-      if (!res.ok) {
-        const error = await res.json();
-        throw new Error(error.message || `HTTP ${res.status}: Failed to delete access code`);
-      }
-      
+      await axios.delete(`/admin/access-codes/${id}`);
+
       // Refetch with current pagination settings
       const { currentPage, pageLimit, searchTerm, zipCodeFilter } = getState().accessCodes;
-      dispatch(fetchAccessCodes({ 
-        page: currentPage, 
-        limit: pageLimit, 
-        search: searchTerm, 
-        zipCodeFilter 
+      dispatch(fetchAccessCodes({
+        page: currentPage,
+        limit: pageLimit,
+        search: searchTerm,
+        zipCodeFilter
       }));
-      
+
       return id;
     } catch (error) {
-      return rejectWithValue(error.message);
+      return rejectWithValue(error.response?.data?.message || error.message);
     }
   }
 );

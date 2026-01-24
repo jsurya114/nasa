@@ -1,5 +1,5 @@
 import { createSlice, createAsyncThunk } from "@reduxjs/toolkit"
-import { API_BASE_URL } from "../../../config"
+import axios from "../axiosInstance";
 
 const initialState = {
     admin: null,
@@ -9,38 +9,24 @@ const initialState = {
     isSuperAdmin: false,
 }
 
-// Helper function to get auth headers
-const getAuthHeaders = () => {
-    const token = localStorage.getItem('adminToken');
-    return {
-        "Content-Type": "application/json",
-        ...(token && { "Authorization": `Bearer ${token}` })
-    };
-};
-
 export const adminLogin = createAsyncThunk(
     "admin/login",
     async (credentials, { rejectWithValue }) => {
         try {
-            const res = await fetch(`${API_BASE_URL}/admin/login`, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify(credentials),
-            })
-            const data = await res.json();
+            const res = await axios.post(`/admin/login`, credentials);
+            const data = res.data;
 
-            if (!res.ok) {
-                return rejectWithValue(data)
+            // Store tokens in localStorage
+            if (data.accessToken) {
+                localStorage.setItem('adminToken', data.accessToken);
             }
-
-            // Store token in localStorage
-            if (data.token) {
-                localStorage.setItem('adminToken', data.token);
+            if (data.refreshToken) {
+                localStorage.setItem('adminRefreshToken', data.refreshToken);
             }
 
             return data;
         } catch (error) {
-            return rejectWithValue({ message: error.message })
+            return rejectWithValue(error.response?.data || { message: error.message })
         }
     }
 )
@@ -49,22 +35,15 @@ export const accessAdminUser = createAsyncThunk(
     "admin/access-admin",
     async (_, { rejectWithValue }) => {
         try {
-            const res = await fetch(`${API_BASE_URL}/admin/access-admin`, {
-                method: "GET",
-                headers: getAuthHeaders(),
-            })
-            const data = await res.json();
-
-            if (!res.ok) {
-                // If blocked or unauthorized, clear token
-                if (data.blocked || res.status === 401 || res.status === 403) {
-                    localStorage.removeItem('adminToken');
-                }
-                return rejectWithValue(data.message || "Unable to get Users")
-            }
-            return data;
+            const res = await axios.get(`/admin/access-admin`);
+            return res.data;
         } catch (error) {
-            return rejectWithValue(error.message)
+            // If blocked or unauthorized, clear token
+            if (error.response?.status === 401 || error.response?.status === 403) {
+                localStorage.removeItem('adminToken');
+                localStorage.removeItem('adminRefreshToken');
+            }
+            return rejectWithValue(error.response?.data?.message || "Unable to get Users")
         }
     }
 )
@@ -73,24 +52,18 @@ export const adminLogout = createAsyncThunk(
     "admin/logout",
     async (_, { rejectWithValue }) => {
         try {
-            const res = await fetch(`${API_BASE_URL}/admin/logout`, {
-                method: "POST",
-                headers: getAuthHeaders(),
-            })
-            const data = await res.json();
+            const res = await axios.post(`/admin/logout`);
 
-            if (!res.ok) {
-                return rejectWithValue(data.message || "Logout Error")
-            }
-
-            // Always remove token from localStorage
+            // Always remove tokens from localStorage
             localStorage.removeItem('adminToken');
+            localStorage.removeItem('adminRefreshToken');
 
-            return data;
+            return res.data;
         } catch (error) {
-            // Even if logout fails, remove token
+            // Even if logout fails, remove tokens
             localStorage.removeItem('adminToken');
-            return rejectWithValue(error.message)
+            localStorage.removeItem('adminRefreshToken');
+            return rejectWithValue(error.response?.data?.message || error.message)
         }
     }
 )
@@ -108,6 +81,7 @@ const adminSlice = createSlice({
             state.admin = null;
             state.isSuperAdmin = false;
             localStorage.removeItem('adminToken');
+            localStorage.removeItem('adminRefreshToken');
         }
     },
     extraReducers: (builder) => {
@@ -162,6 +136,7 @@ const adminSlice = createSlice({
                 state.isAuthenticated = false;
                 // Clear token on rejection
                 localStorage.removeItem('adminToken');
+                localStorage.removeItem('adminRefreshToken');
                 if (action.payload !== "UNAUTHORIZED") {
                     state.error = action.payload || "Access denied"
                 } else {

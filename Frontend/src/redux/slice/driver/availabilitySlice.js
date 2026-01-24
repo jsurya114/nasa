@@ -1,38 +1,10 @@
 import { createSlice, createAsyncThunk } from "@reduxjs/toolkit";
-import axios from "axios";
-import { API_BASE_URL } from "../../../config";
+import axios from "../axiosInstance";
 import { translateError } from "../../../hooks/backendI18n.js";
 
 // Get current language from localStorage or default to 'en'
 const getCurrentLanguage = () => {
   return localStorage.getItem('preferredLanguage') || 'en';
-};
-
-// ================= AUTH HELPERS =================
-const getDriverAuthHeaders = () => {
-  const token = localStorage.getItem("driverToken");
-  const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
-  const language = getCurrentLanguage();
-  
-  return {
-    "Content-Type": "application/json",
-    "X-User-Timezone": timezone,
-    "X-Language": language, // Add language header
-    ...(token && { Authorization: `Bearer ${token}` }),
-  };
-};
-
-const getAdminAuthHeaders = () => {
-  const token = localStorage.getItem("adminToken");
-  const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
-  const language = getCurrentLanguage();
-  
-  return {
-    "Content-Type": "application/json",
-    "X-User-Timezone": timezone,
-    "X-Language": language, // Add language header
-    ...(token && { Authorization: `Bearer ${token}` }),
-  };
 };
 
 // ================= DRIVER =================
@@ -42,10 +14,10 @@ export const getDriverAvailability = createAsyncThunk(
   "availability/getDriverAvailability",
   async (_, { rejectWithValue }) => {
     try {
-      const response = await axios.get(
-        `${API_BASE_URL}/driver/availability`,
-        { headers: getDriverAuthHeaders() }
-      );
+      const lang = getCurrentLanguage();
+      const response = await axios.get(`/driver/availability`, {
+        headers: { "X-Language": lang }
+      });
       return response.data.data;
     } catch (error) {
       const lang = getCurrentLanguage();
@@ -61,12 +33,12 @@ export const updateDriverAvailability = createAsyncThunk(
   "availability/updateDriverAvailability",
   async ({ availability, timezone }, { rejectWithValue }) => {
     try {
-      const response = await axios.post(
-        `${API_BASE_URL}/driver/availability`,
+      const lang = getCurrentLanguage();
+      const response = await axios.post(`/driver/availability`,
         { availability },
-        { 
+        {
           headers: {
-            ...getDriverAuthHeaders(),
+            "X-Language": lang,
             "X-User-Timezone": timezone || Intl.DateTimeFormat().resolvedOptions().timeZone
           }
         }
@@ -88,17 +60,15 @@ export const getAllDriversAvailability = createAsyncThunk(
   "availability/getAllDriversAvailability",
   async ({ filterDay = null, page = 1, limit = 10, searchQuery = null, filterCity = null }, { rejectWithValue }) => {
     try {
+      const lang = getCurrentLanguage();
       const params = { page, limit, searchQuery };
       if (filterDay) params.day = filterDay;
       if (filterCity) params.city = filterCity;
 
-      const response = await axios.get(
-        `${API_BASE_URL}/admin/drivers/availability`,
-        {
-          params,
-          headers: getAdminAuthHeaders(),
-        }
-      );
+      const response = await axios.get(`/admin/drivers/availability`, {
+        params,
+        headers: { "X-Language": lang }
+      });
 
       return {
         data: response.data.data,
@@ -118,11 +88,10 @@ export const getAvailableCities = createAsyncThunk(
   "availability/getAvailableCities",
   async (_, { rejectWithValue }) => {
     try {
-      const response = await axios.get(
-        `${API_BASE_URL}/admin/drivers/availability/cities`,
-        { headers: getAdminAuthHeaders() }
-      );
-
+      const lang = getCurrentLanguage();
+      const response = await axios.get(`/admin/drivers/availability/cities`, {
+        headers: { "X-Language": lang }
+      });
       return response.data.data;
     } catch (error) {
       const lang = getCurrentLanguage();
@@ -138,12 +107,11 @@ export const updateDriverAvailabilityByAdmin = createAsyncThunk(
   "availability/updateDriverAvailabilityByAdmin",
   async ({ driverId, availability }, { rejectWithValue }) => {
     try {
-      const response = await axios.put(
-        `${API_BASE_URL}/admin/drivers/availability/${driverId}`,
+      const lang = getCurrentLanguage();
+      const response = await axios.put(`/admin/drivers/availability/${driverId}`,
         { availability },
-        { headers: getAdminAuthHeaders() }
+        { headers: { "X-Language": lang } }
       );
-
       return response.data.data;
     } catch (error) {
       const lang = getCurrentLanguage();
@@ -159,12 +127,10 @@ export const manualResetAllDriversAvailability = createAsyncThunk(
   "availability/manualResetAllDriversAvailability",
   async (_, { rejectWithValue }) => {
     try {
-      const response = await axios.post(
-        `${API_BASE_URL}/admin/drivers/availability/reset-all`,
-        {},
-        { headers: getAdminAuthHeaders() }
-      );
-
+      const lang = getCurrentLanguage();
+      const response = await axios.post(`/admin/drivers/availability/reset-all`, {}, {
+        headers: { "X-Language": lang }
+      });
       return response.data.data;
     } catch (error) {
       const lang = getCurrentLanguage();

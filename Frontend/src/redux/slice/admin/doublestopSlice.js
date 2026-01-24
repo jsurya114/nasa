@@ -1,37 +1,17 @@
 import { createSlice, createAsyncThunk } from "@reduxjs/toolkit";
-import { API_BASE_URL } from "../../../config";
-
-// Helper function to get auth headers
-const getAuthHeaders = () => {
-  const token = localStorage.getItem('adminToken');
-  return {
-    "Content-Type": "application/json",
-    ...(token && { "Authorization": `Bearer ${token}` })
-  };
-};
+import axios from "../axiosInstance";
 
 // Async thunk to fetch dashboard data (daily) with pagination
 export const fetchDashboardData = createAsyncThunk(
   "dashboard/fetchDashboardData",
   async ({ selectedDate, page = 1, limit = 10 }, { rejectWithValue }) => {
     try {
-      const res = await fetch(
-        `${API_BASE_URL}/admin/doubleStop/tempDashboardData?date=${selectedDate}&page=${page}&limit=${limit}`,
-        {
-          method: "GET",
-          headers: getAuthHeaders(),
-        }
-      );
-
-      if (!res.ok) {
-        const error = await res.json();
-        return rejectWithValue(error.message || "Failed to fetch dashboard data");
-      }
-
-      const data = await res.json();
-      return data; // API returns { success: true, data: [...], pagination: {...} }
+      const res = await axios.get(`/admin/doubleStop/tempDashboardData`, {
+        params: { date: selectedDate, page, limit }
+      });
+      return res.data; // API returns { success: true, data: [...], pagination: {...} }
     } catch (err) {
-      return rejectWithValue(err.message);
+      return rejectWithValue(err.response?.data?.message || err.message);
     }
   }
 );
@@ -39,22 +19,14 @@ export const fetchDashboardData = createAsyncThunk(
 // Async thunk to fetch weekly temp data (role-based filtering on backend)
 export const fetchWeeklyTempData = createAsyncThunk(
   "dashboard/fetchWeeklyTempData",
-  async ({page=1,limit=10}, { rejectWithValue }) => {
+  async ({ page = 1, limit = 10 }, { rejectWithValue }) => {
     try {
-      const res = await fetch(`${API_BASE_URL}/admin/doubleStop/fetchWeeklyTempData?page=${page}&limit=${limit}`, {
-        method: "GET",
-        headers: getAuthHeaders(),
+      const res = await axios.get(`/admin/doubleStop/fetchWeeklyTempData`, {
+        params: { page, limit }
       });
-
-      if (!res.ok) {
-        const error = await res.json();
-        return rejectWithValue(error.message || "Failed to fetch weekly data");
-      }
-
-      const data = await res.json();
-      return data; // API returns { success: true, data: [...] }
+      return res.data; // API returns { success: true, data: [...] }
     } catch (err) {
-      return rejectWithValue(err.message);
+      return rejectWithValue(err.response?.data?.message || err.message);
     }
   }
 );

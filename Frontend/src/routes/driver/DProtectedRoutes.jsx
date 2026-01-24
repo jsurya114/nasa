@@ -1,15 +1,19 @@
-import { Navigate,Outlet } from "react-router-dom";
+import { Navigate, Outlet } from "react-router-dom";
 import { useEffect } from "react";
-import { useSelector,useDispatch } from "react-redux";
+import { useSelector, useDispatch } from "react-redux";
 import { accessDriver } from "../../redux/slice/driver/driverSlice.js";
 
-function DProtectRoutes(){
+function DProtectRoutes() {
     const dispatch = useDispatch()
-    const {isAuthenticated}=useSelector((state)=>state.driver)
-    useEffect(()=>{
+    const { isAuthenticated } = useSelector((state) => state.driver)
+    useEffect(() => {
         dispatch(accessDriver())
-    },[])
-    return isAuthenticated ? <Outlet/>:<Navigate to ="/driver/login"/>
+    }, [])
+    if (isAuthenticated === null) {
+        return null;
+    }
+
+    return isAuthenticated ? <Outlet /> : <Navigate to="/driver/login" />
 
 }
 

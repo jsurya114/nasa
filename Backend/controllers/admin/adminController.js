@@ -1,5 +1,5 @@
 import { dbService } from '../../services/admin/dbQueries.js'
-import { generateToken, verifyToken } from '../../services/jwtservice.js'
+import { generateToken, verifyToken, generateRefreshToken, verifyRefreshToken } from '../../services/jwtservice.js'
 import HttpStatus from '../../utils/statusCodes.js'
 import { blackListToken } from '../../services/redis-jwt-service.js'
 
@@ -37,19 +37,21 @@ const adminController = {
           .json({ errors: { password: "Invalid password" } });
       }
 
-      let token = generateToken({ id: admin.id, email: admin.email, role: admin.role, name: admin.name });
+      let accessToken = generateToken({ id: admin.id, email: admin.email, role: admin.role, name: admin.name });
+      let refreshToken = generateRefreshToken({ id: admin.id, email: admin.email, role: admin.role, name: admin.name });
 
-      if (!token) {
+      if (!accessToken || !refreshToken) {
         return res.status(HttpStatus.UNAUTHORIZED).json({ message: "UNAUTHORIZED" });
       }
 
       admin.password = null
 
-      // Return token in response body instead of cookie
-      return res.status(HttpStatus.OK).json({ 
-        message: "Login successful", 
+      // Return tokens in response body
+      return res.status(HttpStatus.OK).json({
+        message: "Login successful",
         admin,
-        token // Send token to be stored in localStorage
+        accessToken,
+        refreshToken
       });
 
     } catch (error) {
@@ -66,8 +68,8 @@ const adminController = {
   Logout: async (req, res) => {
     // Get token from Authorization header instead of cookie
     const authHeader = req.headers.authorization;
-    const token = authHeader && authHeader.startsWith('Bearer ') 
-      ? authHeader.substring(7) 
+    const token = authHeader && authHeader.startsWith('Bearer ')
+      ? authHeader.substring(7)
       : null;
 
     if (token) {
@@ -81,8 +83,8 @@ const adminController = {
     try {
       // Get token from Authorization header instead of cookie
       const authHeader = req.headers.authorization;
-      const token = authHeader && authHeader.startsWith('Bearer ') 
-        ? authHeader.substring(7) 
+      const token = authHeader && authHeader.startsWith('Bearer ')
+        ? authHeader.substring(7)
         : null;
 
       if (!token) return res.status(HttpStatus.UNAUTHORIZED).json({ message: "UNAUTHORIZED" })
@@ -112,6 +114,33 @@ const adminController = {
     } catch (err) {
       console.error(err.message)
       res.status(HttpStatus.INTERNAL_SERVER_ERROR).json({ message: "Server error" })
+    }
+  },
+
+  RefreshToken: async (req, res) => {
+    try {
+      const { refreshToken } = req.body;
+      if (!refreshToken) {
+        return res.status(HttpStatus.BAD_REQUEST).json({ message: "Refresh token is required" });
+      }
+
+      const decoded = verifyRefreshToken(refreshToken);
+      const admin = await dbService.getAdminById(decoded.id);
+
+      if (!admin || !admin.is_active) {
+        return res.status(HttpStatus.UNAUTHORIZED).json({ message: "UNAUTHORIZED" });
+      }
+
+      const newAccessToken = generateToken({ id: admin.id, email: admin.email, role: admin.role, name: admin.name });
+      const newRefreshToken = generateRefreshToken({ id: admin.id, email: admin.email, role: admin.role, name: admin.name });
+
+      return res.status(HttpStatus.OK).json({
+        accessToken: newAccessToken,
+        refreshToken: newRefreshToken
+      });
+    } catch (error) {
+      console.error("❌ Refresh Token Error:", error);
+      return res.status(HttpStatus.UNAUTHORIZED).json({ message: "Invalid refresh token" });
     }
   }
 }

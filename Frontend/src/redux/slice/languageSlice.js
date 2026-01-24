@@ -1,6 +1,5 @@
 import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
-import axios from 'axios';
-import { API_BASE_URL } from '../../config';
+import axios from './axiosInstance';
 import { translateError } from "../../hooks/backendI18n.js"
 
 // Get current language from localStorage or default to 'en'
@@ -18,25 +17,16 @@ export const loadDriverLanguage = createAsyncThunk(
     }
 
     try {
-      const token = localStorage.getItem('driverToken');
       const lang = getCurrentLanguage();
-      
-      if (!token) {
-        return rejectWithValue(translateError(lang, 'auth.authTokenMissing'));
-      }
-      
-      const response = await axios.get(`${API_BASE_URL}/driver/language/${driverId}`, {
-        headers: { 
-          Authorization: `Bearer ${token}`,
-          'X-Language': lang
-        }
+      const response = await axios.get(`/driver/language/${driverId}`, {
+        headers: { 'X-Language': lang }
       });
-      
+
       const preferredLanguage = response.data.preferredLanguage || 'en';
-      
+
       // Store in localStorage for immediate access
       localStorage.setItem('preferredLanguage', preferredLanguage);
-      
+
       return preferredLanguage;
     } catch (error) {
       const lang = getCurrentLanguage();
@@ -55,27 +45,15 @@ export const saveDriverLanguage = createAsyncThunk(
     }
 
     try {
-      const token = localStorage.getItem('driverToken');
       const currentLang = getCurrentLanguage();
-      
-      if (!token) {
-        return rejectWithValue(translateError(currentLang, 'auth.authTokenMissing'));
-      }
-      
-      await axios.put(
-        `${API_BASE_URL}/driver/language`,
+      await axios.put(`/driver/language`,
         { driverId, language },
-        { 
-          headers: { 
-            Authorization: `Bearer ${token}`,
-            'X-Language': currentLang
-          } 
-        }
+        { headers: { 'X-Language': currentLang } }
       );
-      
+
       // Store in localStorage for immediate access
       localStorage.setItem('preferredLanguage', language);
-      
+
       return language;
     } catch (error) {
       const lang = getCurrentLanguage();

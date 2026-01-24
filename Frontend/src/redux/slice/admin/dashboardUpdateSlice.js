@@ -1,27 +1,14 @@
 import { createSlice, createAsyncThunk } from "@reduxjs/toolkit";
-import axios from "axios";
+import axios from "../axiosInstance";
 import { toast } from "react-toastify";
-import { API_BASE_URL } from "../../../config";
-
-// Helper function to get auth headers
-const getAuthHeaders = () => {
-  const token = localStorage.getItem('adminToken');
-  return {
-    ...(token && { "Authorization": `Bearer ${token}` })
-  };
-};
 
 // Async thunk to fetch driver payment data for specific date
 export const fetchDriverPayment = createAsyncThunk(
   "driverPayment/fetchDriverPayment",
   async (date = null, { rejectWithValue }) => {
     try {
-      const url = date 
-        ? `${API_BASE_URL}/admin/doubleStop/calculatePayment?date=${date}`
-        : `${API_BASE_URL}/admin/doubleStop/calculatePayment`;
-        
-      const res = await axios.get(url, {
-        headers: getAuthHeaders()
+      const res = await axios.get(`/admin/doubleStop/calculatePayment`, {
+        params: date ? { date } : {}
       });
       return res.data;
     } catch (error) {
@@ -34,9 +21,7 @@ export const updateWeeklyExcelToDashboard = createAsyncThunk(
   "driverPayment/update-weekly-excel-to-dashboard",
   async (_, { rejectWithValue }) => {
     try {
-      const res = await axios.post(`${API_BASE_URL}/admin/doubleStop/update-weekly-excel-to-dashboard`, {}, {
-        headers: getAuthHeaders()
-      });
+      const res = await axios.post(`/admin/doubleStop/update-weekly-excel-to-dashboard`, {});
       console.log("Data after updating data in dashboard ", res.data);
       return res.data;
     } catch (error) {

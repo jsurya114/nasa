@@ -1,20 +1,11 @@
 import { createSlice, createAsyncThunk } from "@reduxjs/toolkit";
-import { API_BASE_URL } from "../../../config";
-
-// Helper function to get auth headers
-const getAuthHeaders = () => {
-  const token = localStorage.getItem('driverToken');
-  return {
-    "Content-Type": "application/json",
-    ...(token && { "Authorization": `Bearer ${token}` })
-  };
-};
+import axios from "../axiosInstance";
 
 const initialState = {
   driver: null,
   loading: false,
   error: null,
-  isAuthenticated: false,
+  isAuthenticated: null,
 };
 
 export const driverLogin = createAsyncThunk(
@@ -25,34 +16,29 @@ export const driverLogin = createAsyncThunk(
       const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
       console.log("🌍 Detected timezone:", timezone);
 
-      const res = await fetch(`${API_BASE_URL}/driver/login`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          ...credentials,
-          timezone // ADD TIMEZONE TO REQUEST
-        }),
+      const res = await axios.post(`/driver/login`, {
+        ...credentials,
+        timezone // ADD TIMEZONE TO REQUEST
       });
 
-      const data = await res.json();
-
-      if (!res.ok) {
-        return rejectWithValue(data);
-      }
+      const data = res.data;
 
       if (!data.driver) {
         return rejectWithValue({ message: "Invalid response from server" });
       }
 
-      // Store token and timezone in localStorage
-      if (data.token) {
-        localStorage.setItem('driverToken', data.token);
+      // Store tokens and timezone in localStorage
+      if (data.accessToken) {
+        localStorage.setItem('driverToken', data.accessToken);
         localStorage.setItem('driverTimezone', timezone);
+      }
+      if (data.refreshToken) {
+        localStorage.setItem('driverRefreshToken', data.refreshToken);
       }
 
       return data;
     } catch (error) {
-      return rejectWithValue({ message: error.message || "Network error" });
+      return rejectWithValue(error.response?.data || { message: error.message || "Network error" });
     }
   }
 );
@@ -61,24 +47,8 @@ export const accessDriver = createAsyncThunk(
   "driver/access-driver",
   async (_, { rejectWithValue }) => {
     try {
-      const res = await fetch(`${API_BASE_URL}/driver/access-driver`, {
-        method: "GET",
-        headers: getAuthHeaders(),
-      });
-
-      const data = await res.json();
-
-      if (!res.ok) {
-        // If blocked or unauthorized, remove token
-        if (data.reason === "Account has been disabled") {
-          localStorage.removeItem('driverToken');
-          localStorage.removeItem('driverTimezone');
-        }
-        return rejectWithValue({
-          message: data.message || "Unable to get Driver",
-          status: res.status,
-        });
-      }
+      const res = await axios.get(`/driver/access-driver`);
+      const data = res.data;
 
       if (!data.driver) {
         return rejectWithValue({ message: "Invalid response from server" });
@@ -86,7 +56,16 @@ export const accessDriver = createAsyncThunk(
 
       return data;
     } catch (error) {
-      return rejectWithValue({ message: error.message || "Network error" });
+      // If blocked or unauthorized, remove token
+      if (error.response?.status === 401 || error.response?.status === 403) {
+        localStorage.removeItem('driverToken');
+        localStorage.removeItem('driverRefreshToken');
+        localStorage.removeItem('driverTimezone');
+      }
+      return rejectWithValue({
+        message: error.response?.data?.message || "Unable to get Driver",
+        status: error.response?.status,
+      });
     }
   }
 );
@@ -95,29 +74,20 @@ export const driverLogout = createAsyncThunk(
   "driver/logout",
   async (_, { rejectWithValue }) => {
     try {
-      const res = await fetch(`${API_BASE_URL}/driver/logout`, {
-        method: "POST",
-        headers: getAuthHeaders(),
-      });
+      const res = await axios.post(`/driver/logout`);
 
-      const data = await res.json();
-
-      if (!res.ok) {
-        return rejectWithValue({
-          message: data.message || "Logout Error",
-        });
-      }
-
-      // Always remove token and timezone from localStorage
+      // Always remove tokens and timezone from localStorage
       localStorage.removeItem('driverToken');
+      localStorage.removeItem('driverRefreshToken');
       localStorage.removeItem('driverTimezone');
 
-      return data;
+      return res.data;
     } catch (error) {
-      // Even if logout fails, remove token and timezone
+      // Even if logout fails, remove tokens and timezone
       localStorage.removeItem('driverToken');
+      localStorage.removeItem('driverRefreshToken');
       localStorage.removeItem('driverTimezone');
-      return rejectWithValue({ message: error.message || "Network error" });
+      return rejectWithValue({ message: error.response?.data?.message || error.message || "Network error" });
     }
   }
 );
@@ -134,6 +104,7 @@ const driverSlice = createSlice({
       state.isAuthenticated = false;
       state.error = null;
       localStorage.removeItem('driverToken');
+      localStorage.removeItem('driverRefreshToken');
       localStorage.removeItem('driverTimezone');
     },
     setDriver: (state, action) => {
@@ -201,6 +172,7 @@ const driverSlice = createSlice({
         state.driver = null;
         // Clear token and timezone on rejection
         localStorage.removeItem('driverToken');
+        localStorage.removeItem('driverRefreshToken');
         localStorage.removeItem('driverTimezone');
 
         const isUnauthorized = action.payload?.status === 401 ||

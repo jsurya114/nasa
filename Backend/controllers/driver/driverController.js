@@ -1,6 +1,6 @@
 import HttpStatus from '../../utils/statusCodes.js';
 import { loginService } from "../../services/driver/loginQueries.js";
-import { generateToken, verifyToken } from '../../services/jwtservice.js';
+import { generateToken, verifyToken, generateRefreshToken, verifyRefreshToken } from '../../services/jwtservice.js';
 import { blackListToken } from '../../services/redis-jwt-service.js';
 import pool from '../../config/db.js';
 import { translateError } from "../../utils/backendI18n.js";
@@ -20,15 +20,15 @@ const driverController = {
       if (!email) errors.email = translateError(lang, 'auth.emailRequired');
       if (!password) errors.password = translateError(lang, 'auth.passwordRequired');
       if (!timezone) errors.timezone = translateError(lang, 'auth.timezoneRequired');
-      
+
       if (Object.keys(errors).length > 0) {
         return res.status(HttpStatus.BAD_REQUEST).json({ errors });
       }
 
       const driver = await loginService.getDriverByEmail(email);
       if (!driver) {
-        return res.status(HttpStatus.UNAUTHORIZED).json({ 
-          errors: { email: translateError(lang, 'auth.invalidEmail') } 
+        return res.status(HttpStatus.UNAUTHORIZED).json({
+          errors: { email: translateError(lang, 'auth.invalidEmail') }
         });
       }
 
@@ -41,8 +41,8 @@ const driverController = {
 
       const validPassword = await loginService.checkPassword(password, driver.password);
       if (!validPassword) {
-        return res.status(HttpStatus.UNAUTHORIZED).json({ 
-          errors: { password: translateError(lang, 'auth.invalidPassword') } 
+        return res.status(HttpStatus.UNAUTHORIZED).json({
+          errors: { password: translateError(lang, 'auth.invalidPassword') }
         });
       }
 
@@ -54,9 +54,10 @@ const driverController = {
 
       console.log(`✅ ${translateError(lang, 'driver.timezoneUpdated')}: ${timezone} (Driver ${driver.id})`);
 
-      let token = generateToken({ id: driver.id, email: driver.email, name: driver.name });
-      if (!token) {
-        return res.status(HttpStatus.UNAUTHORIZED).json({ 
+      let accessToken = generateToken({ id: driver.id, email: driver.email, name: driver.name });
+      let refreshToken = generateRefreshToken({ id: driver.id, email: driver.email, name: driver.name });
+      if (!accessToken || !refreshToken) {
+        return res.status(HttpStatus.UNAUTHORIZED).json({
           message: translateError(lang, 'common.unauthorized')
         });
       }
@@ -70,12 +71,13 @@ const driverController = {
           name: driver.name,
           timezone: timezone // Return timezone to frontend
         },
-        token
+        accessToken,
+        refreshToken
       });
     } catch (error) {
       const lang = getLang(req);
       console.error(error.message);
-      res.status(HttpStatus.INTERNAL_SERVER_ERROR).json({ 
+      res.status(HttpStatus.INTERNAL_SERVER_ERROR).json({
         message: translateError(lang, 'common.serverError')
       });
     }
@@ -90,7 +92,7 @@ const driverController = {
         : null;
 
       if (!token) {
-        return res.status(HttpStatus.UNAUTHORIZED).json({ 
+        return res.status(HttpStatus.UNAUTHORIZED).json({
           message: translateError(lang, 'common.unauthorized')
         });
       }
@@ -102,7 +104,7 @@ const driverController = {
 
       if (!driver) {
         blackListToken(token);
-        return res.status(HttpStatus.UNAUTHORIZED).json({ 
+        return res.status(HttpStatus.UNAUTHORIZED).json({
           message: translateError(lang, 'common.unauthorized')
         });
       }
@@ -120,12 +122,12 @@ const driverController = {
     } catch (error) {
       const lang = getLang(req);
       console.error(error.message);
-      res.status(HttpStatus.INTERNAL_SERVER_ERROR).json({ 
+      res.status(HttpStatus.INTERNAL_SERVER_ERROR).json({
         message: translateError(lang, 'common.serverError')
       });
     }
   },
-  
+
 
   Logout: async (req, res) => {
     const lang = getLang(req);
@@ -138,9 +140,42 @@ const driverController = {
       blackListToken(token);
     }
 
-    return res.status(HttpStatus.OK).json({ 
+    return res.status(HttpStatus.OK).json({
       message: translateError(lang, 'auth.logoutSuccessful')
     });
+  },
+
+  RefreshToken: async (req, res) => {
+    try {
+      const lang = getLang(req);
+      const { refreshToken } = req.body;
+      if (!refreshToken) {
+        return res.status(HttpStatus.BAD_REQUEST).json({ message: "Refresh token is required" });
+      }
+
+      const decoded = verifyRefreshToken(refreshToken);
+      const driver = await loginService.getDriverByEmail(decoded.email);
+
+      if (!driver || !driver.enabled) {
+        return res.status(HttpStatus.UNAUTHORIZED).json({
+          message: translateError(lang, 'common.unauthorized')
+        });
+      }
+
+      const newAccessToken = generateToken({ id: driver.id, email: driver.email, name: driver.name });
+      const newRefreshToken = generateRefreshToken({ id: driver.id, email: driver.email, name: driver.name });
+
+      return res.status(HttpStatus.OK).json({
+        accessToken: newAccessToken,
+        refreshToken: newRefreshToken
+      });
+    } catch (error) {
+      const lang = getLang(req);
+      console.error("❌ Refresh Token Error:", error);
+      return res.status(HttpStatus.UNAUTHORIZED).json({
+        message: translateError(lang, 'common.unauthorized')
+      });
+    }
   }
 };
 

@@ -15,6 +15,7 @@ import languageController from "../controllers/driver/languageController.js";
 const router = express.Router()
 
 router.post('/login', driverController.Login)
+router.post('/refresh-token', driverController.RefreshToken)
 
 // Protect all routes below this line
 router.use(driverAuth)

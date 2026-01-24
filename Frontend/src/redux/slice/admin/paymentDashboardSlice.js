@@ -1,15 +1,5 @@
-// src/features/paymentDashboard/paymentDashboardSlice.js
 import { createSlice, createAsyncThunk } from "@reduxjs/toolkit";
-import { API_BASE_URL } from "../../../config";
-
-// Helper function to get auth headers
-const getAuthHeaders = () => {
-  const token = localStorage.getItem('adminToken');
-  return {
-    "Content-Type": "application/json",
-    ...(token && { "Authorization": `Bearer ${token}` })
-  };
-};
+import axios from "../axiosInstance";
 
 // Async thunk to fetch data
 export const fetchPaymentDashboard = createAsyncThunk(
@@ -23,20 +13,10 @@ export const fetchPaymentDashboard = createAsyncThunk(
         return { success: true, data }; // return cached data
       }
 
-      const response = await fetch(`${API_BASE_URL}/admin/dashboard/paymentTable`, {
-        method: "GET",
-        headers: getAuthHeaders(),
-      });
-
-      if (!response.ok) {
-        const error = await response.json();
-        return rejectWithValue(error.message || "Failed to fetch payment dashboard");
-      }
-
-      const responseData = await response.json();
-      return responseData; // { success: true, data: [...] }
+      const res = await axios.get(`/admin/dashboard/paymentTable`);
+      return res.data;
     } catch (error) {
-      return rejectWithValue(error.message);
+      return rejectWithValue(error.response?.data?.message || "Failed to fetch payment dashboard");
     }
   }
 );

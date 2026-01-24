@@ -1,63 +1,36 @@
 import { createSlice, createAsyncThunk } from "@reduxjs/toolkit";
-import { API_BASE_URL } from "../../../config";
-
-// Helper function to get auth headers
-const getAuthHeaders = () => {
-  const token = localStorage.getItem('adminToken');
-  return {
-    "Content-Type": "application/json",
-    ...(token && { "Authorization": `Bearer ${token}` })
-  };
-};
+import axios from "../axiosInstance";
 
 // Fetch paginated jobs with search and request cancellation support
 export const fetchPaginatedJobs = createAsyncThunk(
   "jobs/fetchPaginated",
   async ({ page, limit, search = "", status = "all" }, { signal, rejectWithValue }) => {
     try {
-      const res = await fetch(
-        `${API_BASE_URL}/admin/jobs?page=${page}&limit=${limit}&search=${encodeURIComponent(search)}&status=${status}`,
-        { 
-          signal, 
-          headers: getAuthHeaders()
-        }
-      );
-
-      if (!res.ok) {
-        const error = await res.json();
-        return rejectWithValue(error.error || "Failed to fetch jobs");
-      }
-
-      const data = await res.json();
-      return data;
+      const res = await axios.get(`/admin/jobs`, {
+        signal,
+        params: { page, limit, search, status }
+      });
+      return res.data;
     } catch (error) {
-      if (error.name === 'AbortError') {
+      if (error.name === 'AbortError' || axios.isCancel(error)) {
         return rejectWithValue('Request cancelled');
       }
-      console.error("fetchPaginatedJobs error:", error.message);
-      return rejectWithValue(error.message);
+      console.error("fetchPaginatedJobs error:", error.response?.data?.message || error.message);
+      return rejectWithValue(error.response?.data?.message || error.message);
     }
   }
 );
 
-// Fetch all jobs (keep for backwards compatibility if needed elsewhere)
+// Fetch all jobs
 export const fetchJobs = createAsyncThunk(
   "jobs/fetchJobs",
   async (_, { rejectWithValue }) => {
     try {
-      const res = await fetch(`${API_BASE_URL}/admin/jobs`, { 
-        headers: getAuthHeaders()
-      });
-
-      if (!res.ok) {
-        const error = await res.json();
-        return rejectWithValue(error.error || "Failed to fetch jobs");
-      }
-      const data = await res.json();
-      return data;
+      const res = await axios.get(`/admin/jobs`);
+      return res.data;
     } catch (error) {
-      console.error("fetchJobs error:", error.message);
-      return rejectWithValue(error.message);
+      console.error("fetchJobs error:", error.response?.data?.message || error.message);
+      return rejectWithValue(error.response?.data?.message || error.message);
     }
   }
 );
@@ -68,62 +41,38 @@ export const addJob = createAsyncThunk(
   async ({ job, city_code, enabled, city_type }, { rejectWithValue }) => {
     try {
       console.log('Adding job with city_type:', city_type);
-      
-      const res = await fetch(`${API_BASE_URL}/admin/addjob`, {
-        method: "POST",
-        headers: getAuthHeaders(),
-        body: JSON.stringify({ job, city_code, enabled, city_type: city_type || 'DAILY' }),
+      const res = await axios.post(`/admin/addjob`, {
+        job,
+        city_code,
+        enabled,
+        city_type: city_type || 'DAILY'
       });
-
-      if (!res.ok) {
-        const error = await res.json();
-        return rejectWithValue(error.error || "Failed to add job");
-      }
-
-      const data = await res.json();
-      console.log('Job added successfully:', data);
-      return data;
+      console.log('Job added successfully:', res.data);
+      return res.data;
     } catch (error) {
-      console.error("addJob error:", error.message);
-      return rejectWithValue(error.message);
+      console.error("addJob error:", error.response?.data?.message || error.message);
+      return rejectWithValue(error.response?.data?.message || error.message);
     }
   }
 );
 
-// Update a job - NOW INCLUDES CITY_TYPE
+// Update a job
 export const updateJob = createAsyncThunk(
   "jobs/updateJob",
   async ({ id, job, city_code, city_type }, { rejectWithValue }) => {
     try {
       console.log('Updating job:', { id, job, city_code, city_type });
-      
       const payload = { job, city_code };
-      
-      // Always include city_type if provided
       if (city_type !== undefined && city_type !== null) {
         payload.city_type = city_type;
       }
-      
-      console.log('Update payload:', payload);
-      
-      const res = await fetch(`${API_BASE_URL}/admin/updatejob/${id}`, {
-        method: "PUT",
-        headers: getAuthHeaders(),
-        body: JSON.stringify(payload),
-      });
 
-      if (!res.ok) {
-        const error = await res.json();
-        console.error('Update failed with error:', error);
-        return rejectWithValue(error.error || "Failed to update job");
-      }
-
-      const data = await res.json();
-      console.log('Job updated successfully:', data);
-      return data;
+      const res = await axios.put(`/admin/updatejob/${id}`, payload);
+      console.log('Job updated successfully:', res.data);
+      return res.data;
     } catch (error) {
-      console.error("updateJob error:", error.message);
-      return rejectWithValue(error.message);
+      console.error("updateJob error:", error.response?.data?.message || error.message);
+      return rejectWithValue(error.response?.data?.message || error.message);
     }
   }
 );
@@ -133,44 +82,25 @@ export const deleteJob = createAsyncThunk(
   "jobs/deleteJob",
   async (id, { rejectWithValue }) => {
     try {
-      const res = await fetch(`${API_BASE_URL}/admin/deletejob/${id}`, {
-        method: "DELETE",
-        headers: getAuthHeaders(),
-      });
-
-      if (!res.ok) {
-        const error = await res.json();
-        return rejectWithValue(error.error || "Failed to delete job");
-      }
-
+      await axios.delete(`/admin/deletejob/${id}`);
       return id;
     } catch (error) {
-      console.error("deleteJob error:", error.message);
-      return rejectWithValue(error.message);
+      console.error("deleteJob error:", error.response?.data?.message || error.message);
+      return rejectWithValue(error.response?.data?.message || error.message);
     }
   }
 );
 
-// Toggle job status - optimistic update support
+// Toggle job status
 export const jobStatus = createAsyncThunk(
   "jobs/jobStatus",
   async (id, { rejectWithValue }) => {
     try {
-      const res = await fetch(`${API_BASE_URL}/admin/${id}/status`, {
-        method: "PATCH",
-        headers: getAuthHeaders(),
-      });
-
-      if (!res.ok) {
-        const error = await res.json();
-        return rejectWithValue(error.error || "Failed to toggle job status");
-      }
-
-      const data = await res.json();
-      return data;
+      const res = await axios.patch(`/admin/${id}/status`);
+      return res.data;
     } catch (error) {
-      console.error("jobStatus error:", error.message);
-      return rejectWithValue(error.message);
+      console.error("jobStatus error:", error.response?.data?.message || error.message);
+      return rejectWithValue(error.response?.data?.message || error.message);
     }
   }
 );
@@ -180,21 +110,11 @@ export const fetchAllCities = createAsyncThunk(
   async (_, { rejectWithValue }) => {
     try {
       console.log("Fetching all enabled cities...");
-      const res = await fetch(`${API_BASE_URL}/admin/get-cities`, {
-        headers: getAuthHeaders()
-      });
-
-      if (!res.ok) {
-        const error = await res.json();
-        return rejectWithValue(error.message || "Failed to fetch all cities");
-      }
-
-      const data = await res.json();
-    
-      return data.cities;
+      const res = await axios.get(`/admin/get-cities`);
+      return res.data.cities;
     } catch (error) {
-      console.error("fetchAllCities error:", error.message);
-      return rejectWithValue(error.message);
+      console.error("fetchAllCities error:", error.response?.data?.message || error.message);
+      return rejectWithValue(error.response?.data?.message || error.message);
     }
   }
 );
@@ -213,11 +133,9 @@ const jobSlice = createSlice({
     error: null,
   },
   reducers: {
-    // Reset error state
     clearError: (state) => {
       state.error = null;
     },
-    // Reset to initial state
     resetJobsState: (state) => {
       state.cities = [];
       state.allCities = [];
@@ -247,7 +165,6 @@ const jobSlice = createSlice({
         state.error = null;
       })
       .addCase(fetchPaginatedJobs.rejected, (state, action) => {
-        // Don't set error state for cancelled requests
         if (action.payload !== 'Request cancelled') {
           state.status = "failed";
           state.error = action.payload || action.error.message;
@@ -261,12 +178,10 @@ const jobSlice = createSlice({
       .addCase(fetchAllCities.fulfilled, (state, action) => {
         state.allCitiesStatus = "succeeded";
         state.allCities = action.payload || [];
-      
       })
       .addCase(fetchAllCities.rejected, (state, action) => {
         state.allCitiesStatus = "failed";
         state.error = action.payload || action.error.message;
-        console.error("fetchAllCities: Failed:", action.payload);
       })
 
       // Fetch all jobs
@@ -284,7 +199,7 @@ const jobSlice = createSlice({
         state.error = action.payload || action.error.message;
       })
 
-      // Add job - don't update local state, let refetch handle it
+      // Add job
       .addCase(addJob.pending, (state) => {
         state.status = "loading";
         state.error = null;
@@ -292,27 +207,23 @@ const jobSlice = createSlice({
       .addCase(addJob.fulfilled, (state) => {
         state.status = "succeeded";
         state.error = null;
-        // Don't push to cities array - pagination will be handled by refetch
       })
       .addCase(addJob.rejected, (state, action) => {
         state.status = "failed";
         state.error = action.payload || action.error.message;
       })
 
-      // Update job - optimistic update
+      // Update job
       .addCase(updateJob.pending, (state) => {
         state.status = "loading";
         state.error = null;
       })
       .addCase(updateJob.fulfilled, (state, action) => {
-        console.log('Redux state update with:', action.payload);
         state.status = "succeeded";
         const index = state.cities.findIndex((c) => c.id === action.payload.id);
         if (index !== -1) {
-          console.log('Updating city at index:', index, 'with:', action.payload);
           state.cities[index] = action.payload;
         }
-        // Also update in allCities if it exists there
         const allIndex = state.allCities.findIndex((c) => c.id === action.payload.id);
         if (allIndex !== -1) {
           state.allCities[allIndex] = action.payload;
@@ -322,10 +233,9 @@ const jobSlice = createSlice({
       .addCase(updateJob.rejected, (state, action) => {
         state.status = "failed";
         state.error = action.payload || action.error.message;
-        console.error('Update job rejected:', action.payload);
       })
 
-      // Delete job - optimistic update
+      // Delete job
       .addCase(deleteJob.pending, (state) => {
         state.status = "loading";
         state.error = null;
@@ -333,9 +243,7 @@ const jobSlice = createSlice({
       .addCase(deleteJob.fulfilled, (state, action) => {
         state.status = "succeeded";
         state.cities = state.cities.filter((c) => c.id !== action.payload);
-        // Also remove from allCities
         state.allCities = state.allCities.filter((c) => c.id !== action.payload);
-        // Decrement total count
         state.total = Math.max(0, state.total - 1);
         state.error = null;
       })
@@ -344,42 +252,28 @@ const jobSlice = createSlice({
         state.error = action.payload || action.error.message;
       })
 
-      // Toggle job status - optimistic update
+      // Toggle job status
       .addCase(jobStatus.pending, (state, action) => {
-        // Optimistic update for better UX
         const id = action.meta.arg;
         const index = state.cities.findIndex((c) => c.id === id);
         if (index !== -1) {
           state.cities[index].enabled = !state.cities[index].enabled;
         }
-        // Also update in allCities
-        const allIndex = state.allCities.findIndex((c) => c.id === id);
-        if (allIndex !== -1) {
-          // If disabling, remove from allCities (since it only shows enabled)
-          if (state.allCities[allIndex].enabled) {
-            state.allCities = state.allCities.filter((c) => c.id !== id);
-          }
-        }
       })
       .addCase(jobStatus.fulfilled, (state, action) => {
         state.status = "succeeded";
-        // Update with server response to ensure consistency
         const index = state.cities.findIndex((c) => c.id === action.payload.id);
         if (index !== -1) {
           state.cities[index] = action.payload;
         }
-        // Update allCities: remove if disabled, add if enabled
         const allIndex = state.allCities.findIndex((c) => c.id === action.payload.id);
         if (action.payload.enabled) {
           if (allIndex === -1) {
-            // Add to allCities if it was just enabled
             state.allCities.push(action.payload);
           } else {
-            // Update existing
             state.allCities[allIndex] = action.payload;
           }
         } else {
-          // Remove from allCities if disabled
           state.allCities = state.allCities.filter((c) => c.id !== action.payload.id);
         }
         state.error = null;
@@ -387,15 +281,11 @@ const jobSlice = createSlice({
       .addCase(jobStatus.rejected, (state, action) => {
         state.status = "failed";
         state.error = action.payload || action.error.message;
-        // Revert optimistic update on error
         const id = action.meta.arg;
         const index = state.cities.findIndex((c) => c.id === id);
         if (index !== -1) {
           state.cities[index].enabled = !state.cities[index].enabled;
         }
-        // Revert allCities change
-        // This is tricky - we'd need to refetch to be safe
-        // For now, just refetch allCities on error
       });
   },
 });

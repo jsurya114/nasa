@@ -1,48 +1,19 @@
 import { createSlice, createAsyncThunk } from "@reduxjs/toolkit";
-import { API_BASE_URL } from "../../../config"
-
-// Helper function to get auth headers
-const getAuthHeaders = () => {
-  const token = localStorage.getItem('adminToken');
-  return {
-    "Content-Type": "application/json",
-    ...(token && { "Authorization": `Bearer ${token}` })
-  };
-};
+import axios from "../axiosInstance";
 
 // ✅ ENHANCED: Fetch routes with city filter
 export const fetchRoutes = createAsyncThunk("routes/fetchRoutes", async ({ page, limit, search = "", city = "" }) => {
   try {
     console.log("Fetching routes with filters:", { page, limit, search, city });
-    
-    // Build query parameters
-    const params = new URLSearchParams({
-      page: page.toString(),
-      limit: limit.toString()
-    });
-    
-    if (search) {
-      params.append('search', search);
-    }
-    
-    if (city) {
-      params.append('city', city);
-    }
-    
-    const res = await fetch(
-      `${API_BASE_URL}/admin/routes?${params.toString()}`,
-      { headers: getAuthHeaders() }
-    );
 
-    if (!res.ok) {
-      const error = await res.json();
-      throw new Error(error.error || "Failed to fetch routes");
-    }
-    const data = await res.json();
-    console.log("Fetched routes:", data);
-    return data;
+    const res = await axios.get(`/admin/routes`, {
+      params: { page, limit, search, city }
+    });
+
+    console.log("Fetched routes:", res.data);
+    return res.data;
   } catch (error) {
-    console.error("fetchRoutes error:", error.message);
+    console.error("fetchRoutes error:", error.response?.data?.message || error.message);
     throw error;
   }
 });
@@ -51,21 +22,11 @@ export const fetchRoutes = createAsyncThunk("routes/fetchRoutes", async ({ page,
 export const addRoute = createAsyncThunk("routes/addRoute", async (routeData) => {
   try {
     console.log("Adding route:", routeData);
-    const res = await fetch(`${API_BASE_URL}/admin/routes`, {
-      method: "POST",
-      headers: getAuthHeaders(),
-      body: JSON.stringify(routeData),
-    });
-
-    if (!res.ok) {
-      const error = await res.json();
-      throw new Error(error.error || "Failed to add route");
-    }
-    const data = await res.json();
-    console.log("Added route:", data);
-    return data;
+    const res = await axios.post(`/admin/routes`, routeData);
+    console.log("Added route:", res.data);
+    return res.data;
   } catch (error) {
-    console.error("addRoute error:", error.message);
+    console.error("addRoute error:", error.response?.data?.message || error.message);
     throw error;
   }
 });
@@ -74,20 +35,11 @@ export const addRoute = createAsyncThunk("routes/addRoute", async (routeData) =>
 export const toggleRouteStatus = createAsyncThunk("routes/toggleRouteStatus", async (id) => {
   try {
     console.log(`Toggling status for route id: ${id}`);
-    const res = await fetch(`${API_BASE_URL}/admin/routes/${id}/status`, { 
-      method: "PATCH", 
-      headers: getAuthHeaders() 
-    });
-
-    if (!res.ok) {
-      const error = await res.json();
-      throw new Error(error.error || "Failed to toggle route status");
-    }
-    const data = await res.json();
-    console.log("Toggled route:", data);
-    return data;
+    const res = await axios.patch(`/admin/routes/${id}/status`);
+    console.log("Toggled route:", res.data);
+    return res.data;
   } catch (error) {
-    console.error("toggleRouteStatus error:", error.message);
+    console.error("toggleRouteStatus error:", error.response?.data?.message || error.message);
     throw error;
   }
 });
@@ -96,40 +48,22 @@ export const toggleRouteStatus = createAsyncThunk("routes/toggleRouteStatus", as
 export const deleteRoute = createAsyncThunk("routes/deleteRoute", async (id) => {
   try {
     console.log(`Deleting route id: ${id}`);
-    const res = await fetch(`${API_BASE_URL}/admin/routes/${id}`, { 
-      method: "DELETE", 
-      headers: getAuthHeaders() 
-    });
-
-    if (!res.ok) {
-      const error = await res.json();
-      throw new Error(error.error || "Failed to delete route");
-    }
+    await axios.delete(`/admin/routes/${id}`);
     console.log("Deleted route id:", id);
     return id;
   } catch (error) {
-    console.error("deleteRoute error:", error.message);
+    console.error("deleteRoute error:", error.response?.data?.message || error.message);
     throw error;
   }
 });
 
 export const updateRoute = createAsyncThunk("routes/updateRoute", async ({ id, routeData }) => {
   try {
-    const res = await fetch(`${API_BASE_URL}/admin/routes/${id}`, {
-      method: "PUT",
-      headers: getAuthHeaders(),
-      body: JSON.stringify(routeData),
-    })
-
-    if (!res.ok) {
-      const error = await res.json();
-      throw new Error(error.error || "Failed to update route");
-    }
-    const data = await res.json();
-    console.log("Updated route:", data);
-    return data;
+    const res = await axios.put(`/admin/routes/${id}`, routeData);
+    console.log("Updated route:", res.data);
+    return res.data;
   } catch (error) {
-    console.error("updateRoute error:", error.message);
+    console.error("updateRoute error:", error.response?.data?.message || error.message);
     throw error;
   }
 })

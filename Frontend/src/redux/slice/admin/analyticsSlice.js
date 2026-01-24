@@ -1,46 +1,17 @@
 import { createSlice, createAsyncThunk } from "@reduxjs/toolkit";
-import { API_BASE_URL } from "../../../config";
-
-// Helper function to get auth headers
-const getAuthHeaders = () => {
-  const token = localStorage.getItem('adminToken');
-  return {
-    "Content-Type": "application/json",
-    ...(token && { "Authorization": `Bearer ${token}` })
-  };
-};
+import axios from "../axiosInstance";
 
 // Async thunk to fetch analytics data
 export const fetchAnalyticsData = createAsyncThunk(
   "analytics/fetchData",
   async ({ viewType, date, detailLevel }, { rejectWithValue }) => {
     try {
-      // Build query parameters
-      const params = new URLSearchParams({
-        viewType,
-        date,
-        ...(detailLevel && { detailLevel }) // Only add if detailLevel exists
+      const res = await axios.get(`/admin/analytics`, {
+        params: { viewType, date, detailLevel }
       });
-
-      const response = await fetch(
-        `${API_BASE_URL}/admin/analytics?${params.toString()}`,
-        {
-          method: "GET",
-          headers: getAuthHeaders(),
-        }
-      );
-
-      if (!response.ok) {
-        const error = await response.json();
-        return rejectWithValue(error.message || "Failed to fetch analytics data");
-      }
-
-      const data = await response.json();
-      return data.data; // Return the actual data array
+      return res.data.data;
     } catch (error) {
-      return rejectWithValue(
-        error.message || "Failed to fetch analytics data"
-      );
+      return rejectWithValue(error.response?.data?.message || "Failed to fetch analytics data");
     }
   }
 );

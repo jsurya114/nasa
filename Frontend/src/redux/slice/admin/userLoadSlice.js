@@ -1,28 +1,13 @@
 import { createSlice, createAsyncThunk } from "@reduxjs/toolkit";
-import { API_BASE_URL } from "../../../config";
-
-const getAuthHeaders = () => {
-  const token = localStorage.getItem('adminToken');
-  return {
-    "Content-Type": "application/json",
-    ...(token && { "Authorization": `Bearer ${token}` })
-  };
-};
+import axios from "../axiosInstance";
 
 export const toggleAdminRole = createAsyncThunk("/admin/toggle-admin-role",
     async (id, { rejectWithValue }) => {
         try {
-            const res = await fetch(`${API_BASE_URL}/admin/toggle-admin-role/${id}`, {
-                method: "PATCH",
-                headers: getAuthHeaders(),
-            });
-            const data = await res.json();
-            if (!res.ok) {
-                return rejectWithValue(data.message || 'Failure to get details of Admin')
-            }
-            return data;
+            const res = await axios.patch(`/admin/toggle-admin-role/${id}`);
+            return res.data;
         } catch (err) {
-            return rejectWithValue(err.message)
+            return rejectWithValue(err.response?.data?.message || err.message)
         }
     }
 )
@@ -31,18 +16,10 @@ export const addDriver = createAsyncThunk("/admin/create-users",
     async (formData, { rejectWithValue }) => {
         try {
             console.log("formdata of driver ", formData);
-            const res = await fetch(`${API_BASE_URL}/admin/create-users`, {
-                method: "POST",
-                headers: getAuthHeaders(),
-                body: JSON.stringify(formData),
-            })
-            const data = await res.json();
-            if (!res.ok) {
-                return rejectWithValue(data.message || "User Add failure")
-            }
-            return data;
+            const res = await axios.post(`/admin/create-users`, formData);
+            return res.data;
         } catch (error) {
-            return rejectWithValue(error.message)
+            return rejectWithValue(error.response?.data?.message || error.message)
         }
     }
 )
@@ -50,23 +27,16 @@ export const addDriver = createAsyncThunk("/admin/create-users",
 export const getUsers = createAsyncThunk('/admin/get-users',
     async ({ page = 1, search = "", city = "" }, { rejectWithValue }) => {
         try {
-            const params = new URLSearchParams({
-                page: page.toString(),
-                ...(search && { search }),
-                ...(city && city !== "All" && { city })
+            const res = await axios.get(`/admin/get-users`, {
+                params: {
+                    page,
+                    search,
+                    city: city === "All" ? undefined : city
+                }
             });
-            
-            const res = await fetch(`${API_BASE_URL}/admin/get-users?${params}`, {
-                method: "GET",
-                headers: getAuthHeaders(),
-            });
-            const data = await res.json();
-            if (!res.ok) {
-                return rejectWithValue(data.message || "Error while getting users data")
-            }
-            return data;
+            return res.data;
         } catch (err) {
-            return rejectWithValue(err.message)
+            return rejectWithValue(err.response?.data?.message || err.message)
         }
     }
 )
@@ -74,17 +44,10 @@ export const getUsers = createAsyncThunk('/admin/get-users',
 export const getCities = createAsyncThunk('/admin/get-cities',
     async (_, { rejectWithValue }) => {
         try {
-            const res = await fetch(`${API_BASE_URL}/admin/get-cities`, {
-                method: "GET",
-                headers: getAuthHeaders(),
-            });
-            const data = await res.json();
-            if (!res.ok) {
-                return rejectWithValue(data.message || "Error while getting users data")
-            }
-            return data;
+            const res = await axios.get(`/admin/get-cities`);
+            return res.data;
         } catch (err) {
-            return rejectWithValue(err.message)
+            return rejectWithValue(err.response?.data?.message || err.message)
         }
     }
 )
@@ -92,17 +55,10 @@ export const getCities = createAsyncThunk('/admin/get-cities',
 export const getAdminCities = createAsyncThunk('/admin/get-admin-cities',
     async (_, { rejectWithValue }) => {
         try {
-            const res = await fetch(`${API_BASE_URL}/admin/get-admin-cities`, {
-                method: "GET",
-                headers: getAuthHeaders(),
-            });
-            const data = await res.json();
-            if (!res.ok) {
-                return rejectWithValue(data.message || "Error while getting admin cities")
-            }
-            return data;
+            const res = await axios.get(`/admin/get-admin-cities`);
+            return res.data;
         } catch (err) {
-            return rejectWithValue(err.message)
+            return rejectWithValue(err.response?.data?.message || err.message)
         }
     }
 )
@@ -110,50 +66,31 @@ export const getAdminCities = createAsyncThunk('/admin/get-admin-cities',
 export const getAdmins = createAsyncThunk('/admin/get-admins',
     async ({ page = 1 }, { rejectWithValue }) => {
         try {
-            const res = await fetch(`${API_BASE_URL}/admin/get-admins?page=${page}`, {
-                method: "GET",
-                headers: getAuthHeaders(),
+            const res = await axios.get(`/admin/get-admins`, {
+                params: { page }
             });
-            const data = await res.json();
-            if (!res.ok) {
-                return rejectWithValue(data.message || "Error while getting admins data")
-            }
-            return data;
+            return res.data;
         } catch (err) {
-            return rejectWithValue(err.message)
+            return rejectWithValue(err.response?.data?.message || err.message)
         }
     }
 )
 
 export const toggleAvailUser = createAsyncThunk(`/admin/toggle-user`, async (id, { rejectWithValue }) => {
     try {
-        const res = await fetch(`${API_BASE_URL}/admin/toggle-user/${id}`, {
-            method: 'PATCH',
-            headers: getAuthHeaders(),
-        });
-        const data = await res.json();
-        if (!res.ok) {
-            return rejectWithValue(data.message || "Deletion failure");
-        }
-        return data;
+        const res = await axios.patch(`/admin/toggle-user/${id}`);
+        return res.data;
     } catch (err) {
-        return rejectWithValue(err.message);
+        return rejectWithValue(err.response?.data?.message || err.message);
     }
 })
 
 export const toggleAvailAdmin = createAsyncThunk(`/admin/toggle-admin`, async (id, { rejectWithValue }) => {
     try {
-        const res = await fetch(`${API_BASE_URL}/admin/toggle-admin/${id}`, {
-            method: 'PATCH',
-            headers: getAuthHeaders(),
-        });
-        const data = await res.json();
-        if (!res.ok) {
-            return rejectWithValue(data.message || "Disable admin failure");
-        }
-        return data;
+        const res = await axios.patch(`/admin/toggle-admin/${id}`);
+        return res.data;
     } catch (err) {
-        return rejectWithValue(err.message);
+        return rejectWithValue(err.response?.data?.message || err.message);
     }
 })
 
@@ -161,63 +98,36 @@ export const addAdmin = createAsyncThunk(`/admin/create-admin`,
     async (formData, { rejectWithValue }) => {
         try {
             console.log("Admin data ", formData);
-            const res = await fetch(`${API_BASE_URL}/admin/create-admin`, {
-                method: "POST",
-                headers: getAuthHeaders(),
-                body: JSON.stringify(formData),
-            })
-            const data = await res.json();
-            if (!res.ok) {
-                return rejectWithValue(data.message || "Admin Add failure")
-            }
-
-            return data;
+            const res = await axios.post(`/admin/create-admin`, formData);
+            return res.data;
         } catch (error) {
-            return rejectWithValue(error.message);
+            return rejectWithValue(error.response?.data?.message || error.message);
         }
     }
 )
 
 export const updateDriver = createAsyncThunk(
-  "/admin/update-user",
-  async ({ id, formData }, { rejectWithValue }) => {
-    try {
-      const res = await fetch(`${API_BASE_URL}/admin/update-user/${id}`, {
-        method: "PUT",
-        headers: getAuthHeaders(),
-        body: JSON.stringify(formData),
-      });
-
-      const data = await res.json();
-      if (!res.ok) {
-        return rejectWithValue(data.message || "Update failed");
-      }
-      return data;
-    } catch (err) {
-      return rejectWithValue(err.message);
+    "/admin/update-user",
+    async ({ id, formData }, { rejectWithValue }) => {
+        try {
+            const res = await axios.put(`/admin/update-user/${id}`, formData);
+            return res.data;
+        } catch (err) {
+            return rejectWithValue(err.response?.data?.message || err.message);
+        }
     }
-  }
 );
 
 export const updateAdmin = createAsyncThunk(
-  "/admin/update-admin",
-  async ({ id, formData }, { rejectWithValue }) => {
-    try {
-      const res = await fetch(`${API_BASE_URL}/admin/update-admin/${id}`, {
-        method: "PUT",
-        headers: getAuthHeaders(),
-        body: JSON.stringify(formData),
-      });
-
-      const data = await res.json();
-      if (!res.ok) {
-        return rejectWithValue(data.message || "Update failed");
-      }
-      return data;
-    } catch (err) {
-      return rejectWithValue(err.message);
+    "/admin/update-admin",
+    async ({ id, formData }, { rejectWithValue }) => {
+        try {
+            const res = await axios.put(`/admin/update-admin/${id}`, formData);
+            return res.data;
+        } catch (err) {
+            return rejectWithValue(err.response?.data?.message || err.message);
+        }
     }
-  }
 );
 
 
@@ -262,11 +172,11 @@ const userLoadSlice = createSlice({
             })
             .addCase(addDriver.fulfilled, (state, action) => {
                 console.log("Driver added successfully:", action.payload);
-                
+
                 const newDriver = action.payload.insertUser;
-                
+
                 state.drivers = [newDriver, ...state.drivers];
-                
+
                 state.loading = false;
                 state.success = action.payload.message;
                 state.error = null;
@@ -370,11 +280,11 @@ const userLoadSlice = createSlice({
             })
             .addCase(addAdmin.fulfilled, (state, action) => {
                 console.log("Admin added successfully:", action.payload);
-                
+
                 const newAdmin = action.payload.insertAdmin;
-                
+
                 state.admins = [newAdmin, ...state.admins];
-                
+
                 state.loading = false;
                 state.success = action.payload.message;
                 state.error = null;

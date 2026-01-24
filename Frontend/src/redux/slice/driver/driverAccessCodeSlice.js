@@ -1,32 +1,10 @@
-// redux/slice/driver/accessCodeSlice.js
 import { createSlice, createAsyncThunk } from "@reduxjs/toolkit";
-import { API_BASE_URL } from "../../../config";
+import axios from "../axiosInstance";
 import { translateError } from "../../../hooks/backendI18n.js";
 
 // Get current language from localStorage or default to 'en'
 const getCurrentLanguage = () => {
   return localStorage.getItem('preferredLanguage') || 'en';
-};
-
-// Helper function to get auth headers for file uploads
-const getAuthHeaders = (isFormData = false) => {
-  const token = localStorage.getItem('driverToken');
-  const lang = getCurrentLanguage();
-  const headers = {};
-
-  // Don't set Content-Type for FormData - browser will set it with boundary
-  if (!isFormData) {
-    headers['Content-Type'] = 'application/json';
-  }
-
-  // Add language header
-  headers['X-Language'] = lang;
-
-  if (token) {
-    headers['Authorization'] = `Bearer ${token}`;
-  }
-
-  return headers;
 };
 
 // Fetch paginated access codes
@@ -35,28 +13,14 @@ export const fetchAccessCodes = createAsyncThunk(
   async ({ page = 1, limit = 10, search = '', zipCodeFilter = '' } = {}, { rejectWithValue }) => {
     try {
       const lang = getCurrentLanguage();
-      const params = new URLSearchParams({
-        page: page.toString(),
-        limit: limit.toString(),
-        ...(search && { search }),
-        ...(zipCodeFilter && { zip_code: zipCodeFilter })
+      const res = await axios.get(`/driver/access-codes/list`, {
+        params: { page, limit, search, zip_code: zipCodeFilter },
+        headers: { 'X-Language': lang }
       });
-
-      const res = await fetch(`${API_BASE_URL}/driver/access-codes/list?${params}`, {
-        method: 'GET',
-        headers: getAuthHeaders(),
-      });
-
-      if (!res.ok) {
-        const errorText = await res.text();
-        throw new Error(`HTTP ${res.status}: ${errorText}`);
-      }
-
-      const data = await res.json();
-      return data;
+      return res.data;
     } catch (error) {
       const lang = getCurrentLanguage();
-      return rejectWithValue(error.message || translateError(lang, 'accessCode.failedToFetch'));
+      return rejectWithValue(error.response?.data?.message || error.message || translateError(lang, 'accessCode.failedToFetch'));
     }
   }
 );
@@ -82,18 +46,12 @@ export const createAccessCode = createAsyncThunk(
         body = form;
       }
 
-      const res = await fetch(`${API_BASE_URL}/driver/access-codes`, {
-        method: "POST",
-        headers: getAuthHeaders(true), // true = FormData
-        body,
+      const res = await axios.post(`/driver/access-codes`, body, {
+        headers: {
+          'Content-Type': 'multipart/form-data',
+          'X-Language': lang
+        }
       });
-
-      if (!res.ok) {
-        const error = await res.json();
-        throw new Error(error.message || `HTTP ${res.status}: ${translateError(lang, 'accessCode.failedToCreate')}`);
-      }
-
-      const data = await res.json();
 
       // Refetch with current pagination settings
       const { currentPage, pageLimit, searchTerm, zipCodeFilter } = getState().driverAccessCodes;
@@ -104,10 +62,10 @@ export const createAccessCode = createAsyncThunk(
         zipCodeFilter
       }));
 
-      return data.data;
+      return res.data.data;
     } catch (error) {
       const lang = getCurrentLanguage();
-      return rejectWithValue(error.message || translateError(lang, 'accessCode.failedToCreate'));
+      return rejectWithValue(error.response?.data?.message || error.message || translateError(lang, 'accessCode.failedToCreate'));
     }
   }
 );

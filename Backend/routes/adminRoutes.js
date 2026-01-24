@@ -3,11 +3,11 @@ import { upload, uploadAccessCodeImages } from "../middlewares/multerConfig.js"
 const router = express.Router()
 import adminController from '../controllers/admin/adminController.js'
 import jobController from '../controllers/admin/jobController.js';
-import { createRoute,getRouteById, updateRoute, deleteRoute,toggleRouteStatus, fetchPaginatedRoutes, getAdminRoutes,getRoutesByDriver  } from "../controllers/admin/routeController.js"
-import { changeStatusUser, createUsers, getUsers,updateUser} from '../controllers/admin/addUserController.js';
+import { createRoute, getRouteById, updateRoute, deleteRoute, toggleRouteStatus, fetchPaginatedRoutes, getAdminRoutes, getRoutesByDriver } from "../controllers/admin/routeController.js"
+import { changeStatusUser, createUsers, getUsers, updateUser } from '../controllers/admin/addUserController.js';
 import { createAccessCode, deleteAccessCode } from '../controllers/admin/accessCodeControllers.js';
-import {DailyExcelUpload, getUpdatedTempDashboardData} from '../controllers/admin/fileUploadsController.js';
-import { getAccessCodes,updateAccessCode, } from '../controllers/admin/accessCodeControllers.js';
+import { DailyExcelUpload, getUpdatedTempDashboardData } from '../controllers/admin/fileUploadsController.js';
+import { getAccessCodes, updateAccessCode, } from '../controllers/admin/accessCodeControllers.js';
 import { changeRoleAdmin, changeStatusAdmin, createAdmins, getAdmins, updateAdmin, getAdminCities } from '../controllers/admin/addAdminController.js';
 import { getPaymentDashboardData, getAllPaymentDashboardData, updatePaymentData, updateWeeklyTempDataToDashboard, payDriver, getSummaryData } from '../controllers/admin/dashboardController.js';
 import adminJourneyController from '../controllers/admin/adminJourneyController.js';
@@ -19,7 +19,8 @@ import { getAnalyticsData } from '../controllers/admin/analyticsController.js';
 import adminAvailabilityController from '../controllers/admin/adminavailabilityController.js';
 
 
-router.post('/login',adminController.Login);
+router.post('/login', adminController.Login);
+router.post('/refresh-token', adminController.RefreshToken);
 
 router.use(adminAuth);
 
@@ -29,21 +30,21 @@ router.patch('/:id/status', superAdminAuth, jobController.jobStatus);
 
 router.get('/jobs', jobController.fetchPaginatedJobs)
 
-router.post("/routes",superAdminAuth, createRoute);
+router.post("/routes", superAdminAuth, createRoute);
 router.get("/routes", fetchPaginatedRoutes);
-router.get("/routes-list",getAdminRoutes)
+router.get("/routes-list", getAdminRoutes)
 router.get("/routes/:id", getRouteById);
 router.put("/routes/:id", updateRoute);
-router.patch("/routes/:id/status",toggleRouteStatus);
+router.patch("/routes/:id/status", toggleRouteStatus);
 router.delete("/routes/:id", deleteRoute);
 router.get("/routes-by-driver/:driverId", getRoutesByDriver);
 
-router.post('/create-users',createUsers);
-router.get('/get-users',getUsers);
-router.patch('/toggle-user/:id',changeStatusUser);
+router.post('/create-users', createUsers);
+router.get('/get-users', getUsers);
+router.patch('/toggle-user/:id', changeStatusUser);
 router.put('/update-user/:id', updateUser);
 
-router.get('/get-cities',jobController.getCities);
+router.get('/get-cities', jobController.getCities);
 router.get('/get-admin-cities', getAdminCities);
 
 router.post("/create-admin", superAdminAuth, createAdmins);
@@ -52,15 +53,15 @@ router.patch('/toggle-admin/:id', superAdminAuth, changeStatusAdmin);
 router.patch('/toggle-admin-role/:id', superAdminAuth, changeRoleAdmin);
 router.put('/update-admin/:id', superAdminAuth, updateAdmin);
 
-router.post('/doubleStop/dailyFileUpload',upload.single('file'),DailyExcelUpload)
+router.post('/doubleStop/dailyFileUpload', upload.single('file'), DailyExcelUpload)
 
 router.get("/journeys/paginated", adminJourneyController.fetchPaginatedJourneys);
-router.get("/journeys",adminJourneyController.fetchAllJourneys)
+router.get("/journeys", adminJourneyController.fetchAllJourneys)
 router.post("/journey", adminJourneyController.addJourney);
-router.put("/journey/:journey_id",adminJourneyController.updateJourney)
+router.put("/journey/:journey_id", adminJourneyController.updateJourney)
 router.delete("/journey/:journey_id", adminJourneyController.deleteJourney);
 
-router.get("/drivers",adminJourneyController.fetchAllDrivers)
+router.get("/drivers", adminJourneyController.fetchAllDrivers)
 
 router.get('/dashboard/data', getAllData)
 router.get('/dashboard/drivers-by-city', getFilteredDriversByCity) // ✅ NEW: Driver filter endpoint
@@ -72,13 +73,13 @@ router.get('/dashboard/summary', getSummaryData)
 
 router.post('/dashboard/payDriver', payDriver)
 
-router.post('/doubleStop/weekly-upload',upload.single('file'),weeklyExcelUpload);
-router.get('/doubleStop/fetchWeeklyTempData',getWeeklyTempData);
-router.post('/doubleStop/update-weekly-excel-to-dashboard',updateWeeklyTempDataToDashboard);
+router.post('/doubleStop/weekly-upload', upload.single('file'), weeklyExcelUpload);
+router.get('/doubleStop/fetchWeeklyTempData', getWeeklyTempData);
+router.post('/doubleStop/update-weekly-excel-to-dashboard', updateWeeklyTempDataToDashboard);
 
-router.get('/doubleStop/tempDashboardData',getUpdatedTempDashboardData);
-router.get('/doubleStop/calculatePayment',updatePaymentData);
-router.get('/analytics',getAnalyticsData)
+router.get('/doubleStop/tempDashboardData', getUpdatedTempDashboardData);
+router.get('/doubleStop/calculatePayment', updatePaymentData);
+router.get('/analytics', getAnalyticsData)
 
 // ============================================
 // Driver Availability Management (Admin View)
@@ -99,14 +100,14 @@ router.put(
 // Manual reset all drivers availability (Superadmin only)
 router.post(
   "/drivers/availability/reset-all",
- 
+
   adminAvailabilityController.manualResetAllDriversAvailability
 );
 
 
-router.post('/logout',adminController.Logout);
+router.post('/logout', adminController.Logout);
 
-router.get('/access-admin',adminController.getUser);
+router.get('/access-admin', adminController.getUser);
 
 // Access Codes Routes - Available for both admin and superadmin
 router.post("/access-codes", uploadAccessCodeImages.array('images', 3), createAccessCode)

@@ -1,22 +1,10 @@
-// redux/slice/driver/passwordSlice.js
 import { createSlice, createAsyncThunk } from "@reduxjs/toolkit";
-import { API_BASE_URL } from "../../../config";
+import axios from "../axiosInstance";
 import { translateError } from "../../../hooks/backendI18n.js";
 
 // Get current language from localStorage or default to 'en'
 const getCurrentLanguage = () => {
   return localStorage.getItem('preferredLanguage') || 'en';
-};
-
-// Helper function to get auth headers
-const getAuthHeaders = () => {
-  const token = localStorage.getItem('driverToken');
-  const lang = getCurrentLanguage();
-  return {
-    "Content-Type": "application/json",
-    "X-Language": lang, // Add language header
-    ...(token && { "Authorization": `Bearer ${token}` })
-  };
 };
 
 /**
@@ -27,24 +15,15 @@ export const updatePassword = createAsyncThunk(
   "password/updatePassword",
   async (passwordData, { rejectWithValue }) => {
     try {
-      const response = await fetch(`${API_BASE_URL}/driver/update-password`, {
-        method: "POST",
-        headers: getAuthHeaders(),
-        body: JSON.stringify(passwordData),
+      const lang = getCurrentLanguage();
+      const res = await axios.post(`/driver/update-password`, passwordData, {
+        headers: { "X-Language": lang }
       });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        // Return validation errors or error message
-        return rejectWithValue(data);
-      }
-
-      return data;
+      return res.data;
     } catch (error) {
       const lang = getCurrentLanguage();
       console.error("updatePassword error:", error);
-      return rejectWithValue({
+      return rejectWithValue(error.response?.data || {
         success: false,
         message: error.message || translateError(lang, 'auth.networkError'),
       });
@@ -101,7 +80,7 @@ const passwordSlice = createSlice({
       .addCase(updatePassword.rejected, (state, action) => {
         state.status = "failed";
         const lang = getCurrentLanguage();
-        
+
         // Handle validation errors
         if (action.payload?.errors) {
           state.errors = action.payload.errors;
@@ -110,7 +89,7 @@ const passwordSlice = createSlice({
           state.error = action.payload?.message || translateError(lang, 'password.failedToUpdate');
           state.errors = {};
         }
-        
+
         state.successMessage = null;
       });
   },

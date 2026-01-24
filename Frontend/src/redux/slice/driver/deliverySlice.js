@@ -1,5 +1,5 @@
 import { createSlice, createAsyncThunk } from "@reduxjs/toolkit";
-import { API_BASE_URL } from "../../../config";
+import axios from "../axiosInstance";
 import { translateError } from "../../../hooks/backendI18n.js";
 
 // Get current language from localStorage or default to 'en'
@@ -23,44 +23,20 @@ export const fetchDeliverySummary = createAsyncThunk(
         return rejectWithValue(translateError(lang, 'delivery.bothDatesRequiredShort'));
       }
 
-      // ✅ Get token from localStorage
-      const token = localStorage.getItem('driverToken');
+      const res = await axios.get(`/driver/deliveries/${driverId}`, {
+        params: { from_date, to_date },
+        headers: { "X-Language": lang },
+        signal,
+      });
 
-      if (!token) {
-        return rejectWithValue(translateError(lang, 'delivery.noAuthToken'));
-      }
-
-      const res = await fetch(
-        `${API_BASE_URL}/driver/deliveries/${driverId}?from_date=${encodeURIComponent(from_date)}&to_date=${encodeURIComponent(to_date)}`,
-        {
-          headers: {
-            "Authorization": `Bearer ${token}`,
-            "X-Language": lang, // Send language header
-          },
-          signal, // Support request cancellation
-        }
-      );
-
-      if (!res.ok) {
-        // ✅ Handle 401 - clear token
-        if (res.status === 401) {
-          localStorage.removeItem('driverToken');
-        }
-        
-        const errorData = await res.json().catch(() => ({}));
-        return rejectWithValue(errorData.message || errorData.error || translateError(lang, 'delivery.failedToFetch'));
-      }
-
-      const data = await res.json();
-      return Array.isArray(data) ? data : [];
+      return Array.isArray(res.data) ? res.data : [];
     } catch (err) {
       const lang = getCurrentLanguage();
-      // Don't log cancellation errors
-      if (err.name === 'AbortError') {
+      if (err.name === 'AbortError' || axios.isCancel(err)) {
         return rejectWithValue(translateError(lang, 'delivery.requestCancelled'));
       }
       console.error("fetchDeliverySummary error:", err);
-      return rejectWithValue(err.message || translateError(lang, 'delivery.errorFetching'));
+      return rejectWithValue(err.response?.data?.message || err.message || translateError(lang, 'delivery.errorFetching'));
     }
   }
 );
@@ -78,7 +54,7 @@ const deliverySlice = createSlice({
     clearDeliveryError: (state) => {
       state.error = null;
     },
-    
+
     // Reset deliveries state
     resetDeliveries: (state) => {
       state.deliveries = [];
@@ -86,7 +62,7 @@ const deliverySlice = createSlice({
       state.error = null;
       state.lastFetch = null;
     },
-    
+
     // Set deliveries from cache without triggering loading state
     setDeliveriesFromCache: (state, action) => {
       state.deliveries = action.payload;
