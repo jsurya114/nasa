@@ -2,7 +2,7 @@ import { AdminDashboardQueries } from "../../services/admin/dashboardQueries.js"
 import { WeeklyExcelQueries } from "../../services/admin/weeklyExcelQueries.js";
 import HttpStatus from "../../utils/statusCodes.js";
 
-// ✅ NEW: Get summary data for all records matching the filter
+// ✅ Get summary data for all records matching the filter
 export const getSummaryData = async (req, res) => {
   try {
     const { 
@@ -202,6 +202,7 @@ export const updatePaymentData = async (req, res) => {
   }
 };
 
+// ✅ UPDATED: Only pay for journeys where closed = true
 export const payDriver = async (req, res) => {
   try {
     const { driverName, startDate, endDate } = req.body;
@@ -213,15 +214,26 @@ export const payDriver = async (req, res) => {
       });
     }
 
+    // ✅ Update only journeys where closed = true
     const result = await AdminDashboardQueries.updateDriverPaymentStatus(
       driverName, 
       startDate, 
       endDate
     );
     
+    // ✅ Check if any rows were updated
+    if (result.rowCount === 0) {
+      return res.status(HttpStatus.OK).json({ 
+        success: true, 
+        message: `No closed journeys found to mark as paid for ${driverName}`,
+        rowsUpdated: 0,
+        warning: "Only journeys with closed status 'Yes' can be marked as paid"
+      });
+    }
+    
     return res.status(HttpStatus.OK).json({ 
       success: true, 
-      message: `Payment marked as paid for ${driverName}`,
+      message: `Payment marked as paid for ${result.rowCount} closed journey(s) for ${driverName}`,
       rowsUpdated: result.rowCount 
     });
   } catch (error) {

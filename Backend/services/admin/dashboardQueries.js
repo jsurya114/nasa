@@ -53,98 +53,98 @@ export const AdminDashboardQueries = {
     }
   },
 
-  // ✅ NEW: Get summary data for all matching records (not paginated)
+  // ✅ Get summary data for all matching records (not paginated)
   getSummaryData: async (filters = {}, id, role) => {
-  try {
-    const baseQuery = `
-      SELECT 
-        COALESCE(SUM(pd.packages), 0) AS total_packages,
-        COALESCE(SUM(pd.no_scanned), 0) AS total_no_scanned,
-        COALESCE(SUM(pd.failed_attempt), 0) AS total_failed_attempt,
-        COALESCE(SUM(pd.fs), 0) AS total_fs,
-        COALESCE(SUM(pd.ds), 0) AS total_ds,
-        COALESCE(SUM(pd.delivered), 0) AS total_delivered,
-        COALESCE(SUM(pd.driver_payment), 0) AS total_driver_payment,
-        COALESCE(SUM(pd.company_earnings), 0) AS total_company_earnings
-      FROM payment_dashboard pd
-      JOIN drivers d ON d.id = pd.driver_id
-      JOIN city c ON d.city_id = c.id
-      LEFT JOIN routes r ON pd.route_id = r.id
-      WHERE 1 = 1
-    `;
+    try {
+      const baseQuery = `
+        SELECT 
+          COALESCE(SUM(pd.packages), 0) AS total_packages,
+          COALESCE(SUM(pd.no_scanned), 0) AS total_no_scanned,
+          COALESCE(SUM(pd.failed_attempt), 0) AS total_failed_attempt,
+          COALESCE(SUM(pd.fs), 0) AS total_fs,
+          COALESCE(SUM(pd.ds), 0) AS total_ds,
+          COALESCE(SUM(pd.delivered), 0) AS total_delivered,
+          COALESCE(SUM(pd.driver_payment), 0) AS total_driver_payment,
+          COALESCE(SUM(pd.company_earnings), 0) AS total_company_earnings
+        FROM payment_dashboard pd
+        JOIN drivers d ON d.id = pd.driver_id
+        JOIN city c ON d.city_id = c.id
+        LEFT JOIN routes r ON pd.route_id = r.id
+        WHERE 1 = 1
+      `;
 
-    const whereClauses = [];
-    const queryParams = [];
+      const whereClauses = [];
+      const queryParams = [];
 
-    if (filters.job) {
-      whereClauses.push(`c.job = $${queryParams.length + 1}`);
-      queryParams.push(filters.job);
+      if (filters.job) {
+        whereClauses.push(`c.job = $${queryParams.length + 1}`);
+        queryParams.push(filters.job);
+      }
+
+      if (filters.driver) {
+        whereClauses.push(`d.name = $${queryParams.length + 1}`);
+        queryParams.push(filters.driver);
+      }
+
+      if (filters.route) {
+        whereClauses.push(`r.name = $${queryParams.length + 1}`);
+        queryParams.push(filters.route);
+      }
+
+      if (filters.startDate) {
+        whereClauses.push(`pd.journey_date >= $${queryParams.length + 1}::date`);
+        queryParams.push(filters.startDate);
+      }
+
+      if (filters.endDate) {
+        whereClauses.push(`pd.journey_date <= $${queryParams.length + 1}::date`);
+        queryParams.push(filters.endDate);
+      }
+
+      if (filters.paymentStatus) {
+        const isPaid = filters.paymentStatus.toLowerCase() === "paid";
+        whereClauses.push(`pd.paid = $${queryParams.length + 1}`);
+        queryParams.push(isPaid);
+      }
+
+      // Filter by data type
+      if (filters.dataType && filters.dataType !== "all") {
+        whereClauses.push(`
+          CASE 
+            WHEN pd.start_seq IS NULL OR pd.end_seq IS NULL 
+                 OR pd.start_seq = 0 OR pd.end_seq = 0 
+            THEN 'weekly' 
+            ELSE 'daily' 
+          END = $${queryParams.length + 1}
+        `);
+        queryParams.push(filters.dataType);
+      }
+
+      if (role === "admin") {
+        whereClauses.push(`
+          EXISTS (
+            SELECT 1
+            FROM admin_city_ref acr
+            WHERE acr.city_id = c.id
+              AND acr.admin_id = $${queryParams.length + 1}
+          )
+        `);
+        queryParams.push(id);
+      }
+
+      let finalQuery = baseQuery;
+
+      if (whereClauses.length > 0) {
+        finalQuery += " AND " + whereClauses.join(" AND ");
+      }
+
+      const result = await pool.query(finalQuery, queryParams);
+      return result.rows[0];
+    } catch (error) {
+      console.error("Error in getSummaryData:", error);
+      throw error;
     }
-
-    if (filters.driver) {
-      whereClauses.push(`d.name = $${queryParams.length + 1}`);
-      queryParams.push(filters.driver);
-    }
-
-    if (filters.route) {
-      whereClauses.push(`r.name = $${queryParams.length + 1}`);
-      queryParams.push(filters.route);
-    }
-
-    if (filters.startDate) {
-      whereClauses.push(`pd.journey_date >= $${queryParams.length + 1}::date`);
-      queryParams.push(filters.startDate);
-    }
-
-    if (filters.endDate) {
-      whereClauses.push(`pd.journey_date <= $${queryParams.length + 1}::date`);
-      queryParams.push(filters.endDate);
-    }
-
-    if (filters.paymentStatus) {
-      const isPaid = filters.paymentStatus.toLowerCase() === "paid";
-      whereClauses.push(`pd.paid = $${queryParams.length + 1}`);
-      queryParams.push(isPaid);
-    }
-
-    // Filter by data type (unchanged)
-    if (filters.dataType && filters.dataType !== "all") {
-      whereClauses.push(`
-        CASE 
-          WHEN pd.start_seq IS NULL OR pd.end_seq IS NULL 
-               OR pd.start_seq = 0 OR pd.end_seq = 0 
-          THEN 'weekly' 
-          ELSE 'daily' 
-        END = $${queryParams.length + 1}
-      `);
-      queryParams.push(filters.dataType);
-    }
-
-    if (role === "admin") {
-      whereClauses.push(`
-        EXISTS (
-          SELECT 1
-          FROM admin_city_ref acr
-          WHERE acr.city_id = c.id
-            AND acr.admin_id = $${queryParams.length + 1}
-        )
-      `);
-      queryParams.push(id);
-    }
-
-    let finalQuery = baseQuery;
-
-    if (whereClauses.length > 0) {
-      finalQuery += " AND " + whereClauses.join(" AND ");
-    }
-
-    const result = await pool.query(finalQuery, queryParams);
-    return result.rows[0];
-  } catch (error) {
-    console.error("Error in getSummaryData:", error);
-    throw error;
-  }
-},
+  },
 
   getPaymentDashboardCount: async (filters = {}, id, role) => {
     try {
@@ -462,13 +462,16 @@ export const AdminDashboardQueries = {
     }
   },
 
+  // ✅ UPDATED: Only pay journeys with closed = true
   updateDriverPaymentStatus: async (driverName, startDate, endDate) => {
     try {
       const whereClauses = [];
       const queryParams = [driverName];
       
+      // Driver name filter
       whereClauses.push(`d.name = $1`);
       
+      // Date filters
       if (startDate) {
         whereClauses.push(`pd.journey_date >= $${queryParams.length + 1}::date`);
         queryParams.push(startDate);
@@ -479,6 +482,7 @@ export const AdminDashboardQueries = {
         queryParams.push(endDate);
       }
 
+      // ✅ CRITICAL: Build the complete UPDATE query with closed status check
       const updateQuery = `
         UPDATE payment_dashboard pd
         SET 
@@ -487,10 +491,16 @@ export const AdminDashboardQueries = {
         FROM drivers d
         WHERE pd.driver_id = d.id
           AND ${whereClauses.join(' AND ')}
+          AND pd.closed = true
           AND pd.paid = false;
       `;
 
+      console.log("Executing payment update query:", updateQuery);
+      console.log("With params:", queryParams);
+
       const result = await pool.query(updateQuery, queryParams);
+      
+      console.log(`Updated ${result.rowCount} records to paid status`);
       
       return result;
     } catch (error) {
