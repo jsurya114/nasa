@@ -16,10 +16,11 @@ import Header from "../../reuse/driver/Header";
 import Nav from "../../reuse/driver/Nav";
 import { toast } from "react-toastify";
 import useTranslation from "../../hooks/useTranslation.js";
+import { translateAccessCode } from "../../hooks/accessCodeTranslations.js";
 import AccessCodeDetailsDialog from "../AccessCodeDetailsDialog.jsx";
 
 export default function DriverAccessCodePage() {
-  const { t } = useTranslation();
+  const { t, currentLanguage } = useTranslation();
   const dispatch = useDispatch();
   const {
     accessCodes = [],
@@ -195,42 +196,42 @@ export default function DriverAccessCodePage() {
   const getPaginationPages = () => {
     const pages = [];
     const maxVisible = 7;
-    
+
     if (totalPages <= maxVisible) {
       for (let i = 1; i <= totalPages; i++) {
         pages.push(i);
       }
     } else {
       pages.push(1);
-      
+
       let start = Math.max(2, currentPage - 2);
       let end = Math.min(totalPages - 1, currentPage + 2);
-      
+
       if (start <= 2) {
         end = Math.min(totalPages - 1, 5);
         start = 2;
       }
-      
+
       if (end >= totalPages - 1) {
         start = Math.max(2, totalPages - 4);
         end = totalPages - 1;
       }
-      
+
       if (start > 2) {
         pages.push('ellipsis-start');
       }
-      
+
       for (let i = start; i <= end; i++) {
         pages.push(i);
       }
-      
+
       if (end < totalPages - 1) {
         pages.push('ellipsis-end');
       }
-      
+
       pages.push(totalPages);
     }
-    
+
     return pages;
   };
 
@@ -282,9 +283,8 @@ export default function DriverAccessCodePage() {
                 value={zipCode}
                 onChange={(e) => handleFieldChange("zipCode", e.target.value)}
                 onBlur={() => handleBlur("zipCode")}
-                className={`w-full px-4 py-3 border-2 ${
-                  touched.zipCode && errors.zipCode ? "border-red-500" : "border-gray-200"
-                } rounded-xl focus:ring-4 focus:ring-purple-100 focus:border-[#8200db] bg-white text-gray-900 transition-all`}
+                className={`w-full px-4 py-3 border-2 ${touched.zipCode && errors.zipCode ? "border-red-500" : "border-gray-200"
+                  } rounded-xl focus:ring-4 focus:ring-purple-100 focus:border-[#8200db] bg-white text-gray-900 transition-all`}
                 disabled={status === "loading"}
               />
               {touched.zipCode && errors.zipCode && (
@@ -314,9 +314,8 @@ export default function DriverAccessCodePage() {
                 value={address}
                 onChange={(e) => handleFieldChange("address", e.target.value)}
                 onBlur={() => handleBlur("address")}
-                className={`w-full px-4 py-3 border-2 ${
-                  touched.address && errors.address ? "border-red-500" : "border-gray-200"
-                } rounded-xl focus:ring-4 focus:ring-purple-100 focus:border-[#8200db] text-gray-900 transition-all`}
+                className={`w-full px-4 py-3 border-2 ${touched.address && errors.address ? "border-red-500" : "border-gray-200"
+                  } rounded-xl focus:ring-4 focus:ring-purple-100 focus:border-[#8200db] text-gray-900 transition-all`}
                 disabled={status === "loading"}
               />
               {touched.address && errors.address && (
@@ -345,9 +344,8 @@ export default function DriverAccessCodePage() {
                 value={accessCode}
                 onChange={(e) => handleFieldChange("accessCode", e.target.value)}
                 onBlur={() => handleBlur("accessCode")}
-                className={`w-full px-4 py-3 border-2 ${
-                  touched.accessCode && errors.accessCode ? "border-red-500" : "border-gray-200"
-                } rounded-xl focus:ring-4 focus:ring-purple-100 focus:border-[#8200db] text-gray-900 transition-all`}
+                className={`w-full px-4 py-3 border-2 ${touched.accessCode && errors.accessCode ? "border-red-500" : "border-gray-200"
+                  } rounded-xl focus:ring-4 focus:ring-purple-100 focus:border-[#8200db] text-gray-900 transition-all`}
                 disabled={status === "loading"}
               />
               {touched.accessCode && errors.accessCode && (
@@ -394,11 +392,10 @@ export default function DriverAccessCodePage() {
             <div className="flex justify-end pt-4">
               <button
                 type="submit"
-                className={`px-6 sm:px-8 py-3 bg-gradient-to-r from-[#8200db] to-[#9d00ff] text-white rounded-xl shadow-lg hover:from-[#7300c4] hover:to-[#8a00e6] focus:outline-none focus:ring-4 focus:ring-purple-200 transition-all font-semibold ${
-                  status === "loading"
+                className={`px-6 sm:px-8 py-3 bg-gradient-to-r from-[#8200db] to-[#9d00ff] text-white rounded-xl shadow-lg hover:from-[#7300c4] hover:to-[#8a00e6] focus:outline-none focus:ring-4 focus:ring-purple-200 transition-all font-semibold ${status === "loading"
                     ? "opacity-50 cursor-not-allowed"
                     : "hover:shadow-xl transform hover:-translate-y-0.5"
-                }`}
+                  }`}
                 disabled={status === "loading"}
               >
                 {status === "loading" ? t('saving') : t('saveAccessCode')}
@@ -572,7 +569,7 @@ export default function DriverAccessCodePage() {
                             </td>
                             <td className="px-3 lg:px-4 py-3 sm:py-4">
                               <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-indigo-100 text-indigo-800 border border-indigo-200 break-all max-w-[200px]">
-                                {ac.access_code}
+                                {translateAccessCode(ac.access_code, currentLanguage)}
                               </span>
                             </td>
                             <td className="px-3 lg:px-4 py-3 sm:py-4">
@@ -610,7 +607,7 @@ export default function DriverAccessCodePage() {
                         </span>
                       </div>
 
-                     
+
 
                       {/* Address */}
                       <div className="mb-3">
@@ -622,7 +619,7 @@ export default function DriverAccessCodePage() {
                       <div className="mb-3">
                         <p className="text-xs font-semibold text-gray-500 uppercase mb-1">{t('accessCode')}</p>
                         <span className="inline-flex items-center px-3 py-1.5 rounded-lg text-sm font-medium bg-indigo-50 text-indigo-800 border border-indigo-200 break-all">
-                          🔒 {ac.access_code}
+                          🔒 {translateAccessCode(ac.access_code, currentLanguage)}
                         </span>
                       </div>
 

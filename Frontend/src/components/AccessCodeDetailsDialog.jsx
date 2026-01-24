@@ -2,10 +2,11 @@ import React from "react";
 import { Dialog, DialogBackdrop, DialogPanel, DialogTitle } from "@headlessui/react";
 import { API_BASE_URL } from "../config";
 import useTranslation from "../hooks/useTranslation.js";
+import { translateAccessCode } from "../hooks/accessCodeTranslations.js";
 
 export default function AccessCodeDetailsDialog({ open, onClose, accessCode }) {
-  const { t } = useTranslation();
-  
+  const { t, currentLanguage } = useTranslation();
+
   return (
     <Dialog open={open} onClose={onClose} className="relative z-50">
       <DialogBackdrop
@@ -34,7 +35,7 @@ export default function AccessCodeDetailsDialog({ open, onClose, accessCode }) {
                         </div>
                         <div>
                           <span className="text-gray-500">{t('accessCode')}: </span>
-                          <span className="font-medium text-gray-900">{accessCode.access_code}</span>
+                          <span className="font-medium text-gray-900">{translateAccessCode(accessCode.access_code, currentLanguage)}</span>
                         </div>
                         <div className="sm:col-span-2">
                           <span className="text-gray-500">{t('address')}: </span>
