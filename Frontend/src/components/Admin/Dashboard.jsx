@@ -1,7 +1,16 @@
 import React, { useState, useMemo, useCallback, useEffect } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import { useNavigate } from "react-router-dom";
-import { fetchDashboardData, fetchDriversByCity, fetchFilteredPaymentData, fetchSummaryData, clearFilteredData, payDriver, setDataType } from "../../redux/slice/admin/dashSlice.js";
+import { 
+  fetchDashboardData, 
+  fetchDriversByCity, 
+  fetchFilteredPaymentData, 
+  fetchTodayPaymentData, 
+  fetchSummaryData, 
+  clearFilteredData, 
+  payDriver, 
+  setDataType 
+} from "../../redux/slice/admin/dashSlice.js";
 import Header from "../../reuse/Header.jsx";
 import Nav from "../../reuse/Nav.jsx";
 import PaymentDashboardTable from "./DashboardTable.jsx"; 
@@ -24,7 +33,8 @@ export default function Dashboard() {
     paymentProcessing,
     pagination,
     filters: reduxFilters,
-    selectedDataType
+    selectedDataType,
+    showTodayOnly // ✅ NEW: Get today-only flag from Redux
   } = useSelector((state) => state.dash);
 
   const { isSuperAdmin } = useSelector((state) => state.admin);
@@ -119,12 +129,13 @@ export default function Dashboard() {
     };
   }, [summaryData, isFiltered]);
 
-  // Only fetch dropdown data on mount, don't fetch payment data
+  // ✅ UPDATED: Fetch dropdown data AND today's data on mount
   useEffect(() => {
     dispatch(fetchDashboardData());
-  }, [dispatch]);
+    dispatch(fetchTodayPaymentData({ page: 1, limit: itemsPerPage })); // ✅ Load today's data by default
+  }, [dispatch, itemsPerPage]);
 
-  // ✅ NEW: Handle job city change to fetch filtered drivers
+  // ✅ Handle job city change to fetch filtered drivers
   const handleJobChange = useCallback((value) => {
     setLocalFilters((prev) => ({
       ...prev,
@@ -140,7 +151,6 @@ export default function Dashboard() {
       dispatch(fetchDriversByCity("All"));
     }
   }, [dispatch]);
-
   const handleFilterChange = useCallback((e) => {
     const { name, value, type, checked } = e.target;
     
@@ -156,8 +166,18 @@ export default function Dashboard() {
     }));
   }, [handleJobChange]);
 
+  // ✅ UPDATED: Handle Filter Data button - check if filters are applied
   const handleFilterClick = () => {
     setShowExtraFields(isSuperAdmin && localFilters.companyEarnings);
+    
+    // ✅ NEW: Check if any filters are actually applied
+    const hasFilters = 
+      localFilters.job !== "All" ||
+      localFilters.driver !== "All" ||
+      localFilters.route !== "All" ||
+      localFilters.startDate ||
+      localFilters.endDate ||
+      localFilters.paymentStatus !== "All";
     
     const filterParams = {
       page: 1,
@@ -167,12 +187,20 @@ export default function Dashboard() {
     
     dispatch(setDataType("all"));
     
-    if (localFilters.job !== "All") filterParams.job = localFilters.job;
-    if (localFilters.driver !== "All") filterParams.driver = localFilters.driver;
-    if (localFilters.route !== "All") filterParams.route = localFilters.route;
-    if (localFilters.startDate) filterParams.startDate = localFilters.startDate;
-    if (localFilters.endDate) filterParams.endDate = localFilters.endDate;
-    if (localFilters.paymentStatus !== "All") filterParams.paymentStatus = localFilters.paymentStatus;
+    // ✅ NEW: If no filters, show all data instead of filtered
+    if (!hasFilters) {
+      // No filters applied - fetch all data
+      filterParams.allData = true; // This will fetch all data without date restriction
+    } else {
+      // Filters applied - add them to params
+      if (localFilters.job !== "All") filterParams.job = localFilters.job;
+      if (localFilters.driver !== "All") filterParams.driver = localFilters.driver;
+      if (localFilters.route !== "All") filterParams.route = localFilters.route;
+      if (localFilters.startDate) filterParams.startDate = localFilters.startDate;
+      if (localFilters.endDate) filterParams.endDate = localFilters.endDate;
+      if (localFilters.paymentStatus !== "All") filterParams.paymentStatus = localFilters.paymentStatus;
+    }
+    
     if (isSuperAdmin && localFilters.companyEarnings) filterParams.companyEarnings = localFilters.companyEarnings;
     
     setCurrentPage(1);
@@ -188,6 +216,7 @@ export default function Dashboard() {
     }
   };
 
+  // ✅ UPDATED: Handle Clear Filters - reset to today's data
   const handleClearFilters = () => {
     setLocalFilters({
       job: "All",
@@ -206,6 +235,9 @@ export default function Dashboard() {
     dispatch(fetchDriversByCity("All"));
     dispatch(clearFilteredData());
     dispatch(setDataType("all"));
+    
+    // ✅ NEW: Fetch today's data after clearing
+    dispatch(fetchTodayPaymentData({ page: 1, limit: itemsPerPage }));
   };
 
   const handleDataTypeChange = (dataType) => {
@@ -274,6 +306,7 @@ export default function Dashboard() {
   const handleAddDelivery = useCallback(() => {
     navigate("/admin/journeys");
   }, [navigate]);
+  
   const filterOptions = useMemo(
     () => [
       {
@@ -307,8 +340,7 @@ export default function Dashboard() {
   );
 
   if (loading) return <div className="text-center py-10"><Loader/></div>;
-  if (error) return <div className="text-center text-red-600 py-10">{error}</div>;
-
+  if (error) return <div className="text-center text-red-600 py-10">{error}</div>
   return (
     <>
       <style>{`
@@ -359,7 +391,13 @@ export default function Dashboard() {
         <section className="bg-white border border-gray-200 rounded-xl shadow-sm mb-4">
           <div className="font-bold text-gray-900 bg-gray-50 border-b border-gray-200 px-4 py-3 flex items-center justify-between">
             <span>Data Filters</span>
-            {isFiltered && (
+            {/* ✅ NEW: Show indicator for today's data or filtered data */}
+            {showTodayOnly && (
+              <span className="text-sm font-normal text-blue-600">
+                📅 Showing today's journeys
+              </span>
+            )}
+            {isFiltered && !showTodayOnly && (
               <span className="text-sm font-normal text-gray-600">
                 📅 Showing filtered data
               </span>
@@ -519,19 +557,8 @@ export default function Dashboard() {
           </section>
         )}
 
-        {!isFiltered && (
-          <section className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-x-auto p-8 text-center">
-            <div className="flex flex-col items-center gap-4">
-              <svg className="w-20 h-20 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" />
-              </svg>
-              <div>
-                <p className="text-gray-700 text-lg font-medium mb-2">No Data to Display</p>
-                <p className="text-gray-500">Please use the filters above and click "Filter Data" to view payment records</p>
-              </div>
-            </div>
-          </section>
-        )}
+        {/* ✅ REMOVED: "No Data to Display" message when not filtered */}
+        {/* The table component will handle displaying today's data */}
 
         {isFiltered && (
           <section className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-x-auto">

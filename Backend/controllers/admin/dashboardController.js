@@ -12,7 +12,8 @@ export const getSummaryData = async (req, res) => {
       startDate, 
       endDate, 
       paymentStatus,
-      dataType
+      dataType,
+      defaultToday
     } = req.query;
     
     const { id, role } = req.user;
@@ -26,6 +27,13 @@ export const getSummaryData = async (req, res) => {
     if (endDate) filters.endDate = endDate;
     if (paymentStatus && paymentStatus !== "All") filters.paymentStatus = paymentStatus;
     if (dataType && dataType !== "all") filters.dataType = dataType;
+    
+    // Handle default today filter
+    if (defaultToday === "true") {
+      const today = new Date().toISOString().split('T')[0];
+      filters.startDate = today;
+      filters.endDate = today;
+    }
 
     const summary = await AdminDashboardQueries.getSummaryData(filters, id, role);
     
@@ -55,7 +63,8 @@ export const getPaymentDashboardData = async (req, res) => {
       companyEarnings,
       dataType,
       page = 1,
-      limit = 10
+      limit = 10,
+      defaultToday
     } = req.query;
     
     const { id, role } = req.user;
@@ -70,6 +79,13 @@ export const getPaymentDashboardData = async (req, res) => {
     if (paymentStatus && paymentStatus !== "All") filters.paymentStatus = paymentStatus;
     if (companyEarnings === "true") filters.companyEarnings = true;
     if (dataType && dataType !== "all") filters.dataType = dataType;
+    
+    // Handle default today filter
+    if (defaultToday === "true") {
+      const today = new Date().toISOString().split('T')[0];
+      filters.startDate = today;
+      filters.endDate = today;
+    }
 
     const pageNum = parseInt(page);
     const limitNum = parseInt(limit);
@@ -111,7 +127,18 @@ export const getPaymentDashboardData = async (req, res) => {
 
 export const getAllPaymentDashboardData = async (req, res) => {
   try {
-    const { job, driver, route, startDate, endDate, paymentStatus, companyEarnings, dataType } = req.query;
+    const { 
+      job, 
+      driver, 
+      route, 
+      startDate, 
+      endDate, 
+      paymentStatus, 
+      companyEarnings, 
+      dataType,
+      defaultToday
+    } = req.query;
+    
     const { id, role } = req.user;
     
     const filters = {};
@@ -124,6 +151,13 @@ export const getAllPaymentDashboardData = async (req, res) => {
     if (paymentStatus && paymentStatus !== "All") filters.paymentStatus = paymentStatus;
     if (companyEarnings === "true") filters.companyEarnings = true;
     if (dataType && dataType !== "all") filters.dataType = dataType;
+    
+    // Handle default today filter
+    if (defaultToday === "true") {
+      const today = new Date().toISOString().split('T')[0];
+      filters.startDate = today;
+      filters.endDate = today;
+    }
 
     const result = await AdminDashboardQueries.PaymentDashboardTable(filters, id, role);
     

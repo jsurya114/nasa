@@ -1,13 +1,19 @@
 import { useEffect, useMemo, useState, useCallback } from "react";
 import { useDispatch, useSelector } from "react-redux";
-import { fetchFilteredPaymentData } from "../../redux/slice/admin/dashSlice";
+import { fetchFilteredPaymentData, fetchTodayPaymentData } from "../../redux/slice/admin/dashSlice";
 
 export default function PaymentDashboardTable() {
   const dispatch = useDispatch();
   
-  const { filteredPaymentData, paymentLoading, paymentError, isFiltered, pagination, filters } = useSelector(
-    (state) => state.dash
-  );
+  const { 
+    filteredPaymentData, 
+    paymentLoading, 
+    paymentError, 
+    isFiltered, 
+    pagination, 
+    filters,
+    showTodayOnly // ✅ NEW: Get today-only flag
+  } = useSelector((state) => state.dash);
   
   // ✅ Get isSuperAdmin from Redux (kept for summary display logic)
   const { isSuperAdmin } = useSelector((state) => state.admin);
@@ -57,38 +63,54 @@ export default function PaymentDashboardTable() {
     });
   }, [filteredPaymentData, shouldShowTotals]);
 
+  // ✅ UPDATED: Refresh button logic - respect current view
   const handleRefresh = () => {
-    const today = getTodayDate();
-    dispatch(fetchFilteredPaymentData({
-      ...filters,
-      startDate: today,
-      endDate: today,
-      page: currentPage,
-      limit: itemsPerPage
-    }));
+    if (showTodayOnly) {
+      // If showing today's data, refresh today's data
+      dispatch(fetchTodayPaymentData({ page: currentPage, limit: itemsPerPage }));
+    } else {
+      // Otherwise refresh with current filters
+      dispatch(fetchFilteredPaymentData({
+        ...filters,
+        page: currentPage,
+        limit: itemsPerPage
+      }));
+    }
   };
 
   const handlePageChange = useCallback((newPage) => {
     if (newPage >= 1 && newPage <= pagination.totalPages) {
       setCurrentPage(newPage);
-      dispatch(fetchFilteredPaymentData({
-        ...filters,
-        page: newPage,
-        limit: itemsPerPage
-      }));
+      
+      // ✅ NEW: Use appropriate fetch based on view type
+      if (showTodayOnly) {
+        dispatch(fetchTodayPaymentData({ page: newPage, limit: itemsPerPage }));
+      } else {
+        dispatch(fetchFilteredPaymentData({
+          ...filters,
+          page: newPage,
+          limit: itemsPerPage
+        }));
+      }
     }
-  }, [dispatch, filters, itemsPerPage, pagination.totalPages]);
+  }, [dispatch, filters, itemsPerPage, pagination.totalPages, showTodayOnly]);
 
   const handleItemsPerPageChange = useCallback((e) => {
     const newLimit = parseInt(e.target.value);
     setItemsPerPage(newLimit);
     setCurrentPage(1);
-    dispatch(fetchFilteredPaymentData({
-      ...filters,
-      page: 1,
-      limit: newLimit
-    }));
-  }, [dispatch, filters]);
+    
+    // ✅ NEW: Use appropriate fetch based on view type
+    if (showTodayOnly) {
+      dispatch(fetchTodayPaymentData({ page: 1, limit: newLimit }));
+    } else {
+      dispatch(fetchFilteredPaymentData({
+        ...filters,
+        page: 1,
+        limit: newLimit
+      }));
+    }
+  }, [dispatch, filters, showTodayOnly]);
 
   const getPageNumbers = () => {
     const totalPages = pagination.totalPages;
@@ -120,7 +142,7 @@ export default function PaymentDashboardTable() {
     return pages;
   };
 
-  // ✅ UPDATED: Removed Company Earnings from table headers
+  // ✅ Table headers (unchanged)
   const tableHeaders = useMemo(() => {
     return [
       "Driver",
@@ -192,13 +214,18 @@ export default function PaymentDashboardTable() {
         </div>
       )}
 
+      {/* ✅ UPDATED: Empty state message based on view type */}
       {!isLoading && !displayError && displayData.length === 0 && (
         <div className="p-8 text-center">
           <svg className="w-16 h-16 text-gray-300 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
           </svg>
           <p className="text-gray-500 text-lg font-medium">No data found</p>
-          <p className="text-gray-400 text-sm mt-2">Try adjusting your filter criteria</p>
+          <p className="text-gray-400 text-sm mt-2">
+            {showTodayOnly 
+              ? "No journeys found for today. Try adding a new delivery or use filters to see other dates."
+              : "Try adjusting your filter criteria"}
+          </p>
         </div>
       )}
 
@@ -260,7 +287,6 @@ export default function PaymentDashboardTable() {
                         "-"
                       )}
                     </td>
-                    {/* ✅ REMOVED: Company Earnings column - only show in summary */}
                     <td
                       className={`px-3 py-2 border-b border-gray-200 font-semibold whitespace-nowrap ${
                         row.paid ? "text-green-600" : "text-red-600"
@@ -303,7 +329,6 @@ export default function PaymentDashboardTable() {
                     <td className="px-3 py-3 border-b border-gray-200 text-green-700 text-lg whitespace-nowrap">
                       💰 {totals.driverPayment.toFixed(2)}
                     </td>
-                    {/* ✅ REMOVED: Company Earnings total - only show in summary */}
                     <td className="px-3 py-3 border-b border-gray-200 whitespace-nowrap">
                       -
                     </td>

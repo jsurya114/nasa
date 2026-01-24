@@ -25,7 +25,7 @@ export const fetchDashboardData = createAsyncThunk(
   }
 );
 
-// ✅ NEW: Fetch drivers filtered by city
+// ✅ Fetch drivers filtered by city
 export const fetchDriversByCity = createAsyncThunk(
   "dashboard/fetchDriversByCity",
   async (cityJob, { rejectWithValue }) => {
@@ -72,6 +72,31 @@ export const fetchFilteredPaymentData = createAsyncThunk(
         data: res.data.data, 
         pagination: res.data.pagination,
         filters 
+      };
+    } catch (err) {
+      return rejectWithValue(err.response?.data?.message || err.message);
+    }
+  }
+);
+
+// ✅ NEW: Fetch today's payment data (default view)
+export const fetchTodayPaymentData = createAsyncThunk(
+  "dashboard/fetchTodayPaymentData",
+  async ({ page = 1, limit = 10 }, { rejectWithValue }) => {
+    try {
+      const res = await axios.get(`${API_BASE_URL}/admin/dashboard/paymentTable`, {
+        params: { 
+          defaultToday: "true",
+          page,
+          limit
+        },
+        headers: getAuthHeaders()
+      });
+      if (!res.data.success) throw new Error(res.data.message);
+      return { 
+        data: res.data.data, 
+        pagination: res.data.pagination,
+        filters: { defaultToday: true }
       };
     } catch (err) {
       return rejectWithValue(err.response?.data?.message || err.message);
@@ -141,6 +166,7 @@ const dashboardSlice = createSlice({
     paymentError: null,
     summaryError: null,
     isFiltered: false,
+    showTodayOnly: false, // ✅ NEW: Track if showing only today's data
   },
   reducers: {
     clearFilteredData: (state) => {
@@ -149,6 +175,7 @@ const dashboardSlice = createSlice({
       state.filters = {};
       state.selectedDataType = "all";
       state.summaryData = null;
+      state.showTodayOnly = false; // ✅ Reset today view flag
       state.pagination = {
         total: 0,
         page: 1,
@@ -176,7 +203,7 @@ const dashboardSlice = createSlice({
         state.loading = false;
         state.error = action.payload;
       })
-      // ✅ NEW: Handle driver filter by city
+      // Handle driver filter by city
       .addCase(fetchDriversByCity.pending, (state) => {
         state.loading = true;
         state.error = null;
@@ -211,11 +238,32 @@ const dashboardSlice = createSlice({
         state.pagination = action.payload.pagination;
         state.filters = action.payload.filters;
         state.isFiltered = true;
+        state.showTodayOnly = false; // ✅ Not showing today-only view
       })
       .addCase(fetchFilteredPaymentData.rejected, (state, action) => {
         state.paymentLoading = false;
         state.paymentError = action.payload;
         state.isFiltered = true;
+        state.showTodayOnly = false;
+      })
+      // ✅ NEW: Handle today's payment data
+      .addCase(fetchTodayPaymentData.pending, (state) => {
+        state.paymentLoading = true;
+        state.paymentError = null;
+      })
+      .addCase(fetchTodayPaymentData.fulfilled, (state, action) => {
+        state.paymentLoading = false;
+        state.filteredPaymentData = action.payload.data;
+        state.pagination = action.payload.pagination;
+        state.filters = action.payload.filters;
+        state.isFiltered = true;
+        state.showTodayOnly = true; // ✅ Mark as showing today's data
+      })
+      .addCase(fetchTodayPaymentData.rejected, (state, action) => {
+        state.paymentLoading = false;
+        state.paymentError = action.payload;
+        state.isFiltered = false;
+        state.showTodayOnly = false;
       })
       .addCase(fetchAllPaymentData.pending, (state) => {
         state.allPaymentLoading = true;
