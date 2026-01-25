@@ -31,6 +31,7 @@ export default function AdminDriverAvailability() {
   const [editAvailability, setEditAvailability] = useState({});
   const [isSaving, setIsSaving] = useState(false);
   const [currentDayIndex, setCurrentDayIndex] = useState(0);
+  const [currentHour, setCurrentHour] = useState(0);
 
   const daysOfWeek = [
     "monday",
@@ -67,9 +68,9 @@ export default function AdminDriverAvailability() {
 
   // Update current day index (in USER'S LOCAL timezone, Monday-based)
   useEffect(() => {
-    const updateCurrentDay = () => {
+    const updateCurrentTime = () => {
       const now = new Date();
-      
+
       // Use Intl API to get time in user's timezone
       const formatter = new Intl.DateTimeFormat('en-US', {
         timeZone: userTimezone,
@@ -77,19 +78,21 @@ export default function AdminDriverAvailability() {
         hour: 'numeric',
         hour12: false
       });
-      
+
       const parts = formatter.formatToParts(now);
       const weekday = parts.find(p => p.type === 'weekday').value.toLowerCase();
-      
+      const hour = parseInt(parts.find(p => p.type === 'hour').value, 10);
+
       // Map day name to index (Monday = 0)
       const dayNames = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
       const dayIndex = dayNames.indexOf(weekday);
-      
+
       setCurrentDayIndex(dayIndex);
+      setCurrentHour(hour);
     };
 
-    updateCurrentDay();
-    const interval = setInterval(updateCurrentDay, 60000);
+    updateCurrentTime();
+    const interval = setInterval(updateCurrentTime, 60000);
     return () => clearInterval(interval);
   }, [userTimezone]);
 
@@ -148,7 +151,7 @@ export default function AdminDriverAvailability() {
     if (filterAvailabilityStatus && filterDay) {
       // If both day and status are selected, filter by that day's availability
       const isAvailableOnDay = driver.availability?.[filterDay] === true;
-      
+
       if (filterAvailabilityStatus === "available") {
         return isAvailableOnDay;
       } else if (filterAvailabilityStatus === "unavailable") {
@@ -159,14 +162,14 @@ export default function AdminDriverAvailability() {
       // "available" = has at least one day available
       // "unavailable" = has no days available (all days are false)
       const hasAnyDayAvailable = Object.values(driver.availability || {}).some(day => day === true);
-      
+
       if (filterAvailabilityStatus === "available") {
         return hasAnyDayAvailable;
       } else if (filterAvailabilityStatus === "unavailable") {
         return !hasAnyDayAvailable;
       }
     }
-    
+
     return true; // Show all if no status filter
   });
 
@@ -194,11 +197,11 @@ export default function AdminDriverAvailability() {
       // If no day selected, show overall availability counts
       // "available" = has at least one day available
       // "unavailable" = has no days available (all days false)
-      const available = allDriversAvailability.filter((d) => 
+      const available = allDriversAvailability.filter((d) =>
         Object.values(d.availability || {}).some(day => day === true)
       ).length;
 
-      const unavailable = allDriversAvailability.filter((d) => 
+      const unavailable = allDriversAvailability.filter((d) =>
         !Object.values(d.availability || {}).some(day => day === true)
       ).length;
 
@@ -225,7 +228,7 @@ export default function AdminDriverAvailability() {
   const getPageNumbers = () => {
     const pages = [];
     const maxVisible = 7;
-    
+
     if (totalPages <= maxVisible) {
       for (let i = 1; i <= totalPages; i++) {
         pages.push(i);
@@ -247,7 +250,7 @@ export default function AdminDriverAvailability() {
         pages.push(totalPages);
       }
     }
-    
+
     return pages;
   };
 
@@ -262,17 +265,28 @@ export default function AdminDriverAvailability() {
    * SPECIAL HANDLING FOR SUNDAY: When today is Sunday, the week display shows next week
    */
   const isDayLocked = (dayKey) => {
+    // Special Rule: On Sunday before 12:00 PM (noon)
+    if (currentDayIndex === 6 && currentHour < 12) {
+      const dayIndex = dayIndexMap[dayKey];
+      // Admins CAN edit Sunday (today) and Monday (tomorrow) even BEFORE reset
+      if (dayIndex === 6 || dayIndex === 0) {
+        return false;
+      }
+      // Block Tuesday-Saturday (Pending Reset)
+      return true;
+    }
+
     const dayIndex = dayIndexMap[dayKey];
-    
+
     // Special case: If today is Sunday (index 6)
     if (currentDayIndex === 6) {
       // All days in the availability table represent:
       // - Sunday = today (can edit)
       // - Monday-Saturday = next week (can edit all)
-      // So nothing is locked on Sundays
+      // So nothing is locked on Sundays after 12:00 PM
       return false;
     }
-    
+
     // For Monday-Saturday (currentDayIndex 0-5):
     // Only lock past days (days that have already occurred this week)
     return dayIndex < currentDayIndex;
@@ -291,10 +305,14 @@ export default function AdminDriverAvailability() {
 
   const toggleDay = (day) => {
     if (isDayLocked(day)) {
-      toast.error(`Cannot edit ${day}. That day has already ended.`);
+      if (currentDayIndex === 6 && currentHour < 12) {
+        toast.error(`Availability for ${day} is locked until the Sunday 12:00 PM reset.`);
+      } else {
+        toast.error(`Cannot edit ${day}. That day has already ended.`);
+      }
       return;
     }
-    
+
     setEditAvailability((prev) => ({
       ...prev,
       [day]: !prev[day]
@@ -310,12 +328,12 @@ export default function AdminDriverAvailability() {
           availability: editAvailability
         })
       );
-      
+
       if (!res.error) {
         toast.success("Availability updated successfully!");
         setEditingDriverId(null);
         setEditAvailability({});
-        
+
         // Refresh global counts after update
         dispatch(getGlobalAvailabilityCounts({
           searchQuery: searchQuery || null,
@@ -338,7 +356,7 @@ export default function AdminDriverAvailability() {
       try {
         const result = await dispatch(manualResetAllDriversAvailability()).unwrap();
         toast.success(`✅ ${result.totalDriversReset} drivers reset successfully!`);
-        
+
         // Refresh the current page
         dispatch(getAllDriversAvailability({
           filterDay: filterDay || null,
@@ -347,7 +365,7 @@ export default function AdminDriverAvailability() {
           searchQuery: searchQuery || null,
           filterCity: filterCity || null
         }));
-        
+
         // Refresh global counts
         dispatch(getGlobalAvailabilityCounts({
           searchQuery: searchQuery || null,
@@ -391,7 +409,7 @@ export default function AdminDriverAvailability() {
                     {admin?.role === "superadmin" && <span className="ml-1 text-blue-600 font-medium">(Superadmin Access)</span>}
                   </p>
                 </div>
-                
+
                 {/* Stats Badge */}
                 <div className="hidden sm:flex flex-col items-end">
                   <div className="text-2xl font-bold text-blue-600">{totalRecords}</div>
@@ -531,11 +549,10 @@ export default function AdminDriverAvailability() {
                   <button
                     onClick={handleManualReset}
                     disabled={resetLoading}
-                    className={`w-full sm:w-auto px-6 py-2.5 rounded-lg font-semibold transition-all flex items-center justify-center gap-2 text-sm ${
-                      resetLoading
-                        ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                        : 'bg-red-600 text-white hover:bg-red-700 shadow-lg hover:shadow-xl active:scale-95'
-                    }`}
+                    className={`w-full sm:w-auto px-6 py-2.5 rounded-lg font-semibold transition-all flex items-center justify-center gap-2 text-sm ${resetLoading
+                      ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                      : 'bg-red-600 text-white hover:bg-red-700 shadow-lg hover:shadow-xl active:scale-95'
+                      }`}
                   >
                     {resetLoading ? (
                       <>
@@ -564,17 +581,16 @@ export default function AdminDriverAvailability() {
             {daysOfWeek.map((day, index) => {
               const isCurrentDay = index === currentDayIndex;
               const count = availabilityCounts[day] || 0;
-              
+
               return (
                 <div
                   key={day}
-                  className={`bg-white rounded-lg shadow-sm border-2 p-3 sm:p-4 transition-all ${
-                    isCurrentDay
-                      ? 'border-blue-500 bg-blue-50'
-                      : filterDay === day
+                  className={`bg-white rounded-lg shadow-sm border-2 p-3 sm:p-4 transition-all ${isCurrentDay
+                    ? 'border-blue-500 bg-blue-50'
+                    : filterDay === day
                       ? 'border-green-500 bg-green-50'
                       : 'border-gray-200'
-                  }`}
+                    }`}
                 >
                   <div className="text-center">
                     <div className={`text-xs font-semibold mb-1 ${isCurrentDay ? 'text-blue-700' : 'text-gray-600'}`}>
@@ -605,7 +621,7 @@ export default function AdminDriverAvailability() {
                   <li>• ✅ <strong>You can edit availability for TODAY and all future days</strong></li>
                   <li>• ❌ Past days (before today) cannot be edited</li>
                   <li>• 🔄 Availability resets every Sunday at 12:00 PM in each driver's timezone</li>
-                  
+
                   {/* Show filter status */}
                   {filterAvailabilityStatus && (
                     <li className="mt-2 pt-2 border-t border-blue-300">
@@ -637,7 +653,7 @@ export default function AdminDriverAvailability() {
               </svg>
               <h3 className="text-lg font-semibold text-gray-900 mb-2">No Drivers Found</h3>
               <p className="text-sm text-gray-600 mb-4">
-                {hasActiveFilters 
+                {hasActiveFilters
                   ? "No drivers match your current filters. Try adjusting or clearing your filters."
                   : "No drivers available in the system."
                 }
@@ -682,9 +698,8 @@ export default function AdminDriverAvailability() {
                           return (
                             <th
                               key={day}
-                              className={`px-2 py-2 text-center text-xs font-semibold ${
-                                isCurrentDay ? 'text-blue-700 bg-blue-50' : 'text-gray-600'
-                              }`}
+                              className={`px-2 py-2 text-center text-xs font-semibold ${isCurrentDay ? 'text-blue-700 bg-blue-50' : 'text-gray-600'
+                                }`}
                             >
                               {daysShort[day]}
                               {isCurrentDay && <div className="text-[10px] text-blue-600">Today</div>}
@@ -699,13 +714,12 @@ export default function AdminDriverAvailability() {
                         const isEditing = editingDriverId === driver.id;
                         const displayAvailability = isEditing ? editAvailability : driver.availability;
                         const availableDaysCount = getAvailableDays(displayAvailability);
-                        
+
                         return (
                           <tr
                             key={driver.id}
-                            className={`hover:bg-gray-50 transition-colors ${
-                              driverIndex % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'
-                            } ${isEditing ? 'ring-2 ring-blue-500' : ''}`}
+                            className={`hover:bg-gray-50 transition-colors ${driverIndex % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'
+                              } ${isEditing ? 'ring-2 ring-blue-500' : ''}`}
                           >
                             <td className="px-6 py-4 whitespace-nowrap">
                               <div className="flex items-center gap-3">
@@ -723,11 +737,10 @@ export default function AdminDriverAvailability() {
                             </td>
                             <td className="px-6 py-4 whitespace-nowrap">
                               <span
-                                className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold ${
-                                  driver.enabled
-                                    ? 'bg-green-100 text-green-800'
-                                    : 'bg-gray-100 text-gray-800'
-                                }`}
+                                className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold ${driver.enabled
+                                  ? 'bg-green-100 text-green-800'
+                                  : 'bg-gray-100 text-gray-800'
+                                  }`}
                               >
                                 {driver.enabled ? '✓ Enabled' : '○ Disabled'}
                               </span>
@@ -738,27 +751,25 @@ export default function AdminDriverAvailability() {
                               const isAvailable = displayAvailability[day];
                               const isLocked = isDayLocked(day);
                               const isDayToday = dayIdx === currentDayIndex;
-                              
+
                               return (
                                 <td key={day} className={`px-2 py-4 text-center ${isDayToday ? 'bg-blue-50' : ''}`}>
                                   <button
                                     onClick={() => isEditing && toggleDay(day)}
                                     disabled={!isEditing || isLocked}
-                                    className={`w-10 h-10 rounded-full flex items-center justify-center font-bold transition-all ${
-                                      isAvailable
-                                        ? 'bg-green-500 text-white hover:bg-green-600'
-                                        : 'bg-gray-200 text-gray-500 hover:bg-gray-300'
-                                    } ${
-                                      !isEditing || isLocked
+                                    className={`w-10 h-10 rounded-full flex items-center justify-center font-bold transition-all ${isAvailable
+                                      ? 'bg-green-500 text-white hover:bg-green-600'
+                                      : 'bg-gray-200 text-gray-500 hover:bg-gray-300'
+                                      } ${!isEditing || isLocked
                                         ? 'cursor-not-allowed opacity-50'
                                         : 'cursor-pointer hover:scale-110 active:scale-95'
-                                    }`}
+                                      }`}
                                     title={
                                       isLocked
                                         ? `Cannot edit ${day} - day has already passed`
                                         : isAvailable
-                                        ? 'Available'
-                                        : 'Unavailable'
+                                          ? 'Available'
+                                          : 'Unavailable'
                                     }
                                   >
                                     {isAvailable ? '✓' : '✕'}
@@ -823,13 +834,12 @@ export default function AdminDriverAvailability() {
                   const isEditing = editingDriverId === driver.id;
                   const displayAvailability = isEditing ? editAvailability : driver.availability;
                   const availableDaysCount = getAvailableDays(displayAvailability);
-                  
+
                   return (
                     <div
                       key={driver.id}
-                      className={`bg-white rounded-xl shadow-md border-2 p-4 transition-all ${
-                        isEditing ? 'border-blue-500 ring-2 ring-blue-200' : 'border-gray-200'
-                      }`}
+                      className={`bg-white rounded-xl shadow-md border-2 p-4 transition-all ${isEditing ? 'border-blue-500 ring-2 ring-blue-200' : 'border-gray-200'
+                        }`}
                     >
                       {/* Driver Header */}
                       <div className="flex items-start justify-between mb-4">
@@ -844,11 +854,10 @@ export default function AdminDriverAvailability() {
                           </div>
                         </div>
                         <span
-                          className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-semibold ${
-                            driver.enabled
-                              ? 'bg-green-100 text-green-800'
-                              : 'bg-gray-100 text-gray-800'
-                          }`}
+                          className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-semibold ${driver.enabled
+                            ? 'bg-green-100 text-green-800'
+                            : 'bg-gray-100 text-gray-800'
+                            }`}
                         >
                           {driver.enabled ? '✓ Enabled' : '○ Disabled'}
                         </span>
@@ -860,7 +869,7 @@ export default function AdminDriverAvailability() {
                           const isAvailable = displayAvailability[day];
                           const isLocked = isDayLocked(day);
                           const isDayToday = dayIdx === currentDayIndex;
-                          
+
                           return (
                             <div key={day} className="text-center">
                               <div className={`text-[10px] font-semibold mb-1 ${isDayToday ? 'text-blue-700' : 'text-gray-600'}`}>
@@ -869,21 +878,19 @@ export default function AdminDriverAvailability() {
                               <button
                                 onClick={() => isEditing && toggleDay(day)}
                                 disabled={!isEditing || isLocked}
-                                className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm transition-all ${
-                                  isAvailable
-                                    ? 'bg-green-500 text-white'
-                                    : 'bg-gray-200 text-gray-500'
-                                } ${
-                                  !isEditing || isLocked
+                                className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm transition-all ${isAvailable
+                                  ? 'bg-green-500 text-white'
+                                  : 'bg-gray-200 text-gray-500'
+                                  } ${!isEditing || isLocked
                                     ? 'cursor-not-allowed opacity-50'
                                     : 'cursor-pointer hover:scale-110 active:scale-95'
-                                } ${isDayToday ? 'ring-2 ring-blue-400' : ''}`}
+                                  } ${isDayToday ? 'ring-2 ring-blue-400' : ''}`}
                                 title={
                                   isLocked
                                     ? `Cannot edit ${day} - day has already passed`
                                     : isAvailable
-                                    ? 'Available'
-                                    : 'Unavailable'
+                                      ? 'Available'
+                                      : 'Unavailable'
                                 }
                               >
                                 {isAvailable ? '✓' : '✕'}
@@ -980,11 +987,10 @@ export default function AdminDriverAvailability() {
                             <button
                               key={pageNum}
                               onClick={() => goToPage(pageNum)}
-                              className={`px-4 py-2 rounded-lg font-medium transition-all ${
-                                currentPage === pageNum
-                                  ? 'bg-blue-600 text-white shadow-lg'
-                                  : 'bg-white text-gray-700 border border-gray-300 hover:bg-gray-50'
-                              }`}
+                              className={`px-4 py-2 rounded-lg font-medium transition-all ${currentPage === pageNum
+                                ? 'bg-blue-600 text-white shadow-lg'
+                                : 'bg-white text-gray-700 border border-gray-300 hover:bg-gray-50'
+                                }`}
                             >
                               {pageNum}
                             </button>

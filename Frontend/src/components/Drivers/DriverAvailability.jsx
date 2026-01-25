@@ -54,7 +54,7 @@ export default function DriverAvailability() {
   useEffect(() => {
     const updateCurrentTime = () => {
       const now = new Date();
-      
+
       // Use Intl API to get time in user's timezone
       const formatter = new Intl.DateTimeFormat('en-US', {
         timeZone: userTimezone,
@@ -62,15 +62,15 @@ export default function DriverAvailability() {
         hour: 'numeric',
         hour12: false
       });
-      
+
       const parts = formatter.formatToParts(now);
       const weekday = parts.find(p => p.type === 'weekday').value.toLowerCase();
       const hour = parseInt(parts.find(p => p.type === 'hour').value, 10);
-      
+
       // Map day name to index (Monday = 0)
       const dayNames = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
       const dayIndex = dayNames.indexOf(weekday);
-      
+
       setCurrentDayIndex(dayIndex);
       setCurrentHour(hour);
     };
@@ -104,43 +104,53 @@ export default function DriverAvailability() {
   }, [successMessage, error, dispatch]);
 
   const isDayLocked = (dayIndex) => {
-    // Special case: If today is Sunday (index 6), all other days are next week's days
+    // Special Rule: On Sunday before 12:00 PM (noon), lock ALL days because reset is pending
+    if (currentDayIndex === 6 && currentHour < 12) {
+      return true;
+    }
+
+    // Special case: If today is Sunday (index 6), and it's after 12:00 PM
     if (currentDayIndex === 6) {
       // Sunday itself is always locked
       if (dayIndex === 6) {
         return true;
       }
-      
+
       // Monday (index 0) is tomorrow, locked after 7 PM on Sunday
       if (dayIndex === 0 && currentHour >= 19) {
         return true;
       }
-      
+
       // Tuesday-Saturday (next week) are all unlocked
       return false;
     }
-    
+
     // For Monday-Saturday (currentDayIndex 0-5):
     // Days before current day are locked (they've already ended)
     if (dayIndex < currentDayIndex) {
       return true;
     }
-    
+
     // Current day is ALWAYS locked
     if (dayIndex === currentDayIndex) {
       return true;
     }
-    
+
     // Next day is locked after 7 PM today
     const nextDayIndex = (currentDayIndex + 1) % 7;
     if (dayIndex === nextDayIndex && currentHour >= 19) {
       return true;
     }
-    
+
     return false;
   };
 
   const getLockReason = (dayIndex) => {
+    // Special case: Sunday before noon
+    if (currentDayIndex === 6 && currentHour < 12) {
+      return "pending_reset";
+    }
+
     // Special case: Sunday handling
     if (currentDayIndex === 6) {
       if (dayIndex === 6) {
@@ -151,21 +161,21 @@ export default function DriverAvailability() {
       }
       return null;
     }
-    
+
     // For Monday-Saturday:
     if (dayIndex < currentDayIndex) {
       return "past";
     }
-    
+
     if (dayIndex === currentDayIndex) {
       return "today";
     }
-    
+
     const nextDayIndex = (currentDayIndex + 1) % 7;
     if (dayIndex === nextDayIndex && currentHour >= 19) {
       return "tomorrow_cutoff";
     }
-    
+
     return null;
   };
 
@@ -173,8 +183,10 @@ export default function DriverAvailability() {
     if (isDayLocked(dayIndex)) {
       const dayName = daysOfWeek.find(d => d.index === dayIndex)?.label || day;
       const lockReason = getLockReason(dayIndex);
-      
-      if (lockReason === "past") {
+
+      if (lockReason === "pending_reset") {
+        toast.error(t('pendingResetMessage'));
+      } else if (lockReason === "past") {
         toast.error(t('thatDayHasEnded'));
       } else if (lockReason === "today") {
         toast.error(t('cannotUpdateToday'));
@@ -193,9 +205,9 @@ export default function DriverAvailability() {
 
   const handleSave = () => {
     // Send availability with timezone info
-    dispatch(updateDriverAvailability({ 
+    dispatch(updateDriverAvailability({
       availability,
-      timezone: userTimezone 
+      timezone: userTimezone
     }));
   };
 
@@ -247,7 +259,7 @@ export default function DriverAvailability() {
                   </span>
                 </div>
                 <div className="text-xs text-gray-500">
-                  
+
                 </div>
                 <div className="text-xs text-blue-600 font-medium">
                   🌍 {t('timezone')}: {userTimezone}
@@ -339,27 +351,25 @@ export default function DriverAvailability() {
                   return (
                     <div
                       key={key}
-                      className={`bg-white rounded-lg shadow-sm p-4 sm:p-5 transition-all duration-200 border-2 ${
-                        isCurrentDay
+                      className={`bg-white rounded-lg shadow-sm p-4 sm:p-5 transition-all duration-200 border-2 ${isCurrentDay
                           ? 'border-blue-500 bg-blue-50/30'
                           : isLocked
-                          ? 'border-gray-200 opacity-60'
-                          : availability[key] 
-                          ? 'border-green-500 bg-green-50/30' 
-                          : 'border-gray-200'
-                      }`}
+                            ? 'border-gray-200 opacity-60'
+                            : availability[key]
+                              ? 'border-green-500 bg-green-50/30'
+                              : 'border-gray-200'
+                        }`}
                     >
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-3 flex-1">
-                          <div className={`flex-shrink-0 h-12 w-12 rounded-lg flex items-center justify-center font-bold text-sm ${
-                            isCurrentDay
+                          <div className={`flex-shrink-0 h-12 w-12 rounded-lg flex items-center justify-center font-bold text-sm ${isCurrentDay
                               ? 'bg-blue-100 text-blue-700 ring-2 ring-blue-300'
                               : isLocked
-                              ? 'bg-gray-100 text-gray-500'
-                              : availability[key]
-                              ? 'bg-green-100 text-green-700'
-                              : 'bg-gray-100 text-gray-600'
-                          }`}>
+                                ? 'bg-gray-100 text-gray-500'
+                                : availability[key]
+                                  ? 'bg-green-100 text-green-700'
+                                  : 'bg-gray-100 text-gray-600'
+                            }`}>
                             {short.toUpperCase()}
                           </div>
                           <div className="flex-1">
@@ -404,20 +414,18 @@ export default function DriverAvailability() {
                         <button
                           onClick={() => handleToggle(key, index)}
                           disabled={isLocked}
-                          className={`relative inline-flex h-8 w-16 items-center rounded-full transition-all duration-300 focus:outline-none focus:ring-2 focus:ring-blue-500 ${
-                            isLocked
+                          className={`relative inline-flex h-8 w-16 items-center rounded-full transition-all duration-300 focus:outline-none focus:ring-2 focus:ring-blue-500 ${isLocked
                               ? 'opacity-50 cursor-not-allowed bg-gray-300'
                               : availability[key]
-                              ? 'bg-green-500'
-                              : 'bg-gray-300'
-                          }`}
+                                ? 'bg-green-500'
+                                : 'bg-gray-300'
+                            }`}
                         >
                           <span
-                            className={`inline-block h-6 w-6 transform rounded-full bg-white shadow-lg transition-transform duration-300 ${
-                              availability[key]
+                            className={`inline-block h-6 w-6 transform rounded-full bg-white shadow-lg transition-transform duration-300 ${availability[key]
                                 ? 'translate-x-9'
                                 : 'translate-x-1'
-                            }`}
+                              }`}
                           />
                         </button>
                       </div>
@@ -432,11 +440,10 @@ export default function DriverAvailability() {
                   <button
                     onClick={handleSave}
                     disabled={!hasChanges || loading}
-                    className={`flex-1 py-2.5 sm:py-3 px-4 sm:px-6 rounded-lg font-semibold transition-all flex items-center justify-center gap-2 text-sm sm:text-base ${
-                      hasChanges && !loading
+                    className={`flex-1 py-2.5 sm:py-3 px-4 sm:px-6 rounded-lg font-semibold transition-all flex items-center justify-center gap-2 text-sm sm:text-base ${hasChanges && !loading
                         ? 'bg-blue-600 text-white hover:bg-blue-700 shadow-lg hover:shadow-xl active:scale-95'
                         : 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                    }`}
+                      }`}
                   >
                     {loading ? (
                       <>
@@ -456,11 +463,10 @@ export default function DriverAvailability() {
                   <button
                     onClick={handleReset}
                     disabled={!hasChanges || loading}
-                    className={`flex-1 py-2.5 sm:py-3 px-4 sm:px-6 rounded-lg font-semibold transition-all flex items-center justify-center gap-2 text-sm sm:text-base ${
-                      hasChanges && !loading
+                    className={`flex-1 py-2.5 sm:py-3 px-4 sm:px-6 rounded-lg font-semibold transition-all flex items-center justify-center gap-2 text-sm sm:text-base ${hasChanges && !loading
                         ? 'bg-gray-100 text-gray-700 hover:bg-gray-200 border border-gray-300 active:scale-95'
                         : 'bg-gray-50 text-gray-400 cursor-not-allowed border border-gray-200'
-                    }`}
+                      }`}
                   >
                     <svg className="w-4 h-4 sm:w-5 sm:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />

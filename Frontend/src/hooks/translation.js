@@ -6,7 +6,7 @@ const translations = {
     dashboardDriver: 'Dashboard Driver',
     logout: 'Logout',
     language: 'Language',
-    
+
     // Common UI elements
     welcome: 'Welcome',
     profile: 'Profile',
@@ -16,7 +16,7 @@ const translations = {
     history: 'History',
     notifications: 'Notifications',
     dashboard: 'Dashboard',
-    
+
     // Buttons
     save: 'Save',
     cancel: 'Cancel',
@@ -32,7 +32,7 @@ const translations = {
     view: 'View',
     download: 'Download',
     upload: 'Upload',
-    
+
     // Status
     pending: 'Pending',
     completed: 'Completed',
@@ -42,7 +42,7 @@ const translations = {
     inactive: 'Inactive',
     approved: 'Approved',
     rejected: 'Rejected',
-    
+
     // Messages
     loading: 'Loading...',
     success: 'Success',
@@ -54,7 +54,7 @@ const translations = {
     deleteSuccess: 'Deleted successfully',
     actionSuccess: 'Action completed successfully',
     actionFailed: 'Action failed',
-    
+
     // Forms
     firstName: 'First Name',
     lastName: 'Last Name',
@@ -69,14 +69,14 @@ const translations = {
     time: 'Time',
     description: 'Description',
     notes: 'Notes',
-    
+
     // Navigation
     home: 'Home',
     menu: 'Menu',
     help: 'Help',
     about: 'About',
     contact: 'Contact',
-    
+
     // Availability Page
     myAvailability: 'My Availability',
     manageWeeklySchedule: 'Manage your weekly availability schedule',
@@ -129,6 +129,7 @@ const translations = {
     saving: 'Saving...',
     reset: 'Reset',
     thatDayHasEnded: 'That day has already ended. You can only update future days',
+    pendingResetMessage: 'Availability is locked until the Sunday 12:00 PM reset.',
 
     // Journey Page
     startYourJourney: 'Start Your Journey',
@@ -210,7 +211,7 @@ const translations = {
     accessCodeDetails: 'Access Code Details',
     noImagesUploaded: 'No images uploaded for this access code.',
     accessCodeImage: 'Access code image',
-    
+
     // Delivery Page
     deliverySummary: 'Delivery Summary',
     filterDeliveries: 'Filter deliveries by date range',
@@ -265,7 +266,7 @@ const translations = {
     invalidEmail: 'Invalid email',
     invalidPassword: 'Invalid password',
     accountBlocked: 'Your account has been blocked. Please contact support.',
-    
+
     // Backend Error Messages (Password Update)
     oldPasswordRequired: 'Current password is required',
     newPasswordRequired: 'New password is required',
@@ -275,7 +276,7 @@ const translations = {
     incorrectPassword: 'Current password is incorrect',
     passwordUpdateSuccess: 'Password updated successfully',
     passwordUpdateFailed: 'Failed to update password',
-    
+
     // Backend Error Messages (General)
     serverError: 'Server error occurred',
     unauthorized: 'Unauthorized access',
@@ -288,7 +289,7 @@ const translations = {
     dashboardDriver: 'Panel del Conductor',
     logout: 'Cerrar Sesión',
     language: 'Idioma',
-    
+
     // Common UI elements
     welcome: 'Bienvenido',
     profile: 'Perfil',
@@ -298,7 +299,7 @@ const translations = {
     history: 'Historial',
     notifications: 'Notificaciones',
     dashboard: 'Panel',
-    
+
     // Buttons
     save: 'Guardar',
     cancel: 'Cancelar',
@@ -314,7 +315,7 @@ const translations = {
     view: 'Ver',
     download: 'Descargar',
     upload: 'Subir',
-    
+
     // Status
     pending: 'Pendiente',
     completed: 'Completado',
@@ -324,7 +325,7 @@ const translations = {
     inactive: 'Inactivo',
     approved: 'Aprobado',
     rejected: 'Rechazado',
-    
+
     // Messages
     loading: 'Cargando...',
     success: 'Éxito',
@@ -336,7 +337,7 @@ const translations = {
     deleteSuccess: 'Eliminado exitosamente',
     actionSuccess: 'Acción completada exitosamente',
     actionFailed: 'Acción fallida',
-    
+
     // Forms
     firstName: 'Nombre',
     lastName: 'Apellido',
@@ -351,7 +352,7 @@ const translations = {
     time: 'Hora',
     description: 'Descripción',
     notes: 'Notas',
-    
+
     // Navigation
     home: 'Inicio',
     menu: 'Menú',
@@ -411,6 +412,7 @@ const translations = {
     saving: 'Guardando...',
     reset: 'Reiniciar',
     thatDayHasEnded: 'Ese día ya ha terminado. Solo puedes actualizar días futuros',
+    pendingResetMessage: 'La disponibilidad está bloqueada hasta el reinicio del domingo a las 12:00 PM.',
 
     // Journey Page
     startYourJourney: 'Iniciar tu Viaje',
@@ -492,7 +494,7 @@ const translations = {
     accessCodeDetails: 'Detalles del Código de Acceso',
     noImagesUploaded: 'No se subieron imágenes para este código de acceso.',
     accessCodeImage: 'Imagen del código de acceso',
-    
+
     // Delivery Page
     deliverySummary: 'Resumen de Entregas',
     filterDeliveries: 'Filtrar entregas por rango de fechas',
@@ -547,7 +549,7 @@ const translations = {
     invalidEmail: 'Correo electrónico inválido',
     invalidPassword: 'Contraseña inválida',
     accountBlocked: 'Tu cuenta ha sido bloqueada. Por favor contacta a soporte.',
-    
+
     // Backend Error Messages (Password Update)
     oldPasswordRequired: 'La contraseña actual es requerida',
     newPasswordRequired: 'La nueva contraseña es requerida',
@@ -557,7 +559,7 @@ const translations = {
     incorrectPassword: 'La contraseña actual es incorrecta',
     passwordUpdateSuccess: 'Contraseña actualizada exitosamente',
     passwordUpdateFailed: 'Error al actualizar la contraseña',
-    
+
     // Backend Error Messages (General)
     serverError: 'Ocurrió un error en el servidor',
     unauthorized: 'Acceso no autorizado',
