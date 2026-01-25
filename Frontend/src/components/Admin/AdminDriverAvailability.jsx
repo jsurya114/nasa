@@ -305,11 +305,7 @@ export default function AdminDriverAvailability() {
 
   const toggleDay = (day) => {
     if (isDayLocked(day)) {
-      if (currentDayIndex === 6 && currentHour < 12) {
-        toast.error(`Availability for ${day} is locked until the Sunday 12:00 PM reset.`);
-      } else {
-        toast.error(`Cannot edit ${day}. That day has already ended.`);
-      }
+      toast.error(`Cannot edit ${day}. That day has already ended.`);
       return;
     }
 

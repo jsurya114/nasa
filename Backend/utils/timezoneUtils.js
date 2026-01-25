@@ -205,45 +205,29 @@ export const validateAvailabilityUpdate = (availability, currentAvailability, ti
  * - All future days
  */
 export const validateAdminAvailabilityUpdate = (availability, currentAvailability, timezone) => {
-  const { dayIndex, hour } = getCurrentTimeInTimezone(timezone);
+  const { dayIndex } = getCurrentTimeInTimezone(timezone);
   const dayNames = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
   const errors = [];
 
-  // Special Rule: On Sunday before 12:00 PM (noon)
-  if (dayIndex === 6 && hour < 12) {
-    for (const day of dayNames) {
-      if (availability[day] !== currentAvailability.availability[day]) {
-        const targetDayIndex = dayNames.indexOf(day);
+  for (const day of dayNames) {
+    const targetDayIndex = dayNames.indexOf(day);
 
-        // Admins CAN edit Sunday (today) and Monday (tomorrow) even BEFORE reset
-        if (targetDayIndex === 6 || targetDayIndex === 0) {
-          continue;
-        }
-
-        // Block Tuesday-Saturday (Pending Reset)
-        errors.push(`Cannot update ${day} availability until the Sunday 12:00 PM reset has occurred.`);
-        break;
-      }
+    // Skip if no change
+    if (availability[day] === currentAvailability.availability[day]) {
+      continue;
     }
-  } else {
-    for (const day of dayNames) {
-      const targetDayIndex = dayNames.indexOf(day);
 
-      // Skip if no change
-      if (availability[day] === currentAvailability.availability[day]) {
-        continue;
-      }
+    // SPECIAL HANDLING FOR SUNDAY:
+    // When it's Sunday, we treat it as today, and all other days as the upcoming week.
+    // Therefore, admins can edit EVERYTHING on Sundays.
+    if (dayIndex === 6) {
+      continue;
+    }
 
-      // On Sunday after 12:00 PM, all days are next week or today
-      if (dayIndex === 6 && hour >= 12) {
-        // All days are editable by admin on Sunday afternoon
-        continue;
-      }
-
-      // Standard logic for other days: Admins can only NOT modify past days
-      if (targetDayIndex < dayIndex) {
-        errors.push(`Cannot modify availability for ${day}. That day has already ended. You can only update today and future days.`);
-      }
+    // Standard logic for Mon-Sat:
+    // Admins can edit today and all future days. Only past days (before today) are blocked.
+    if (targetDayIndex < dayIndex) {
+      errors.push(`Cannot modify availability for ${day}. That day has already ended. You can only update today and future days.`);
     }
   }
 
