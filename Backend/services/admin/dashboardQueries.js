@@ -1,39 +1,5 @@
 import pool from "../../config/db.js";
 
-// ✅ Helper function to add city-based sequence filtering (defined outside the object)
-const addCityBasedSequenceFilter = (whereClauses, queryParams, filters) => {
-  // City-based sequence filtering logic
-  // If a city is selected, apply sequence filtering based on city type
-  if (filters.job && filters.job !== "All") {
-    // Get city information to determine if it's daily or weekly
-    // Daily cities: Exclude records where start_seq = 0 AND end_seq = 0
-    // Weekly cities: Only include records where start_seq = 0 AND end_seq = 0
-    whereClauses.push(`
-      CASE 
-        -- Check if city is daily-based (by checking if there are any records with non-zero sequences)
-        WHEN EXISTS (
-          SELECT 1 
-          FROM payment_dashboard pd2
-          JOIN drivers d2 ON d2.id = pd2.driver_id
-          JOIN city c2 ON d2.city_id = c2.id
-          WHERE c2.job = $${queryParams.length + 1}
-            AND (pd2.start_seq IS NOT NULL AND pd2.start_seq != 0)
-            AND (pd2.end_seq IS NOT NULL AND pd2.end_seq != 0)
-          LIMIT 1
-        ) THEN 
-          -- Daily city: Exclude records with zero sequences
-          NOT (COALESCE(pd.start_seq, 0) = 0 AND COALESCE(pd.end_seq, 0) = 0)
-        ELSE 
-          -- Weekly city: Only include records with zero sequences
-          (COALESCE(pd.start_seq, 0) = 0 AND COALESCE(pd.end_seq, 0) = 0)
-      END
-    `);
-    queryParams.push(filters.job);
-  }
-  
-  return { whereClauses, queryParams };
-};
-
 export const AdminDashboardQueries = {
   // Update payment table for a specific date only
   updatePaymentTableForDate: async (selectedDate) => {
@@ -107,8 +73,8 @@ export const AdminDashboardQueries = {
         WHERE 1 = 1
       `;
 
-      let whereClauses = [];
-      let queryParams = [];
+      const whereClauses = [];
+      const queryParams = [];
 
       if (filters.job) {
         whereClauses.push(`c.job = $${queryParams.length + 1}`);
@@ -154,11 +120,6 @@ export const AdminDashboardQueries = {
         queryParams.push(filters.dataType);
       }
 
-      // ✅ NEW: Add city-based sequence filtering
-      const filterResult = addCityBasedSequenceFilter(whereClauses, queryParams, filters);
-      whereClauses = filterResult.whereClauses;
-      queryParams = filterResult.queryParams;
-
       if (role === "admin") {
         whereClauses.push(`
           EXISTS (
@@ -196,8 +157,8 @@ export const AdminDashboardQueries = {
         WHERE 1 = 1
       `;
 
-      let whereClauses = [];
-      let queryParams = [];
+      const whereClauses = [];
+      const queryParams = [];
 
       if (filters.job) {
         whereClauses.push(`c.job = $${queryParams.length + 1}`);
@@ -241,11 +202,6 @@ export const AdminDashboardQueries = {
         `);
         queryParams.push(filters.dataType);
       }
-
-      // ✅ NEW: Add city-based sequence filtering
-      const filterResult = addCityBasedSequenceFilter(whereClauses, queryParams, filters);
-      whereClauses = filterResult.whereClauses;
-      queryParams = filterResult.queryParams;
 
       if (role === "admin") {
         whereClauses.push(`
@@ -296,7 +252,7 @@ export const AdminDashboardQueries = {
           pd.delivered, 
           pd.closed, 
           pd.payment_date,
-          pd.driver_payment,
+          pd.driver_payment, 
           ${companyEarningsField}
           pd.paid,
           pd.start_seq,
@@ -314,8 +270,8 @@ export const AdminDashboardQueries = {
         WHERE 1 = 1
       `;
 
-      let whereClauses = [];
-      let queryParams = [];
+      const whereClauses = [];
+      const queryParams = [];
 
       if (filters.job) {
         whereClauses.push(`c.job = $${queryParams.length + 1}`);
@@ -359,11 +315,6 @@ export const AdminDashboardQueries = {
         `);
         queryParams.push(filters.dataType);
       }
-
-      // ✅ NEW: Add city-based sequence filtering
-      const filterResult = addCityBasedSequenceFilter(whereClauses, queryParams, filters);
-      whereClauses = filterResult.whereClauses;
-      queryParams = filterResult.queryParams;
 
       if (role === "admin") {
         whereClauses.push(`
@@ -437,8 +388,8 @@ export const AdminDashboardQueries = {
         WHERE 1 = 1
       `;
 
-      let whereClauses = [];
-      let queryParams = [];
+      const whereClauses = [];
+      const queryParams = [];
 
       if (filters.job) {
         whereClauses.push(`c.job = $${queryParams.length + 1}`);
@@ -482,11 +433,6 @@ export const AdminDashboardQueries = {
         `);
         queryParams.push(filters.dataType);
       }
-
-      // ✅ NEW: Add city-based sequence filtering
-      const filterResult = addCityBasedSequenceFilter(whereClauses, queryParams, filters);
-      whereClauses = filterResult.whereClauses;
-      queryParams = filterResult.queryParams;
 
       if (role === "admin") {
         whereClauses.push(`
