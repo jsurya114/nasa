@@ -61,30 +61,23 @@ export const getAllottedRoutes = async (id) => {
   return result.rows;
 }
 
-// ✅ UPDATED: Get drivers filtered by ROUTE city (for superadmin)
-// Shows drivers who have at least one route in the selected city
+// ✅ NEW: Get drivers filtered by city (for superadmin)
 export const getDriversByCity = async (cityJob) => {
   const result = await pool.query(
-    `SELECT DISTINCT d.id, d.name, d.enabled, c.job AS city
+    `SELECT d.id, d.name, d.enabled, c.job AS city
      FROM drivers d
      JOIN city c ON c.id = d.city_id
-     WHERE d.enabled = true
-     AND EXISTS (
-       SELECT 1 FROM payment_dashboard pd
-       JOIN routes r ON pd.route_id = r.id
-       WHERE pd.driver_id = d.id AND r.job = $1
-     )
+     WHERE d.enabled = true AND c.job = $1
      ORDER BY d.name ASC`,
     [cityJob]
   );
   return result.rows;
 };
 
-// ✅ UPDATED: Get allotted drivers filtered by ROUTE city (for admin)
-// Shows drivers who have at least one route in the selected city
+// ✅ NEW: Get allotted drivers filtered by city (for admin)
 export const getAllottedDriversByCity = async (id, cityJob) => {
   const result = await pool.query(
-    `SELECT DISTINCT
+    `SELECT 
       d.id,
       d.name,
       d.enabled,
@@ -94,11 +87,7 @@ export const getAllottedDriversByCity = async (id, cityJob) => {
     JOIN admin_city_ref acr ON acr.city_id = c.id
     WHERE acr.admin_id = $1 
     AND d.enabled = true
-    AND EXISTS (
-      SELECT 1 FROM payment_dashboard pd
-      JOIN routes r ON pd.route_id = r.id
-      WHERE pd.driver_id = d.id AND r.job = $2
-    )
+    AND c.job = $2
     ORDER BY d.name ASC`,
     [id, cityJob]
   );
