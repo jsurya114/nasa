@@ -61,9 +61,19 @@ export const getAllottedRoutes = async (id) => {
   return result.rows;
 }
 
-// ✅ UPDATED: Get drivers filtered by ROUTE city (for superadmin)
-// Shows drivers who have at least one route in the selected city
-export const getDriversByCity = async (cityJob) => {
+// ✅ UPDATED: Get drivers filtered by ROUTE city and schedule type (for superadmin)
+// Shows drivers who have at least one route in the selected city matching schedule criteria
+export const getDriversByCity = async (cityJob, dataType) => {
+  // Build sequence condition based on dataType
+  let sequenceCondition = '';
+  if (dataType === 'daily') {
+    // Daily: exclude routes where startSeq=0 AND endSeq=0
+    sequenceCondition = 'AND (pd.start_seq > 0 OR pd.end_seq > 0)';
+  } else if (dataType === 'weekly') {
+    // Weekly: only show routes where startSeq=0 AND endSeq=0
+    sequenceCondition = 'AND pd.start_seq = 0 AND pd.end_seq = 0';
+  }
+
   const result = await pool.query(
     `SELECT DISTINCT d.id, d.name, d.enabled, c.job AS city
      FROM drivers d
@@ -72,7 +82,7 @@ export const getDriversByCity = async (cityJob) => {
      AND EXISTS (
        SELECT 1 FROM payment_dashboard pd
        JOIN routes r ON pd.route_id = r.id
-       WHERE pd.driver_id = d.id AND r.job = $1
+       WHERE pd.driver_id = d.id AND r.job = $1 ${sequenceCondition}
      )
      ORDER BY d.name ASC`,
     [cityJob]
@@ -80,9 +90,19 @@ export const getDriversByCity = async (cityJob) => {
   return result.rows;
 };
 
-// ✅ UPDATED: Get allotted drivers filtered by ROUTE city (for admin)
-// Shows drivers who have at least one route in the selected city
-export const getAllottedDriversByCity = async (id, cityJob) => {
+// ✅ UPDATED: Get allotted drivers filtered by ROUTE city and schedule type (for admin)
+// Shows drivers who have at least one route in the selected city matching schedule criteria
+export const getAllottedDriversByCity = async (id, cityJob, dataType) => {
+  // Build sequence condition based on dataType
+  let sequenceCondition = '';
+  if (dataType === 'daily') {
+    // Daily: exclude routes where startSeq=0 AND endSeq=0
+    sequenceCondition = 'AND (pd.start_seq > 0 OR pd.end_seq > 0)';
+  } else if (dataType === 'weekly') {
+    // Weekly: only show routes where startSeq=0 AND endSeq=0
+    sequenceCondition = 'AND pd.start_seq = 0 AND pd.end_seq = 0';
+  }
+
   const result = await pool.query(
     `SELECT DISTINCT
       d.id,
@@ -97,7 +117,7 @@ export const getAllottedDriversByCity = async (id, cityJob) => {
     AND EXISTS (
       SELECT 1 FROM payment_dashboard pd
       JOIN routes r ON pd.route_id = r.id
-      WHERE pd.driver_id = d.id AND r.job = $2
+      WHERE pd.driver_id = d.id AND r.job = $2 ${sequenceCondition}
     )
     ORDER BY d.name ASC`,
     [id, cityJob]

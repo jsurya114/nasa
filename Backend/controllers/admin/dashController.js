@@ -1,9 +1,9 @@
-import { 
-  getAllCities, 
-  getAllDrivers, 
-  getAllRoutes, 
-  getAllottedCities, 
-  getAllottedDrivers, 
+import {
+  getAllCities,
+  getAllDrivers,
+  getAllRoutes,
+  getAllottedCities,
+  getAllottedDrivers,
   getAllottedRoutes,
   getDriversByCity,
   getAllottedDriversByCity
@@ -13,7 +13,7 @@ export const getAllData = async (req, res) => {
   try {
     const { id: userId, role: userRole } = req.user;
     let cities, drivers, routes;
-    
+
     if (userRole == 'superadmin') {
       [cities, drivers, routes] = await Promise.all([
         getAllCities(),
@@ -38,12 +38,12 @@ export const getAllData = async (req, res) => {
   }
 };
 
-// ✅ NEW: Get drivers filtered by city
+// ✅ UPDATED: Get drivers filtered by city and schedule type
 export const getFilteredDriversByCity = async (req, res) => {
   try {
     const { id: userId, role: userRole } = req.user;
-    const { cityJob } = req.query;
-    
+    const { cityJob, dataType } = req.query;
+
     if (!cityJob || cityJob === "All") {
       // Return all drivers if no city selected
       let drivers;
@@ -57,15 +57,15 @@ export const getFilteredDriversByCity = async (req, res) => {
         data: drivers,
       });
     }
-    
-    // Return filtered drivers by city
+
+    // Return filtered drivers by city and schedule type
     let drivers;
     if (userRole === 'superadmin') {
-      drivers = await getDriversByCity(cityJob);
+      drivers = await getDriversByCity(cityJob, dataType);
     } else {
-      drivers = await getAllottedDriversByCity(userId, cityJob);
+      drivers = await getAllottedDriversByCity(userId, cityJob, dataType);
     }
-    
+
     res.status(200).json({
       success: true,
       data: drivers,
