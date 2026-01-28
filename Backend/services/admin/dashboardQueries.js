@@ -21,7 +21,7 @@ export const AdminDashboardQueries = {
           AND pd.journey_date = $1::date;
       `;
       const result = await pool.query(queryStr, [selectedDate]);
-     
+
       return result;
     } catch (error) {
       console.error("Error in updatePaymentTableForDate:", error);
@@ -54,6 +54,7 @@ export const AdminDashboardQueries = {
   },
 
   // ✅ Get summary data for all matching records (not paginated)
+  // Modified: Join via route's job for historical driver data and apply city_type rules
   getSummaryData: async (filters = {}, id, role) => {
     try {
       const baseQuery = `
@@ -68,17 +69,26 @@ export const AdminDashboardQueries = {
           COALESCE(SUM(pd.company_earnings), 0) AS total_company_earnings
         FROM payment_dashboard pd
         JOIN drivers d ON d.id = pd.driver_id
-        JOIN city c ON d.city_id = c.id
         LEFT JOIN routes r ON pd.route_id = r.id
+        LEFT JOIN city c ON r.job = c.job
         WHERE 1 = 1
       `;
 
       const whereClauses = [];
       const queryParams = [];
 
+      // Filter by route's city (historical) and apply city_type rules
       if (filters.job) {
         whereClauses.push(`c.job = $${queryParams.length + 1}`);
         queryParams.push(filters.job);
+        // Auto-apply city_type filtering: DAILY = seq != 0, WEEKLY = seq = 0
+        whereClauses.push(`(
+          CASE 
+            WHEN c.city_type = 'DAILY' THEN pd.start_seq != 0 AND pd.end_seq != 0
+            WHEN c.city_type = 'WEEKLY' THEN pd.start_seq = 0 AND pd.end_seq = 0
+            ELSE TRUE
+          END
+        )`);
       }
 
       if (filters.driver) {
@@ -146,23 +156,33 @@ export const AdminDashboardQueries = {
     }
   },
 
+  // Modified: Join via route's job for historical driver data and apply city_type rules
   getPaymentDashboardCount: async (filters = {}, id, role) => {
     try {
       const baseQuery = `
         SELECT COUNT(*) as total
         FROM payment_dashboard pd
         JOIN drivers d ON d.id = pd.driver_id
-        JOIN city c ON d.city_id = c.id
         LEFT JOIN routes r ON pd.route_id = r.id
+        LEFT JOIN city c ON r.job = c.job
         WHERE 1 = 1
       `;
 
       const whereClauses = [];
       const queryParams = [];
 
+      // Filter by route's city (historical) and apply city_type rules
       if (filters.job) {
         whereClauses.push(`c.job = $${queryParams.length + 1}`);
         queryParams.push(filters.job);
+        // Auto-apply city_type filtering: DAILY = seq != 0, WEEKLY = seq = 0
+        whereClauses.push(`(
+          CASE 
+            WHEN c.city_type = 'DAILY' THEN pd.start_seq != 0 AND pd.end_seq != 0
+            WHEN c.city_type = 'WEEKLY' THEN pd.start_seq = 0 AND pd.end_seq = 0
+            ELSE TRUE
+          END
+        )`);
       }
 
       if (filters.driver) {
@@ -229,6 +249,7 @@ export const AdminDashboardQueries = {
     }
   },
 
+  // Modified: Join via route's job for historical driver data and apply city_type rules
   getPaymentDashboardPaginated: async (filters = {}, id, role, limit = 10, offset = 0) => {
     try {
       // Conditionally include company_earnings based on role
@@ -265,17 +286,26 @@ export const AdminDashboardQueries = {
           END AS data_type
         FROM payment_dashboard pd
         JOIN drivers d ON d.id = pd.driver_id
-        JOIN city c ON d.city_id = c.id
         LEFT JOIN routes r ON pd.route_id = r.id
+        LEFT JOIN city c ON r.job = c.job
         WHERE 1 = 1
       `;
 
       const whereClauses = [];
       const queryParams = [];
 
+      // Filter by route's city (historical) and apply city_type rules
       if (filters.job) {
         whereClauses.push(`c.job = $${queryParams.length + 1}`);
         queryParams.push(filters.job);
+        // Auto-apply city_type filtering: DAILY = seq != 0, WEEKLY = seq = 0
+        whereClauses.push(`(
+          CASE 
+            WHEN c.city_type = 'DAILY' THEN pd.start_seq != 0 AND pd.end_seq != 0
+            WHEN c.city_type = 'WEEKLY' THEN pd.start_seq = 0 AND pd.end_seq = 0
+            ELSE TRUE
+          END
+        )`);
       }
 
       if (filters.driver) {
@@ -336,7 +366,7 @@ export const AdminDashboardQueries = {
 
       finalQuery += " ORDER BY r.name, pd.journey_date DESC, pd.start_seq";
       finalQuery += ` LIMIT $${queryParams.length + 1} OFFSET $${queryParams.length + 2}`;
-      
+
       queryParams.push(limit, offset);
 
       const result = await pool.query(finalQuery, queryParams);
@@ -347,6 +377,7 @@ export const AdminDashboardQueries = {
     }
   },
 
+  // Modified: Join via route's job for historical driver data and apply city_type rules
   PaymentDashboardTable: async (filters = {}, id, role) => {
     try {
       // Conditionally include company_earnings based on role
@@ -383,17 +414,26 @@ export const AdminDashboardQueries = {
           END AS data_type
         FROM payment_dashboard pd
         JOIN drivers d ON d.id = pd.driver_id
-        JOIN city c ON d.city_id = c.id
         LEFT JOIN routes r ON pd.route_id = r.id
+        LEFT JOIN city c ON r.job = c.job
         WHERE 1 = 1
       `;
 
       const whereClauses = [];
       const queryParams = [];
 
+      // Filter by route's city (historical) and apply city_type rules
       if (filters.job) {
         whereClauses.push(`c.job = $${queryParams.length + 1}`);
         queryParams.push(filters.job);
+        // Auto-apply city_type filtering: DAILY = seq != 0, WEEKLY = seq = 0
+        whereClauses.push(`(
+          CASE 
+            WHEN c.city_type = 'DAILY' THEN pd.start_seq != 0 AND pd.end_seq != 0
+            WHEN c.city_type = 'WEEKLY' THEN pd.start_seq = 0 AND pd.end_seq = 0
+            ELSE TRUE
+          END
+        )`);
       }
 
       if (filters.driver) {
@@ -467,16 +507,16 @@ export const AdminDashboardQueries = {
     try {
       const whereClauses = [];
       const queryParams = [driverName];
-      
+
       // Driver name filter
       whereClauses.push(`d.name = $1`);
-      
+
       // Date filters
       if (startDate) {
         whereClauses.push(`pd.journey_date >= $${queryParams.length + 1}::date`);
         queryParams.push(startDate);
       }
-      
+
       if (endDate) {
         whereClauses.push(`pd.journey_date <= $${queryParams.length + 1}::date`);
         queryParams.push(endDate);
@@ -499,9 +539,9 @@ export const AdminDashboardQueries = {
       console.log("With params:", queryParams);
 
       const result = await pool.query(updateQuery, queryParams);
-      
+
       console.log(`Updated ${result.rowCount} records to paid status`);
-      
+
       return result;
     } catch (error) {
       console.error("Error in updateDriverPaymentStatus:", error);
