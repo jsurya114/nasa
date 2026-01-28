@@ -31,9 +31,9 @@ export const jobService = {
 
   updateCity: async (id, job, city_code, city_type) => {
     console.log('updateCity called with:', { id, job, city_code, city_type });
-
+    
     let query, params;
-
+    
     if (city_type !== undefined && city_type !== null) {
       query = "UPDATE city SET job = $1, city_code = $2, city_type = $3 WHERE id = $4 RETURNING *";
       params = [job, city_code, city_type, id];
@@ -41,17 +41,17 @@ export const jobService = {
       query = "UPDATE city SET job = $1, city_code = $2 WHERE id = $3 RETURNING *";
       params = [job, city_code, id];
     }
-
+    
     console.log('Executing query:', query, 'with params:', params);
     const result = await pool.query(query, params);
     console.log('Update result:', result.rows[0]);
-
+    
     return result.rows[0];
   },
 
   deleteCity: async (id) => {
     const result = await pool.query(
-      "DELETE FROM city WHERE id = $1 RETURNING *",
+      "DELETE FROM city WHERE id = $1 RETURNING *", 
       [id]
     )
     return result.rows[0]
@@ -155,31 +155,14 @@ export const jobService = {
          WHERE d.id = $1`,
         [driverId]
       );
-
+      
       if (result.rows.length === 0) {
         throw new Error(`Driver with ID ${driverId} not found`);
       }
-
+      
       return result.rows[0].city_type;
     } catch (error) {
       console.error("getCityTypeByDriverId error:", error.message);
-      throw error;
-    }
-  },
-
-  // New: Get city type by job name (for city-based filtering)
-  getCityTypeByJob: async (job) => {
-    try {
-      const result = await pool.query(
-        `SELECT city_type FROM city WHERE job = $1 AND enabled = true`,
-        [job]
-      );
-      if (result.rows.length === 0) {
-        return null;
-      }
-      return result.rows[0].city_type;
-    } catch (error) {
-      console.error("getCityTypeByJob error:", error.message);
       throw error;
     }
   },
