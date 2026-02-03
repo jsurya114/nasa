@@ -4,12 +4,12 @@ import useTranslation from "../../hooks/useTranslation.js";
 
 function Nav() {
   const { t } = useTranslation();
-  
+
   const links = [
     { to: "/driver/dashboard", icon: "📊", label: t('dashboard') },
-    { to: "/driver/access-codes", icon: "🔑", label: t('accessCodes') },
+    { to: "/driver/access-codes", icon: "🔑", label: t('Access codes') },
     { to: "/driver/delivery", icon: "🚛", label: t('deliveries') },
-    { to: "/driver/availability", icon: "📅", label: t('availability') },
+    { to: "/driver/availability", icon: "📅", label: t('Availability') },
     { to: "/driver/update-password", icon: "💤", label: t('password') },
   ];
 
@@ -35,10 +35,9 @@ function Nav() {
                   active:scale-95 hover:scale-105
                   flex-1 sm:flex-initial
                   min-w-[64px] xs:min-w-[72px] sm:min-w-[96px]
-                  ${
-                    isActive
-                      ? "ring-2 ring-blue-500 ring-offset-2 ring-offset-[#462976]"
-                      : ""
+                  ${isActive
+                    ? "ring-2 ring-blue-500 ring-offset-2 ring-offset-[#462976]"
+                    : ""
                   }
                 `
                 }
