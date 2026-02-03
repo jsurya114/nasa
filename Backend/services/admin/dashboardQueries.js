@@ -14,7 +14,7 @@ export const AdminDashboardQueries = {
             fs = dd.first_stop,
             delivered = dd.ds + dd.first_stop,
             driver_payment = (dd.ds * r.driver_doublestop_price) + (dd.first_stop * r.driver_route_price),
-            company_earnings = (dd.ds * r.company_doublestop_price)+ (dd.first_stop * r.company_route_price)
+            company_earnings = (dd.ds * (r.company_doublestop_price - r.driver_doublestop_price))+ (dd.first_stop * (r.company_route_price - r.driver_route_price))
         FROM dashboard_data dd
         JOIN routes r ON dd.route_id = r.id
         WHERE pd.dashboard_data_id = dd.id
@@ -41,7 +41,7 @@ export const AdminDashboardQueries = {
             fs = dd.first_stop,
             delivered = dd.ds + dd.first_stop,
             driver_payment = (dd.ds * r.driver_doublestop_price) + (dd.first_stop * r.driver_route_price),
-            company_earnings = (dd.ds * r.company_doublestop_price)+ (dd.first_stop * r.company_route_price)
+            company_earnings = (dd.ds * (r.company_doublestop_price - r.driver_doublestop_price))+ (dd.first_stop * (r.company_route_price - r.driver_route_price))
         FROM dashboard_data dd
         JOIN routes r ON dd.route_id = r.id
         WHERE pd.dashboard_data_id = dd.id;
