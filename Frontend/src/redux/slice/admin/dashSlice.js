@@ -30,6 +30,21 @@ export const fetchDriversByCity = createAsyncThunk(
   }
 );
 
+// ✅ NEW: Fetch routes filtered by city
+export const fetchRoutesByCity = createAsyncThunk(
+  "dashboard/fetchRoutesByCity",
+  async (cityJob, { rejectWithValue }) => {
+    try {
+      const params = cityJob && cityJob !== "All" ? { cityJob } : {};
+      const res = await axios.get(`/admin/dashboard/routes-by-city`, { params });
+      if (!res.data.success) throw new Error(res.data.message);
+      return res.data.data;
+    } catch (err) {
+      return rejectWithValue(err.response?.data?.message || err.message);
+    }
+  }
+);
+
 export const fetchSummaryData = createAsyncThunk(
   "dashboard/fetchSummaryData",
   async (filters, { rejectWithValue }) => {
@@ -99,9 +114,9 @@ export const fetchAllPaymentData = createAsyncThunk(
 
 export const payDriver = createAsyncThunk(
   "dashboard/payDriver",
-  async ({ driverName, startDate, endDate }, { rejectWithValue }) => {
+  async ({ driverName, startDate, endDate, dataType }, { rejectWithValue }) => {
     try {
-      const res = await axios.post(`/admin/dashboard/payDriver`, { driverName, startDate, endDate });
+      const res = await axios.post(`/admin/dashboard/payDriver`, { driverName, startDate, endDate, dataType });
       if (!res.data.success) throw new Error(res.data.message);
       toast.success(res.data.message);
       return res.data;
@@ -186,6 +201,19 @@ const dashboardSlice = createSlice({
         state.drivers = action.payload || [];
       })
       .addCase(fetchDriversByCity.rejected, (state, action) => {
+        state.loading = false;
+        state.error = action.payload;
+      })
+      // ✅ NEW: Handle route filter by city
+      .addCase(fetchRoutesByCity.pending, (state) => {
+        state.loading = true;
+        state.error = null;
+      })
+      .addCase(fetchRoutesByCity.fulfilled, (state, action) => {
+        state.loading = false;
+        state.routes = action.payload || [];
+      })
+      .addCase(fetchRoutesByCity.rejected, (state, action) => {
         state.loading = false;
         state.error = action.payload;
       })

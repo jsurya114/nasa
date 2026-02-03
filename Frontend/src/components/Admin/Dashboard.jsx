@@ -1,32 +1,33 @@
 import React, { useState, useMemo, useCallback, useEffect } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import { useNavigate } from "react-router-dom";
-import { 
-  fetchDashboardData, 
-  fetchDriversByCity, 
-  fetchFilteredPaymentData, 
-  fetchTodayPaymentData, 
-  fetchSummaryData, 
-  clearFilteredData, 
-  payDriver, 
-  setDataType 
+import {
+  fetchDashboardData,
+  fetchDriversByCity,
+  fetchRoutesByCity,
+  fetchFilteredPaymentData,
+  fetchTodayPaymentData,
+  fetchSummaryData,
+  clearFilteredData,
+  payDriver,
+  setDataType
 } from "../../redux/slice/admin/dashSlice.js";
 import Header from "../../reuse/Header.jsx";
 import Nav from "../../reuse/Nav.jsx";
-import PaymentDashboardTable from "./DashboardTable.jsx"; 
+import PaymentDashboardTable from "./DashboardTable.jsx";
 import Loader from "../Loader.jsx"
 
 export default function Dashboard() {
   const dispatch = useDispatch();
   const navigate = useNavigate();
 
-  const { 
-    cities, 
-    drivers, 
-    routes, 
-    loading, 
-    error, 
-    filteredPaymentData, 
+  const {
+    cities,
+    drivers,
+    routes,
+    loading,
+    error,
+    filteredPaymentData,
     summaryData,
     summaryLoading,
     isFiltered,
@@ -59,6 +60,7 @@ export default function Dashboard() {
   const [itemsPerPage, setItemsPerPage] = useState(10);
   const [showExtraFields, setShowExtraFields] = useState(false);
   const [showConfirmModal, setShowConfirmModal] = useState(false);
+  const [selectedPaymentType, setSelectedPaymentType] = useState(null); // 'daily' or 'weekly'
 
   // Calculate available data types based on filtered data
   const [originalDataTypes, setOriginalDataTypes] = useState({ daily: false, weekly: false });
@@ -86,19 +88,19 @@ export default function Dashboard() {
   }, [filteredPaymentData, isFiltered, selectedDataType, originalDataTypes]);
 
   const shouldShowDataTypeTabs = useMemo(() => {
-    return isFiltered && 
-           reduxFilters.driver && 
-           reduxFilters.driver !== "All" &&
-           (availableDataTypes.daily || availableDataTypes.weekly);
+    return isFiltered &&
+      reduxFilters.driver &&
+      reduxFilters.driver !== "All" &&
+      (availableDataTypes.daily || availableDataTypes.weekly);
   }, [isFiltered, reduxFilters.driver, availableDataTypes]);
 
   // ✅ UPDATED: Check for closed status as well as payment status
   const shouldShowPayButton = useMemo(() => {
-    if (!isFiltered || 
-        !reduxFilters.driver || 
-        reduxFilters.driver === "All" ||
-        reduxFilters.paymentStatus !== "Pending" ||
-        filteredPaymentData.length === 0) {
+    if (!isFiltered ||
+      !reduxFilters.driver ||
+      reduxFilters.driver === "All" ||
+      reduxFilters.paymentStatus !== "Pending" ||
+      filteredPaymentData.length === 0) {
       return false;
     }
 
@@ -107,17 +109,39 @@ export default function Dashboard() {
     return hasUnpaidClosedJourneys;
   }, [isFiltered, reduxFilters.driver, reduxFilters.paymentStatus, filteredPaymentData]);
 
-  // ✅ NEW: Calculate counts for payment confirmation modal
+  // ✅ UPDATED: Calculate separate counts for daily and weekly payments
   const paymentCounts = useMemo(() => {
     if (!filteredPaymentData.length) {
-      return { closedUnpaid: 0, openUnpaid: 0 };
+      return { dailyClosedUnpaid: 0, weeklyClosedUnpaid: 0, openUnpaid: 0 };
     }
 
-    const closedUnpaid = filteredPaymentData.filter(row => row.closed && !row.paid).length;
+    const dailyClosedUnpaid = filteredPaymentData.filter(row =>
+      row.closed && !row.paid && row.data_type === 'daily'
+    ).length;
+    const weeklyClosedUnpaid = filteredPaymentData.filter(row =>
+      row.closed && !row.paid && row.data_type === 'weekly'
+    ).length;
     const openUnpaid = filteredPaymentData.filter(row => !row.closed && !row.paid).length;
 
-    return { closedUnpaid, openUnpaid };
+    return { dailyClosedUnpaid, weeklyClosedUnpaid, openUnpaid };
   }, [filteredPaymentData]);
+
+  // ✅ NEW: Separate conditions for showing daily and weekly pay buttons
+  const shouldShowDailyPayButton = useMemo(() => {
+    return isFiltered &&
+      reduxFilters.driver &&
+      reduxFilters.driver !== "All" &&
+      reduxFilters.paymentStatus === "Pending" &&
+      paymentCounts.dailyClosedUnpaid > 0;
+  }, [isFiltered, reduxFilters.driver, reduxFilters.paymentStatus, paymentCounts.dailyClosedUnpaid]);
+
+  const shouldShowWeeklyPayButton = useMemo(() => {
+    return isFiltered &&
+      reduxFilters.driver &&
+      reduxFilters.driver !== "All" &&
+      reduxFilters.paymentStatus === "Pending" &&
+      paymentCounts.weeklyClosedUnpaid > 0;
+  }, [isFiltered, reduxFilters.driver, reduxFilters.paymentStatus, paymentCounts.weeklyClosedUnpaid]);
 
   const extraFieldsData = useMemo(() => {
     if (!isFiltered || !summaryData) {
@@ -151,29 +175,32 @@ export default function Dashboard() {
     dispatch(fetchTodayPaymentData({ page: 1, limit: itemsPerPage }));
   }, [dispatch, itemsPerPage]);
 
-  // Handle job city change to fetch filtered drivers
+  // Handle job city change to fetch filtered drivers and routes
   const handleJobChange = useCallback((value) => {
     setLocalFilters((prev) => ({
       ...prev,
       job: value,
       driver: "All",
+      route: "All", // ✅ Also reset route when job changes
     }));
-    
+
     if (value && value !== "All") {
       dispatch(fetchDriversByCity(value));
+      dispatch(fetchRoutesByCity(value)); // ✅ Fetch routes filtered by city
     } else {
       dispatch(fetchDriversByCity("All"));
+      dispatch(fetchRoutesByCity("All")); // ✅ Fetch all routes
     }
   }, [dispatch]);
   const handleFilterChange = useCallback((e) => {
     const { name, value, type, checked } = e.target;
-    
+
     // ✅ Special handling for job field
     if (name === "job") {
       handleJobChange(value);
       return;
     }
-    
+
     setLocalFilters((prev) => ({
       ...prev,
       [name]: type === "checkbox" ? checked : value,
@@ -183,24 +210,24 @@ export default function Dashboard() {
   // ✅ UPDATED: Handle Filter Data button - check if filters are applied
   const handleFilterClick = () => {
     setShowExtraFields(isSuperAdmin && localFilters.companyEarnings);
-    
+
     // ✅ NEW: Check if any filters are actually applied
-    const hasFilters = 
+    const hasFilters =
       localFilters.job !== "All" ||
       localFilters.driver !== "All" ||
       localFilters.route !== "All" ||
       localFilters.startDate ||
       localFilters.endDate ||
       localFilters.paymentStatus !== "All";
-    
+
     const filterParams = {
       page: 1,
       limit: itemsPerPage,
       dataType: "all"
     };
-    
+
     dispatch(setDataType("all"));
-    
+
     // ✅ NEW: If no filters, show all data instead of filtered
     if (!hasFilters) {
       // No filters applied - fetch all data
@@ -214,13 +241,13 @@ export default function Dashboard() {
       if (localFilters.endDate) filterParams.endDate = localFilters.endDate;
       if (localFilters.paymentStatus !== "All") filterParams.paymentStatus = localFilters.paymentStatus;
     }
-    
+
     if (isSuperAdmin && localFilters.companyEarnings) filterParams.companyEarnings = localFilters.companyEarnings;
-    
+
     setCurrentPage(1);
-    
+
     dispatch(fetchFilteredPaymentData(filterParams));
-    
+
     if (isSuperAdmin && localFilters.companyEarnings) {
       const summaryParams = { ...filterParams };
       delete summaryParams.page;
@@ -244,30 +271,31 @@ export default function Dashboard() {
     setShowExtraFields(false);
     setCurrentPage(1);
     setOriginalDataTypes({ daily: false, weekly: false });
-    
-    // Reset drivers to show all
+
+    // Reset drivers and routes to show all
     dispatch(fetchDriversByCity("All"));
+    dispatch(fetchRoutesByCity("All")); // ✅ Also reset routes
     dispatch(clearFilteredData());
     dispatch(setDataType("all"));
-    
+
     // ✅ NEW: Fetch today's data after clearing
     dispatch(fetchTodayPaymentData({ page: 1, limit: itemsPerPage }));
   };
 
   const handleDataTypeChange = (dataType) => {
     dispatch(setDataType(dataType));
-    
+
     const filterParams = {
       ...reduxFilters,
       dataType: dataType,
       page: 1,
       limit: itemsPerPage
     };
-    
+
     setCurrentPage(1);
-    
+
     dispatch(fetchFilteredPaymentData(filterParams));
-    
+
     if (isSuperAdmin && showExtraFields) {
       const summaryParams = { ...filterParams };
       delete summaryParams.page;
@@ -277,36 +305,39 @@ export default function Dashboard() {
     }
   };
 
-  const handlePayDriver = async () => {
+  // ✅ UPDATED: handlePayDriver now accepts dataType for separate payments
+  const handlePayDriver = async (dataType) => {
     setShowConfirmModal(false);
-    
+    setSelectedPaymentType(null);
+
     const result = await dispatch(payDriver({
       driverName: reduxFilters.driver,
       startDate: reduxFilters.startDate || null,
       endDate: reduxFilters.endDate || null,
+      dataType: dataType, // 'daily' or 'weekly'
     }));
-    
+
     if (result.type === 'dashboard/payDriver/fulfilled') {
       setLocalFilters(prev => ({
         ...prev,
         paymentStatus: "All"
       }));
-      
+
       const filterParams = {
         page: currentPage,
         limit: itemsPerPage,
         dataType: selectedDataType
       };
-      
+
       if (reduxFilters.job && reduxFilters.job !== "All") filterParams.job = reduxFilters.job;
       if (reduxFilters.driver && reduxFilters.driver !== "All") filterParams.driver = reduxFilters.driver;
       if (reduxFilters.route && reduxFilters.route !== "All") filterParams.route = reduxFilters.route;
       if (reduxFilters.startDate) filterParams.startDate = reduxFilters.startDate;
       if (reduxFilters.endDate) filterParams.endDate = reduxFilters.endDate;
       if (isSuperAdmin && reduxFilters.companyEarnings) filterParams.companyEarnings = reduxFilters.companyEarnings;
-      
+
       dispatch(fetchFilteredPaymentData(filterParams));
-      
+
       if (isSuperAdmin && showExtraFields) {
         const summaryParams = { ...filterParams };
         delete summaryParams.page;
@@ -320,7 +351,7 @@ export default function Dashboard() {
   const handleAddDelivery = useCallback(() => {
     navigate("/admin/journeys");
   }, [navigate]);
-  
+
   const filterOptions = useMemo(
     () => [
       {
@@ -353,7 +384,7 @@ export default function Dashboard() {
     [cities, drivers, routes]
   );
 
-  if (loading) return <div className="text-center py-10"><Loader/></div>;
+  if (loading) return <div className="text-center py-10"><Loader /></div>;
   if (error) return <div className="text-center text-red-600 py-10">{error}</div>
   return (
     <>
@@ -397,263 +428,283 @@ export default function Dashboard() {
           color: #9ca3af;
         }
       `}</style>
-      
-    <div className="min-h-screen bg-gray-100 text-gray-900 font-poppins">
-      <Header />
 
-      <main className="max-w-[1450px] mx-auto p-2 sm:p-4 pb-20 sm:pb-40">
-        <section className="bg-white border border-gray-200 rounded-xl shadow-sm mb-4">
-          <div className="font-bold text-gray-900 bg-gray-50 border-b border-gray-200 px-4 py-3 flex items-center justify-between">
-            <span>Data Filters</span>
-            {showTodayOnly && (
-              <span className="text-sm font-normal text-blue-600">
-                📅 Showing today's journeys
-              </span>
-            )}
-            {isFiltered && !showTodayOnly && (
-              <span className="text-sm font-normal text-gray-600">
-                📅 Showing filtered data
-              </span>
-            )}
-          </div>
-          <div className="divide-y">
-            {filterOptions.map((item, i) => (
-              <div
-                key={i}
-                className="grid grid-cols-1 sm:grid-cols-[160px_1fr_40px] items-center gap-2 sm:gap-3 px-4 py-3"
-              >
-                <div className="text-gray-600">{item.label}</div>
-                {item.type === "select" ? (
-                  <select
-                    className="w-full border border-gray-200 rounded-lg px-3 py-2"
-                    name={item.name}
-                    value={localFilters[item.name]}
-                    onChange={handleFilterChange}
-                  >
-                    {item.options.map((opt, j) => (
-                      <option key={j} value={opt}>
-                        {opt}
-                      </option>
-                    ))}
-                  </select>
-                ) : (
-                  <input
-                    type={item.type}
-                    name={item.name}
-                    value={localFilters[item.name]}
-                    onChange={handleFilterChange}
-                    className="w-full border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-400"
-                  />
-                )}
-                <div className="text-gray-400 text-center hidden sm:block">
-                  {item.type === "select" ? "▾" : "📅"}
-                </div>
-              </div>
-            ))}
+      <div className="min-h-screen bg-gray-100 text-gray-900 font-poppins">
+        <Header />
 
-            {isSuperAdmin && (
-              <div className="flex items-center gap-3 px-4 py-3 bg-blue-50 border-l-4 border-blue-500">
-                <input
-                  type="checkbox"
-                  name="companyEarnings"
-                  checked={localFilters.companyEarnings}
-                  onChange={handleFilterChange}
-                  className="w-4 h-4"
-                />
-                <span className="font-medium text-gray-700">
-                  Summary
+        <main className="max-w-[1450px] mx-auto p-2 sm:p-4 pb-20 sm:pb-40">
+          <section className="bg-white border border-gray-200 rounded-xl shadow-sm mb-4">
+            <div className="font-bold text-gray-900 bg-gray-50 border-b border-gray-200 px-4 py-3 flex items-center justify-between">
+              <span>Data Filters</span>
+              {showTodayOnly && (
+                <span className="text-sm font-normal text-blue-600">
+                  📅 Showing today's journeys
                 </span>
-              </div>
-            )}
-
-            <div className="px-4 py-3 flex flex-wrap gap-3">
-              <button
-                onClick={handleFilterClick}
-                className="bg-blue-600 text-white font-semibold px-4 py-2 rounded-lg shadow-md hover:bg-blue-700 transition-colors"
-              >
-                Filter Data
-              </button>
-              <button
-                onClick={handleClearFilters}
-                className="bg-gray-500 text-white font-semibold px-4 py-2 rounded-lg shadow-md hover:bg-gray-600 transition-colors"
-              >
-                Clear Filters
-              </button>
-              <button
-                onClick={handleAddDelivery}
-                className="bg-blue-600 text-white font-semibold px-4 py-2 rounded-lg shadow-md hover:bg-blue-700 transition-colors"
-              >
-                Add Delivery
-              </button>
-              
-              {shouldShowPayButton && (
-                <button
-                  onClick={() => setShowConfirmModal(true)}
-                  disabled={paymentProcessing}
-                  className="bg-green-600 text-white font-semibold px-4 py-2 rounded-lg shadow-md hover:bg-green-700 transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed"
-                >
-                  {paymentProcessing ? "Processing..." : `💰 Pay ${reduxFilters.driver}`}
-                </button>
+              )}
+              {isFiltered && !showTodayOnly && (
+                <span className="text-sm font-normal text-gray-600">
+                  📅 Showing filtered data
+                </span>
               )}
             </div>
-
-            {showExtraFields && isSuperAdmin && (
-              <div className="px-4 py-3 grid grid-cols-1 gap-3 bg-blue-50">
-                <div className="mb-2 font-semibold text-gray-700 flex items-center gap-2">
-                  <svg className="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
-                  </svg>
-                   Summary
-                  {summaryLoading && <span className="text-sm text-gray-500 ml-2">(Loading...)</span>}
-                </div>
-                
-                {[
-                  { field: "packages", label: "Total Packages" },
-                  { field: "noScanned", label: "Total No Scanned" },
-                  { field: "failedAttempt", label: "Total Failed Attempt" },
-                  { field: "firstStop", label: "Total First Stop (FS)" },
-                  { field: "doubleStop", label: "Total Double Stop (DS)" },
-                  { field: "delivered", label: "Total Delivered" },
-                  { field: "driversPayment", label: "Total Drivers Payment" },
-                  { field: "companyEarnings", label: "Total Company Earnings", highlight: true },
-                ].map((item, i) => (
-                  <div key={i} className="flex items-center gap-3">
-                    <label className="w-48 text-gray-600">{item.label}:</label>
+            <div className="divide-y">
+              {filterOptions.map((item, i) => (
+                <div
+                  key={i}
+                  className="grid grid-cols-1 sm:grid-cols-[160px_1fr_40px] items-center gap-2 sm:gap-3 px-4 py-3"
+                >
+                  <div className="text-gray-600">{item.label}</div>
+                  {item.type === "select" ? (
+                    <select
+                      className="w-full border border-gray-200 rounded-lg px-3 py-2"
+                      name={item.name}
+                      value={localFilters[item.name]}
+                      onChange={handleFilterChange}
+                    >
+                      {item.options.map((opt, j) => (
+                        <option key={j} value={opt}>
+                          {opt}
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
                     <input
-                      type="text"
-                      name={item.field}
-                      value={extraFieldsData[item.field]}
-                      readOnly
-                      className="flex-1 border border-gray-200 rounded-lg px-3 py-2 bg-white text-gray-700 font-semibold"
+                      type={item.type}
+                      name={item.name}
+                      value={localFilters[item.name]}
+                      onChange={handleFilterChange}
+                      className="w-full border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-400"
                     />
+                  )}
+                  <div className="text-gray-400 text-center hidden sm:block">
+                    {item.type === "select" ? "▾" : "📅"}
                   </div>
-                ))}
-              </div>
-            )}
-          </div>
-        </section>
-
-        {shouldShowDataTypeTabs && (
-          <section className="bg-white border border-gray-200 rounded-xl shadow-sm mb-4 p-4">
-            <div className="flex items-center gap-2 flex-wrap">
-              <span className="text-sm font-semibold text-gray-700 mr-2">View:</span>
-              
-              <button
-                onClick={() => handleDataTypeChange("all")}
-                className={`data-type-tab ${selectedDataType === "all" ? "active" : ""}`}
-              >
-                📊 All Data
-              </button>
-              
-              <button
-                onClick={() => handleDataTypeChange("daily")}
-                disabled={!availableDataTypes.daily}
-                className={`data-type-tab ${selectedDataType === "daily" ? "active" : ""} ${!availableDataTypes.daily ? "disabled" : ""}`}
-              >
-                📅 SPEEDX
-              </button>
-              
-              <button
-                onClick={() => handleDataTypeChange("weekly")}
-                disabled={!availableDataTypes.weekly}
-                className={`data-type-tab ${selectedDataType === "weekly" ? "active" : ""} ${!availableDataTypes.weekly ? "disabled" : ""}`}
-              >
-                📆 GOFO
-              </button>
-              
-              <span className="ml-auto text-xs text-gray-500">
-                {selectedDataType === "all" && "Showing all records"}
-                {selectedDataType === "daily" && "Showing daily records only"}
-                {selectedDataType === "weekly" && "Showing weekly records only"}
-              </span>
-            </div>
-          </section>
-        )}
-
-        {isFiltered && (
-          <section className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-x-auto">
-            <div className="font-bold text-gray-900 bg-gray-50 border-b border-gray-200 px-4 py-3">
-              Driver Jobs
-            </div>
-            <PaymentDashboardTable showExtraFields={showExtraFields && isSuperAdmin} />
-          </section>
-        )}
-      </main>
-
-      <Nav />
-
-      {/* ✅ UPDATED: Confirmation Modal with Closed Status Warning */}
-      {showConfirmModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg shadow-xl max-w-md w-full animate-fadeIn border border-gray-200">
-            <div className="p-6">
-              <div className="flex items-center gap-3 mb-4">
-                <div className="w-12 h-12 bg-green-100 rounded-full flex items-center justify-center">
-                  <svg className="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                  </svg>
                 </div>
-                <h3 className="text-lg font-semibold text-gray-900">
-                  Confirm Payment
-                </h3>
+              ))}
+
+              {isSuperAdmin && (
+                <div className="flex items-center gap-3 px-4 py-3 bg-blue-50 border-l-4 border-blue-500">
+                  <input
+                    type="checkbox"
+                    name="companyEarnings"
+                    checked={localFilters.companyEarnings}
+                    onChange={handleFilterChange}
+                    className="w-4 h-4"
+                  />
+                  <span className="font-medium text-gray-700">
+                    Summary
+                  </span>
+                </div>
+              )}
+
+              <div className="px-4 py-3 flex flex-wrap gap-3">
+                <button
+                  onClick={handleFilterClick}
+                  className="bg-blue-600 text-white font-semibold px-4 py-2 rounded-lg shadow-md hover:bg-blue-700 transition-colors"
+                >
+                  Filter Data
+                </button>
+                <button
+                  onClick={handleClearFilters}
+                  className="bg-gray-500 text-white font-semibold px-4 py-2 rounded-lg shadow-md hover:bg-gray-600 transition-colors"
+                >
+                  Clear Filters
+                </button>
+                <button
+                  onClick={handleAddDelivery}
+                  className="bg-blue-600 text-white font-semibold px-4 py-2 rounded-lg shadow-md hover:bg-blue-700 transition-colors"
+                >
+                  Add Delivery
+                </button>
+
+                {/* ✅ UPDATED: Separate Daily and Weekly Pay Buttons */}
+                {shouldShowDailyPayButton && (
+                  <button
+                    onClick={() => {
+                      setSelectedPaymentType('daily');
+                      setShowConfirmModal(true);
+                    }}
+                    disabled={paymentProcessing}
+                    className="bg-green-600 text-white font-semibold px-4 py-2 rounded-lg shadow-md hover:bg-green-700 transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed"
+                  >
+                    {paymentProcessing ? "Processing..." : `📅 Pay Daily (${paymentCounts.dailyClosedUnpaid})`}
+                  </button>
+                )}
+
+                {shouldShowWeeklyPayButton && (
+                  <button
+                    onClick={() => {
+                      setSelectedPaymentType('weekly');
+                      setShowConfirmModal(true);
+                    }}
+                    disabled={paymentProcessing}
+                    className="bg-purple-600 text-white font-semibold px-4 py-2 rounded-lg shadow-md hover:bg-purple-700 transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed"
+                  >
+                    {paymentProcessing ? "Processing..." : `📆 Pay Weekly (${paymentCounts.weeklyClosedUnpaid})`}
+                  </button>
+                )}
               </div>
-              
-              <div className="mb-4 space-y-3">
-                <p className="text-gray-700">
-                  Mark payments as paid for <span className="font-semibold text-gray-900">{reduxFilters.driver}</span>?
-                </p>
-                
-                <div className="bg-green-50 border border-green-200 rounded-lg p-3">
-                  <div className="flex items-start gap-2">
-                    <svg className="w-5 h-5 text-green-600 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+
+              {showExtraFields && isSuperAdmin && (
+                <div className="px-4 py-3 grid grid-cols-1 gap-3 bg-blue-50">
+                  <div className="mb-2 font-semibold text-gray-700 flex items-center gap-2">
+                    <svg className="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
                     </svg>
-                    <div>
-                      <p className="text-sm font-semibold text-green-800">
-                        {paymentCounts.closedUnpaid} closed journey(s) will be marked as paid
-                      </p>
-                    </div>
+                    Summary
+                    {summaryLoading && <span className="text-sm text-gray-500 ml-2">(Loading...)</span>}
                   </div>
+
+                  {[
+                    { field: "packages", label: "Total Packages" },
+                    { field: "noScanned", label: "Total No Scanned" },
+                    { field: "failedAttempt", label: "Total Failed Attempt" },
+                    { field: "firstStop", label: "Total First Stop (FS)" },
+                    { field: "doubleStop", label: "Total Double Stop (DS)" },
+                    { field: "delivered", label: "Total Delivered" },
+                    { field: "driversPayment", label: "Total Drivers Payment" },
+                    { field: "companyEarnings", label: "Total Company Earnings", highlight: true },
+                  ].map((item, i) => (
+                    <div key={i} className="flex items-center gap-3">
+                      <label className="w-48 text-gray-600">{item.label}:</label>
+                      <input
+                        type="text"
+                        name={item.field}
+                        value={extraFieldsData[item.field]}
+                        readOnly
+                        className="flex-1 border border-gray-200 rounded-lg px-3 py-2 bg-white text-gray-700 font-semibold"
+                      />
+                    </div>
+                  ))}
                 </div>
-                
-                {paymentCounts.openUnpaid > 0 && (
-                  <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">
+              )}
+            </div>
+          </section>
+
+          {shouldShowDataTypeTabs && (
+            <section className="bg-white border border-gray-200 rounded-xl shadow-sm mb-4 p-4">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-sm font-semibold text-gray-700 mr-2">View:</span>
+
+                <button
+                  onClick={() => handleDataTypeChange("all")}
+                  className={`data-type-tab ${selectedDataType === "all" ? "active" : ""}`}
+                >
+                  📊 All Data
+                </button>
+
+                <button
+                  onClick={() => handleDataTypeChange("daily")}
+                  disabled={!availableDataTypes.daily}
+                  className={`data-type-tab ${selectedDataType === "daily" ? "active" : ""} ${!availableDataTypes.daily ? "disabled" : ""}`}
+                >
+                  📅 SPEEDX
+                </button>
+
+                <button
+                  onClick={() => handleDataTypeChange("weekly")}
+                  disabled={!availableDataTypes.weekly}
+                  className={`data-type-tab ${selectedDataType === "weekly" ? "active" : ""} ${!availableDataTypes.weekly ? "disabled" : ""}`}
+                >
+                  📆 GOFO
+                </button>
+
+                <span className="ml-auto text-xs text-gray-500">
+                  {selectedDataType === "all" && "Showing all records"}
+                  {selectedDataType === "daily" && "Showing daily records only"}
+                  {selectedDataType === "weekly" && "Showing weekly records only"}
+                </span>
+              </div>
+            </section>
+          )}
+
+          {isFiltered && (
+            <section className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-x-auto">
+              <div className="font-bold text-gray-900 bg-gray-50 border-b border-gray-200 px-4 py-3">
+                Driver Jobs
+              </div>
+              <PaymentDashboardTable showExtraFields={showExtraFields && isSuperAdmin} />
+            </section>
+          )}
+        </main>
+
+        <Nav />
+
+        {/* ✅ UPDATED: Confirmation Modal for Separate Daily/Weekly Payments */}
+        {showConfirmModal && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-lg shadow-xl max-w-md w-full animate-fadeIn border border-gray-200">
+              <div className="p-6">
+                <div className="flex items-center gap-3 mb-4">
+                  <div className={`w-12 h-12 rounded-full flex items-center justify-center ${selectedPaymentType === 'weekly' ? 'bg-purple-100' : 'bg-green-100'}`}>
+                    <svg className={`w-6 h-6 ${selectedPaymentType === 'weekly' ? 'text-purple-600' : 'text-green-600'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                  </div>
+                  <h3 className="text-lg font-semibold text-gray-900">
+                    Confirm {selectedPaymentType === 'daily' ? 'Daily (SPEEDX)' : 'Weekly (GOFO)'} Payment
+                  </h3>
+                </div>
+
+                <div className="mb-4 space-y-3">
+                  <p className="text-gray-700">
+                    Mark <span className="font-semibold">{selectedPaymentType === 'daily' ? 'daily' : 'weekly'}</span> payments as paid for <span className="font-semibold text-gray-900">{reduxFilters.driver}</span>?
+                  </p>
+
+                  <div className={`border rounded-lg p-3 ${selectedPaymentType === 'weekly' ? 'bg-purple-50 border-purple-200' : 'bg-green-50 border-green-200'}`}>
                     <div className="flex items-start gap-2">
-                      <svg className="w-5 h-5 text-amber-600 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                      <svg className={`w-5 h-5 mt-0.5 ${selectedPaymentType === 'weekly' ? 'text-purple-600' : 'text-green-600'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
                       </svg>
                       <div>
-                        <p className="text-sm font-semibold text-amber-800">
-                          {paymentCounts.openUnpaid} journey(s) with open status will NOT be paid
-                        </p>
-                        <p className="text-xs text-amber-700 mt-1">
-                          Only journeys with closed status "Yes" can be marked as paid
+                        <p className={`text-sm font-semibold ${selectedPaymentType === 'weekly' ? 'text-purple-800' : 'text-green-800'}`}>
+                          {selectedPaymentType === 'daily' ? paymentCounts.dailyClosedUnpaid : paymentCounts.weeklyClosedUnpaid} closed {selectedPaymentType} journey(s) will be marked as paid
                         </p>
                       </div>
                     </div>
                   </div>
-                )}
-              </div>
-              
-              <div className="flex gap-3 justify-end">
-                <button
-                  onClick={() => setShowConfirmModal(false)}
-                  className="px-4 py-2 text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-md transition-colors font-medium"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={handlePayDriver}
-                  className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors font-medium"
-                >
-                  Confirm Payment
-                </button>
+
+                  {paymentCounts.openUnpaid > 0 && (
+                    <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">
+                      <div className="flex items-start gap-2">
+                        <svg className="w-5 h-5 text-amber-600 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                        </svg>
+                        <div>
+                          <p className="text-sm font-semibold text-amber-800">
+                            {paymentCounts.openUnpaid} journey(s) with open status will NOT be paid
+                          </p>
+                          <p className="text-xs text-amber-700 mt-1">
+                            Only journeys with closed status "Yes" can be marked as paid
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                <div className="flex gap-3 justify-end">
+                  <button
+                    onClick={() => {
+                      setShowConfirmModal(false);
+                      setSelectedPaymentType(null);
+                    }}
+                    className="px-4 py-2 text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-md transition-colors font-medium"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={() => handlePayDriver(selectedPaymentType)}
+                    className={`px-4 py-2 text-white rounded-md transition-colors font-medium ${selectedPaymentType === 'weekly' ? 'bg-purple-600 hover:bg-purple-700' : 'bg-green-600 hover:bg-green-700'}`}
+                  >
+                    Confirm Payment
+                  </button>
+                </div>
               </div>
             </div>
           </div>
-        </div>
-      )}
-    </div>
+        )}
+      </div>
     </>
   );
 }

@@ -93,3 +93,34 @@ export const getAllottedDriversByCity = async (id, cityJob) => {
   );
   return result.rows;
 };
+
+// ✅ NEW: Get routes filtered by city (for superadmin)
+export const getRoutesByCity = async (cityJob) => {
+  const result = await pool.query(
+    `SELECT r.id, r.name, r.enabled, r.job AS city
+     FROM routes r
+     WHERE r.job = $1
+     ORDER BY r.name ASC`,
+    [cityJob]
+  );
+  return result.rows;
+};
+
+// ✅ NEW: Get allotted routes filtered by city (for admin)
+export const getAllottedRoutesByCity = async (id, cityJob) => {
+  const result = await pool.query(
+    `SELECT 
+      r.id,
+      r.name,
+      r.enabled,
+      c.job AS city
+    FROM routes r
+    JOIN city c ON c.job = r.job
+    JOIN admin_city_ref acr ON acr.city_id = c.id
+    WHERE acr.admin_id = $1
+    AND r.job = $2
+    ORDER BY r.name ASC`,
+    [id, cityJob]
+  );
+  return result.rows;
+};

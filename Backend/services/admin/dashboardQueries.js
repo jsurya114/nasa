@@ -502,8 +502,8 @@ export const AdminDashboardQueries = {
     }
   },
 
-  // ✅ UPDATED: Only pay journeys with closed = true
-  updateDriverPaymentStatus: async (driverName, startDate, endDate) => {
+  // ✅ UPDATED: Only pay journeys with closed = true, with optional dataType filter
+  updateDriverPaymentStatus: async (driverName, startDate, endDate, dataType = null) => {
     try {
       const whereClauses = [];
       const queryParams = [driverName];
@@ -520,6 +520,15 @@ export const AdminDashboardQueries = {
       if (endDate) {
         whereClauses.push(`pd.journey_date <= $${queryParams.length + 1}::date`);
         queryParams.push(endDate);
+      }
+
+      // ✅ NEW: Data type filter for separate daily/weekly payments
+      if (dataType === 'daily') {
+        // Daily: start_seq and end_seq are both non-zero
+        whereClauses.push(`(pd.start_seq IS NOT NULL AND pd.end_seq IS NOT NULL AND pd.start_seq != 0 AND pd.end_seq != 0)`);
+      } else if (dataType === 'weekly') {
+        // Weekly: start_seq or end_seq is null or zero
+        whereClauses.push(`(pd.start_seq IS NULL OR pd.end_seq IS NULL OR pd.start_seq = 0 OR pd.end_seq = 0)`);
       }
 
       // ✅ CRITICAL: Build the complete UPDATE query with closed status check
