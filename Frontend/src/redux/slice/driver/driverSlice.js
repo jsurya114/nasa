@@ -31,6 +31,7 @@ export const driverLogin = createAsyncThunk(
       if (data.accessToken) {
         localStorage.setItem('driverToken', data.accessToken);
         localStorage.setItem('driverTimezone', timezone);
+        localStorage.setItem('lastActivity', Date.now().toString());
       }
       if (data.refreshToken) {
         localStorage.setItem('driverRefreshToken', data.refreshToken);
@@ -74,18 +75,19 @@ export const driverLogout = createAsyncThunk(
   "driver/logout",
   async (_, { rejectWithValue }) => {
     try {
-      // Optimistic cleanup: remove tokens immediately
+      const res = await axios.post(`/driver/logout`);
+      // Cleanup tokens after successful logout request
       localStorage.removeItem('driverToken');
       localStorage.removeItem('driverRefreshToken');
       localStorage.removeItem('driverTimezone');
-
-      const res = await axios.post(`/driver/logout`);
+      localStorage.removeItem('lastActivity');
       return res.data;
     } catch (error) {
       // Ensure tokens are removed even on error
       localStorage.removeItem('driverToken');
       localStorage.removeItem('driverRefreshToken');
       localStorage.removeItem('driverTimezone');
+      localStorage.removeItem('lastActivity');
       return rejectWithValue({ message: error.response?.data?.message || error.message || "Network error" });
     }
   }

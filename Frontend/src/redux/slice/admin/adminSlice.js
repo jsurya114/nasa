@@ -19,6 +19,7 @@ export const adminLogin = createAsyncThunk(
             // Store tokens in localStorage
             if (data.accessToken) {
                 localStorage.setItem('adminToken', data.accessToken);
+                localStorage.setItem('lastActivity', Date.now().toString());
             }
             if (data.refreshToken) {
                 localStorage.setItem('adminRefreshToken', data.refreshToken);
@@ -52,16 +53,17 @@ export const adminLogout = createAsyncThunk(
     "admin/logout",
     async (_, { rejectWithValue }) => {
         try {
-            // Optimistic cleanup: remove tokens immediately
+            const res = await axios.post(`/admin/logout`);
+            // Cleanup tokens after successful logout request
             localStorage.removeItem('adminToken');
             localStorage.removeItem('adminRefreshToken');
-
-            const res = await axios.post(`/admin/logout`);
+            localStorage.removeItem('lastActivity');
             return res.data;
         } catch (error) {
             // Ensure tokens are removed even on error
             localStorage.removeItem('adminToken');
             localStorage.removeItem('adminRefreshToken');
+            localStorage.removeItem('lastActivity');
             return rejectWithValue(error.response?.data?.message || error.message)
         }
     }

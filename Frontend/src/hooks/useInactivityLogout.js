@@ -12,7 +12,7 @@ const useInactivityLogout = () => {
 
     // Timeouts in milliseconds
     const ADMIN_TIMEOUT = 5 * 60 * 60 * 1000; // 5 hours
-    const DRIVER_TIMEOUT = 2 * 60 * 1000; // 2 minutes
+    const DRIVER_TIMEOUT = 24 * 60 * 60 * 1000; // 24 hours (expanded for mobile usage)
 
     const getTimeoutAndAction = () => {
         if (isAdminAuthenticated) {
@@ -70,6 +70,10 @@ const useInactivityLogout = () => {
             // Check if already expired before setting up listeners
             const expired = checkInactivity();
             if (!expired) {
+                // Ensure lastActivity is initialized if not present
+                if (!localStorage.getItem('lastActivity')) {
+                    localStorage.setItem('lastActivity', Date.now().toString());
+                }
                 resetTimer();
                 events.forEach((event) => {
                     window.addEventListener(event, handleActivity);
