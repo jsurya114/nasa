@@ -349,7 +349,7 @@ createEntriesFromWeeklyCount: async () => {
         wc.total_deliveries AS delivered,
         ((wc.fs * r.driver_route_price) +
         (wc.ds * r.driver_doublestop_price)) AS driver_payment,
-       ((wc.fs *( r.company_route_price-r.driver_route_price)) +
+        ((wc.fs *( r.company_route_price-r.driver_route_price)) +
         (wc.ds * (r.company_doublestop_price-r.driver_doublestop_price))) AS company_earnings,
         TRUE,
         FALSE,

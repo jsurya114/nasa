@@ -36,7 +36,8 @@ export const store = configureStore({
        analytics:analyticsReducer,
        availability: availabilityReducer,
        password:passwordReducer,
-      language:languageReducer
+      language:languageReducer,
+      excel:excelReducer
     
     }
 })
