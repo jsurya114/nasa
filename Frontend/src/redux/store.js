@@ -1,3 +1,4 @@
+
 import { configureStore } from "@reduxjs/toolkit"
 import adminReducer from '../redux/slice/admin/adminSlice.js'
 import JobReducer from '../redux/slice/admin/jobSlice'
@@ -36,7 +37,8 @@ export const store = configureStore({
        analytics:analyticsReducer,
        availability: availabilityReducer,
        password:passwordReducer,
-      language:languageReducer
+      language:languageReducer,
+      excel:excelReducer
     
     }
 })
