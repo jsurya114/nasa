@@ -19,7 +19,7 @@ export const getUpdatedTempDashboardData = async (req, res) => {
     const { id, role } = req.user;
 
     const { date, page = 1, limit = 10 } = req.query;
-    
+
     if (!date || date === 'undefined' || date === 'null') {
       return res.status(HttpStatus.BAD_REQUEST).json({
         success: false,
@@ -35,7 +35,7 @@ export const getUpdatedTempDashboardData = async (req, res) => {
         message: "Date must be in YYYY-MM-DD format",
       });
     }
-    
+
     await client.query('BEGIN');
 
     const pageNum = parseInt(page);
@@ -96,19 +96,19 @@ export const DailyExcelUpload = async (req, res) => {
     }
 
     const { uploadDate } = req.body;
-   
-    
-        
+
+
+
     if (!uploadDate) {
-  return res.status(HttpStatus.BAD_REQUEST).json({
-    success: false,
-    message: "uploadDate is required"
-  });
-}
+      return res.status(HttpStatus.BAD_REQUEST).json({
+        success: false,
+        message: "uploadDate is required"
+      });
+    }
 
 
     const fileName = req.file;
-      const workbook = XLSX.read(req.file.buffer, { type: "buffer" });
+    const workbook = XLSX.read(req.file.buffer, { type: "buffer" });
     const sheet = workbook.Sheets[sheetName];
 
     if (!sheet) {
@@ -122,18 +122,18 @@ export const DailyExcelUpload = async (req, res) => {
 
     await ExcelFileQueries.deleteIfTableAlreadyExists(tableName, client);
     await ExcelFileQueries.createDailyTable(tableName, client);
-   await ExcelFileQueries.insertDataIntoDailyTable(
-  tableName,
-  rows,
-  uploadDate,
-  client
-);
+    await ExcelFileQueries.insertDataIntoDailyTable(
+      tableName,
+      rows,
+      uploadDate,
+      client
+    );
 
 
     await ExcelFileQueries.mergeDeliveriesAndExcelData(client);
 
     // 🔥 RESET old delivery results so recalculation works
-    await ExcelFileQueries.resetDeliveryResults(client,uploadDate);
+    await ExcelFileQueries.resetDeliveryResults(client, uploadDate);
 
     await ExcelFileQueries.setUntouchedRowsAsNoScannedAndUpdateFailedAttempt(
       client
@@ -152,6 +152,9 @@ export const DailyExcelUpload = async (req, res) => {
         delivered = 0,
         is_deliveries_count_added = false
        WHERE journey_date = $1
+         AND (start_seq != 0 OR end_seq != 0)
+         AND paid = false
+   
     `, [uploadDate]);
 
     await ExcelFileQueries.addEachDriversCount(client);
@@ -182,9 +185,9 @@ export const DailyExcelUpload = async (req, res) => {
 
 
 
-  
 
 
 
 
-      
+
+
