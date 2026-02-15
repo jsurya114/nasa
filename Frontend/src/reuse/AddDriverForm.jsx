@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { useSelector, useDispatch } from "react-redux";
+import Select from 'react-select';
 
 function AddDriverForm({ onSubmit, editData, isEdit, onCancel }) {
 
@@ -21,9 +22,30 @@ function AddDriverForm({ onSubmit, editData, isEdit, onCancel }) {
 
   const [errors, setErrors] = useState({});
 
+  // Prepare city options
+  const cityOptions = Array.isArray(city)
+    ? city.map((c) => ({ value: c.job, label: c.job, id: c.id }))
+    : [];
+
   // Populate form when edit starts
   useEffect(() => {
     if (isEdit && editData) {
+      // Parse city string "City1, City2" into options
+      let selectedCities = [];
+      if (editData.job) {
+        const cityNames = editData.job.split(',').map(s => s.trim());
+        // Find matching options from available cities
+        selectedCities = cityOptions.filter(opt => cityNames.includes(opt.value));
+
+        // If some cities are not in the list (e.g. disabled/removed), create options for them to show current assignment
+        const foundNames = selectedCities.map(c => c.value);
+        cityNames.forEach(name => {
+          if (name && !foundNames.includes(name)) {
+            selectedCities.push({ value: name, label: name });
+          }
+        });
+      }
+
       setForm({
         name: editData.name || "",
         email: editData.email || "",
@@ -31,11 +53,11 @@ function AddDriverForm({ onSubmit, editData, isEdit, onCancel }) {
         driver_code: editData.driver_code || "",
         password: "", // Leave empty - optional to change
         confirmPassword: "",
-        city: editData.job || "",
+        city: selectedCities,
         enabled: !!editData.enabled,
       });
     }
-  }, [isEdit, editData]);
+  }, [isEdit, editData, city]);
 
 
   const handleChange = (e) => {
@@ -47,19 +69,28 @@ function AddDriverForm({ onSubmit, editData, isEdit, onCancel }) {
     setErrors((prev) => ({ ...prev, [name]: "" }));
   };
 
+  const handleCityChange = (selectedOptions) => {
+    setForm(prev => ({
+      ...prev,
+      city: selectedOptions || []
+    }));
+    setErrors(prev => ({ ...prev, city: "" }));
+  };
+
   const validate = () => {
     let newErrors = {};
 
     if (!form.name.trim()) newErrors.name = "Name is required";
     if (!form.email.trim()) newErrors.email = "Email is required";
-    
+
     // Validate phone number (basic validation - adjust regex as needed)
     if (form.phoneNumber && !/^\+?[\d\s\-()]+$/.test(form.phoneNumber)) {
       newErrors.phoneNumber = "Invalid phone number format";
     }
-    
+
     if (!form.driver_code || !form.driver_code.toString().trim()) newErrors.driver_code = "Driver Code is required";
-    if (!form.city.trim()) newErrors.city = "City is required";
+
+    if (!form.city || form.city.length === 0) newErrors.city = "At least one city is required";
 
     if (!isEdit) {
       // For new drivers, password is required
@@ -89,12 +120,15 @@ function AddDriverForm({ onSubmit, editData, isEdit, onCancel }) {
     }
 
     const { confirmPassword, ...driverData } = form;
-    
+
+    // Transform city options to simple array of strings for backend
+    driverData.city = form.city.map(c => c.value);
+
     // If editing and password is empty, don't send password field
     if (isEdit && !driverData.password.trim()) {
       delete driverData.password;
     }
-    
+
     onSubmit(driverData);
 
     if (!isEdit) {
@@ -105,7 +139,7 @@ function AddDriverForm({ onSubmit, editData, isEdit, onCancel }) {
         driver_code: "",
         password: "",
         confirmPassword: "",
-        city: "",
+        city: [],
         enabled: false,
       });
     }
@@ -121,11 +155,11 @@ function AddDriverForm({ onSubmit, editData, isEdit, onCancel }) {
       driver_code: "",
       password: "",
       confirmPassword: "",
-      city: "",
+      city: [],
       enabled: false,
     });
     setErrors({});
-    onCancel(); 
+    onCancel();
   };
 
   return (
@@ -166,8 +200,8 @@ function AddDriverForm({ onSubmit, editData, isEdit, onCancel }) {
         value={form.driver_code}
         onChange={handleChange}
         placeholder="Driver Code"
-    
-         className="px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
+
+        className="px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
       />
       {errors.driver_code && (
         <p className="text-red-500 text-sm">{errors.driver_code}</p>
@@ -209,24 +243,29 @@ function AddDriverForm({ onSubmit, editData, isEdit, onCancel }) {
         <label className="text-sm font-medium text-gray-700">
           City
         </label>
-        <select
-          value={form.city}
-          name="city"
-          onChange={handleChange}
-          className="w-full px-3 py-2 border rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-purple-500"
-        >
-          <option value="">Select City</option>
 
-          {Array.isArray(city) &&
-            city.map((c) => (
-              <option key={c.id} value={c.job}>
-                {c.job}
-              </option>
-            ))}
-        </select>
+        <Select
+          isMulti
+          name="city"
+          options={cityOptions}
+          value={form.city}
+          onChange={handleCityChange}
+          placeholder="Select Cities..."
+          className="basic-multi-select"
+          classNamePrefix="select"
+          styles={{
+            control: (base) => ({
+              ...base,
+              borderColor: errors.city ? '#ef4444' : base.borderColor,
+              '&:hover': {
+                borderColor: errors.city ? '#ef4444' : '#a855f7'
+              }
+            })
+          }}
+        />
 
         {errors.city && <p className="text-red-500 text-sm">{errors.city}</p>}
-        
+
         {/* Info message about city access */}
         {!isSuperAdmin && city.length > 0 && (
           <p className="text-xs text-blue-600 flex items-center gap-1">
@@ -236,7 +275,7 @@ function AddDriverForm({ onSubmit, editData, isEdit, onCancel }) {
             Showing only your assigned cities ({city.length})
           </p>
         )}
-        
+
         {city.length === 0 && !loading && (
           <p className="text-xs text-red-600 flex items-center gap-1">
             <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">

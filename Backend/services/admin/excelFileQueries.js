@@ -20,7 +20,7 @@ export const ExcelFileQueries = {
           upload_date DATE
         )
       `);
-      
+
     } catch (error) {
       console.error("❌ Error creating table:", error);
       throw error;
@@ -30,7 +30,7 @@ export const ExcelFileQueries = {
   insertDataIntoDailyTable: async (tableName, data, uploadDate, client) => {
     try {
       if (!data || data.length === 0) {
-      
+
         return;
       }
 
@@ -74,7 +74,7 @@ export const ExcelFileQueries = {
       `;
 
       await client.query(query, values);
-     
+
     } catch (error) {
       console.error("❌ Error inserting daily data:", error);
       throw error;
@@ -84,7 +84,7 @@ export const ExcelFileQueries = {
   deleteIfTableAlreadyExists: async (tableName, client) => {
     try {
       await client.query(`DROP TABLE IF EXISTS ${tableName}`);
-      
+
     } catch (error) {
       console.error(error);
       throw error;
@@ -107,7 +107,7 @@ export const ExcelFileQueries = {
         WHERE d.seq_route_code = e.seq_route_code
           AND DATE(d.driver_set_date) = DATE(e.upload_date);
       `);
-      
+
     } catch (error) {
       throw error;
     }
@@ -134,7 +134,7 @@ export const ExcelFileQueries = {
         WHERE final_result = 'not_assigned';
       `;
       await client.query(queryStr);
-     
+
     } catch (error) {
       throw error;
     }
@@ -203,7 +203,8 @@ export const ExcelFileQueries = {
           AND EXISTS (
             SELECT 1
             FROM admin_city_ref acr
-            WHERE acr.city_id = d.city_id
+            JOIN driver_city_ref dcr ON acr.city_id = dcr.city_id
+            WHERE dcr.driver_id = d.id
               AND acr.admin_id = $2
           )
         `;
@@ -249,7 +250,8 @@ export const ExcelFileQueries = {
           AND EXISTS (
             SELECT 1
             FROM admin_city_ref acr
-            WHERE acr.city_id = d.city_id
+            JOIN driver_city_ref dcr ON acr.city_id = dcr.city_id
+            WHERE dcr.driver_id = d.id
               AND acr.admin_id = $2
           )
         `;
@@ -298,7 +300,7 @@ export const ExcelFileQueries = {
       `;
 
       await client.query(queryStr);
-      
+
     } catch (error) {
       console.error(error);
       throw error;

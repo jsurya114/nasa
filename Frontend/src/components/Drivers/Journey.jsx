@@ -10,7 +10,7 @@ import {
   fetchTodayJourney,
   saveJourney,
   clearJourneyError,
-  // fetchDriverCityType,
+  fetchDriverCityType,
 } from "../../redux/slice/driver/journeySlice.js";
 
 const Journey = () => {
@@ -25,15 +25,15 @@ const Journey = () => {
   const journeyFetchedRef = useRef(false);
   const prevDriverIdRef = useRef(null);
 
-  const { 
-    routes, 
-    routesStatus, 
-    routesError, 
-    journeys, 
-    journeyStatus, 
+  const {
+    routes,
+    routesStatus,
+    routesError,
+    journeys,
+    journeyStatus,
     journeyError,
     cityType,
-    cityTypeStatus 
+    cityTypeStatus
   } = useSelector((state) => state.journey);
 
   const currentDate = useMemo(() => {
@@ -52,9 +52,9 @@ const Journey = () => {
   });
 
   // Fetch city type on mount
-  // useEffect(() => {
-  //   dispatch(fetchDriverCityType());
-  // }, [dispatch]);
+  useEffect(() => {
+    dispatch(fetchDriverCityType(driver?.id));
+  }, [dispatch, driver?.id]);
 
   useEffect(() => {
     if (!routesFetchedRef.current && routesStatus === 'idle') {
@@ -110,7 +110,7 @@ const Journey = () => {
 
   const handleChange = useCallback((e) => {
     const { name, value } = e.target;
-    
+
     setFormData((prev) => {
       if (prev[name] === value) return prev;
       return { ...prev, [name]: value };
@@ -135,7 +135,7 @@ const Journey = () => {
     e.preventDefault();
 
     if (isJourneySaved) return;
-    
+
     setErrors({});
     setShowWeeklyRestriction(false);
 
@@ -150,11 +150,11 @@ const Journey = () => {
 
     try {
       await dispatch(saveJourney(journeyData)).unwrap();
-      
+
       await dispatch(fetchTodayJourney(driver.id)).unwrap();
-      
+
       setIsJourneySaved(true);
-      
+
       toast.success(t('journeySaved'), {
         position: "bottom-center",
         autoClose: 3000,
@@ -168,13 +168,13 @@ const Journey = () => {
       }));
     } catch (err) {
       setIsJourneySaved(false);
-      
+
       if (err.error === 'WEEKLY_CITY_RESTRICTION') {
         console.log('Weekly city restriction detected from backend');
         setShowWeeklyRestriction(true);
-        
+
         // dispatch(fetchDriverCityType());
-        
+
         toast.error(err.message || t('weeklyRestriction'), {
           position: "top-center",
           autoClose: 5000,
@@ -362,17 +362,16 @@ const Journey = () => {
             <button
               onClick={handleSubmit}
               disabled={isJourneySaved || isLoadingJourney}
-              className={`w-full py-2 px-4 rounded-md font-medium focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-colors ${
-                isJourneySaved || isLoadingJourney
+              className={`w-full py-2 px-4 rounded-md font-medium focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-colors ${isJourneySaved || isLoadingJourney
                   ? "bg-gray-400 text-gray-700 cursor-not-allowed"
                   : "bg-blue-600 text-white hover:bg-blue-700"
-              }`}
+                }`}
             >
-              {isLoadingJourney 
+              {isLoadingJourney
                 ? t('saving')
-                : isJourneySaved 
-                ? t('routeAlreadySaved')
-                : t('saveRoute')}
+                : isJourneySaved
+                  ? t('routeAlreadySaved')
+                  : t('saveRoute')}
             </button>
           </div>
         </div>

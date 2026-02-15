@@ -32,7 +32,7 @@ export const insertRoute = async (data) => {
     }
   }
 
- 
+
   const result = await pool.query(
     `INSERT INTO routes 
       (name, job, company_route_price, driver_route_price, company_doublestop_price, driver_doublestop_price, route_code_in_string, enabled) 
@@ -49,7 +49,7 @@ export const insertRoute = async (data) => {
     ]
   );
 
- 
+
   return result.rows[0];
 };
 
@@ -71,7 +71,7 @@ export const getRoutesForAdmin = async (adminId) => {
       AND c.enabled = true
     ORDER BY r.id ASC
   `, [adminId]);
-  
+
 
   return result.rows;
 };
@@ -89,11 +89,13 @@ export const getAllRoutesOfDriver = async (id) => {
       r.route_code_in_string,
       r.enabled
     FROM drivers d
-    JOIN city c ON c.id = d.city_id
+    JOIN driver_city_ref dcr ON d.id = dcr.driver_id
+    JOIN city c ON c.id = dcr.city_id
     JOIN routes r ON r.job = c.job
     WHERE d.id = $1
       AND d.enabled = true
-      AND r.enabled = true;
+      AND r.enabled = true
+      AND c.city_type = 'DAILY';
   `, [id]);
   return result.rows;
 };
@@ -164,14 +166,14 @@ export const toggleRouteStatusQuery = async (id) => {
 
   const route = await getRouteByIdQuery(id);
   if (!route) {
-   
+
     return null;
   }
   const result = await pool.query(
     "UPDATE routes SET enabled = NOT enabled WHERE id=$1 RETURNING *",
     [id]
   );
- 
+
   return result.rows[0];
 };
 
@@ -335,7 +337,7 @@ export const routePagination = async (page, limit, search = "", cityFilter = "",
     }
 
     const routes = await pool.query(routeQuery, values);
-    
+
     // Build count query values based on filters
     let countValues;
     if (isSuperAdmin) {
@@ -379,14 +381,15 @@ export const getRoutesByDriverCity = async (driverId) => {
       SELECT DISTINCT r.* 
       FROM routes r
       INNER JOIN city c ON r.job = c.job
-      INNER JOIN drivers d ON d.city_id = c.id
-      WHERE d.id = $1
+      INNER JOIN driver_city_ref dcr ON c.id = dcr.city_id
+      WHERE dcr.driver_id = $1
         AND r.enabled = true
         AND c.enabled = true
+        AND c.city_type = 'DAILY'
       ORDER BY r.id ASC
     `, [driverId]);
-    
-  
+
+
     return result.rows;
   } catch (error) {
     console.error("getRoutesByDriverCity error:", error.message);

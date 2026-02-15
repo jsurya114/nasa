@@ -14,6 +14,21 @@ export const jobService = {
     return result.rows[0].id;
   },
 
+  getCityIdsByJobs: async (jobs) => {
+    if (!Array.isArray(jobs) || jobs.length === 0) return [];
+
+    const result = await pool.query(
+      "SELECT id FROM city WHERE job = ANY($1) AND enabled = true",
+      [jobs]
+    );
+
+    if (result.rows.length === 0) {
+      throw new Error(`No valid cities found for jobs: ${jobs.join(', ')}`);
+    }
+
+    return result.rows.map(row => row.id);
+  },
+
   getCity: async () => {
     const result = await pool.query(
       "SELECT id, job, city_code, enabled, city_type FROM city ORDER BY id ASC"
@@ -31,9 +46,9 @@ export const jobService = {
 
   updateCity: async (id, job, city_code, city_type) => {
     console.log('updateCity called with:', { id, job, city_code, city_type });
-    
+
     let query, params;
-    
+
     if (city_type !== undefined && city_type !== null) {
       query = "UPDATE city SET job = $1, city_code = $2, city_type = $3 WHERE id = $4 RETURNING *";
       params = [job, city_code, city_type, id];
@@ -41,17 +56,17 @@ export const jobService = {
       query = "UPDATE city SET job = $1, city_code = $2 WHERE id = $3 RETURNING *";
       params = [job, city_code, id];
     }
-    
+
     console.log('Executing query:', query, 'with params:', params);
     const result = await pool.query(query, params);
     console.log('Update result:', result.rows[0]);
-    
+
     return result.rows[0];
   },
 
   deleteCity: async (id) => {
     const result = await pool.query(
-      "DELETE FROM city WHERE id = $1 RETURNING *", 
+      "DELETE FROM city WHERE id = $1 RETURNING *",
       [id]
     )
     return result.rows[0]
@@ -150,17 +165,24 @@ export const jobService = {
     try {
       const result = await pool.query(
         `SELECT c.city_type 
-         FROM drivers d
-         JOIN city c ON d.city_id = c.id
-         WHERE d.id = $1`,
+         FROM driver_city_ref dcr
+         JOIN city c ON dcr.city_id = c.id
+         WHERE dcr.driver_id = $1`,
         [driverId]
       );
-      
+
       if (result.rows.length === 0) {
-        throw new Error(`Driver with ID ${driverId} not found`);
+        // Driver has no cities assigned or doesn't exist
+        // Default to DAILY to avoid blocking access if they are just unassigned? 
+        // Or throw error?
+        // Let's assume if they have no cities, they can't do anything anyway, but 'DAILY' lets them see the empty form.
+        return 'DAILY';
       }
-      
-      return result.rows[0].city_type;
+
+      // If ANY assigned city is DAILY, return DAILY.
+      const hasDaily = result.rows.some(row => row.city_type === 'DAILY');
+
+      return hasDaily ? 'DAILY' : 'WEEKLY';
     } catch (error) {
       console.error("getCityTypeByDriverId error:", error.message);
       throw error;

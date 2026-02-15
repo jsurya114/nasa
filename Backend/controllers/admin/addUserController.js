@@ -5,7 +5,7 @@ export const createUsers = async (req, res) => {
     try {
         const { email, password, name, driver_code, city, enabled, phoneNumber } = req.body;
 
-        if (!email || !password || !city || !driver_code) {
+        if (!email || !password || !city || (Array.isArray(city) && city.length === 0) || !driver_code) {
             return res.status(HttpStatus.UNAUTHORIZED).json({ message: "Email, password, city & driver code is required" })
         }
 
@@ -28,7 +28,7 @@ export const createUsers = async (req, res) => {
 
 export const getUsers = async (req, res) => {
     try {
-       
+
 
         const adminId = req.user.id;
         const adminRole = req.user.role;
@@ -65,7 +65,7 @@ export const getUsers = async (req, res) => {
 export const changeStatusUser = async (req, res) => {
     try {
         const id = req.params.id;
-      
+
         const checkUser = await dbService.getDriverById(id);
         if (!checkUser)
             return res.status(HttpStatus.NOT_FOUND).json({ message: "User does not exists" });
@@ -85,7 +85,7 @@ export const updateUser = async (req, res) => {
         // Check if driver_code is being changed and if it already exists for another driver
         if (driver_code) {
             const existingDriver = await dbService.getDriverByCode(driver_code);
-            
+
             // Only return error if the code exists AND belongs to a different driver
             if (existingDriver && existingDriver.id !== parseInt(id)) {
                 return res.status(409).json({

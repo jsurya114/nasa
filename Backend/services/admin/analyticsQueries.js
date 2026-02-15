@@ -27,7 +27,8 @@ export const AnalyticsQueries = {
           AND EXISTS (
             SELECT 1
             FROM admin_city_ref acr
-            WHERE acr.city_id = d.city_id
+            JOIN driver_city_ref dcr ON acr.city_id = dcr.city_id
+            WHERE dcr.driver_id = d.id
               AND acr.admin_id = $2
           )
         `;
@@ -85,7 +86,10 @@ export const AnalyticsQueries = {
           AND EXISTS (
             SELECT 1
             FROM admin_city_ref acr
-            WHERE acr.city_id = d.city_id
+            JOIN city c ON acr.city_id = c.id
+            JOIN driver_city_ref dcr ON c.id = dcr.city_id
+            JOIN drivers dr ON dcr.driver_id = dr.id
+            WHERE dr.driver_code = d.driver_code
               AND acr.admin_id = $2
           )
         `;
@@ -126,7 +130,8 @@ export const AnalyticsQueries = {
           AND EXISTS (
             SELECT 1
             FROM admin_city_ref acr
-            WHERE acr.city_id = d.city_id
+            JOIN driver_city_ref dcr ON acr.city_id = dcr.city_id
+            WHERE dcr.driver_id = d.id
               AND acr.admin_id = $2
           )
         `;

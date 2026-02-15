@@ -124,9 +124,10 @@ export const availabilityService = {
 
     /* ================= COUNT QUERY ================= */
     let countQuery = `
-      SELECT COUNT(*) AS total
+      SELECT COUNT(DISTINCT d.id) AS total
       FROM drivers d
-      JOIN city c ON d.city_id = c.id
+      LEFT JOIN driver_city_ref dcr ON d.id = dcr.driver_id
+      LEFT JOIN city c ON dcr.city_id = c.id
     `;
 
     let countParams = [];
@@ -139,7 +140,7 @@ export const availabilityService = {
         AND d.name ILIKE $2
       `;
       countParams = [adminId, searchPattern];
-      
+
       if (filterCity) {
         countQuery += ` AND c.job = $3`;
         countParams.push(filterCity);
@@ -151,7 +152,7 @@ export const availabilityService = {
         AND d.name ILIKE $1
       `;
       countParams = [searchPattern];
-      
+
       if (filterCity) {
         countQuery += ` AND c.job = $2`;
         countParams.push(filterCity);
@@ -172,7 +173,7 @@ export const availabilityService = {
         d.name,
         d.email,
         d.enabled,
-        c.job AS city,
+        COALESCE(STRING_AGG(DISTINCT c.job, ', '), '') AS city,
         d.monday,
         d.tuesday,
         d.wednesday,
@@ -182,7 +183,8 @@ export const availabilityService = {
         d.sunday,
         d.availability_updated_at
       FROM drivers d
-      JOIN city c ON d.city_id = c.id
+      LEFT JOIN driver_city_ref dcr ON d.id = dcr.driver_id
+      LEFT JOIN city c ON dcr.city_id = c.id
     `;
 
     let params = [];
@@ -195,13 +197,16 @@ export const availabilityService = {
         AND d.name ILIKE $2
       `;
       params = [adminId, searchPattern];
-      
+
       if (filterCity) {
         dataQuery += ` AND c.job = $3`;
         params.push(filterCity);
       }
-      
-      dataQuery += ` ORDER BY d.name LIMIT $${params.length + 1} OFFSET $${params.length + 2}`;
+
+      dataQuery += ` 
+        GROUP BY d.id, d.driver_code, d.name, d.email, d.enabled, d.monday, d.tuesday, d.wednesday, d.thursday, d.friday, d.saturday, d.sunday, d.availability_updated_at
+        ORDER BY d.name LIMIT $${params.length + 1} OFFSET $${params.length + 2}
+      `;
       params.push(limit, offset);
     } else {
       dataQuery += `
@@ -210,13 +215,16 @@ export const availabilityService = {
         AND d.name ILIKE $1
       `;
       params = [searchPattern];
-      
+
       if (filterCity) {
         dataQuery += ` AND c.job = $2`;
         params.push(filterCity);
       }
-      
-      dataQuery += ` ORDER BY d.name LIMIT $${params.length + 1} OFFSET $${params.length + 2}`;
+
+      dataQuery += ` 
+        GROUP BY d.id, d.driver_code, d.name, d.email, d.enabled, d.monday, d.tuesday, d.wednesday, d.thursday, d.friday, d.saturday, d.sunday, d.availability_updated_at
+        ORDER BY d.name LIMIT $${params.length + 1} OFFSET $${params.length + 2}
+      `;
       params.push(limit, offset);
     }
 
@@ -265,15 +273,16 @@ export const availabilityService = {
 
     let query = `
       SELECT
-        COUNT(CASE WHEN d.monday = true THEN 1 END) AS monday_count,
-        COUNT(CASE WHEN d.tuesday = true THEN 1 END) AS tuesday_count,
-        COUNT(CASE WHEN d.wednesday = true THEN 1 END) AS wednesday_count,
-        COUNT(CASE WHEN d.thursday = true THEN 1 END) AS thursday_count,
-        COUNT(CASE WHEN d.friday = true THEN 1 END) AS friday_count,
-        COUNT(CASE WHEN d.saturday = true THEN 1 END) AS saturday_count,
-        COUNT(CASE WHEN d.sunday = true THEN 1 END) AS sunday_count
+        COUNT(DISTINCT CASE WHEN d.monday = true THEN d.id END) AS monday_count,
+        COUNT(DISTINCT CASE WHEN d.tuesday = true THEN d.id END) AS tuesday_count,
+        COUNT(DISTINCT CASE WHEN d.wednesday = true THEN d.id END) AS wednesday_count,
+        COUNT(DISTINCT CASE WHEN d.thursday = true THEN d.id END) AS thursday_count,
+        COUNT(DISTINCT CASE WHEN d.friday = true THEN d.id END) AS friday_count,
+        COUNT(DISTINCT CASE WHEN d.saturday = true THEN d.id END) AS saturday_count,
+        COUNT(DISTINCT CASE WHEN d.sunday = true THEN d.id END) AS sunday_count
       FROM drivers d
-      JOIN city c ON d.city_id = c.id
+      LEFT JOIN driver_city_ref dcr ON d.id = dcr.driver_id
+      LEFT JOIN city c ON dcr.city_id = c.id
     `;
 
     let params = [];
@@ -285,7 +294,7 @@ export const availabilityService = {
         AND d.name ILIKE $2
       `;
       params = [adminId, searchPattern];
-      
+
       if (filterCity) {
         query += ` AND c.job = $3`;
         params.push(filterCity);
@@ -295,7 +304,7 @@ export const availabilityService = {
         WHERE d.name ILIKE $1
       `;
       params = [searchPattern];
-      
+
       if (filterCity) {
         query += ` AND c.job = $2`;
         params.push(filterCity);
@@ -336,7 +345,7 @@ export const availabilityService = {
       query = `
         SELECT DISTINCT c.job AS city
         FROM city c
-        JOIN drivers d ON d.city_id = c.id
+        JOIN driver_city_ref dcr ON dcr.city_id = c.id
         ORDER BY c.job
       `;
     } else {
@@ -361,8 +370,8 @@ export const availabilityService = {
       accessQuery = `
         SELECT d.id
         FROM drivers d
-        JOIN city c ON d.city_id = c.id
-        JOIN admin_city_ref acr ON acr.city_id = c.id
+        JOIN driver_city_ref dcr ON d.id = dcr.driver_id
+        JOIN admin_city_ref acr ON acr.city_id = dcr.city_id
         WHERE d.id = $1 AND acr.admin_id = $2
       `;
       accessParams = [driverId, adminId];
