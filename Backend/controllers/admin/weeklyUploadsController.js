@@ -391,7 +391,8 @@ async function processExcelFromBuffer(buffer, client, startTime) {
   await workbook.xlsx.load(buffer);
   // console.log(`[${Date.now() - startTime}ms] Excel loaded`);
 
-  const worksheet = workbook.getWorksheet("Details of dlivery Fee");
+  const worksheet = workbook.getWorksheet("Details of Delivery Fees");
+  // const worksheet = workbook.getWorksheet("Details of dlivery Fee");
   if (!worksheet) {
     const availableSheets = workbook.worksheets.map(ws => ws.name);
     throw new Error(
