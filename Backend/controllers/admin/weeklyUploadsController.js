@@ -385,40 +385,92 @@ export const weeklyExcelUpload = async (req, res) => {
 };
 
 async function processExcelFromBuffer(buffer, client, startTime) {
-  
-  // console.log(`[${Date.now() - startTime}ms] Loading Excel...`);
+
   const workbook = new ExcelJS.Workbook();
   await workbook.xlsx.load(buffer);
-  // console.log(`[${Date.now() - startTime}ms] Excel loaded`);
 
   //const worksheet = workbook.getWorksheet("Details of dlivery Fee");
   const worksheet = workbook.getWorksheet("Details of Delivery Fees");
   if (!worksheet) {
     const availableSheets = workbook.worksheets.map(ws => ws.name);
     throw new Error(
-      `Sheet "Details of dlivery Fee" not found. Available sheets: ${availableSheets.join(', ')}`
+      `Sheet "Details of Delivery Fees" not found. Available sheets: ${availableSheets.join(', ')}`
     );
   }
 
- 
-  // console.log(`[${Date.now() - startTime}ms] Starting row processing...`);
-  
+  // ============================
+  // ✅ HEADER-BASED MAPPING START
+  // ============================
+
+  const normalize = (str) =>
+    str?.toString().trim().toLowerCase().replace(/\s+/g, ' ');
+
+  // Build header map
+  const headerMap = {};
+  const headerRow = worksheet.getRow(1).values;
+
+  headerRow.forEach((header, index) => {
+    if (header) {
+      headerMap[normalize(header)] = index;
+    }
+  });
+
+  // Define expected headers
+  const headerAliases = {
+    region_route: ['region/route'],
+    courier: ['courier'],
+    delivery_id: ['delivery id'],
+    signing_time: ['signing time'],
+    stop_point_details: ['stop point details']
+  };
+
+  const resolveHeader = (aliases) => {
+    for (const key of aliases) {
+      const normalizedKey = normalize(key);
+      if (headerMap[normalizedKey]) {
+        return headerMap[normalizedKey];
+      }
+    }
+    return null;
+  };
+
+  const getValue = (row, aliases) => {
+    const index = resolveHeader(aliases);
+    if (!index) return '';
+    return (row.values[index] || '').toString().trim();
+  };
+
+  // Validate required headers
+  const requiredHeaders = [
+    headerAliases.delivery_id,
+    headerAliases.signing_time,
+    headerAliases.stop_point_details
+  ];
+
+  for (const aliases of requiredHeaders) {
+    if (!resolveHeader(aliases)) {
+      throw new Error(`Missing required column in Excel: ${aliases.join(' / ')}`);
+    }
+  }
+
+  // ============================
+  // ✅ HEADER-BASED MAPPING END
+  // ============================
+
   const aggregatedData = new Map();
   let totalProcessed = 0;
   let totalSkipped = 0;
 
   worksheet.eachRow((row, rowNumber) => {
-    if (rowNumber === 1) return; // Skip header
+    if (rowNumber === 1) return;
 
     try {
-      const values = row.values.slice(1);
-      
-      // Extract fields
-      const regionRoute = (values[6] || '').toString().trim();
-      const courier = (values[8] || '').toString().trim();
-      const deliveryId = parseInt(values[9]) || null;
-      const signingTime = (values[12] || '').toString().trim();
-      const stopPointDetails = (values[18] || '').toString().trim();
+      // ✅ USE HEADER-BASED ACCESS
+      const regionRoute = getValue(row, headerAliases.region_route);
+      const courier = getValue(row, headerAliases.courier);
+      const deliveryId = parseInt(getValue(row, headerAliases.delivery_id)) || null;
+      const signingTime = getValue(row, headerAliases.signing_time);
+      const stopPointDetails = getValue(row, headerAliases.stop_point_details);
 
       // Validation
       if (!deliveryId || !signingTime || !stopPointDetails) {
@@ -436,7 +488,6 @@ async function processExcelFromBuffer(buffer, client, startTime) {
       const formattedDate = delDate.format('YYYY-MM-DD');
       const address = stopPointDetails;
 
-      // Aggregate data
       const key = `${formattedDate}-${deliveryId}-${regionRoute}`;
       
       if (!aggregatedData.has(key)) {
@@ -448,19 +499,17 @@ async function processExcelFromBuffer(buffer, client, startTime) {
           total_deliveries: 0,
           fs: 0,
           ds: 0,
-          addresses: new Map([["1",0]])
+          addresses: new Map([["1", 0]])
         });
       }
 
       const entry = aggregatedData.get(key);
       entry.total_deliveries++;
 
-      // Count first stops (FS) and double stops (DS)
       if (entry.addresses.has(address)) {
         entry.fs++;
       } else {
         entry.ds++;
-        // entry.addresses.add(address);
       }
 
       totalProcessed++;
@@ -471,39 +520,21 @@ async function processExcelFromBuffer(buffer, client, startTime) {
     }
   });
 
-  // console.log(`[${Date.now() - startTime}ms] Row processing complete`);
-  // console.log(`  - Processed: ${totalProcessed}`);
-  // console.log(`  - Skipped: ${totalSkipped}`);
-  // console.log(`  - Aggregated records: ${aggregatedData.size}`);
-
- 
   const tableName = "weeklycount";
-  // console.log(`[${Date.now() - startTime}ms] Preparing database table...`);
+
   await WeeklyExcelQueries.deleteWeeklyTableIfExists(tableName);
   await WeeklyExcelQueries.createWeeklyTable(tableName);
-  // console.log(`[${Date.now() - startTime}ms] Table ready`);
 
-  
   await client.query('BEGIN');
   
   try {
-    // Configuration
-    const BATCH_SIZE = 1000; // Insert 1000 records per batch
+    const BATCH_SIZE = 1000;
     const dataArray = Array.from(aggregatedData.values());
     let totalInserted = 0;
 
-    // console.log(`[${Date.now() - startTime}ms] Starting batched bulk INSERT...`);
-    // console.log(`  - Total records: ${dataArray.length}`);
-    // console.log(`  - Batch size: ${BATCH_SIZE}`);
-    // console.log(`  - Number of batches: ${Math.ceil(dataArray.length / BATCH_SIZE)}`);
-
-    // Process in batches
     for (let i = 0; i < dataArray.length; i += BATCH_SIZE) {
-      const batchStartTime = Date.now();
       const batch = dataArray.slice(i, i + BATCH_SIZE);
-      const batchNumber = Math.floor(i / BATCH_SIZE) + 1;
-      
-      // Build VALUES clauses and parameters for this batch
+
       const values = [];
       const params = [];
       let paramCounter = 1;
@@ -519,7 +550,6 @@ async function processExcelFromBuffer(buffer, client, startTime) {
         paramCounter += 7;
       }
 
-      // Execute batch insert
       const query = `
         INSERT INTO weeklycount 
         (courier_name, driver_id, del_route, total_deliveries, fs, ds, del_date)
@@ -532,16 +562,10 @@ async function processExcelFromBuffer(buffer, client, startTime) {
       `;
       
       await client.query(query, params);
-      
       totalInserted += batch.length;
-      const batchTime = Date.now() - batchStartTime;
-      
-      // console.log(`[${Date.now() - startTime}ms] Batch ${batchNumber}/${Math.ceil(dataArray.length / BATCH_SIZE)}: ${batch.length} records in ${batchTime}ms (${totalInserted}/${dataArray.length} total)`);
     }
 
-    // console.log(`[${Date.now() - startTime}ms] All batches completed. Committing transaction...`);
     await client.query('COMMIT');
-    // console.log(`[${Date.now() - startTime}ms] Transaction committed successfully`);
 
     return {
       success: true,
@@ -553,7 +577,6 @@ async function processExcelFromBuffer(buffer, client, startTime) {
     };
 
   } catch (dbError) {
-    console.error(`[${Date.now() - startTime}ms] Database error, rolling back:`, dbError.message);
     await client.query('ROLLBACK');
     throw dbError;
   }
