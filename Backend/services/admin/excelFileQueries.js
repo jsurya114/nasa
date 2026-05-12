@@ -30,51 +30,53 @@ export const ExcelFileQueries = {
   insertDataIntoDailyTable: async (tableName, data, uploadDate, client) => {
     try {
       if (!data || data.length === 0) {
-      
         return;
       }
 
-      const values = [];
-      const placeholders = [];
+      const chunkSize = 100;
+      for (let i = 0; i < data.length; i += chunkSize) {
+        const chunk = data.slice(i, i + chunkSize);
+        const values = [];
+        const placeholders = [];
 
-      data.forEach((row, i) => {
-        const idx = i * 12;
+        chunk.forEach((row, rowIndex) => {
+          const idx = rowIndex * 12;
 
-        placeholders.push(
-          `($${idx + 1}, $${idx + 2}, $${idx + 3}, $${idx + 4}, $${idx + 5},
-            $${idx + 6}, $${idx + 7}, $${idx + 8}, $${idx + 9},
-            $${idx + 10}, $${idx + 11}, $${idx + 12})`
-        );
+          placeholders.push(
+            `($${idx + 1}, $${idx + 2}, $${idx + 3}, $${idx + 4}, $${idx + 5},
+              $${idx + 6}, $${idx + 7}, $${idx + 8}, $${idx + 9},
+              $${idx + 10}, $${idx + 11}, $${idx + 12})`
+          );
 
-        const routeModified = row.Route ? row.Route.substring(4) : null;
+          const routeModified = row.Route ? row.Route.toString().substring(4) : null;
+          const address = row.Address ? row.Address.toString().toLowerCase() : null;
 
-        values.push(
-          row.Route,
-          row.Sequence,
-          row.Address.toLowerCase(),
-          row.Unit || null,
-          Number(row.ZipCode),
-          row.TrackingNo,
-          row.RecipientName,
-          row.RecipientPhone,
-          row.Status,
-          row.CompleteTime ? new Date(row.CompleteTime) : null,
-          `${row.Sequence}${routeModified}`,
-          new Date(uploadDate + "T12:00:00Z")
+          values.push(
+            row.Route,
+            row.Sequence,
+            address,
+            row.Unit || null,
+            row.ZipCode ? Number(row.ZipCode) : null,
+            row.TrackingNo,
+            row.RecipientName,
+            row.RecipientPhone,
+            row.Status,
+            row.CompleteTime ? new Date(row.CompleteTime) : null,
+            `${row.Sequence}${routeModified}`,
+            new Date(uploadDate + "T12:00:00Z")
+          );
+        });
 
-        );
-      });
+        const query = `
+          INSERT INTO ${tableName} (
+            route, sequence, address, unit, zipcode,
+            tracking_no, recipient_name, recipient_phone,
+            status, complete_time, seq_route_code, upload_date
+          ) VALUES ${placeholders.join(",")}
+        `;
 
-      const query = `
-        INSERT INTO ${tableName} (
-          route, sequence, address, unit, zipcode,
-          tracking_no, recipient_name, recipient_phone,
-          status, complete_time, seq_route_code, upload_date
-        ) VALUES ${placeholders.join(",")}
-      `;
-
-      await client.query(query, values);
-     
+        await client.query(query, values);
+      }
     } catch (error) {
       console.error("❌ Error inserting daily data:", error);
       throw error;
