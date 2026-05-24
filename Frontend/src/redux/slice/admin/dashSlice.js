@@ -114,9 +114,9 @@ export const fetchAllPaymentData = createAsyncThunk(
 
 export const payDriver = createAsyncThunk(
   "dashboard/payDriver",
-  async ({ driverName, startDate, endDate, dataType }, { rejectWithValue }) => {
+  async ({ driverName, startDate, endDate, dataType, job }, { rejectWithValue }) => {
     try {
-      const res = await axios.post(`/admin/dashboard/payDriver`, { driverName, startDate, endDate, dataType });
+      const res = await axios.post(`/admin/dashboard/payDriver`, { driverName, startDate, endDate, dataType, job });
       if (!res.data.success) throw new Error(res.data.message);
       toast.success(res.data.message);
       return res.data;

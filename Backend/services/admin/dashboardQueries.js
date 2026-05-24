@@ -502,8 +502,8 @@ export const AdminDashboardQueries = {
     }
   },
 
-  // ✅ UPDATED: Only pay journeys with closed = true, with optional dataType filter
-  updateDriverPaymentStatus: async (driverName, startDate, endDate, dataType = null) => {
+  // ✅ UPDATED: Only pay journeys with closed = true, with optional dataType and job (city) filter
+  updateDriverPaymentStatus: async (driverName, startDate, endDate, dataType = null, job = null) => {
     try {
       const whereClauses = [];
       const queryParams = [driverName];
@@ -531,13 +531,22 @@ export const AdminDashboardQueries = {
         whereClauses.push(`(pd.start_seq IS NULL OR pd.end_seq IS NULL OR pd.start_seq = 0 OR pd.end_seq = 0)`);
       }
 
+      // ✅ FIX: City/job filter to only mark records for the selected city as paid
+      if (job) {
+        whereClauses.push(`c.job = $${queryParams.length + 1}`);
+        queryParams.push(job);
+      }
+
       // ✅ CRITICAL: Build the complete UPDATE query with closed status check
+      // Join routes and city tables so we can filter by city/job
       const updateQuery = `
         UPDATE payment_dashboard pd
         SET 
           paid = true,
           payment_date = CURRENT_DATE
         FROM drivers d
+        LEFT JOIN routes r ON pd.route_id = r.id
+        LEFT JOIN city c ON r.job = c.job
         WHERE pd.driver_id = d.id
           AND ${whereClauses.join(' AND ')}
           AND pd.closed = true

@@ -205,7 +205,7 @@ export const updatePaymentData = async (req, res) => {
 // ✅ UPDATED: Pay journeys with closed = true, supports separate daily/weekly payments
 export const payDriver = async (req, res) => {
   try {
-    const { driverName, startDate, endDate, dataType } = req.body;
+    const { driverName, startDate, endDate, dataType, job } = req.body;
 
     if (!driverName) {
       return res.status(HttpStatus.BAD_REQUEST).json({
@@ -214,12 +214,13 @@ export const payDriver = async (req, res) => {
       });
     }
 
-    // ✅ Update only journeys where closed = true, optionally filtered by dataType
+    // ✅ Update only journeys where closed = true, optionally filtered by dataType and city (job)
     const result = await AdminDashboardQueries.updateDriverPaymentStatus(
       driverName,
       startDate,
       endDate,
-      dataType || null
+      dataType || null,
+      job || null
     );
 
     // Generate appropriate message based on dataType

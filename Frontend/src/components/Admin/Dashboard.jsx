@@ -315,6 +315,7 @@ export default function Dashboard() {
       startDate: reduxFilters.startDate || null,
       endDate: reduxFilters.endDate || null,
       dataType: dataType, // 'daily' or 'weekly'
+      job: reduxFilters.job || null, // ✅ FIX: Pass selected city to scope payment
     }));
 
     if (result.type === 'dashboard/payDriver/fulfilled') {
