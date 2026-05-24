@@ -209,7 +209,7 @@ export default function Dashboard() {
 
   // ✅ UPDATED: Handle Filter Data button - check if filters are applied
   const handleFilterClick = () => {
-    setShowExtraFields(isSuperAdmin && localFilters.companyEarnings);
+    setShowExtraFields(localFilters.companyEarnings);
 
     // ✅ NEW: Check if any filters are actually applied
     const hasFilters =
@@ -296,7 +296,7 @@ export default function Dashboard() {
 
     dispatch(fetchFilteredPaymentData(filterParams));
 
-    if (isSuperAdmin && showExtraFields) {
+    if (showExtraFields) {
       const summaryParams = { ...filterParams };
       delete summaryParams.page;
       delete summaryParams.limit;
@@ -339,7 +339,7 @@ export default function Dashboard() {
 
       dispatch(fetchFilteredPaymentData(filterParams));
 
-      if (isSuperAdmin && showExtraFields) {
+      if (showExtraFields) {
         const summaryParams = { ...filterParams };
         delete summaryParams.page;
         delete summaryParams.limit;
@@ -483,20 +483,18 @@ export default function Dashboard() {
                 </div>
               ))}
 
-              {isSuperAdmin && (
-                <div className="flex items-center gap-3 px-4 py-3 bg-blue-50 border-l-4 border-blue-500">
-                  <input
-                    type="checkbox"
-                    name="companyEarnings"
-                    checked={localFilters.companyEarnings}
-                    onChange={handleFilterChange}
-                    className="w-4 h-4"
-                  />
-                  <span className="font-medium text-gray-700">
-                    Summary
-                  </span>
-                </div>
-              )}
+              <div className="flex items-center gap-3 px-4 py-3 bg-blue-50 border-l-4 border-blue-500">
+                <input
+                  type="checkbox"
+                  name="companyEarnings"
+                  checked={localFilters.companyEarnings}
+                  onChange={handleFilterChange}
+                  className="w-4 h-4"
+                />
+                <span className="font-medium text-gray-700">
+                  Summary
+                </span>
+              </div>
 
               <div className="px-4 py-3 flex flex-wrap gap-3">
                 <button
@@ -546,7 +544,7 @@ export default function Dashboard() {
                 )}
               </div>
 
-              {showExtraFields && isSuperAdmin && (
+              {showExtraFields && (
                 <div className="px-4 py-3 grid grid-cols-1 gap-3 bg-blue-50">
                   <div className="mb-2 font-semibold text-gray-700 flex items-center gap-2">
                     <svg className="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -564,7 +562,7 @@ export default function Dashboard() {
                     { field: "doubleStop", label: "Total Double Stop (DS)" },
                     { field: "delivered", label: "Total Delivered" },
                     { field: "driversPayment", label: "Total Drivers Payment" },
-                    { field: "companyEarnings", label: "Total Company Earnings", highlight: true },
+                    ...(isSuperAdmin ? [{ field: "companyEarnings", label: "Total Company Earnings", highlight: true }] : []),
                   ].map((item, i) => (
                     <div key={i} className="flex items-center gap-3">
                       <label className="w-48 text-gray-600">{item.label}:</label>
@@ -624,7 +622,7 @@ export default function Dashboard() {
               <div className="font-bold text-gray-900 bg-gray-50 border-b border-gray-200 px-4 py-3">
                 Driver Jobs
               </div>
-              <PaymentDashboardTable showExtraFields={showExtraFields && isSuperAdmin} />
+              <PaymentDashboardTable showExtraFields={showExtraFields} />
             </section>
           )}
         </main>
