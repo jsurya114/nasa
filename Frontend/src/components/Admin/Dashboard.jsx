@@ -248,7 +248,7 @@ export default function Dashboard() {
 
     dispatch(fetchFilteredPaymentData(filterParams));
 
-    if (isSuperAdmin && localFilters.companyEarnings) {
+    if (localFilters.companyEarnings) {
       const summaryParams = { ...filterParams };
       delete summaryParams.page;
       delete summaryParams.limit;
@@ -335,7 +335,7 @@ export default function Dashboard() {
       if (reduxFilters.route && reduxFilters.route !== "All") filterParams.route = reduxFilters.route;
       if (reduxFilters.startDate) filterParams.startDate = reduxFilters.startDate;
       if (reduxFilters.endDate) filterParams.endDate = reduxFilters.endDate;
-      if (isSuperAdmin && reduxFilters.companyEarnings) filterParams.companyEarnings = reduxFilters.companyEarnings;
+      if (reduxFilters.companyEarnings) filterParams.companyEarnings = reduxFilters.companyEarnings;
 
       dispatch(fetchFilteredPaymentData(filterParams));
 
