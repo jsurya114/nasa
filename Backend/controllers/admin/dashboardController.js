@@ -202,7 +202,7 @@ export const updatePaymentData = async (req, res) => {
   }
 };
 
-// ✅ UPDATED: Pay journeys with closed = true, supports separate daily/weekly payments
+//  UPDATED: Pay journeys with closed = true, supports separate daily/weekly payments
 export const payDriver = async (req, res) => {
   try {
     const { driverName, startDate, endDate, dataType, job } = req.body;
@@ -214,7 +214,7 @@ export const payDriver = async (req, res) => {
       });
     }
 
-    // ✅ Update only journeys where closed = true, optionally filtered by dataType and city (job)
+    //  Update only journeys where closed = true, optionally filtered by dataType and city (job)
     const result = await AdminDashboardQueries.updateDriverPaymentStatus(
       driverName,
       startDate,
@@ -227,7 +227,7 @@ export const payDriver = async (req, res) => {
     const paymentTypeLabel = dataType === 'daily' ? 'daily (SPEEDX)' :
       dataType === 'weekly' ? 'weekly (GOFO)' : 'all';
 
-    // ✅ Check if any rows were updated
+    //  Check if any rows were updated
     if (result.rowCount === 0) {
       return res.status(HttpStatus.OK).json({
         success: true,
