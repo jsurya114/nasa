@@ -99,7 +99,7 @@ const AgreementModal = ({ isOpen, onClose, driverName }) => {
               <li>Contractors do not choose routes.</li>
               <li>Once assigned, routes cannot be changed or disputed.</li>
               <li>Refusal to accept assigned routes or packages will result in immediate termination.</li>
-              <li>Please do not contact company management to complain about assigned routes or to express personal preferences regarding routes.</li>
+              <li>The Contractor shall not contact company management, supervisors, or administrative personnel to dispute, complain about, or express personal preferences regarding assigned routes.</li>
             </ul>
           </div>
 
