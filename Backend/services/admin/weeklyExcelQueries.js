@@ -397,13 +397,56 @@ createEntriesFromWeeklyCount: async () => {
 
     const updateResult = await client.query(updateQuery, [insertedIds]);
 
-   
+    // QUERY 3: Apply insurance deduction ($1.92 per driver per working day)
+    // A driver should only be charged $1.92 ONCE per day, regardless of how many
+    // routes they drive on that day (e.g. GOFO 9 + GOFO 39 = still only $1.92).
+    // 
+    // Step 3a: Zero out insurance on ALL rows for the affected driver-days
+    //          (covers both old and newly inserted rows for those days).
+    // Step 3b: Apply $1.92 to exactly ONE row per driver-day (lowest pd.id).
+    const INSURANCE_RATE_PER_DAY = 1.92;
+
+    // 3a: Find all affected (driver_id, journey_date) pairs from the new batch
+    //     and reset insurance_deduction to 0 for ALL rows matching those pairs.
+    const resetInsuranceQuery = `
+      UPDATE payment_dashboard pd
+      SET insurance_deduction = 0
+      WHERE (pd.driver_id, pd.journey_date) IN (
+        SELECT pd2.driver_id, pd2.journey_date
+        FROM payment_dashboard pd2
+        WHERE pd2.dashboard_data_id = ANY($1)
+      )
+      AND pd.insurance_deduction != 0
+    `;
+    await client.query(resetInsuranceQuery, [insertedIds]);
+
+    // 3b: Now apply $1.92 to exactly ONE row per (driver_id, journey_date)
+    //     across ALL records for those driver-days (not just the new batch).
+    const insuranceQuery = `
+      UPDATE payment_dashboard pd
+      SET insurance_deduction = $1
+      WHERE pd.id IN (
+        SELECT DISTINCT ON (all_pd.driver_id, all_pd.journey_date)
+          all_pd.id
+        FROM payment_dashboard all_pd
+        WHERE (all_pd.driver_id, all_pd.journey_date) IN (
+          SELECT pd2.driver_id, pd2.journey_date
+          FROM payment_dashboard pd2
+          WHERE pd2.dashboard_data_id = ANY($2)
+        )
+        ORDER BY all_pd.driver_id, all_pd.journey_date, all_pd.id
+      )
+    `;
+
+    const insuranceResult = await client.query(insuranceQuery, [INSURANCE_RATE_PER_DAY, insertedIds]);
+    console.log(`🛡️ Insurance deduction applied to ${insuranceResult.rowCount} driver-day(s) at $${INSURANCE_RATE_PER_DAY}/day`);
 
     await client.query('COMMIT');
 
     return {
       inserted: insertResult.rowCount,
       updated: updateResult.rowCount,
+      insuranceApplied: insuranceResult.rowCount,
       totalAffected: insertResult.rowCount
     };
   } catch (err) {

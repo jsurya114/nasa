@@ -69,7 +69,8 @@ const driverController = {
           id: driver.id,
           email: driver.email,
           name: driver.name,
-          timezone: timezone // Return timezone to frontend
+          timezone: timezone, // Return timezone to frontend
+          agreement_signed: driver.agreement_signed
         },
         accessToken,
         refreshToken
@@ -118,7 +119,12 @@ const driverController = {
         });
       }
 
-      return res.status(HttpStatus.OK).json({ driver: decoded });
+      return res.status(HttpStatus.OK).json({ 
+        driver: {
+          ...decoded,
+          agreement_signed: driver.agreement_signed
+        }
+      });
     } catch (error) {
       const lang = getLang(req);
       console.error(error.message);
@@ -174,6 +180,39 @@ const driverController = {
       console.error("❌ Refresh Token Error:", error);
       return res.status(HttpStatus.UNAUTHORIZED).json({
         message: translateError(lang, 'common.unauthorized')
+      });
+    }
+  },
+
+  submitAgreement: async (req, res) => {
+    try {
+      const { name, joining_date } = req.body;
+      const driverId = req.driver.id;
+
+      if (!name || !joining_date) {
+        return res.status(HttpStatus.BAD_REQUEST).json({
+          message: "Name and joining date are required"
+        });
+      }
+
+      await pool.query(
+        `UPDATE drivers 
+         SET agreement_signed = TRUE, 
+             agreement_signed_at = NOW(), 
+             agreement_signature_name = $1, 
+             agreement_joining_date = $2 
+         WHERE id = $3`,
+        [name, joining_date, driverId]
+      );
+
+      return res.status(HttpStatus.OK).json({
+        success: true,
+        message: "Agreement signed successfully"
+      });
+    } catch (error) {
+      console.error("❌ Submit Agreement Error:", error);
+      return res.status(HttpStatus.INTERNAL_SERVER_ERROR).json({
+        message: "Internal server error"
       });
     }
   }

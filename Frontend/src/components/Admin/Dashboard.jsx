@@ -154,8 +154,13 @@ export default function Dashboard() {
         delivered: 0,
         driversPayment: 0,
         companyEarnings: 0,
+        insuranceDeduction: 0,
+        netDriverPayment: 0,
       };
     }
+
+    const totalDriverPayment = Number(summaryData.total_driver_payment) || 0;
+    const totalInsurance = Number(summaryData.total_insurance_deduction) || 0;
 
     return {
       packages: Number(summaryData.total_packages) || 0,
@@ -164,8 +169,10 @@ export default function Dashboard() {
       firstStop: Number(summaryData.total_fs) || 0,
       doubleStop: Number(summaryData.total_ds) || 0,
       delivered: Number(summaryData.total_delivered) || 0,
-      driversPayment: Number(summaryData.total_driver_payment) || 0,
+      driversPayment: totalDriverPayment.toFixed(2),
       companyEarnings: Number(summaryData.total_company_earnings) || 0,
+      insuranceDeduction: totalInsurance.toFixed(2),
+      netDriverPayment: (totalDriverPayment - totalInsurance).toFixed(2),
     };
   }, [summaryData, isFiltered]);
 
@@ -562,16 +569,20 @@ export default function Dashboard() {
                     { field: "doubleStop", label: "Total Double Stop (DS)" },
                     { field: "delivered", label: "Total Delivered" },
                     { field: "driversPayment", label: "Total Drivers Payment" },
+                    ...(Number(extraFieldsData.insuranceDeduction) > 0 ? [
+                      { field: "insuranceDeduction", label: "🛡️ Insurance Deduction", highlight: false, isNegative: true },
+                      { field: "netDriverPayment", label: "💵 Net Driver Payment", highlight: false, isBold: true },
+                    ] : []),
                     ...(isSuperAdmin ? [{ field: "companyEarnings", label: "Total Company Earnings", highlight: true }] : []),
                   ].map((item, i) => (
                     <div key={i} className="flex items-center gap-3">
-                      <label className="w-48 text-gray-600">{item.label}:</label>
+                      <label className={`w-48 ${item.isNegative ? 'text-red-600' : item.isBold ? 'text-green-700 font-bold' : 'text-gray-600'}`}>{item.label}:</label>
                       <input
                         type="text"
                         name={item.field}
-                        value={extraFieldsData[item.field]}
+                        value={item.isNegative ? `-$${extraFieldsData[item.field]}` : item.isBold ? `$${extraFieldsData[item.field]}` : extraFieldsData[item.field]}
                         readOnly
-                        className="flex-1 border border-gray-200 rounded-lg px-3 py-2 bg-white text-gray-700 font-semibold"
+                        className={`flex-1 border border-gray-200 rounded-lg px-3 py-2 bg-white font-semibold ${item.isNegative ? 'text-red-600' : item.isBold ? 'text-green-700' : 'text-gray-700'}`}
                       />
                     </div>
                   ))}

@@ -42,7 +42,7 @@ export default function PaymentDashboardTable() {
   const totals = useMemo(() => {
     if (!shouldShowTotals) return null;
 
-    return filteredPaymentData.reduce((acc, row) => {
+    const result = filteredPaymentData.reduce((acc, row) => {
       return {
         packages: acc.packages + (Number(row.packages) || 0),
         noScanned: acc.noScanned + (Number(row.no_scanned) || 0),
@@ -51,6 +51,7 @@ export default function PaymentDashboardTable() {
         ds: acc.ds + (Number(row.ds) || 0),
         delivered: acc.delivered + (Number(row.delivered) || 0),
         driverPayment: acc.driverPayment + (Number(row.driver_payment) || 0),
+        insuranceDeduction: acc.insuranceDeduction + (Number(row.insurance_deduction) || 0),
       };
     }, {
       packages: 0,
@@ -60,7 +61,14 @@ export default function PaymentDashboardTable() {
       ds: 0,
       delivered: 0,
       driverPayment: 0,
+      insuranceDeduction: 0,
     });
+
+    // Count working days (rows where insurance was applied)
+    result.insuranceDays = filteredPaymentData.filter(r => Number(r.insurance_deduction) > 0).length;
+    result.netPayment = result.driverPayment - result.insuranceDeduction;
+
+    return result;
   }, [filteredPaymentData, shouldShowTotals]);
 
   // ✅ UPDATED: Refresh button logic - respect current view
@@ -157,6 +165,7 @@ export default function PaymentDashboardTable() {
       "Delivered",
       "Closed",
       "Driver Payment",
+      "Insurance",
       "Paid"
     ];
   }, []);
@@ -287,6 +296,11 @@ export default function PaymentDashboardTable() {
                         "-"
                       )}
                     </td>
+                    <td className={`px-3 py-2 border-b border-gray-200 whitespace-nowrap ${
+                      Number(row.insurance_deduction) > 0 ? "text-red-600 font-semibold" : "text-gray-400"
+                    }`}>
+                      {Number(row.insurance_deduction) > 0 ? `-$${Number(row.insurance_deduction).toFixed(2)}` : "-"}
+                    </td>
                     <td
                       className={`px-3 py-2 border-b border-gray-200 font-semibold whitespace-nowrap ${
                         row.paid ? "text-green-600" : "text-red-600"
@@ -298,41 +312,70 @@ export default function PaymentDashboardTable() {
                 ))}
                 
                 {shouldShowTotals && totals && (
-                  <tr className="bg-blue-50 font-bold border-t-2 border-blue-600">
-                    <td className="px-3 py-3 border-b border-gray-200 whitespace-nowrap">
-                      TOTAL
-                    </td>
-                    <td className="px-3 py-3 border-b border-gray-200 whitespace-nowrap" colSpan="3">
-                      {displayData[0].driver_name}
-                    </td>
-                    <td className="px-3 py-3 border-b border-gray-200 text-blue-900 whitespace-nowrap">
-                      {totals.packages}
-                    </td>
-                    <td className="px-3 py-3 border-b border-gray-200 text-blue-900 whitespace-nowrap">
-                      {totals.noScanned}
-                    </td>
-                    <td className="px-3 py-3 border-b border-gray-200 text-blue-900 whitespace-nowrap">
-                      {totals.failedAttempt}
-                    </td>
-                    <td className="px-3 py-3 border-b border-gray-200 text-blue-900 whitespace-nowrap">
-                      {totals.fs}
-                    </td>
-                    <td className="px-3 py-3 border-b border-gray-200 text-blue-900 whitespace-nowrap">
-                      {totals.ds}
-                    </td>
-                    <td className="px-3 py-3 border-b border-gray-200 text-blue-900 whitespace-nowrap">
-                      {totals.delivered}
-                    </td>
-                    <td className="px-3 py-3 border-b border-gray-200 whitespace-nowrap">
-                      -
-                    </td>
-                    <td className="px-3 py-3 border-b border-gray-200 text-green-700 text-lg whitespace-nowrap">
-                      💰 {totals.driverPayment.toFixed(2)}
-                    </td>
-                    <td className="px-3 py-3 border-b border-gray-200 whitespace-nowrap">
-                      -
-                    </td>
-                  </tr>
+                  <>
+                    <tr className="bg-blue-50 font-bold border-t-2 border-blue-600">
+                      <td className="px-3 py-3 border-b border-gray-200 whitespace-nowrap">
+                        TOTAL
+                      </td>
+                      <td className="px-3 py-3 border-b border-gray-200 whitespace-nowrap" colSpan="3">
+                        {displayData[0].driver_name}
+                      </td>
+                      <td className="px-3 py-3 border-b border-gray-200 text-blue-900 whitespace-nowrap">
+                        {totals.packages}
+                      </td>
+                      <td className="px-3 py-3 border-b border-gray-200 text-blue-900 whitespace-nowrap">
+                        {totals.noScanned}
+                      </td>
+                      <td className="px-3 py-3 border-b border-gray-200 text-blue-900 whitespace-nowrap">
+                        {totals.failedAttempt}
+                      </td>
+                      <td className="px-3 py-3 border-b border-gray-200 text-blue-900 whitespace-nowrap">
+                        {totals.fs}
+                      </td>
+                      <td className="px-3 py-3 border-b border-gray-200 text-blue-900 whitespace-nowrap">
+                        {totals.ds}
+                      </td>
+                      <td className="px-3 py-3 border-b border-gray-200 text-blue-900 whitespace-nowrap">
+                        {totals.delivered}
+                      </td>
+                      <td className="px-3 py-3 border-b border-gray-200 whitespace-nowrap">
+                        -
+                      </td>
+                      <td className="px-3 py-3 border-b border-gray-200 text-green-700 text-lg whitespace-nowrap">
+                        💰 ${totals.driverPayment.toFixed(2)}
+                      </td>
+                      <td className="px-3 py-3 border-b border-gray-200 whitespace-nowrap">
+                        -
+                      </td>
+                      <td className="px-3 py-3 border-b border-gray-200 whitespace-nowrap">
+                        -
+                      </td>
+                    </tr>
+                    {totals.insuranceDeduction > 0 && (
+                      <tr className="bg-red-50 font-bold">
+                        <td className="px-3 py-3 border-b border-gray-200 whitespace-nowrap" colSpan="11">
+                          🛡️ Insurance Payment Deduction ({totals.insuranceDays} day{totals.insuranceDays !== 1 ? 's' : ''} × $1.92)
+                        </td>
+                        <td className="px-3 py-3 border-b border-gray-200 text-red-600 text-lg whitespace-nowrap">
+                          -${totals.insuranceDeduction.toFixed(2)}
+                        </td>
+                        <td className="px-3 py-3 border-b border-gray-200 whitespace-nowrap" colSpan="2">
+                        </td>
+                      </tr>
+                    )}
+                    {totals.insuranceDeduction > 0 && (
+                      <tr className="bg-green-50 font-bold border-b-2 border-green-600">
+                        <td className="px-3 py-3 border-b border-gray-200 whitespace-nowrap" colSpan="11">
+                          💵 Net Payment
+                        </td>
+                        <td className="px-3 py-3 border-b border-gray-200 text-green-700 text-lg whitespace-nowrap">
+                          ${totals.netPayment.toFixed(2)}
+                        </td>
+                        <td className="px-3 py-3 border-b border-gray-200 whitespace-nowrap" colSpan="2">
+                        </td>
+                      </tr>
+                    )}
+                  </>
                 )}
               </tbody>
             </table>

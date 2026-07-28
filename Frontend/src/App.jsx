@@ -13,6 +13,7 @@ const DoubleStop = lazy(() => import("./components/Admin/DoubleStop.jsx"));
 const AddAccessCodePage = lazy(() => import("./components/Admin/AccessCode.jsx"));
 const AdminJourney = lazy(() => import("./components/Admin/AdminJorney.jsx"));
 const AdminDriverAvailability = lazy(() => import("./components/Admin/AdminDriverAvailability.jsx"));
+const AdminDriverAgreements = lazy(() => import("./components/Admin/AdminDriverAgreements.jsx"));
 
 import ProtectedRoutes from "./routes/admin/ProtectedRoute.jsx";
 import AdminPublicOnlyRoute from "./routes/admin/PublicOnlyRoute.jsx";
@@ -23,6 +24,8 @@ const Journey = lazy(() => import("./components/Drivers/Journey.jsx"));
 const Devlivery = lazy(() => import("./components/Drivers/Delivery.jsx"));
 const DriverAccessCodePage = lazy(() => import("./components/Drivers/accessCode.jsx"));
 const DriverAvailability = lazy(() => import("./components/Drivers/DriverAvailability.jsx"));
+const DriverAgreement = lazy(() => import("./components/Drivers/DriverAgreement.jsx"));
+const DriverViewAgreement = lazy(() => import("./components/Drivers/DriverViewAgreement.jsx"));
 
 import DPublicRoutes from "./routes/driver/DPublicRoutes.jsx";
 import DProtectRoutes from "./routes/driver/DProtectedRoutes.jsx";
@@ -49,6 +52,7 @@ function App() {
               <Route path="/admin/jobs" element={<Jobs />} />
               <Route path="/admin/routes" element={<RoutesForm />} />
               <Route path="/admin/create-users" element={<AddUsers />} />
+              <Route path="/admin/agreements" element={<AdminDriverAgreements />} />
               <Route path="/admin/double-stop" element={<DoubleStop />} />
               <Route path="/admin/manage-access-codes" element={<AddAccessCodePage />} />
               <Route path="/admin/journeys" element={<AdminJourney />} />
@@ -62,6 +66,8 @@ function App() {
 
             {/* Driver Protected Routes */}
             <Route element={<DProtectRoutes />}>
+              <Route path="/driver/agreement" element={<DriverAgreement />} />
+              <Route path="/driver/view-agreement" element={<DriverViewAgreement />} />
               <Route path="/driver/dashboard" element={<Journey />} />
               <Route path="/driver/access-codes" element={<DriverAccessCodePage />} />
               <Route path="/driver/delivery" element={<Devlivery />} />

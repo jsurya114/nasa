@@ -55,7 +55,7 @@ const Deliveries = () => {
   // Memoized summary calculation based on filtered deliveries
   const summary = useMemo(() => {
     if (!filteredDeliveries || filteredDeliveries.length === 0) return null;
-    return filteredDeliveries.reduce(
+    const result = filteredDeliveries.reduce(
       (acc, d) => {
         return {
           packages: acc.packages + (parseInt(d.packages) || 0),
@@ -65,10 +65,15 @@ const Deliveries = () => {
           double_stop: acc.double_stop + (parseInt(d.double_stop) || 0),
           delivered: acc.delivered + (parseInt(d.delivered) || 0),
           earning: acc.earning + (parseFloat(d.earning) || 0),
+          insuranceDeduction: acc.insuranceDeduction + (parseFloat(d.insurance_deduction) || 0),
         };
       },
-      { packages: 0, no_scanned: 0, failed_attempt: 0, first_stop: 0, double_stop: 0, delivered: 0, earning: 0 }
+      { packages: 0, no_scanned: 0, failed_attempt: 0, first_stop: 0, double_stop: 0, delivered: 0, earning: 0, insuranceDeduction: 0 }
     );
+    // Count working days where insurance was charged
+    result.insuranceDays = filteredDeliveries.filter(r => Number(r.insurance_deduction) > 0).length;
+    result.netPayment = result.earning - result.insuranceDeduction;
+    return result;
   }, [filteredDeliveries]);
 
   // Load from localStorage ONCE with cache validation
@@ -226,25 +231,33 @@ const Deliveries = () => {
 
   // Dynamic summary labels based on current data type
   const summaryLabels = useMemo(() => {
-    if (currentDataType === 'weekly') {
-      return {
-        [t('totalPackages')]: summary?.packages,
-        [t('firstStop')]: summary?.first_stop,
-        [t('doubleStop')]: summary?.double_stop,
-        [t('delivered')]: summary?.delivered,
-        [t('totalEarning')]: summary ? `$${summary.earning.toFixed(2)}` : "$0.00",
-      };
+    const labels = {};
+
+    if (currentDataType === 'weekly' || selectedDataType === 'all') {
+      labels[t('totalPackages')] = summary?.packages;
+      labels[t('firstStop')] = summary?.first_stop;
+      labels[t('doubleStop')] = summary?.double_stop;
+      labels[t('delivered')] = summary?.delivered;
     } else {
-      return {
-        [t('totalPackages')]: summary?.packages,
-        [t('delivered')]: summary?.delivered,
-        [t('failed')]: summary?.failed_attempt,
-        [t('notScanned')]: summary?.no_scanned,
-        [t('doubleStop')]: summary?.double_stop,
-        [t('totalEarning')]: summary ? `$${summary.earning.toFixed(2)}` : "$0.00",
-      };
+      // daily only
+      labels[t('totalPackages')] = summary?.packages;
+      labels[t('delivered')] = summary?.delivered;
+      labels[t('failed')] = summary?.failed_attempt;
+      labels[t('notScanned')] = summary?.no_scanned;
+      labels[t('doubleStop')] = summary?.double_stop;
     }
-  }, [summary, currentDataType, t]);
+
+    // Always show insurance info and deduct from total when there's insurance
+    if (summary?.insuranceDeduction > 0) {
+      labels['🛡️ Insurance Days'] = summary?.insuranceDays || 0;
+      labels['🛡️ Insurance ($1.92/day)'] = summary ? `-$${summary.insuranceDeduction.toFixed(2)}` : "$0.00";
+      labels[t('totalEarning')] = summary ? `$${summary.netPayment.toFixed(2)}` : "$0.00";
+    } else {
+      labels[t('totalEarning')] = summary ? `$${summary.earning.toFixed(2)}` : "$0.00";
+    }
+
+    return labels;
+  }, [summary, currentDataType, selectedDataType, t]);
 
   return (
     <div className="min-h-screen bg-gray-50 text-gray-900 font-poppins">

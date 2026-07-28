@@ -23,6 +23,7 @@ router.use(driverAuth)
 router.get("/access-driver", driverController.getDriver)
 router.get("/city-type", jobController.getDriverCityType)
 router.post("/logout", driverController.Logout)
+router.post("/agreement", driverController.submitAgreement)
 
 // ============================================
 // JOURNEY ROUTES - PROTECTED BY CITY TYPE VALIDATION

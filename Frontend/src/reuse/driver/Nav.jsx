@@ -10,6 +10,7 @@ function Nav() {
     { to: "/driver/access-codes", icon: "🔑", label: t('Access codes') },
     { to: "/driver/delivery", icon: "🚛", label: t('deliveries') },
     { to: "/driver/availability", icon: "📅", label: t('Availability') },
+    { to: "/driver/view-agreement", icon: "📝", label: "Agreement" },
     { to: "/driver/update-password", icon: "💤", label: t('password') },
   ];
 

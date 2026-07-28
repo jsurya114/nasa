@@ -20,6 +20,7 @@ const fetchDeliverySummary = async (driverId, fromDate, toDate) => {
             pd.ds AS double_stop,
             pd.delivered,
             pd.driver_payment AS earning,
+            pd.insurance_deduction,
             pd.start_seq,
             pd.end_seq,
             pd.closed,

@@ -10,13 +10,14 @@ function Nav() {
     { to: "/admin/double-stop", icon: "🔁", label: "Double Stop" },
     { to: "/admin/manage-access-codes", icon: "🔑", label: "Access Codes" },
     { to: "/admin/driver-availability", icon: "📅", label: "Availability" },
+    { to: "/admin/agreements", icon: "📝", label: "Agreements" },
   ];
 
   return (
     <nav className="fixed bottom-0 left-0 right-0 bg-[#462976] border-t border-white/10 z-50">
       {/* Mobile: Horizontally Scrollable */}
       <div className="overflow-x-auto scrollbar-hide sm:overflow-x-visible">
-        <div className="flex sm:grid sm:grid-cols-7 gap-1.5 xs:gap-2 sm:gap-3 md:gap-4 p-2 sm:p-3 min-w-max sm:min-w-0 px-2 sm:px-4 max-w-full sm:max-w-screen-xl mx-auto">
+        <div className="flex sm:grid sm:grid-cols-8 gap-1.5 xs:gap-2 sm:gap-3 md:gap-4 p-2 sm:p-3 min-w-max sm:min-w-0 px-2 sm:px-4 max-w-full sm:max-w-screen-xl mx-auto">
           {links.map((item, index) => (
             <NavLink
               key={index}

@@ -93,6 +93,18 @@ export const driverLogout = createAsyncThunk(
   }
 );
 
+export const submitDriverAgreement = createAsyncThunk(
+  "driver/submit-agreement",
+  async (agreementData, { rejectWithValue, getState }) => {
+    try {
+      const res = await axios.post(`/driver/agreement`, agreementData);
+      return res.data;
+    } catch (error) {
+      return rejectWithValue(error.response?.data || { message: error.message || "Network error" });
+    }
+  }
+);
+
 const driverSlice = createSlice({
   name: "driver",
   initialState,
@@ -185,6 +197,13 @@ const driverSlice = createSlice({
           state.error = null;
         } else {
           state.error = action.payload?.message || "Access denied";
+        }
+      })
+
+      // ===== Submit Agreement =====
+      .addCase(submitDriverAgreement.fulfilled, (state) => {
+        if (state.driver) {
+          state.driver.agreement_signed = true;
         }
       });
   },

@@ -108,7 +108,11 @@ router.post(
   adminAvailabilityController.manualResetAllDriversAvailability
 );
 
+import agreementController from '../controllers/admin/agreementController.js';
 
+
+router.get('/drivers/agreements', agreementController.getAllAgreements);
+router.put('/drivers/:id/agreement/toggle', agreementController.toggleAgreement);
 router.post('/logout', adminController.Logout);
 
 router.get('/access-admin', adminController.getUser);

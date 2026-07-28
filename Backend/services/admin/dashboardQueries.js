@@ -66,7 +66,8 @@ export const AdminDashboardQueries = {
           COALESCE(SUM(pd.ds), 0) AS total_ds,
           COALESCE(SUM(pd.delivered), 0) AS total_delivered,
           COALESCE(SUM(pd.driver_payment), 0) AS total_driver_payment,
-          COALESCE(SUM(pd.company_earnings), 0) AS total_company_earnings
+          COALESCE(SUM(pd.company_earnings), 0) AS total_company_earnings,
+          COALESCE(SUM(pd.insurance_deduction), 0) AS total_insurance_deduction
         FROM payment_dashboard pd
         JOIN drivers d ON d.id = pd.driver_id
         LEFT JOIN routes r ON pd.route_id = r.id
@@ -275,6 +276,7 @@ export const AdminDashboardQueries = {
           pd.payment_date,
           pd.driver_payment, 
           ${companyEarningsField}
+          pd.insurance_deduction,
           pd.paid,
           pd.start_seq,
           pd.end_seq, 
@@ -403,6 +405,7 @@ export const AdminDashboardQueries = {
           pd.payment_date,
           pd.driver_payment,
           ${companyEarningsField}
+          pd.insurance_deduction,
           pd.paid,
           pd.start_seq,
           pd.end_seq, 
