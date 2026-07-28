@@ -7,7 +7,7 @@ function Nav() {
     { to: "/admin/create-users", icon: "👥", label: "Users" },
     { to: "/admin/routes", icon: "🧭", label: "Routes" },
     { to: "/admin/jobs", icon: "📦", label: "Cities" },
-    { to: "/admin/double-stop", icon: "🔁", label: "Double Stop" },
+    { to: "/admin/double-stop", icon: "🔁", label: "File Upload" },
     { to: "/admin/manage-access-codes", icon: "🔑", label: "Access Codes" },
     { to: "/admin/driver-availability", icon: "📅", label: "Availability" },
     { to: "/admin/agreements", icon: "📝", label: "Agreements" },
