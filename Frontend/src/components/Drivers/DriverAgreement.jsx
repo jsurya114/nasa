@@ -109,7 +109,7 @@ const DriverAgreement = () => {
             <ul className="list-disc pl-5 space-y-1">
               <li>Any misdelivered package that is unrecoverable will be charged at full package value of package.</li>
               <li>Any package delivered to an unauthorized location, left unattended in a lobby, or left on grass (unless fenced/secured single family house) will result in a <span className="font-semibold text-red-600">$100 charge</span> per package if not recovered.</li>
-              <li><span className="font-semibold text-red-600">Delivering to a mailbox under any circumstance is strictly prohibited and will result in a $500 charge per package.</span></li>
+              <li><span className="font-semibold text-red-600">Delivery of any package into a mailbox is strictly prohibited under all circumstances. Any violation will result in a $500 charge per package. If a claim, fine, penalty, or other financial loss arises from a mailbox delivery, the Contractor shall be responsible for the actual amount of the claim or loss if it exceeds $500 per package.</span></li>
               <li>Any package lost after leaving the warehouse will be charged at full package value.</li>
               <li>If a package is missing before leaving the warehouse, the Contractor must report it immediately via the designated WhatsApp group. (If not reported in group full value will be charged)</li>
               <li>Any damaged package reported after leaving the warehouse will be the Contractor’s responsibility and charged at full value.</li>
