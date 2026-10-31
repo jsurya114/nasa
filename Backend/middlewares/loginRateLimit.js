@@ -1,3 +1,4 @@
+import net from 'net';
 import client from '../config/redis.js';
 import HttpStatus from '../utils/statusCodes.js';
 import { translateError, getLangFromRequest } from '../utils/backendI18n.js';
@@ -5,26 +6,57 @@ import { translateError, getLangFromRequest } from '../utils/backendI18n.js';
 /**
  * Strict limits for the admin and driver login routes (issue #10).
  *
- * Two limits, counted per 15 minute window:
- *  - per account: at most 5 attempts for one email from one address.
+ * Three counters per 15 minute window, separate for each area:
+ *  - per account and address: at most 5 attempts for one email from one address.
+ *  - per account, any address: at most 20 attempts for one email. Stops an attack
+ *    spread over many addresses. It is higher than the limit above on purpose, so
+ *    a stranger cannot easily lock a real user out.
  *  - per address: at most 50 failed attempts from one address, over all emails.
- * A successful login clears the account counter and gives back the address count,
+ * A successful login clears the account counters and gives back the address count,
  * so normal use is never limited.
  *
- * HOW THE ADDRESS IS KNOWN. Behind a proxy (such as the host's load balancer) the
- * address Express sees is the proxy's, so every user would look the same. Set
- * TRUST_PROXY to the number of proxies in front of the app (1 for a single
- * hosting proxy). Until it is set, a request that carries X-Forwarded-For is
- * treated as "address not trusted": the per-address limit is skipped, so one
- * attacker cannot lock every user out, and only the per-account limit applies.
+ * THE ADDRESS is always req.ip. Nothing the client sends decides whether a limit
+ * applies. Express builds req.ip from the TRUST_PROXY setting: behind N proxies
+ * it takes the address those proxies saw, and ignores anything the client put in
+ * X-Forwarded-For before them. Wrong TRUST_PROXY means wrong addresses (behind a
+ * proxy, every user would look like one address), so in production the server
+ * refuses to start until TRUST_PROXY is set (0 means "no proxy in front").
  */
 
 const WINDOW_SECONDS = 15 * 60;
-const MAX_ATTEMPTS_PER_ACCOUNT = 5;
+const MAX_ATTEMPTS_PER_ACCOUNT_AND_ADDRESS = 5;
+const MAX_ATTEMPTS_PER_ACCOUNT = 20;
 const MAX_FAILED_PER_ADDRESS = 50;
 
-// Number of proxies in front of the app. 0 means none, or not configured.
+// Number of proxies in front of the app. 0 means none.
 export const trustProxyHops = () => Math.max(0, parseInt(process.env.TRUST_PROXY, 10) || 0);
+
+// Stops the server at start-up in production when TRUST_PROXY is missing or not a whole number.
+export function assertTrustProxyConfigured() {
+  if (process.env.NODE_ENV !== 'production') return;
+  const value = process.env.TRUST_PROXY;
+  if (value === undefined || !/^\d+$/.test(value.trim())) {
+    throw new Error(
+      'TRUST_PROXY must be set to the number of proxies in front of the app (0 if none, 1 behind a single hosting proxy). Login limits depend on it.'
+    );
+  }
+}
+
+// IPv4 stays as is; an IPv4-mapped IPv6 address becomes IPv4; other IPv6 addresses are
+// grouped by their /64, because one customer is given a whole /64.
+export function addressKeyPart(rawIp) {
+  const ip = String(rawIp || 'unknown');
+  const unmapped = ip.startsWith('::ffff:') ? ip.slice(7) : ip;
+  if (net.isIPv4(unmapped)) return unmapped;
+  if (!net.isIPv6(unmapped)) return ip;
+  const [head, tail = ''] = unmapped.split('::');
+  const headParts = head ? head.split(':') : [];
+  const tailParts = tail ? tail.split(':') : [];
+  const full = unmapped.includes('::')
+    ? [...headParts, ...Array(8 - headParts.length - tailParts.length).fill('0'), ...tailParts]
+    : headParts;
+  return `${full.slice(0, 4).map((part) => part.toLowerCase().replace(/^0+(?=.)/, '')).join(':')}::/64`;
+}
 
 // Fallback counters, used only while Redis is unavailable: key -> { count, resetAt }.
 const memory = new Map();
@@ -69,33 +101,33 @@ async function giveBack(key) {
 
 /**
  * @param {'admin'|'driver'} area  each area has its own counters
- * @param {{windowSeconds?:number, maxPerAccount?:number, maxFailedPerAddress?:number}} [options]
+ * @param {{windowSeconds?:number}} [options]
  */
 export function loginRateLimit(area, options = {}) {
   const windowSeconds = options.windowSeconds ?? WINDOW_SECONDS;
-  const maxPerAccount = options.maxPerAccount ?? MAX_ATTEMPTS_PER_ACCOUNT;
-  const maxFailedPerAddress = options.maxFailedPerAddress ?? MAX_FAILED_PER_ADDRESS;
 
   return async (req, res, next) => {
     const email = typeof req.body?.email === 'string' ? req.body.email.trim().toLowerCase().slice(0, 150) : '';
+    const address = addressKeyPart(req.ip);
 
-    // Behind an unconfigured proxy the address is the proxy's, not the user's.
-    const addressTrusted = trustProxyHops() > 0 || !req.headers['x-forwarded-for'];
-    const address = addressTrusted ? String(req.ip || 'unknown') : 'shared';
+    const addressKey = `rl:login:${area}:ip:${address}`;
+    const accountAddressKey = email ? `rl:login:${area}:acct:${address}:${email}` : null;
+    const accountKey = email ? `rl:login:${area}:acctall:${email}` : null;
 
-    const accountKey = email ? `rl:login:${area}:acct:${address}:${email}` : null;
-    const addressKey = addressTrusted ? `rl:login:${area}:ip:${address}` : null;
-
-    const [account, addr] = await Promise.all([
+    const [addr, accountAddress, account] = await Promise.all([
+      bump(addressKey, windowSeconds),
+      accountAddressKey ? bump(accountAddressKey, windowSeconds) : null,
       accountKey ? bump(accountKey, windowSeconds) : null,
-      addressKey ? bump(addressKey, windowSeconds) : null,
     ]);
 
-    const overAccount = account && account.count > maxPerAccount;
-    const overAddress = addr && addr.count > maxFailedPerAddress;
+    const blocked = [
+      addr.count > MAX_FAILED_PER_ADDRESS ? addr : null,
+      accountAddress && accountAddress.count > MAX_ATTEMPTS_PER_ACCOUNT_AND_ADDRESS ? accountAddress : null,
+      account && account.count > MAX_ATTEMPTS_PER_ACCOUNT ? account : null,
+    ].filter(Boolean);
 
-    if (overAccount || overAddress) {
-      const retryAfter = Math.max(overAccount ? account.ttl : 0, overAddress ? addr.ttl : 0, 1);
+    if (blocked.length > 0) {
+      const retryAfter = Math.max(...blocked.map((counter) => counter.ttl), 1);
       const lang = getLangFromRequest(req);
       res.set('Retry-After', String(retryAfter));
       return res.status(HttpStatus.TOO_MANY_REQUESTS).json({
@@ -103,11 +135,12 @@ export function loginRateLimit(area, options = {}) {
       });
     }
 
-    // A successful login clears the account counter and gives back the address count.
+    // A successful login clears the account counters and gives back the address count.
     res.on('finish', () => {
       if (res.statusCode === HttpStatus.OK) {
+        if (accountAddressKey) clear(accountAddressKey);
         if (accountKey) clear(accountKey);
-        if (addressKey) giveBack(addressKey);
+        giveBack(addressKey);
       }
     });
 
