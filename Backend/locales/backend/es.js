@@ -11,6 +11,7 @@ export const backendEs = {
     accountDisabled: "La cuenta ha sido deshabilitada",
     unauthorized: "NO AUTORIZADO",
     authTokenMissing: "Falta el token de autenticación",
+    tooManyAttempts: "Demasiados intentos de inicio de sesión. Inténtalo de nuevo en {minutes} minutos.",
   },
 
   // Driver errors

@@ -17,9 +17,10 @@ import { getAllData, getFilteredDriversByCity, getFilteredRoutesByCity } from '.
 import { getWeeklyTempData, weeklyExcelUpload } from '../controllers/admin/weeklyUploadsController.js';
 import { getAnalyticsData } from '../controllers/admin/analyticsController.js';
 import adminAvailabilityController from '../controllers/admin/adminavailabilityController.js';
+import { loginRateLimit } from '../middlewares/loginRateLimit.js';
 
 
-router.post('/login', adminController.Login);
+router.post('/login', loginRateLimit('admin'), adminController.Login);
 router.post('/refresh-token', adminController.RefreshToken);
 
 router.use(adminAuth);

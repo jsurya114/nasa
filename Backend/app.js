@@ -8,12 +8,20 @@ import cookieParser from 'cookie-parser';
 import sanitizeMiddleware from './middlewares/sanitize.js';
 import { notFound, errorHandler } from './middlewares/errorHandler.js';
 import rateLimit from './middlewares/rateLimit.js';
+import { trustProxyHops } from './middlewares/loginRateLimit.js';
 import { initializeAvailabilityResetCron } from './utils/availabilityCronJob.js';
 
 dotenv.config()
 
 const PORT = process.env.PORT;
 const app = express();
+
+// How many proxies sit in front of the app (TRUST_PROXY, e.g. 1 behind a single hosting proxy).
+// Without it, every user behind a proxy has the proxy's address, which breaks per-address limits.
+app.set('trust proxy', trustProxyHops() || false);
+if (process.env.NODE_ENV === 'production' && trustProxyHops() === 0) {
+  console.warn('TRUST_PROXY is not set. If the app runs behind a proxy, all users share one address and per-address limits are weaker.');
+}
 
 // CORS configuration - credentials set to false since we're using localStorage
 app.use(cors({
