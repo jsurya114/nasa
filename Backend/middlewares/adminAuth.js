@@ -1,6 +1,7 @@
 import HttpStatus from '../utils/statusCodes.js';
 import { verifyToken } from '../services/jwtservice.js';
 import { isTokenRevoked } from '../services/redis-jwt-service.js';
+import { requireRole, ADMIN_ROLES } from './requireRole.js';
 
 export default async function adminAuth(req, res, next) {
   try {
@@ -22,8 +23,10 @@ export default async function adminAuth(req, res, next) {
 
     const decoded = verifyToken(token);
     req.admin = decoded;
-      req.user = decoded; 
-    next();
+    req.user = decoded;
+
+    // Only admin tokens may use admin routes. Driver tokens are refused.
+    return requireRole(...ADMIN_ROLES)(req, res, next);
   } catch (err) {
     console.log(err.message, 'err in admin middleware')
     return res.status(HttpStatus.UNAUTHORIZED).json({ message: 'UNAUTHORIZED' })
