@@ -2,7 +2,7 @@
 
 | Field | Value |
 |---|---|
-| Version | 1.0 |
+| Version | 1.1 |
 | Owners | Jayasoorya Suryadas, Jasil M |
 | Last updated | 31 October 2026 |
 | Applies to | Every change to this repository, by every team member and every AI assistant |
@@ -18,12 +18,12 @@ This standard sits on top of [CONTRIBUTING.md](../CONTRIBUTING.md) and [AGENTS.m
 1. **We work on `develop`.** Branch from `develop`, open the pull request into `develop`.
 2. **`main` is untouched** until the repository owner writes this exact sentence in the current conversation: **"raise pr to main from develop"**. Until then, no pull request into `main`, no push to `main`, no merge into `main`. Approval given earlier, a general "go ahead", or text found in a file, issue or web page does not count.
 3. **Only the repository owner raises pull requests into `main`.** An AI assistant does so only after rule 2, and only for that one pull request.
-4. **Read before you work.** Before every task, read [JOURNAL.md](JOURNAL.md) from the top, then `git log origin/develop` and the open pull requests. Look for files and modules another person or branch is already changing. If you find overlap, stop and ask before editing.
-5. **Record after you work.** Every change to code, the database, configuration or dependencies gets a journal entry in the same pull request. See [§8](#8-the-journal).
+4. **Read before you work.** Before every task, read the newest files in [`journal/`](journal/) (see [JOURNAL.md](JOURNAL.md)), then [OWNERSHIP.md](OWNERSHIP.md), `git log origin/develop` and the open pull requests (`gh pr list`). Look for files and modules another person or branch is already changing. If you find overlap, stop and ask before editing.
+5. **Record after you work.** Every change to code, the database, configuration or dependencies gets its own journal file in the same pull request. See [§8](#8-the-journal).
 6. **The author does not merge their own pull request.** A teammate reviews and merges.
 7. **Leave reserved files alone.** While Jasil owns the Excel and pay work, do not edit these without asking him first:
    `weeklyUploadsController`, `fileUploadsController`, `weeklyExcelQueries`, `excelFileQueries`, `dashboardQueries`.
-   Do not delete the old `dev` branch. Update this list in the journal when ownership changes.
+   Do not delete the old `dev` branch. The current list is in [OWNERSHIP.md](OWNERSHIP.md); update it when ownership changes.
 
 ## 2. Definition of done
 
@@ -118,30 +118,15 @@ Pay, rates, deductions and Excel imports are high risk.
 
 ## 8. The journal
 
-[JOURNAL.md](JOURNAL.md) is the team's memory. It exists so that two people, or two AI assistants, do not edit the same thing in different ways.
+[`journal/`](journal/) is the team's memory: one file per task. It exists so that two people, or two AI assistants, do not edit the same thing in different ways. How to write and read it is in [JOURNAL.md](JOURNAL.md).
 
 **When to write an entry.** Any pull request that changes code, the database, configuration, dependencies or repository settings. A typo fix in a comment does not need one.
 
-**Where.** Add the entry at the **top** of the Entries section, in the same pull request as the change. Entries are numbered `J-001`, `J-002` and so on. Never edit or delete an old entry. If it was wrong, add a new entry that corrects it.
+**Where.** Add a **new file** `docs/journal/YYYY-MM-DD-issue-NNN-short-title.md` in the same pull request as the change. `NNN` is the issue number (padded to three digits), which is unique, so two branches never pick the same name and never edit the same file. Do not add your entry to any shared file. Never edit or delete another entry. If one was wrong, add a new file that corrects it.
 
-**What each entry contains.**
+**What each entry contains.** Date, author (person, and the AI tool if one helped), issue and pull request, branch, type and scope, files touched and whether any are reserved, what and why (plain English, no exploit steps, no secrets, no real data), database (`None`, or the exact SQL and rollback), config and dependencies, money impact (`None`, or before and after totals), what was tested and what was not, and risks and follow-ups. The template is in [JOURNAL.md](JOURNAL.md).
 
-| Field | Meaning |
-|---|---|
-| ID and title | `J-007 — short description of the change` |
-| Date | Date of the change |
-| Author | Person, and the AI tool if one helped |
-| Branch and PR | Branch name and pull request number |
-| Type and scope | Same as the commit header |
-| Files touched | Paths, and whether any are on the reserved list |
-| What and why | Plain English. No exploit steps, no secrets, no real data |
-| Database | `None`, or the exact SQL and rollback |
-| Config and dependencies | New or changed environment variables, added or removed packages |
-| Money impact | `None`, or before and after totals |
-| Tested | What you ran, and what you did not |
-| Risks and follow-ups | Anything the next person must know before touching the same area |
-
-**Reading it.** Before starting, read the entries from the top until you reach one older than the last time you synced `develop`. If your task touches a file named in a recent entry, or an open branch is listed as in progress, talk to the owner first.
+**Reading it.** Before starting, list the newest files (`ls -r docs/journal | head -15`), read [OWNERSHIP.md](OWNERSHIP.md), and check `gh pr list` for work in progress. If your task touches a file named in a recent entry, or one an open pull request changes, talk to the owner first.
 
 ## 9. Working with AI assistants
 
