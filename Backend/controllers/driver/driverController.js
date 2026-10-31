@@ -4,6 +4,15 @@ import { generateToken, verifyToken, generateRefreshToken, verifyRefreshToken } 
 import { blackListToken } from '../../services/redis-jwt-service.js';
 import pool from '../../config/db.js';
 import { translateError } from "../../utils/backendI18n.js";
+import { DRIVER_ROLE } from '../../middlewares/requireRole.js';
+
+// Token payload for a driver. The role keeps driver tokens out of admin routes.
+const driverTokenPayload = (driver) => ({
+  id: driver.id,
+  email: driver.email,
+  name: driver.name,
+  role: DRIVER_ROLE
+});
 
 // Helper to get language from request
 const getLang = (req) => {
@@ -54,8 +63,8 @@ const driverController = {
 
       console.log(`✅ ${translateError(lang, 'driver.timezoneUpdated')}: ${timezone} (Driver ${driver.id})`);
 
-      let accessToken = generateToken({ id: driver.id, email: driver.email, name: driver.name });
-      let refreshToken = generateRefreshToken({ id: driver.id, email: driver.email, name: driver.name });
+      let accessToken = generateToken(driverTokenPayload(driver));
+      let refreshToken = generateRefreshToken(driverTokenPayload(driver));
       if (!accessToken || !refreshToken) {
         return res.status(HttpStatus.UNAUTHORIZED).json({
           message: translateError(lang, 'common.unauthorized')
@@ -160,6 +169,15 @@ const driverController = {
       }
 
       const decoded = verifyRefreshToken(refreshToken);
+
+      // An admin refresh token must never mint a driver token.
+      // Old driver tokens have no role and are still accepted (issue #14 removes this).
+      if (decoded.role !== undefined && decoded.role !== DRIVER_ROLE) {
+        return res.status(HttpStatus.UNAUTHORIZED).json({
+          message: translateError(lang, 'common.unauthorized')
+        });
+      }
+
       const driver = await loginService.getDriverByEmail(decoded.email);
 
       if (!driver || !driver.enabled) {
@@ -168,8 +186,8 @@ const driverController = {
         });
       }
 
-      const newAccessToken = generateToken({ id: driver.id, email: driver.email, name: driver.name });
-      const newRefreshToken = generateRefreshToken({ id: driver.id, email: driver.email, name: driver.name });
+      const newAccessToken = generateToken(driverTokenPayload(driver));
+      const newRefreshToken = generateRefreshToken(driverTokenPayload(driver));
 
       return res.status(HttpStatus.OK).json({
         accessToken: newAccessToken,
