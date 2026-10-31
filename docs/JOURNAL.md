@@ -117,10 +117,12 @@ Not tested: a real browser, and a real database.
 
 **Money impact.** None. No Excel, pay or dashboard file was touched.
 
-**Tested.** A throwaway script (not committed) ran the real middleware against a local Redis: admin and superadmin tokens on admin routes (200), driver token and old role-less token on admin routes (403), driver and old role-less tokens on driver routes (200), admin and superadmin tokens on driver routes (403), no token (401), and a refresh token from the wrong area on each refresh endpoint (401). All 12 passed. The same script failed 4 of 12 on the code before this change. Not tested: a full login and refresh with a real database, and the frontend in a browser.
+**Tested.** A throwaway script (not committed) ran the real middleware against a local Redis: admin and superadmin tokens on admin routes (200), driver token and old role-less token on admin routes (403), driver and old role-less tokens on driver routes (200), admin and superadmin tokens on driver routes (403), no token (401), and a refresh token from the wrong area on each refresh endpoint (401). All 12 passed. The same script failed 4 of 12 on the code before this change. Not tested: a full login and refresh with a real database, and the frontend in a real browser.
+
+**Both-session browsers.** After review (Jasil, PR #36) the frontend fix from issue #9 (PR #43, J-008) is merged into this branch. It makes each request use its own area's tokens, so a browser holding both an admin and a driver session no longer sends the admin token on driver pages. Verified on this branch: 16 checks with both sessions open (normal requests, expired driver token, expired admin token, failed driver refresh, no driver refresh token while an admin one exists) and the original 12 role checks, all passed.
 
 **Risks and follow-ups.**
-- A browser that holds both an admin token and a driver token sends the admin token on driver pages today, so driver pages will now be refused there. Issue #9 (send the token for the current app area) fixes this. Merge #9 before the next release to `main`. Normal users hold one token and are not affected.
+- PR #43 is a prerequisite. If #43 is merged first, this branch carries no extra frontend change; if this is merged first, #43 becomes empty. Either order works.
 - Issue #14 removes the role-less allowance after 7 days in production.
 
 ### J-003 — Make `develop` the default branch
