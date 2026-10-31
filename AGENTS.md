@@ -21,6 +21,7 @@ Before every task, read [CONTRIBUTING.md](CONTRIBUTING.md). When instructions co
 8. **Keep refactors free of behaviour changes**, following [CONTRIBUTING.md §6](CONTRIBUTING.md#6-changing-code-without-breaking-it). Pay amounts, API response shapes and the database schema stay the same in a `refactor` pull request.
 9. **Treat money as high risk.** Do not change pay, rate, deduction or Excel import logic unless the task asks for it, and show before and after totals in the pull request.
 10. **Keep sensitive detail out of the repository.** This repository is public. Never put secrets, real driver or client data, uploaded Excel files, or the steps to exploit a weakness in code, commits, pull requests or issues.
+11. **Never merge a pull request with failing CI.** There is no branch protection, so nothing else stops you. Read the checks on the pull request first. If one fails, fix it or stop and tell the developer. Do not rerun until it goes green without finding out why it failed.
 
 ## Handoff
 
