@@ -8,7 +8,7 @@ Legacy ID: J-006
 | Author | Jayasoorya Suryadas, with Claude Code |
 | Branch / PR | `fix/stop-logging-sensitive-data` / pull request into `develop` (issue #6) |
 | Type / scope | `fix(security)` |
-| Files touched | `Backend/app.js`, `Backend/services/admin/dbQueries.js`, `Backend/services/redis-jwt-service.js`, `Backend/utils/availabilityCronJob.js`, `Frontend/src/redux/slice/admin/userLoadSlice.js`, `Frontend/src/redux/slice/driver/passwordSlice.js`, `Frontend/src/redux/slice/axiosInstance.js` |
+| Files touched | `Backend/app.js`, `Backend/services/admin/dbQueries.js`, `Backend/services/redis-jwt-service.js`, `Backend/utils/availabilityCronJob.js`, `Frontend/src/redux/slice/admin/userLoadSlice.js`, `Frontend/src/redux/slice/driver/passwordSlice.js` |
 | Reserved files touched | None |
 
 **What and why.** Logs must never hold passwords, tokens, personal data or whole request bodies. Searched every live `console` call in the backend and the sign-in related ones in the frontend. Removed or trimmed these:
@@ -18,7 +18,8 @@ Legacy ID: J-006
 - Backend `app.js`: the request log for `/admin` and `/driver` now prints only the method and path, with no query string and no part of the `Authorization` header.
 - Backend `availabilityCronJob.js`: the weekly reset log lists driver IDs, not names and driver codes.
 - Frontend `userLoadSlice.js`: removed the two logs of the "add driver" and "add admin" form (they held the plain password).
-- Frontend `passwordSlice.js` and `axiosInstance.js`: log the error message only, not the whole axios error (it carries the request body: the passwords or the refresh token).
+- Frontend `passwordSlice.js`: logs the error message only, not the whole axios error (it carries the request body: the passwords).
+- Frontend `axiosInstance.js`: the same change for the token refresh failure log (it carries the refresh token) was delivered by PR #43 (`2026-10-31-issue-009-token-by-app-area.md`), so this branch no longer touches that file. The line is identical, and it was dropped here to avoid a conflict.
 
 **Left alone on purpose.**
 - Other frontend `console.log` calls (route, job and delivery data). They hold no secrets. Issue #18 (one small logger) removes them.
