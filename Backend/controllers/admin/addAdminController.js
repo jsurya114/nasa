@@ -1,6 +1,6 @@
 import express from 'express';
 import HttpStatus from '../../utils/statusCodes.js';
-import { dbService } from '../../services/admin/dbQueries.js';
+import { dbService, parseCityIds } from '../../services/admin/dbQueries.js';
 import { jobService } from '../../services/admin/jobQueries.js';
 
 // Replace the createAdmins function in addAdminController.js
@@ -29,6 +29,13 @@ export const createAdmins = async(req, res) => {
         if (role === 'admin' && city.length <= 0) {
             return res.status(HttpStatus.BAD_REQUEST).json({
                 message: "At least one city must be provided for Admin User"
+            });
+        }
+
+        // City IDs must be plain whole numbers
+        if (role === 'admin' && !parseCityIds(city)) {
+            return res.status(HttpStatus.BAD_REQUEST).json({
+                message: "Invalid city selection"
             });
         }
 
@@ -210,6 +217,13 @@ export const updateAdmin = async(req, res) => {
         if (role === 'admin' && city.length <= 0) {
             return res.status(HttpStatus.BAD_REQUEST).json({
                 message: "At least one city must be provided for Admin User"
+            });
+        }
+
+        // City IDs must be plain whole numbers
+        if (role === 'admin' && !parseCityIds(city)) {
+            return res.status(HttpStatus.BAD_REQUEST).json({
+                message: "Invalid city selection"
             });
         }
 
