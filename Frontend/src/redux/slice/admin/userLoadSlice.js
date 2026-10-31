@@ -15,7 +15,6 @@ export const toggleAdminRole = createAsyncThunk("/admin/toggle-admin-role",
 export const addDriver = createAsyncThunk("/admin/create-users",
     async (formData, { rejectWithValue }) => {
         try {
-            console.log("formdata of driver ", formData);
             const res = await axios.post(`/admin/create-users`, formData);
             return res.data;
         } catch (error) {
@@ -97,7 +96,6 @@ export const toggleAvailAdmin = createAsyncThunk(`/admin/toggle-admin`, async (i
 export const addAdmin = createAsyncThunk(`/admin/create-admin`,
     async (formData, { rejectWithValue }) => {
         try {
-            console.log("Admin data ", formData);
             const res = await axios.post(`/admin/create-admin`, formData);
             return res.data;
         } catch (error) {

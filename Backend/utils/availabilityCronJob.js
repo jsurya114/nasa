@@ -66,7 +66,7 @@ const resetDriversInTimezone = async (timezone) => {
     if (result.rowCount > 0) {
       console.log(`✅ Reset ${result.rowCount} enabled drivers in ${timezone}:`);
       result.rows.forEach(driver => {
-        console.log(`   - Driver ${driver.id}: ${driver.name} (${driver.driver_code})`);
+        console.log(`   - Driver ${driver.id}`);
       });
     }
     
