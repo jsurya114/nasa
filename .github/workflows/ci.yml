@@ -1,0 +1,125 @@
+# CI for pull requests into develop (issue #39).
+#
+# Rules this file follows (see docs/ENGINEERING_STANDARD.md and CONTRIBUTING.md §5):
+# - Trigger is `pull_request` only. Never `pull_request_target`.
+# - Read-only token, no secrets, no deploy steps. CI never touches main or production.
+# - Node version comes from .nvmrc. npm is cached. Outdated runs are cancelled.
+#
+# There is no branch protection on this repository, so a failed check does not stop a merge.
+# The team rule is: never merge a pull request with failing CI.
+name: CI
+
+on:
+  pull_request:
+    branches: [develop]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  commit-messages:
+    name: Commit messages
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      # Runs the same hook as `git commit` (CONTRIBUTING.md §3) on every non-merge commit in the PR.
+      - name: Check every commit message
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          failed=0
+          for sha in $(git rev-list --no-merges "$BASE_SHA..$HEAD_SHA"); do
+            git log -1 --format=%B "$sha" > "$RUNNER_TEMP/commit-message.txt"
+            echo "--- $(git log -1 --format='%h %s' "$sha")"
+            if ! bash .githooks/commit-msg "$RUNNER_TEMP/commit-message.txt"; then
+              echo "::error title=Commit message rejected::$(git log -1 --format='%h %s' "$sha")"
+              failed=1
+            fi
+          done
+          exit "$failed"
+
+  frontend:
+    name: Frontend
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: Frontend
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: Frontend/package-lock.json
+
+      - name: Install
+        run: npm ci
+
+      # Non-blocking until the existing errors are cleaned up (issue #40).
+      # Then remove `continue-on-error` in its own pull request.
+      - name: Lint (non-blocking for now)
+        run: npm run lint
+        continue-on-error: true
+
+      - name: Build
+        run: npm run build
+        env:
+          # Placeholder only. No production values in CI.
+          VITE_BACKEND_LOCALHOST_ROUTE: http://localhost:5000
+
+      # Non-blocking for now. Reports known problems in dependencies.
+      - name: Dependency audit (non-blocking)
+        run: npm audit --audit-level=high
+        continue-on-error: true
+
+  backend:
+    name: Backend
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: Backend
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: Backend/package-lock.json
+
+      - name: Install
+        run: npm ci
+
+      # `npm test` is still a placeholder that always fails, so check syntax instead.
+      - name: Check syntax of every .js file
+        run: |
+          failed=0
+          while IFS= read -r -d '' file; do
+            if ! node --check "$file"; then
+              echo "::error file=Backend/${file#./}::Syntax error"
+              failed=1
+            fi
+          done < <(find . -name node_modules -prune -o -type f -name '*.js' -print0)
+          exit "$failed"
+
+      # Non-blocking for now. `xlsx` keeps failing until issue #25 is done.
+      - name: Dependency audit (non-blocking)
+        run: npm audit --audit-level=high
+        continue-on-error: true
