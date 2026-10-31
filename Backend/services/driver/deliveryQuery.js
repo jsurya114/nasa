@@ -11,8 +11,6 @@ const fetchDeliverySummary = async (driverId, fromDate, toDate) => {
             r.route_code_in_string AS route_code,
             COALESCE(r.driver_route_price, 0) AS driver_route_price,
             COALESCE(r.driver_doublestop_price, 0) AS driver_doublestop_price,
-            COALESCE(r.company_route_price, 0) AS company_route_price,
-            COALESCE(r.company_doublestop_price, 0) AS company_doublestop_price,
             pd.packages,
             pd.no_scanned,
             pd.failed_attempt,
