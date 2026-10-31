@@ -1,0 +1,39 @@
+# Allowed commit scopes, one per line (CONTRIBUTING.md §3.3).
+# To add one, also update the table in CONTRIBUTING.md in the same commit.
+
+# Apps
+frontend
+backend
+mobile
+
+# Cross-cutting
+auth
+db
+api
+ui
+validation
+i18n
+security
+
+# Repository
+deps
+config
+repo
+readme
+docs
+
+# Domain modules
+drivers
+admins
+cities
+routes
+journeys
+deliveries
+availability
+access-codes
+agreements
+excel
+payroll
+quickbooks
+dashboard
+analytics
