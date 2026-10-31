@@ -1,0 +1,140 @@
+#!/usr/bin/env bash
+#
+# commit-msg hook: validates commit messages against CONTRIBUTING.md §3
+# (Conventional Commits with the team's rules).
+#
+# Enable once per clone:  git config core.hooksPath .githooks
+# Allowed scopes live in .githooks/scopes (one per line, # for comments).
+
+set -u
+
+TYPES="feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert"
+SCOPE_REQUIRED="feat|fix|refactor|perf|test"
+BODY_REQUIRED="feat|fix"
+MAX_HEADER=72
+MAX_BODY_LINE=100
+
+msg_file="$1"
+scopes_file="$(dirname "$0")/scopes"
+SCOPES="$(sed -e 's/#.*//' -e 's/[[:space:]]//g' "$scopes_file" 2>/dev/null | awk 'NF' | paste -sd '|' -)"
+
+# Remove the verbose-mode diff (everything after the scissors line) and comment lines.
+message="$(sed -e '/^# -* >8 -*$/,$d' -e '/^#/d' "$msg_file")"
+
+header="$(printf '%s\n' "$message" | awk 'NF { print; exit }')"
+
+# Let git-generated and autosquash messages through.
+case "$header" in
+  "Merge "* | "Revert \""* | "fixup! "* | "squash! "* | "amend! "*) exit 0 ;;
+esac
+
+errors=()
+add_error() { errors+=("$1"); }
+
+# Lines after the header (header removed, leading blank lines kept for the blank-line check).
+rest="$(printf '%s\n' "$message" | awk 'found { print; next } NF { found = 1 }')"
+
+# --- Header -----------------------------------------------------------------
+header_re="^(${TYPES})(\(([a-z0-9-]+)\))?(!)?: (.+)$"
+if [[ ! "$header" =~ $header_re ]]; then
+  add_error "Header must be '<type>(<scope>): <subject>'. Allowed types: ${TYPES//|/, }."
+else
+  type="${BASH_REMATCH[1]}"
+  scope="${BASH_REMATCH[3]}"
+  breaking="${BASH_REMATCH[4]}"
+  subject="${BASH_REMATCH[5]}"
+
+  if [[ -n "$scope" && ! "$scope" =~ ^(${SCOPES})$ ]]; then
+    add_error "Unknown scope '${scope}'. Allowed: ${SCOPES//|/, }. Add new ones to .githooks/scopes."
+  fi
+  if [[ -z "$scope" && "$type" =~ ^(${SCOPE_REQUIRED})$ ]]; then
+    add_error "A scope is required for '${type}' commits, e.g. '${type}(auth): …'."
+  fi
+  if (( ${#header} > MAX_HEADER )); then
+    add_error "Header is ${#header} characters; the maximum is ${MAX_HEADER}."
+  fi
+  if [[ "$subject" == *. ]]; then
+    add_error "Subject must not end with a full stop."
+  fi
+
+  first_word="${subject%% *}"
+  if [[ "$first_word" =~ ^[A-Z][a-z] ]]; then
+    add_error "Subject must start with a lowercase verb ('add', not '${first_word}')."
+  fi
+  first_lower="$(printf '%s' "$first_word" | tr '[:upper:]' '[:lower:]')"
+  case "$first_lower" in
+    added|adds|adding|fixed|fixes|fixing|updated|updates|updating|changed|changes|changing| \
+    removed|removes|removing|created|creates|creating|implemented|implements|implementing| \
+    refactored|refactors|refactoring|moved|moves|renamed|renames|improved|improves)
+      add_error "Use the imperative mood ('add', 'fix', 'update'), not '${first_word}'." ;;
+  esac
+
+  subject_lower="$(printf '%s' "$subject" | tr '[:upper:]' '[:lower:]')"
+  case "$subject_lower" in
+    update|updates|change|changes|fix|fixes|final|final2|done|wip|misc|stuff|minor|test|asdf| \
+    "minor changes"|"small fix"|"code update"|"some changes"|"bug fix"|"latest")
+      add_error "Subject '${subject}' does not describe the change. Say what changed and where." ;;
+  esac
+fi
+
+# --- Blank line after the header ----------------------------------------------
+if [[ -n "$(printf '%s' "$rest" | tr -d '[:space:]')" ]]; then
+  second_line="$(printf '%s\n' "$rest" | head -n 1)"
+  if [[ -n "$(printf '%s' "$second_line" | tr -d '[:space:]')" ]]; then
+    add_error "Leave one blank line between the header and the body."
+  fi
+fi
+
+# --- Body and trailers ----------------------------------------------------------
+trailer_re='^(BREAKING CHANGE|[A-Za-z][A-Za-z-]*): '
+body_lines=0
+has_breaking_trailer=0
+has_revert_line=0
+while IFS= read -r line; do
+  [[ -z "$(printf '%s' "$line" | tr -d '[:space:]')" ]] && continue
+  if [[ "$line" =~ $trailer_re ]]; then
+    [[ "$line" == "BREAKING CHANGE: "* || "$line" == "BREAKING-CHANGE: "* ]] && has_breaking_trailer=1
+    continue
+  fi
+  [[ "$line" == "This reverts commit "* ]] && has_revert_line=1
+  body_lines=$((body_lines + 1))
+  if (( ${#line} > MAX_BODY_LINE )) && [[ "$line" != *"http://"* && "$line" != *"https://"* ]]; then
+    add_error "Body line longer than ${MAX_BODY_LINE} characters (wrap at 72): '${line:0:40}…'"
+  fi
+done <<< "$rest"
+
+if [[ -n "${type:-}" ]]; then
+  if [[ "$type" =~ ^(${BODY_REQUIRED})$ ]] && (( body_lines == 0 )); then
+    add_error "A body is required for '${type}' commits: one line on why, then bullets on what changed."
+  fi
+  if [[ -n "${breaking:-}" ]] && (( has_breaking_trailer == 0 )); then
+    add_error "A '!' breaking change needs a 'BREAKING CHANGE: <description>' trailer."
+  fi
+  if [[ "$type" == "revert" ]] && (( has_revert_line == 0 )); then
+    add_error "A revert needs the line 'This reverts commit <sha>.' in the body."
+  fi
+fi
+
+# --- Result --------------------------------------------------------------------
+if (( ${#errors[@]} > 0 )); then
+  {
+    echo ""
+    echo "✖ Commit message rejected (see CONTRIBUTING.md §3):"
+    echo ""
+    for e in "${errors[@]}"; do echo "  - $e"; done
+    echo ""
+    echo "  Your header:  ${header}"
+    echo ""
+    echo "  Format:  <type>(<scope>): <subject>"
+    echo "           <blank line>"
+    echo "           Why the change is needed."
+    echo "           <blank line>"
+    echo "           - What changed"
+    echo "           <blank line>"
+    echo "           Refs: #12"
+    echo ""
+  } >&2
+  exit 1
+fi
+
+exit 0
