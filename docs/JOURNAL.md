@@ -9,16 +9,42 @@ The team's record of every change to code, the database, configuration, dependen
 
 | Area | Owner | Note |
 |---|---|---|
-| `weeklyUploadsController`, `fileUploadsController`, `weeklyExcelQueries`, `excelFileQueries`, `dashboardQueries` | Jasil | Leave alone. Ask first. |
-| Old `dev` branch | Jasil | Do not delete. Has 7 commits not on `main`. |
+| Excel, pay and dashboard zone. Backend: `weeklyUploadsController`, `fileUploadsController`, `dashboardController`, `analyticsController`, `weeklyExcelQueries`, `excelFileQueries`, `dashboardQueries`, `analyticsQueries`, Excel settings in `multerConfig`, new payroll and QuickBooks files. Frontend: `Dashboard`, `DashboardTable`, `DoubleStop`, `DriverPaymentUpdate`, `Analystic`, `UploadedData`, `TempUploadedData` and their slices (`dashSlice`, `dashboardUpdateSlice`, `paymentDashboardSlice`, `excelSlice`, `doublestopSlice`, `analyticsSlice`) | Jasil | Leave alone. Ask first. Issues #24 to #32. |
+| Everything else (auth, middleware, route files, `app.js`, drivers, admins, cities, routes, journeys, availability, access codes, agreements, logging, docs, migrations, mobile app, UI refresh outside Jasil's screens) | Jayasoorya | Issues #3 to #23. |
+| Old `dev` branch | Jasil | Do not delete. Has 7 commits not on `main`. Issue #27. |
 
 ## In progress
 
 | Branch | Owner | Area |
 |---|---|---|
-| `docs/engineering-standard` | Jayasoorya | `docs/` only |
+| `docs/work-split` | Jayasoorya | `docs/JOURNAL.md` only |
 
 ## Entries
+
+### J-002 — Split the work between Jayasoorya and Jasil
+
+| Field | Value |
+|---|---|
+| Date | 31 October 2026 |
+| Author | Jayasoorya Suryadas, with Claude Code |
+| Branch / PR | `docs/work-split` / pull request into `develop` |
+| Type / scope | `docs(docs)` |
+| Files touched | `docs/JOURNAL.md` |
+| Reserved files touched | None |
+
+**What and why.** The handoff tasks from Jasil are now GitHub issues #3 to #32, each with one assignee and one priority label (`P0-critical` to `P3-low`). Issue #33 is the tracking issue that defines the two file zones, the shared contracts and the order. The zones are drawn so that no issue needs the other person's work. The ownership table above now lists both zones.
+
+**Repository settings.** Created labels `P0-critical`, `P1-high`, `P2-medium`, `P3-low`, `security`, `refactor`, `chore`, `performance` and `excel-pay`. The repository is already private.
+
+**Database.** None.
+
+**Config and dependencies.** None.
+
+**Money impact.** None.
+
+**Tested.** Documentation only. Checked that every issue number in the table exists.
+
+**Risks and follow-ups.** Two shared files can conflict textually: the backend dependency lock file and this journal. Whoever merges second regenerates the lock file and keeps both journal entries.
 
 ### J-001 — Add engineering standard and journal
 
