@@ -2,6 +2,38 @@ import pool  from "../../config/db.js";
 import bcrypt from "bcrypt";
 import { jobService } from "./jobQueries.js";
 
+/**
+ * Turns the city list sent by the admin form (`[{ value: 3, label: "..." }]`)
+ * into a plain list of unique whole numbers, or returns null if anything in it
+ * is not a positive whole number. City IDs are sent to the database as a
+ * query parameter, never joined into the SQL text.
+ */
+export const parseCityIds = (cities) => {
+    if (!Array.isArray(cities)) return null;
+
+    const ids = [];
+    for (const city of cities) {
+        const raw = city?.value;
+        const ok =
+            (typeof raw === "number" && Number.isInteger(raw)) ||
+            (typeof raw === "string" && /^[0-9]+$/.test(raw.trim()));
+        const id = ok ? Number(raw) : NaN;
+        if (!Number.isSafeInteger(id) || id < 1) return null;
+        ids.push(id);
+    }
+    return [...new Set(ids)];
+};
+
+// Saves the admin's cities using query parameters only.
+const insertAdminCities = async (client, adminId, cityIds) => {
+    await client.query(
+        `INSERT INTO admin_city_ref(admin_id, city_id)
+         SELECT $1, UNNEST($2::int[])
+         ON CONFLICT (admin_id, city_id) DO NOTHING`,
+        [adminId, cityIds]
+    );
+};
+
 export const dbService = {
     getAdminByEmail: async (email) => {
         let result = await pool.query("SELECT * FROM admin WHERE email = $1", [email]);
@@ -158,13 +190,9 @@ export const dbService = {
 
             const cities = Array.isArray(data.city) ? data.city : [];
             if (data.role === 'admin' && cities.length > 0) {
-                const values = data.city.map((c) => `(${admin.id}, ${c.value})`).join(',');
-                const query = `
-                    INSERT INTO admin_city_ref(admin_id, city_id)
-                    VALUES ${values}
-                    ON CONFLICT (admin_id, city_id) DO NOTHING;
-                `;
-                await client.query(query);
+                const cityIds = parseCityIds(cities);
+                if (!cityIds) throw new Error('Invalid city selection');
+                await insertAdminCities(client, admin.id, cityIds);
             }
 
             await client.query('COMMIT');
@@ -349,13 +377,9 @@ updateParams = [
 
             const cities = Array.isArray(data.city) ? data.city : [];
             if (data.role === 'admin' && cities.length > 0) {
-                const values = cities.map((c) => `(${admin.id},${c.value})`).join(',');
-                const query = `
-                    INSERT INTO admin_city_ref(admin_id, city_id)
-                    VALUES ${values}
-                    ON CONFLICT (admin_id, city_id) DO NOTHING;
-                `;
-                await client.query(query);
+                const cityIds = parseCityIds(cities);
+                if (!cityIds) throw new Error('Invalid city selection');
+                await insertAdminCities(client, admin.id, cityIds);
             }
 
             await client.query('COMMIT');
