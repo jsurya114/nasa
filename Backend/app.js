@@ -35,16 +35,14 @@ app.use(rateLimit({ windowMs: 15 * 60 * 1000, max: 1000 }));
 initializeAvailabilityResetCron()
 
 app.use('/admin', (req, _, next) => {
-  // Updated logging to show Authorization header instead of cookie
-  const authHeader = req.headers.authorization?.slice(0, 20) || 'no-token';
-  console.log(req.originalUrl, '##', authHeader, '**', Date().toString().slice(16, 25))
+  // Log method and path only. Never the Authorization header or the query string.
+  console.log(req.method, req.originalUrl.split('?')[0], '**', Date().toString().slice(16, 25))
   next()
 }, adminRoutes);
 
 app.use('/driver', (req, _, next) => {
-  // Updated logging to show Authorization header instead of cookie
-  const authHeader = req.headers.authorization?.slice(0, 20) || 'no-token';
-  console.log(req.originalUrl, '##', authHeader, '**', Date().toString().slice(16, 25))
+  // Log method and path only. Never the Authorization header or the query string.
+  console.log(req.method, req.originalUrl.split('?')[0], '**', Date().toString().slice(16, 25))
   next()
 }, driverRoutes)
 

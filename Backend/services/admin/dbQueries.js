@@ -260,7 +260,6 @@ export const dbService = {
             // Hash the new password
             const hashedPwd = await dbService.hashedPassword(data.password);
             
-            console.log("updateuser",id,data)
          updateQuery = `
   UPDATE drivers
   SET 

@@ -73,7 +73,7 @@ axios.interceptors.response.use(
           }
         }
       } catch (refreshError) {
-        console.error("Token refresh failed:", refreshError);
+        console.error("Token refresh failed:", refreshError.message);
         // If refresh fails, clear tokens and redirect to login
         localStorage.removeItem('adminToken');
         localStorage.removeItem('adminRefreshToken');
