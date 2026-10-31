@@ -2,6 +2,7 @@ import { dbService } from '../../services/admin/dbQueries.js'
 import { generateToken, verifyToken, generateRefreshToken, verifyRefreshToken } from '../../services/jwtservice.js'
 import HttpStatus from '../../utils/statusCodes.js'
 import { blackListToken } from '../../services/redis-jwt-service.js'
+import { ADMIN_ROLES } from '../../middlewares/requireRole.js'
 
 const adminController = {
   Login: async (req, res) => {
@@ -125,6 +126,12 @@ const adminController = {
       }
 
       const decoded = verifyRefreshToken(refreshToken);
+
+      // A driver refresh token must never mint an admin token.
+      if (!ADMIN_ROLES.includes(decoded.role)) {
+        return res.status(HttpStatus.UNAUTHORIZED).json({ message: "UNAUTHORIZED" });
+      }
+
       const admin = await dbService.getAdminById(decoded.id);
 
       if (!admin || !admin.is_active) {
