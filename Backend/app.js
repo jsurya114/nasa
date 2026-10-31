@@ -9,8 +9,12 @@ import sanitizeMiddleware from './middlewares/sanitize.js';
 import { notFound, errorHandler } from './middlewares/errorHandler.js';
 import rateLimit from './middlewares/rateLimit.js';
 import { initializeAvailabilityResetCron } from './utils/availabilityCronJob.js';
+import { assertAuthSecrets } from './services/jwtservice.js';
 
 dotenv.config()
+
+// Stop at start-up, with a clear message, if a token secret is missing or shared.
+assertAuthSecrets()
 
 const PORT = process.env.PORT;
 const app = express();

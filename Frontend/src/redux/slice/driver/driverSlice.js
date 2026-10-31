@@ -75,7 +75,9 @@ export const driverLogout = createAsyncThunk(
   "driver/logout",
   async (_, { rejectWithValue }) => {
     try {
-      const res = await axios.post(`/driver/logout`);
+      // Send the refresh token too, so the server can revoke it.
+      const refreshToken = localStorage.getItem('driverRefreshToken');
+      const res = await axios.post(`/driver/logout`, { refreshToken });
       // Cleanup tokens after successful logout request
       localStorage.removeItem('driverToken');
       localStorage.removeItem('driverRefreshToken');
