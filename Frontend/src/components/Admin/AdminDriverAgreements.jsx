@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { FileText } from "lucide-react";
 import axios from '../../redux/slice/axiosInstance';
 import { toast } from 'react-toastify';
 import Header from '../../reuse/Header';
@@ -249,9 +250,10 @@ const AdminDriverAgreements = () => {
             <div className="flex items-center gap-3">
               <button
                 onClick={() => handleViewAgreement('')}
-                className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition text-sm font-medium whitespace-nowrap"
+                className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition text-sm font-medium whitespace-nowrap inline-flex items-center gap-2"
               >
-                📄 View Agreement
+                <FileText className="w-4 h-4" aria-hidden="true" />
+                View Agreement
               </button>
               <div className="w-full md:w-72">
                 <SearchBar 

@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { Info } from "lucide-react";
 import { useSelector } from 'react-redux';
 import Select from 'react-select';
 
@@ -223,8 +224,9 @@ function AddAdminForm({ onSubmit, editData, isEdit, onCancel }) {
           <option value="superadmin">Super Admin</option>
         </select>
         {isEdit && (
-          <p className="text-xs text-gray-500">
-            ℹ️ Role cannot be changed during edit
+          <p className="text-xs text-gray-500 flex items-center gap-1.5">
+            <Info className="w-3.5 h-3.5 flex-shrink-0" aria-hidden="true" />
+            Role cannot be changed during edit
           </p>
         )}
       </div>
