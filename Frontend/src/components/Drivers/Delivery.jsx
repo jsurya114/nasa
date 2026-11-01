@@ -100,8 +100,7 @@ const Deliveries = () => {
             setSelectedDataType(savedDataType || "all");
             dispatch(setDeliveriesFromCache(parsedDeliveries));
           }
-        } catch (err) {
-          console.error("Failed to parse cached data:", err);
+        } catch {
           localStorage.removeItem("deliveryData");
           localStorage.removeItem("deliveryFilters");
           localStorage.removeItem("deliveryTimestamp");

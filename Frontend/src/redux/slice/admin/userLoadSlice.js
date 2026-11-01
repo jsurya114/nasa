@@ -169,7 +169,6 @@ const userLoadSlice = createSlice({
                 state.success = null;
             })
             .addCase(addDriver.fulfilled, (state, action) => {
-                console.log("Driver added successfully:", action.payload);
 
                 const newDriver = action.payload.insertUser;
 
@@ -180,7 +179,6 @@ const userLoadSlice = createSlice({
                 state.error = null;
             })
             .addCase(addDriver.rejected, (state, action) => {
-                console.error("Add driver failed:", action.payload);
                 state.loading = false;
                 state.error = action.payload || "Failed to add driver";
                 state.success = null;
@@ -277,7 +275,6 @@ const userLoadSlice = createSlice({
                 state.success = null;
             })
             .addCase(addAdmin.fulfilled, (state, action) => {
-                console.log("Admin added successfully:", action.payload);
 
                 const newAdmin = action.payload.insertAdmin;
 
@@ -288,7 +285,6 @@ const userLoadSlice = createSlice({
                 state.error = null;
             })
             .addCase(addAdmin.rejected, (state, action) => {
-                console.error("Add admin failed:", action.payload);
                 state.loading = false;
                 state.error = action.payload || "Failed to add admin";
                 state.success = null;
@@ -297,7 +293,6 @@ const userLoadSlice = createSlice({
                 state.loading = true;
             })
             .addCase(getCities.fulfilled, (state, action) => {
-                console.log("From cities", action.payload.cities);
                 state.city = action.payload.cities;
                 state.loading = false;
                 state.success = true;
@@ -312,7 +307,6 @@ const userLoadSlice = createSlice({
                 state.loading = true;
             })
             .addCase(getAdminCities.fulfilled, (state, action) => {
-                console.log("From admin cities", action.payload.cities);
                 state.city = action.payload.cities;
                 state.loading = false;
                 state.success = true;

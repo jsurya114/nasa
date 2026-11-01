@@ -15,7 +15,6 @@ export const fetchPaginatedJobs = createAsyncThunk(
       if (error.name === 'AbortError' || axios.isCancel(error)) {
         return rejectWithValue('Request cancelled');
       }
-      console.error("fetchPaginatedJobs error:", error.response?.data?.message || error.message);
       return rejectWithValue(error.response?.data?.message || error.message);
     }
   }
@@ -29,7 +28,6 @@ export const fetchJobs = createAsyncThunk(
       const res = await axios.get(`/admin/jobs`);
       return res.data;
     } catch (error) {
-      console.error("fetchJobs error:", error.response?.data?.message || error.message);
       return rejectWithValue(error.response?.data?.message || error.message);
     }
   }
@@ -40,17 +38,14 @@ export const addJob = createAsyncThunk(
   "jobs/addJob",
   async ({ job, city_code, enabled, city_type }, { rejectWithValue }) => {
     try {
-      console.log('Adding job with city_type:', city_type);
       const res = await axios.post(`/admin/addjob`, {
         job,
         city_code,
         enabled,
         city_type: city_type || 'DAILY'
       });
-      console.log('Job added successfully:', res.data);
       return res.data;
     } catch (error) {
-      console.error("addJob error:", error.response?.data?.message || error.message);
       return rejectWithValue(error.response?.data?.message || error.message);
     }
   }
@@ -61,17 +56,14 @@ export const updateJob = createAsyncThunk(
   "jobs/updateJob",
   async ({ id, job, city_code, city_type }, { rejectWithValue }) => {
     try {
-      console.log('Updating job:', { id, job, city_code, city_type });
       const payload = { job, city_code };
       if (city_type !== undefined && city_type !== null) {
         payload.city_type = city_type;
       }
 
       const res = await axios.put(`/admin/updatejob/${id}`, payload);
-      console.log('Job updated successfully:', res.data);
       return res.data;
     } catch (error) {
-      console.error("updateJob error:", error.response?.data?.message || error.message);
       return rejectWithValue(error.response?.data?.message || error.message);
     }
   }
@@ -85,7 +77,6 @@ export const deleteJob = createAsyncThunk(
       await axios.delete(`/admin/deletejob/${id}`);
       return id;
     } catch (error) {
-      console.error("deleteJob error:", error.response?.data?.message || error.message);
       return rejectWithValue(error.response?.data?.message || error.message);
     }
   }
@@ -99,7 +90,6 @@ export const jobStatus = createAsyncThunk(
       const res = await axios.patch(`/admin/${id}/status`);
       return res.data;
     } catch (error) {
-      console.error("jobStatus error:", error.response?.data?.message || error.message);
       return rejectWithValue(error.response?.data?.message || error.message);
     }
   }
@@ -109,11 +99,9 @@ export const fetchAllCities = createAsyncThunk(
   "jobs/fetchAllCities",
   async (_, { rejectWithValue }) => {
     try {
-      console.log("Fetching all enabled cities...");
       const res = await axios.get(`/admin/get-cities`);
       return res.data.cities;
     } catch (error) {
-      console.error("fetchAllCities error:", error.response?.data?.message || error.message);
       return rejectWithValue(error.response?.data?.message || error.message);
     }
   }

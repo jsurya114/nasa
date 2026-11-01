@@ -22,7 +22,6 @@ const DriverLogin = () => {
   useEffect(() => {
     const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
     setDetectedTimezone(timezone);
-    console.log("🌍 Detected timezone:", timezone);
   }, []);
 
   useEffect(() => {

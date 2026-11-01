@@ -28,13 +28,11 @@ export const translateError = (lang, key, params = {}) => {
     if (translation && typeof translation === 'object' && k in translation) {
       translation = translation[k];
     } else {
-      console.warn(`Backend translation key not found: ${key} for language: ${lang}`);
       return key;
     }
   }
   
   if (typeof translation !== 'string') {
-    console.warn(`Backend translation is not a string: ${key}`);
     return key;
   }
   

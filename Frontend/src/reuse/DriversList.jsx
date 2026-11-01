@@ -56,11 +56,7 @@ function DriversList({ onEdit }) {
   };
 
   function handleToggleChange(id) {    
-    try {
-      dispatch(toggleAvailUser(id));
-    } catch (err) {
-      console.error("Failed to toggle status:", err);
-    }
+    dispatch(toggleAvailUser(id));
   }
 
   function handleEdit(driver) {

@@ -35,7 +35,6 @@ const useInactivityLogout = () => {
             localStorage.setItem('lastActivity', Date.now().toString());
 
             timeoutRef.current = setTimeout(() => {
-                console.log("Session timed out due to inactivity");
                 localStorage.removeItem('lastActivity');
                 dispatch(logoutAction());
             }, timeout);
@@ -56,7 +55,6 @@ const useInactivityLogout = () => {
                 if (lastActivity) {
                     const elapsed = Date.now() - parseInt(lastActivity, 10);
                     if (elapsed >= timeout) {
-                        console.log("Session expired during tab closure");
                         localStorage.removeItem('lastActivity');
                         dispatch(logoutAction());
                         return true;

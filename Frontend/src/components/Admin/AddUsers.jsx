@@ -29,7 +29,6 @@ const AddUsers = () => {
 
   // Fetch cities on mount - use getAdminCities which handles both superadmin and regular admin
   useEffect(() => {
-    console.log("Fetching cities on mount, isSuperAdmin:", isSuperAdmin);
     
     // Always use getAdminCities - it handles role-based filtering
     // Superadmin gets all cities, regular admin gets assigned cities
@@ -69,8 +68,8 @@ const AddUsers = () => {
         .then(() => {
           setEditDriver(null);
         })
-        .catch((err) => {
-          console.error("Failed to update driver:", err);
+        .catch(() => {
+          // The users slice keeps the error and the screen shows it.
         });
     } else {
       dispatch(addDriver(form));
@@ -85,8 +84,8 @@ const AddUsers = () => {
         .then(() => {
           setEditAdmin(null);
         })
-        .catch((err) => {
-          console.error("Failed to update admin:", err);
+        .catch(() => {
+          // The users slice keeps the error and the screen shows it.
         });
     } else {
       dispatch(addAdmin(form));
