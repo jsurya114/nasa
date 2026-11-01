@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react';
+import { SkeletonTableRows } from "./Skeleton.jsx";
 import { useDispatch, useSelector } from 'react-redux';
 import { getUsers, toggleAvailUser, setSearchTerm, setSelectedCity } from '../redux/slice/admin/userLoadSlice';
 import Pagination from './Pagination';
-import { toast } from 'react-toastify';
+import { toast } from "../utils/toast";
 
 function DriversList({ onEdit }) {
   const dispatch = useDispatch();  
@@ -68,7 +69,7 @@ function DriversList({ onEdit }) {
   const hasActiveFilters = localSearchTerm || (localSelectedCity && localSelectedCity !== "All");
 
   return (
-    <section className="bg-white rounded-xl shadow p-4">
+    <section className="card-surface p-4">
       {/* Search and Filter Section */}
       <div className="mb-4 space-y-3">
         <div className="flex flex-col sm:flex-row gap-3">
@@ -80,7 +81,7 @@ function DriversList({ onEdit }) {
                 value={localSearchTerm}
                 onChange={(e) => setLocalSearchTerm(e.target.value)}
                 placeholder="Search by name, email, phone, or driver code..."
-                className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                className="bg-white text-ink placeholder:text-ink-muted/70 focus:outline-none transition-shadow min-h-11 w-full pl-10 pr-4 py-2 border border-line rounded-xl focus:ring-4 focus:ring-brand-500/20 focus:border-brand-500"
               />
               <svg
                 className="absolute left-3 top-2.5 h-5 w-5 text-gray-400"
@@ -103,7 +104,7 @@ function DriversList({ onEdit }) {
             <select
               value={localSelectedCity}
               onChange={handleCityChange}
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+              className="bg-white text-ink placeholder:text-ink-muted/70 focus:outline-none transition-shadow min-h-11 w-full px-4 py-2 border border-line rounded-xl focus:ring-4 focus:ring-brand-500/20 focus:border-brand-500"
             >
               <option value="All">All Cities</option>
               {city && city.length > 0 && city.map((c) => (
@@ -172,7 +173,7 @@ function DriversList({ onEdit }) {
             <tr className="bg-gray-50 text-left">
               {["Sl No", "Driver Code", "Name", "Email", "Phone", "City", "Status", "Actions"].map(
                 (head, i) => (
-                  <th key={i} className="px-3 py-2 border-b border-gray-200">
+                  <th key={i} className="px-3 py-2 border-b border-line">
                     {head}
                   </th>
                 )
@@ -181,17 +182,7 @@ function DriversList({ onEdit }) {
           </thead>
           <tbody>
             {usersLoad && drivers.length === 0 ? (
-              <tr>
-                <td colSpan="8" className="text-center py-4 text-gray-500 font-medium">
-                  <div className="flex items-center justify-center">
-                    <svg className="animate-spin h-6 w-6 mr-2 text-purple-600" viewBox="0 0 24 24">
-                      <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
-                      <path fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
-                    </svg>
-                    Loading drivers...
-                  </div>
-                </td>
-              </tr>
+              <SkeletonTableRows rows={5} cols={8} label="Loading drivers..." />
             ) : drivers.length > 0 ? (
               drivers.map((d, i) => (
                 <tr key={d.id} className={!d.enabled ? "bg-gray-50" : ""}>
@@ -272,7 +263,7 @@ function DriversList({ onEdit }) {
                         disabled={!d.enabled}
                         className={`group relative px-4 py-1.5 text-white text-xs font-medium rounded-md transition-all duration-200 shadow-sm flex items-center gap-1.5 ${
                           d.enabled
-                            ? "bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 hover:shadow-md cursor-pointer"
+                            ? "bg-brand hover:bg-brand-900 hover:shadow-md cursor-pointer"
                             : "bg-gray-400 cursor-not-allowed opacity-50"
                         }`}
                         title={d.enabled ? "Edit driver" : "Enable driver to edit"}

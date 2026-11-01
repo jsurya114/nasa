@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import { SkeletonPage, Skeleton } from "../../reuse/Skeleton.jsx";
 import { TriangleAlert } from "lucide-react";
 import Header from "../../reuse/driver/Header";
 import Nav from "../../reuse/driver/Nav";
 import { useSelector, useDispatch } from "react-redux";
-import { toast } from "react-toastify";
+import { toast } from "../../utils/toast";
 import useTranslation from "../../hooks/useTranslation.js";
 import {
   fetchRoutes,
@@ -205,7 +206,7 @@ const Journey = () => {
 
     return journeys.map((row) => (
       <tr key={row.id || row.journey_date} className="hover:bg-gray-50">
-        <td className="px-3 sm:px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+        <td className="px-3 sm:px-6 py-4 whitespace-nowrap text-sm font-medium text-ink">
           {driver?.name}
         </td>
         <td className="px-3 sm:px-6 py-4 whitespace-nowrap text-sm text-gray-500">
@@ -220,7 +221,7 @@ const Journey = () => {
         <td className="px-3 sm:px-6 py-4 whitespace-nowrap text-center text-sm text-gray-500">
           {row.end_seq}
         </td>
-        <td className="px-3 sm:px-6 py-4 whitespace-nowrap text-center text-sm font-medium text-gray-900">
+        <td className="px-3 sm:px-6 py-4 whitespace-nowrap text-center text-sm font-medium text-ink">
           {calculatePackages(row)}
         </td>
       </tr>
@@ -230,19 +231,14 @@ const Journey = () => {
   // Loading state
   if (cityTypeStatus === 'loading') {
     return (
-      <div className="min-h-screen bg-gray-50 text-gray-900 font-poppins flex items-center justify-center">
-        <div className="text-center">
-          <div className="w-16 h-16 border-4 border-purple-200 border-t-brand rounded-full animate-spin mx-auto mb-4" />
-          <p className="text-gray-600">{t('loading')}</p>
-        </div>
-      </div>
+      <SkeletonPage label={t('loading')} />
     );
   }
 
   // Weekly restriction view
   if (cityType === 'WEEKLY' || showWeeklyRestriction) {
     return (
-      <div className="min-h-screen bg-gray-50 text-gray-900 font-poppins">
+      <div className="min-h-dvh bg-canvas text-ink">
         <Header />
         <main className="max-w-5xl mx-auto mt-4 sm:mt-6 mb-24 px-4 sm:px-6 pb-36">
           <div className="bg-blue-50 border-2 border-blue-300 rounded-lg p-8 text-center shadow-md">
@@ -251,7 +247,7 @@ const Journey = () => {
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
               </svg>
             </div>
-            <h1 className="text-2xl font-bold text-gray-900 mb-2">{t('journeyDisabled')}</h1>
+            <h1 className="text-2xl font-bold text-ink mb-2">{t('journeyDisabled')}</h1>
             <p className="text-gray-700 mb-4">
               {t('weeklyConfigured')}
             </p>
@@ -275,13 +271,13 @@ const Journey = () => {
 
   // Daily city - show normal journey page
   return (
-    <div className="min-h-screen bg-gray-50 text-gray-900 font-poppins">
+    <div className="min-h-dvh bg-canvas text-ink">
       <Header />
 
       <main className="max-w-5xl mx-auto mt-4 sm:mt-6 mb-24 px-4 sm:px-6 pb-36">
-        <div className="bg-white border border-gray-200 rounded-lg shadow-sm mb-8">
-          <div className="px-4 sm:px-6 py-4 border-b border-gray-200">
-            <h1 className="text-lg font-semibold text-gray-900">
+        <div className="card-surface mb-8">
+          <div className="px-4 sm:px-6 py-4 border-b border-line">
+            <h1 className="text-lg font-semibold text-ink">
               {t('startYourJourney')}
             </h1>
           </div>
@@ -297,7 +293,7 @@ const Journey = () => {
                 name="journey_date"
                 value={formData.journey_date}
                 readOnly
-                className="w-full px-3 py-3 text-base border border-gray-300 rounded-md bg-gray-100 text-gray-500 cursor-not-allowed focus:outline-none"
+                className="placeholder:text-ink-muted/70 transition-shadow focus:ring-4 focus:ring-brand-500/20 focus:border-brand-500 min-h-11 w-full px-3 py-3 text-base border border-line rounded-xl bg-gray-100 text-gray-500 cursor-not-allowed focus:outline-none"
               />
             </div>
 
@@ -312,7 +308,7 @@ const Journey = () => {
                 value={formData.start_sequence}
                 onChange={handleChange}
                 disabled={isJourneySaved}
-                className="w-full px-3 py-3 text-base border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-purple-600 focus:border-purple-600 disabled:bg-gray-100 disabled:cursor-not-allowed"
+                className="bg-white text-ink placeholder:text-ink-muted/70 transition-shadow min-h-11 w-full px-3 py-3 text-base border border-line rounded-xl focus:outline-none focus:ring-4 focus:ring-brand-500/20 focus:border-brand-500 disabled:bg-gray-100 disabled:cursor-not-allowed"
               />
               {errors.start_seq && (
                 <p className="text-red-500 text-sm mt-1">{errors.start_seq}</p>
@@ -330,7 +326,7 @@ const Journey = () => {
                 value={formData.end_sequence}
                 onChange={handleChange}
                 disabled={isJourneySaved}
-                className="w-full px-3 py-3 text-base border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-purple-600 focus:border-purple-600 disabled:bg-gray-100 disabled:cursor-not-allowed"
+                className="bg-white text-ink placeholder:text-ink-muted/70 transition-shadow min-h-11 w-full px-3 py-3 text-base border border-line rounded-xl focus:outline-none focus:ring-4 focus:ring-brand-500/20 focus:border-brand-500 disabled:bg-gray-100 disabled:cursor-not-allowed"
               />
               {errors.end_seq && (
                 <p className="text-red-500 text-sm mt-1">{errors.end_seq}</p>
@@ -347,7 +343,7 @@ const Journey = () => {
                 value={formData.route}
                 onChange={handleChange}
                 disabled={isJourneySaved || isLoadingRoutes}
-                className="w-full px-3 py-3 text-base border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-purple-600 focus:border-purple-600 disabled:bg-gray-100 disabled:cursor-not-allowed"
+                className="bg-white text-ink placeholder:text-ink-muted/70 transition-shadow min-h-11 w-full px-3 py-3 text-base border border-line rounded-xl focus:outline-none focus:ring-4 focus:ring-brand-500/20 focus:border-brand-500 disabled:bg-gray-100 disabled:cursor-not-allowed"
               >
                 <option value="">
                   {isLoadingRoutes ? t('loadingRoutes') : t('selectRoute')}
@@ -381,14 +377,44 @@ const Journey = () => {
           </div>
         </div>
 
-        <div className="bg-white border border-gray-200 rounded-lg shadow-sm">
-          <div className="px-4 sm:px-6 py-4 border-b border-gray-200">
-            <h2 className="text-lg font-semibold text-gray-900">{t('records')}</h2>
+        <div className="card-surface">
+          <div className="px-4 sm:px-6 py-4 border-b border-line">
+            <h2 className="text-lg font-semibold text-ink">{t('records')}</h2>
           </div>
 
-          <div className="overflow-x-auto">
+          {/* Phones: one card per journey. Tablets and desktops keep the table below. */}
+          {journeyStatus === 'succeeded' && Array.isArray(journeys) && journeys.length > 0 && (
+            <ul className="divide-y divide-line md:hidden">
+              {journeys.map((row) => (
+                <li key={row.id || row.journey_date} className="px-4 py-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="truncate font-semibold text-ink">{row.route_name}</p>
+                      <p className="text-sm text-ink-muted">{row.journey_date}</p>
+                    </div>
+                    <div className="shrink-0 text-right">
+                      <p className="text-xs font-medium uppercase tracking-wide text-ink-muted">{t('packages')}</p>
+                      <p className="text-xl font-semibold tabular-nums text-ink">{calculatePackages(row)}</p>
+                    </div>
+                  </div>
+                  <dl className="mt-3 grid grid-cols-2 gap-2 text-sm">
+                    <div className="rounded-xl bg-brand-50 px-3 py-2">
+                      <dt className="text-xs text-ink-muted">{t('startSeq')}</dt>
+                      <dd className="font-medium tabular-nums text-ink">{row.start_seq}</dd>
+                    </div>
+                    <div className="rounded-xl bg-brand-50 px-3 py-2">
+                      <dt className="text-xs text-ink-muted">{t('endSeq')}</dt>
+                      <dd className="font-medium tabular-nums text-ink">{row.end_seq}</dd>
+                    </div>
+                  </dl>
+                </li>
+              ))}
+            </ul>
+          )}
+
+          <div className="hidden overflow-x-auto md:block">
             <table className="w-full">
-              <thead className="bg-gray-50">
+              <thead className="bg-brand-50/60">
                 <tr>
                   <th className="px-3 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     {t('driver')}
@@ -410,13 +436,24 @@ const Journey = () => {
                   </th>
                 </tr>
               </thead>
-              <tbody className="bg-white divide-y divide-gray-200">
+              <tbody className="bg-white divide-y divide-line">
                 {journeyRows}
               </tbody>
             </table>
+          </div>
+          <div>
             {journeyStatus === 'loading' && (
-              <div className="text-center py-8 text-gray-500">
-                {t('loadingJourneys')}
+              <div role="status" className="space-y-3 px-4 py-4 sm:px-6">
+                <span className="sr-only">{t('loadingJourneys')}</span>
+                {[0, 1, 2].map((i) => (
+                  <div key={i} aria-hidden="true" className="flex items-center justify-between gap-3">
+                    <div className="flex-1 space-y-2">
+                      <Skeleton className="h-4 w-1/3" />
+                      <Skeleton className="h-3 w-1/4" />
+                    </div>
+                    <Skeleton className="h-6 w-12" />
+                  </div>
+                ))}
               </div>
             )}
             {journeyStatus === 'succeeded' && journeys.length === 0 && (

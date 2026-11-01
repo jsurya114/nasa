@@ -1,4 +1,5 @@
 import React, { useEffect } from 'react';
+import { SkeletonList } from "../../reuse/Skeleton.jsx";
 import { useSelector, useDispatch } from 'react-redux';
 import { fetchAnalyticsData } from '../../redux/slice/admin/analyticsSlice';
 
@@ -60,7 +61,7 @@ const Analystic = ({ viewType, selectedDate }) => {
   // Don't render if no data has been uploaded
   if (!data || data.length === 0) {
     return (
-      <section className="bg-white rounded-xl shadow p-6 text-center">
+      <section className="card-surface p-6 text-center">
         <div className="text-gray-400">
           <svg className="w-16 h-16 mx-auto mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
@@ -73,7 +74,7 @@ const Analystic = ({ viewType, selectedDate }) => {
   }
 
   return (
-    <section className="bg-white rounded-xl shadow p-6">
+    <section className="card-surface p-6">
       <div className="mb-4">
         <h2 className="font-bold text-xl text-gray-800 flex items-center gap-2">
           <svg className="w-6 h-6 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -87,9 +88,7 @@ const Analystic = ({ viewType, selectedDate }) => {
       </div>
 
       {loading ? (
-        <div className="flex justify-center items-center py-8">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-purple-600"></div>
-        </div>
+        <SkeletonList rows={4} label="Loading..." className="py-4" />
       ) : error ? (
         <div className="bg-red-50 border border-red-200 rounded-lg p-4 text-red-700">
           {error}
@@ -102,7 +101,7 @@ const Analystic = ({ viewType, selectedDate }) => {
         <div className="overflow-x-auto">
           <table className="w-full border-collapse text-sm">
             <thead>
-              <tr className="bg-gradient-to-r from-purple-50 to-purple-100">
+              <tr className="bg-brand-50/60">
                 <th className="px-4 py-3 text-left font-semibold text-gray-700 border-b-2 border-purple-200">
                   Driver Name
                 </th>

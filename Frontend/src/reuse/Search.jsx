@@ -8,7 +8,7 @@ function SearchBar({ value, onChange, placeholder = "Search..." }) {
         placeholder={placeholder}
         value={value}
         onChange={onChange}
-        className="px-4 py-2 border border-gray-300 rounded-lg w-64 focus:ring-2 focus:ring-purple-600 focus:outline-none"
+        className="bg-white text-ink placeholder:text-ink-muted/70 transition-shadow min-h-11 w-full min-w-0 px-4 py-2.5 border border-line rounded-xl sm:w-64 focus:ring-4 focus:ring-brand-500/20 focus:border-brand-500 focus:outline-none"
       />
     </div>
   );

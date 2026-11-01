@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useCallback, useMemo } from "react";
+import { SkeletonTableRows } from "../../reuse/Skeleton.jsx";
 import { useDispatch, useSelector } from "react-redux";
-import { toast, ToastContainer } from 'react-toastify';
-import 'react-toastify/dist/ReactToastify.css';
+import { toast } from "../../utils/toast";
 import Header from "../../reuse/Header";
 import Nav from "../../reuse/Nav";
 import { fetchRoutes, addRoute, toggleRouteStatus, updateRoute } from "../../redux/slice/admin/routeSlice";
@@ -195,13 +195,13 @@ export default function RoutesForm() {
   []);
 
   return (
-    <div className="min-h-screen bg-gray-100 text-gray-900 font-poppins">
+    <div className="min-h-dvh bg-canvas text-ink">
       <Header />
       <main className="max-w-[1450px] mx-auto p-4 pb-40">
         {/* Form Section */}
-        <section className="bg-white border border-gray-200 rounded-xl shadow-sm mb-4 p-4 sm:p-6">
+        <section className="card-surface mb-4 p-4 sm:p-6">
           <div className="flex items-center justify-between mb-4">
-            <h2 className="font-bold text-gray-900 bg-gray-50 border-b border-gray-200 px-4 py-3 -mx-6 -mt-6 rounded-t-xl flex-1">
+            <h2 className="font-bold text-ink bg-brand-50/60 border-b border-line px-4 sm:px-6 py-3 -mx-4 -mt-4 sm:-mx-6 sm:-mt-6 rounded-t-[var(--radius-card)] flex-1">
               {editingId ? 'Edit Route' : 'Add Route'}
             </h2>
             {editingId && (
@@ -221,7 +221,7 @@ export default function RoutesForm() {
                 placeholder="Enter route name"
                 value={formData.route}
                 onChange={(e) => handleInputChange("route", e.target.value)}
-                className="w-full px-3 py-3 sm:py-2 border rounded-lg focus:ring-2 focus:ring-purple-600"
+                className="bg-white text-ink placeholder:text-ink-muted/70 focus:outline-none transition-shadow border-line min-h-11 w-full px-3 py-3 sm:py-2 border rounded-xl focus:ring-4 focus:ring-brand-500/20"
               />
             </div>
 
@@ -232,7 +232,7 @@ export default function RoutesForm() {
                 placeholder="Enter route code string (optional)"
                 value={formData.routeCodeInString}
                 onChange={(e) => handleInputChange("routeCodeInString", e.target.value)}
-                className="w-full px-3 py-3 sm:py-2 border rounded-lg focus:ring-2 focus:ring-purple-600"
+                className="bg-white text-ink placeholder:text-ink-muted/70 focus:outline-none transition-shadow border-line min-h-11 w-full px-3 py-3 sm:py-2 border rounded-xl focus:ring-4 focus:ring-brand-500/20"
               />
             </div>
 
@@ -241,7 +241,7 @@ export default function RoutesForm() {
               <select
                 value={formData.job}
                 onChange={(e) => handleInputChange("job", e.target.value)}
-                className="w-full px-3 py-3 sm:py-2 border rounded-lg focus:ring-2 focus:ring-purple-600 bg-white"
+                className="text-ink placeholder:text-ink-muted/70 focus:outline-none transition-shadow border-line min-h-11 w-full px-3 py-3 sm:py-2 border rounded-xl focus:ring-4 focus:ring-brand-500/20 bg-white"
               >
                 <option value="">Select City</option>
                 {enabledJobs.length > 0 ? (
@@ -275,7 +275,7 @@ export default function RoutesForm() {
                   type="number"
                   value={formData[field]}
                   onChange={(e) => handleInputChange(field, e.target.value)}
-                  className="w-full px-3 py-3 sm:py-2 border rounded-lg focus:ring-2 focus:ring-purple-600"
+                  className="bg-white text-ink placeholder:text-ink-muted/70 focus:outline-none transition-shadow border-line min-h-11 w-full px-3 py-3 sm:py-2 border rounded-xl focus:ring-4 focus:ring-brand-500/20"
                   min="0"
                   step="0.01"
                 />
@@ -310,13 +310,13 @@ export default function RoutesForm() {
         </section>
 
         {/* Table Section */}
-        <section className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-x-auto">
-          <h2 className="font-bold text-gray-900 bg-gray-50 border-b border-gray-200 px-4 py-3 rounded-t-xl">
+        <section className="card-surface overflow-x-auto">
+          <h2 className="font-bold text-gray-900 bg-gray-50 border-b border-line px-4 py-3 rounded-t-xl">
             Route List
           </h2>
           
           {/* ✅ NEW: Filter Section */}
-          <div className="px-4 py-2 border-b border-gray-200 bg-gray-50">
+          <div className="px-4 py-2 border-b border-line bg-gray-50">
             <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
               {/* Search Bar */}
               <div className="md:col-span-2">
@@ -332,7 +332,7 @@ export default function RoutesForm() {
                 <select
                   value={cityFilter}
                   onChange={handleCityFilterChange}
-                  className="flex-1 px-2 py-1.5 border border-gray-300 rounded-md focus:ring-2 focus:ring-purple-600 focus:border-transparent bg-white text-xs"
+                  className="text-ink placeholder:text-ink-muted/70 focus:outline-none transition-shadow flex-1 px-2 py-1.5 border border-line rounded-xl focus:ring-4 focus:ring-brand-500/20 focus:border-brand-500 bg-white text-xs"
                 >
                   <option value="">All Cities</option>
                   {enabledJobs.map((city) => (
@@ -394,7 +394,7 @@ export default function RoutesForm() {
               <thead>
                 <tr className="bg-gray-50 text-left">
                   {tableHeaders.map((head, i) => (
-                    <th key={i} className="px-3 py-2 border-b border-gray-200 font-semibold text-gray-800">
+                    <th key={i} className="px-3 py-2 border-b border-line font-semibold text-gray-800">
                       {head}
                     </th>
                   ))}
@@ -402,17 +402,7 @@ export default function RoutesForm() {
               </thead>
               <tbody>
                 {routesStatus === "loading" && routes.length === 0 ? (
-                  <tr>
-                    <td colSpan="7" className="text-center py-4 text-gray-500 font-medium">
-                      <div className="flex items-center justify-center">
-                        <svg className="animate-spin h-6 w-6 mr-2 text-purple-600" viewBox="0 0 24 24">
-                          <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
-                          <path fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
-                        </svg>
-                        Loading routes...
-                      </div>
-                    </td>
-                  </tr>
+                  <SkeletonTableRows rows={5} cols={7} label="Loading routes..." />
                 ) : routesStatus === "failed" ? (
                   <tr>
                     <td colSpan="7" className="text-center py-4 text-red-500 font-medium">
@@ -448,16 +438,16 @@ export default function RoutesForm() {
                         editingId === route.id ? "ring-2 ring-purple-500" : ""
                       }`}
                     >
-                      <td className="px-3 py-2 border-b border-gray-200">{route.route}</td>
-                      <td className="px-3 py-2 border-b border-gray-200">{route.routeCodeInString}</td>
-                      <td className="px-3 py-2 border-b border-gray-200">
+                      <td className="px-3 py-2 border-b border-line">{route.route}</td>
+                      <td className="px-3 py-2 border-b border-line">{route.routeCodeInString}</td>
+                      <td className="px-3 py-2 border-b border-line">
                         <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
                           {route.job}
                         </span>
                       </td>
-                      <td className="px-3 py-2 border-b border-gray-200">{route.companyRoutePrice}</td>
-                      <td className="px-3 py-2 border-b border-gray-200">{route.driverRoutePrice}</td>
-                      <td className="px-3 py-2 border-b border-gray-200">
+                      <td className="px-3 py-2 border-b border-line">{route.companyRoutePrice}</td>
+                      <td className="px-3 py-2 border-b border-line">{route.driverRoutePrice}</td>
+                      <td className="px-3 py-2 border-b border-line">
                         <span
                           className={`px-2 py-1 rounded-full text-sm font-medium ${
                             route.enabled ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700"
@@ -466,7 +456,7 @@ export default function RoutesForm() {
                           {route.enabled ? "Enabled" : "Disabled"}
                         </span>
                       </td>
-                      <td className="px-3 py-2 border-b border-gray-200">
+                      <td className="px-3 py-2 border-b border-line">
                         <div className="flex items-center gap-10">
                           <label className="relative inline-flex items-center cursor-pointer">
                             <input
@@ -508,20 +498,6 @@ export default function RoutesForm() {
       </main>
 
       <Nav />
-      
-      <ToastContainer
-        position="top-right"
-        autoClose={3000}
-        hideProgressBar={false}
-        newestOnTop={false}
-        closeOnClick
-        rtl={false}
-        pauseOnFocusLoss
-        draggable
-        pauseOnHover
-        theme="light"
-        className="mt-16"
-      />
     </div>
   );
 }

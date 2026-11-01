@@ -89,7 +89,7 @@ export default function AccessCodeEditDialog({ open, onClose, accessCode, onSave
         <div className="flex min-h-full items-end justify-center p-4 text-center sm:items-center sm:p-0">
           <DialogPanel
             transition
-            className="relative transform overflow-hidden rounded-lg bg-white text-left shadow-xl outline-1 -outline-offset-1 outline-gray-200 transition-all data-closed:translate-y-4 data-closed:opacity-0 data-enter:duration-300 data-enter:ease-out data-leave:duration-200 data-leave:ease-in sm:my-8 sm:w-full sm:max-w-2xl data-closed:sm:translate-y-0 data-closed:sm:scale-95"
+            className="relative transform overflow-hidden rounded-3xl bg-white text-left shadow-[var(--shadow-float)] outline-1 -outline-offset-1 outline-gray-200 transition-all data-closed:translate-y-4 data-closed:opacity-0 data-enter:duration-300 data-enter:ease-out data-leave:duration-200 data-leave:ease-in sm:my-8 sm:w-full sm:max-w-2xl data-closed:sm:translate-y-0 data-closed:sm:scale-95"
           >
             <div className="px-6 pt-5 pb-4 sm:p-6 sm:pb-4">
               <DialogTitle as="h3" className="text-lg font-semibold text-gray-900">Edit Access Code</DialogTitle>
@@ -100,7 +100,7 @@ export default function AccessCodeEditDialog({ open, onClose, accessCode, onSave
                     <input
                       value={zip}
                       onChange={(e) => setZip(e.target.value)}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                      className="bg-white text-ink placeholder:text-ink-muted/70 focus:outline-none transition-shadow focus:ring-4 focus:ring-brand-500/20 focus:border-brand-500 min-h-11 w-full px-3 py-2 border border-line rounded-xl"
                       placeholder="12345 or 12345-6789"
                     />
                   </div>
@@ -109,7 +109,7 @@ export default function AccessCodeEditDialog({ open, onClose, accessCode, onSave
                     <input
                       value={code}
                       onChange={(e) => setCode(e.target.value)}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                      className="bg-white text-ink placeholder:text-ink-muted/70 focus:outline-none transition-shadow focus:ring-4 focus:ring-brand-500/20 focus:border-brand-500 min-h-11 w-full px-3 py-2 border border-line rounded-xl"
                       placeholder="Alphanumeric"
                     />
                   </div>
@@ -118,7 +118,7 @@ export default function AccessCodeEditDialog({ open, onClose, accessCode, onSave
                     <input
                       value={addr}
                       onChange={(e) => setAddr(e.target.value)}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                      className="bg-white text-ink placeholder:text-ink-muted/70 focus:outline-none transition-shadow focus:ring-4 focus:ring-brand-500/20 focus:border-brand-500 min-h-11 w-full px-3 py-2 border border-line rounded-xl"
                       placeholder="Full address"
                     />
                   </div>
@@ -160,7 +160,7 @@ export default function AccessCodeEditDialog({ open, onClose, accessCode, onSave
                       multiple
                       accept="image/jpeg,image/png,image/webp,image/jpg"
                       onChange={onFilesChange}
-                      className="block w-full text-sm text-gray-900 border border-gray-300 rounded-lg"
+                      className="file:mr-3 file:rounded-lg file:border-0 file:bg-brand-50 file:px-3 file:py-2 file:text-sm file:font-semibold file:text-brand-800 hover:file:bg-brand-100 file:cursor-pointer block w-full text-sm text-gray-900 border border-gray-300 rounded-lg"
                     />
                     {fileError && <p className="text-xs text-red-600 mt-2">{fileError}</p>}
                     {fileInfo && <p className="text-xs text-gray-600 mt-2">{fileInfo}</p>}
@@ -179,7 +179,7 @@ export default function AccessCodeEditDialog({ open, onClose, accessCode, onSave
                 type="button"
                 disabled={saving}
                 onClick={handleSubmit}
-                className="inline-flex w-full justify-center rounded-md bg-[#8200db] px-4 py-2 text-sm font-semibold text-white hover:bg-[#7300c4] sm:ml-3 sm:w-auto disabled:opacity-60"
+                className="inline-flex w-full justify-center rounded-md bg-brand px-4 py-2 text-sm font-semibold text-white hover:bg-brand-dark sm:ml-3 sm:w-auto disabled:opacity-60"
               >
                 {saving ? 'Saving...' : 'Save Changes'}
               </button>
