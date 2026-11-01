@@ -1,6 +1,6 @@
 "use client";
 
-import { Camera } from "lucide-react";
+import { Camera, KeyRound, ListChecks, Save, LoaderCircle } from "lucide-react";
 import { useState, useEffect } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import {
@@ -16,8 +16,8 @@ import {
 import { getAdminCities } from "../../redux/slice/admin/userLoadSlice";
 import Header from "../../reuse/Header";
 import Nav from "../../reuse/Nav";
-import Swal from "sweetalert2";
-import { toast } from "react-toastify";
+import { toast } from "../../utils/toast";
+import { confirmDialog } from "../../utils/confirmDialog";
 import AccessCodeDetailsDialog from "../AccessCodeDetailsDialog";
 import AccessCodeEditDialog from "./AccessCodeEditDialog";
 
@@ -234,7 +234,7 @@ export default function AddAccessCodePage() {
   };
 
   const handleDelete = async (ac) => {
-    const result = await Swal.fire({
+    const confirmed = await confirmDialog({
       title: 'Delete Access Code?',
       html: `
         <div class="text-left">
@@ -243,15 +243,11 @@ export default function AddAccessCodePage() {
           <p class="mb-2"><strong>Access Code:</strong> ${escapeHtml(ac.access_code)}</p>
         </div>
       `,
-      icon: 'warning',
-      showCancelButton: true,
-      confirmButtonColor: '#dc2626',
-      cancelButtonColor: '#6b7280',
-      confirmButtonText: 'Yes, delete it!',
-      cancelButtonText: 'Cancel'
+      confirmText: 'Yes, delete it!',
+      cancelText: 'Cancel',
     });
 
-    if (result.isConfirmed) {
+    if (confirmed) {
       try {
         await dispatch(deleteAccessCode(ac.id)).unwrap();
         toast.success("Access code deleted successfully!", { position: "top-right", autoClose: 2000 });
@@ -322,22 +318,20 @@ export default function AddAccessCodePage() {
 
   return (
     <div
-      className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50 overflow-x-hidden"
+      className="min-h-dvh bg-canvas overflow-x-hidden"
       style={{ fontFamily: "Poppins, sans-serif" }}
     >
       <Header />
 
       <main className="max-w-7xl mx-auto p-3 sm:p-4 lg:p-6 py-6 sm:py-12 pb-32">
         {/* Add New Access Code Card */}
-        <div className="bg-white/80 backdrop-blur-sm border border-white/20 rounded-2xl shadow-xl p-4 sm:p-8 mb-6 sm:mb-8">
+        <div className="card-surface p-4 sm:p-8 mb-6 sm:mb-8">
           <div className="flex flex-col sm:flex-row sm:items-center mb-6 sm:mb-8">
-            <div className="bg-gradient-to-r from-[#8200db] to-[#9d00ff] p-3 rounded-xl mb-4 sm:mb-0 sm:mr-4 w-fit">
-              <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
-              </svg>
+            <div className="mb-4 sm:mb-0 sm:mr-4 grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-brand-50 text-brand-700 ring-1 ring-brand-100">
+              <KeyRound className="h-6 w-6" aria-hidden="true" />
             </div>
             <div>
-              <h1 className="text-xl sm:text-2xl lg:text-3xl font-bold bg-gradient-to-r from-gray-900 to-gray-600 bg-clip-text text-transparent">
+              <h1 className="text-xl sm:text-2xl lg:text-3xl font-bold tracking-tight text-ink">
                 Add New Access Code
               </h1>
               <p className="text-gray-600 mt-1 text-sm sm:text-base">
@@ -359,9 +353,9 @@ export default function AddAccessCodePage() {
                 value={zipCode}
                 onChange={(e) => handleFieldChange("zipCode", e.target.value)}
                 onBlur={() => handleBlur("zipCode")}
-                className={`w-full px-4 py-3 border-2 ${
-                  touched.zipCode && errors.zipCode ? "border-red-500" : "border-gray-200"
-                } rounded-xl focus:ring-4 focus:ring-purple-100 focus:border-[#8200db] bg-white text-gray-900 transition-all`}
+                className={`placeholder:text-ink-muted/70 focus:outline-none transition-shadow min-h-11 w-full px-4 py-3 border ${
+                  touched.zipCode && errors.zipCode ? "border-red-500" : "border-line"
+                } rounded-xl focus:ring-4 focus:ring-brand-500/20 focus:border-brand-500 bg-white text-gray-900 transition-all`}
                 disabled={status === "loading"}
               />
               {touched.zipCode && errors.zipCode && (
@@ -391,9 +385,9 @@ export default function AddAccessCodePage() {
                 value={address}
                 onChange={(e) => handleFieldChange("address", e.target.value)}
                 onBlur={() => handleBlur("address")}
-                className={`w-full px-4 py-3 border-2 ${
-                  touched.address && errors.address ? "border-red-500" : "border-gray-200"
-                } rounded-xl focus:ring-4 focus:ring-purple-100 focus:border-[#8200db] text-gray-900 transition-all`}
+                className={`bg-white placeholder:text-ink-muted/70 focus:outline-none transition-shadow min-h-11 w-full px-4 py-3 border ${
+                  touched.address && errors.address ? "border-red-500" : "border-line"
+                } rounded-xl focus:ring-4 focus:ring-brand-500/20 focus:border-brand-500 text-gray-900 transition-all`}
                 disabled={status === "loading"}
               />
               {touched.address && errors.address && (
@@ -420,7 +414,7 @@ export default function AddAccessCodePage() {
                   id="cityId"
                   value={cityId}
                   onChange={(e) => setCityId(e.target.value)}
-                  className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-4 focus:ring-purple-100 focus:border-[#8200db] text-gray-900 transition-all bg-white"
+                  className="placeholder:text-ink-muted/70 focus:outline-none transition-shadow min-h-11 w-full px-4 py-3 border border-line rounded-xl focus:ring-4 focus:ring-brand-500/20 focus:border-brand-500 text-gray-900 transition-all bg-white"
                   disabled={status === "loading"}
                 >
                   <option value="">{mustChooseCity ? "Select a city" : "No city"}</option>
@@ -445,9 +439,9 @@ export default function AddAccessCodePage() {
                 value={accessCode}
                 onChange={(e) => handleFieldChange("accessCode", e.target.value)}
                 onBlur={() => handleBlur("accessCode")}
-                className={`w-full px-4 py-3 border-2 ${
-                  touched.accessCode && errors.accessCode ? "border-red-500" : "border-gray-200"
-                } rounded-xl focus:ring-4 focus:ring-purple-100 focus:border-[#8200db] text-gray-900 transition-all`}
+                className={`bg-white placeholder:text-ink-muted/70 focus:outline-none transition-shadow min-h-11 w-full px-4 py-3 border ${
+                  touched.accessCode && errors.accessCode ? "border-red-500" : "border-line"
+                } rounded-xl focus:ring-4 focus:ring-brand-500/20 focus:border-brand-500 text-gray-900 transition-all`}
                 disabled={status === "loading"}
               />
               {touched.accessCode && errors.accessCode && (
@@ -476,7 +470,7 @@ export default function AddAccessCodePage() {
                 accept="image/jpeg,image/png,image/webp,image/jpg"
                 multiple
                 onChange={onImagesChange}
-                className="block w-full text-sm text-gray-900 border-2 border-gray-200 rounded-xl cursor-pointer bg-white focus:outline-none focus:ring-4 focus:ring-purple-100 focus:border-[#8200db]"
+                className="file:mr-3 file:rounded-lg file:border-0 file:bg-brand-50 file:px-3 file:py-2 file:text-sm file:font-semibold file:text-brand-800 hover:file:bg-brand-100 file:cursor-pointer block w-full text-sm text-gray-900 border-2 border-line rounded-xl cursor-pointer bg-white focus:outline-none focus:ring-4 focus:ring-purple-100 focus:border-brand"
                 disabled={status === "loading"}
               />
               <p className="text-xs text-gray-500">Allowed types: JPG, JPEG, PNG, WEBP. Max 3 images.</p>
@@ -496,36 +490,34 @@ export default function AddAccessCodePage() {
             <div className="flex justify-end pt-4">
               <button
                 type="submit"
-                className={`px-6 sm:px-8 py-3 bg-gradient-to-r from-[#8200db] to-[#9d00ff] text-white rounded-xl shadow-lg hover:from-[#7300c4] hover:to-[#8a00e6] focus:outline-none focus:ring-4 focus:ring-purple-200 transition-all font-semibold ${
+                className={`px-6 sm:px-8 py-3 bg-brand text-white rounded-xl shadow-lg hover:bg-brand-dark focus:outline-none focus:ring-4 focus:ring-brand-500/30 transition-all font-semibold ${
                   status === "loading"
                     ? "opacity-50 cursor-not-allowed"
                     : "hover:shadow-xl transform hover:-translate-y-0.5"
                 }`}
                 disabled={status === "loading"}
               >
-                {status === "loading" ? "Saving..." : "Save Access Code"}
+                <span className="inline-flex items-center justify-center gap-2">
+                  {status === "loading"
+                    ? <LoaderCircle className="h-5 w-5 animate-spin" aria-hidden="true" />
+                    : <Save className="h-5 w-5" aria-hidden="true" />}
+                  {status === "loading" ? "Saving..." : "Save Access Code"}
+                </span>
               </button>
             </div>
           </form>
         </div>
 
         {/* Saved Access Codes Table */}
-        <div className="bg-white/80 backdrop-blur-sm border border-white/20 rounded-2xl shadow-xl overflow-hidden mb-20">
+        <div className="card-surface overflow-hidden mb-20">
           <div className="px-3 sm:px-4 lg:px-8 py-4 sm:py-6 border-b border-gray-100">
             <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
               <div className="flex flex-col sm:flex-row sm:items-center">
-                <div className="bg-gradient-to-r from-emerald-500 to-teal-600 p-3 rounded-xl mb-4 sm:mb-0 sm:mr-4 w-fit">
-                  <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
-                    />
-                  </svg>
+                <div className="mb-4 sm:mb-0 sm:mr-4 grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-brand-50 text-brand-700 ring-1 ring-brand-100">
+                  <ListChecks className="h-6 w-6" aria-hidden="true" />
                 </div>
                 <div>
-                  <h2 className="text-xl sm:text-2xl lg:text-3xl font-bold bg-gradient-to-r from-gray-900 to-gray-600 bg-clip-text text-transparent">
+                  <h2 className="text-xl sm:text-2xl lg:text-3xl font-bold tracking-tight text-ink">
                     Saved Access Codes
                   </h2>
                   <p className="text-gray-600 mt-1 text-sm sm:text-base">Total: {totalItems} codes</p>
@@ -538,7 +530,7 @@ export default function AddAccessCodePage() {
                 <select
                   value={pageLimit}
                   onChange={(e) => handleLimitChange(Number(e.target.value))}
-                  className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 text-sm"
+                  className="bg-white text-ink placeholder:text-ink-muted/70 focus:outline-none transition-shadow min-h-11 px-3 py-2 border border-line rounded-xl focus:ring-4 focus:ring-brand-500/20 text-sm"
                 >
                   <option value={5}>5</option>
                   <option value={10}>10</option>
@@ -560,11 +552,11 @@ export default function AddAccessCodePage() {
                     value={localSearch}
                     onChange={(e) => setLocalSearch(e.target.value)}
                     onKeyPress={(e) => e.key === "Enter" && handleSearch()}
-                    className="w-full px-4 py-2 pr-10 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 text-sm"
+                    className="bg-white text-ink placeholder:text-ink-muted/70 focus:outline-none transition-shadow min-h-11 w-full px-4 py-2 pr-10 border border-line rounded-xl focus:ring-4 focus:ring-brand-500/20 text-sm"
                   />
                   <button
                     onClick={handleSearch}
-                    className="absolute right-2 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-[#8200db] p-1"
+                    className="absolute right-2 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-brand p-1"
                   >
                     <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path
@@ -583,7 +575,7 @@ export default function AddAccessCodePage() {
           <div className="p-2 sm:p-3 lg:p-6">
             {status === "loading" ? (
               <div className="text-center py-16">
-                <svg className="animate-spin h-12 w-12 text-[#8200db] mx-auto mb-4" viewBox="0 0 24 24">
+                <svg className="animate-spin h-12 w-12 text-brand mx-auto mb-4" viewBox="0 0 24 24">
                   <circle
                     cx="12"
                     cy="12"
@@ -625,8 +617,8 @@ export default function AddAccessCodePage() {
                 {/* Desktop Table View - Hidden on mobile */}
                 <div className="hidden md:block w-full overflow-hidden">
                   <div className="shadow ring-1 ring-black ring-opacity-5 md:rounded-lg">
-                    <table className="w-full divide-y divide-gray-200">
-                      <thead className="bg-gradient-to-r from-gray-50 to-gray-100">
+                    <table className="w-full divide-y divide-line">
+                      <thead className="bg-brand-50/60">
                         <tr>
                           <th className="px-3 lg:px-4 py-3 sm:py-4 text-left text-xs font-bold text-gray-600 uppercase tracking-wider whitespace-nowrap">
                             Zip Code
@@ -684,7 +676,7 @@ export default function AddAccessCodePage() {
                               <div className="flex items-center gap-2">
                                 <button
                                   onClick={(e) => { e.stopPropagation(); handleEdit(ac); }}
-                                  className="inline-flex items-center justify-center px-3 py-2 bg-[#8200db] text-white text-xs font-medium rounded-lg hover:bg-[#7300c4] transition-all whitespace-nowrap"
+                                  className="inline-flex items-center justify-center px-3 py-2 bg-brand text-white text-xs font-medium rounded-lg hover:bg-brand-dark transition-all whitespace-nowrap"
                                 >
                                   <svg
                                     className="w-4 h-4 mr-1"
@@ -734,7 +726,7 @@ export default function AddAccessCodePage() {
                   {accessCodes.map((ac) => (
                     <div
                       key={ac.id}
-                      className="bg-white border border-gray-200 rounded-xl shadow-sm p-4 hover:shadow-md transition-shadow"
+                      className="card-surface p-4 hover:shadow-md transition-shadow"
                     >
                       <div
                         onClick={() => { setSelectedAC(ac); setShowDetails(true); }}
@@ -778,7 +770,7 @@ export default function AddAccessCodePage() {
                         <div className="grid grid-cols-2 gap-2">
                           <button
                             onClick={(e) => { e.stopPropagation(); handleEdit(ac); }}
-                            className="inline-flex items-center justify-center px-3 py-2.5 bg-gradient-to-r from-[#8200db] to-[#9d00ff] text-white text-sm font-semibold rounded-lg hover:from-[#7300c4] hover:to-[#8a00e6] transition-all shadow-md hover:shadow-lg"
+                            className="inline-flex items-center justify-center px-3 py-2.5 bg-brand text-white text-sm font-semibold rounded-lg hover:bg-brand-dark transition-all shadow-md hover:shadow-lg"
                           >
                             <svg
                               className="w-4 h-4 mr-1.5"
@@ -797,7 +789,7 @@ export default function AddAccessCodePage() {
                           </button>
                           <button
                             onClick={(e) => { e.stopPropagation(); handleDelete(ac); }}
-                            className="inline-flex items-center justify-center px-3 py-2.5 bg-gradient-to-r from-red-600 to-red-700 text-white text-sm font-semibold rounded-lg hover:from-red-700 hover:to-red-800 transition-all shadow-md hover:shadow-lg"
+                            className="inline-flex items-center justify-center px-3 py-2.5 bg-red-600 text-white text-sm font-semibold rounded-lg hover:bg-red-700 transition-all shadow-md hover:shadow-lg"
                           >
                             <svg
                               className="w-4 h-4 mr-1.5"
@@ -831,7 +823,7 @@ export default function AddAccessCodePage() {
                         group relative inline-flex items-center px-2 sm:px-4 py-2 text-xs sm:text-sm font-semibold 
                         rounded-lg border transition-all duration-200 ease-out transform
                         ${currentPage === 1
-                          ? "bg-gray-50 text-gray-400 cursor-not-allowed border-gray-200"
+                          ? "bg-gray-50 text-gray-400 cursor-not-allowed border-line"
                           : "bg-white text-gray-700 border-gray-300 hover:bg-gray-50 hover:text-gray-900 hover:border-gray-400 hover:shadow-md hover:scale-[1.02]"
                         }
                       `}
@@ -886,7 +878,7 @@ export default function AddAccessCodePage() {
                         group relative inline-flex items-center px-2 sm:px-4 py-2 text-xs sm:text-sm font-semibold 
                         rounded-lg border transition-all duration-200 ease-out transform
                         ${currentPage === totalPages
-                          ? "bg-gray-50 text-gray-400 cursor-not-allowed border-gray-200"
+                          ? "bg-gray-50 text-gray-400 cursor-not-allowed border-line"
                           : "bg-white text-gray-700 border-gray-300 hover:bg-gray-50 hover:text-gray-900 hover:border-gray-400 hover:shadow-md hover:scale-[1.02]"
                         }
                       `}

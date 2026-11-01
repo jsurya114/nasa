@@ -18,7 +18,7 @@ export default function DriverPaymentSection({loadData}) {
       <ToastContainer position="top-right" autoClose={3000} />
 
       {/* driver payment calculate button section */}
-      <section className="bg-white border mb-4 p-6 border-gray-200 rounded-xl shadow-sm overflow-x-auto flex justify-center">
+      <section className="card-surface mb-4 p-6 overflow-x-auto flex justify-center">
         <button
           onClick={loadData}
           className="px-3 py-1 bg-blue-800 text-white rounded hover:bg-blue-600 disabled:opacity-50"

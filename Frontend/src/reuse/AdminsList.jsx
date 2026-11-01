@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import { clearPaginateTerms, getAdmins, toggleAvailAdmin } from "../redux/slice/admin/userLoadSlice";
 import Pagination from "./Pagination";
-import { toast } from "react-toastify";
+import { toast } from "../utils/toast";
 
 function AdminsList({ onEdit }) {
   const dispatch = useDispatch();
@@ -28,7 +28,7 @@ function AdminsList({ onEdit }) {
   }
 
   return (
-    <section className="bg-white rounded-xl shadow p-4">
+    <section className="card-surface p-4">
       <h2 className="font-bold text-lg mb-4">Administrators</h2>
 
       {!isSuperAdmin && (
@@ -45,7 +45,7 @@ function AdminsList({ onEdit }) {
             <thead>
               <tr className="bg-gray-50 text-left">
                 {["Sl No", "Name", "Email", "Role", "Cities", "Status", "Actions"].map((head, i) => (
-                  <th key={i} className="px-3 py-2 border-b border-gray-200">
+                  <th key={i} className="px-3 py-2 border-b border-line">
                     {head}
                   </th>
                 ))}
@@ -156,7 +156,7 @@ function AdminsList({ onEdit }) {
                           disabled={!a.is_active}
                           className={`group relative px-4 py-1.5 text-white text-xs font-medium rounded-md transition-all duration-200 shadow-sm flex items-center gap-1.5 ${
                             a.is_active
-                              ? "bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 hover:shadow-md cursor-pointer"
+                              ? "bg-brand hover:bg-brand-900 hover:shadow-md cursor-pointer"
                               : "bg-gray-400 cursor-not-allowed opacity-50"
                           }`}
                           title={a.is_active ? "Edit admin" : "Enable admin to edit"}

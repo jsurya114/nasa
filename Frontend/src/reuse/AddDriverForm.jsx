@@ -134,7 +134,7 @@ function AddDriverForm({ onSubmit, editData, isEdit, onCancel }) {
         value={form.name}
         onChange={handleChange}
         placeholder="Driver Name"
-        className="px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
+        className="bg-white text-ink placeholder:text-ink-muted/70 transition-shadow border-line min-h-11 px-3 py-2 border rounded-xl focus:outline-none focus:ring-4 focus:ring-brand-500/20"
       />
       {errors.name && <p className="text-red-500 text-sm">{errors.name}</p>}
 
@@ -144,7 +144,7 @@ function AddDriverForm({ onSubmit, editData, isEdit, onCancel }) {
         value={form.email}
         onChange={handleChange}
         placeholder="Email"
-        className="px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
+        className="bg-white text-ink placeholder:text-ink-muted/70 transition-shadow border-line min-h-11 px-3 py-2 border rounded-xl focus:outline-none focus:ring-4 focus:ring-brand-500/20"
       />
       {errors.email && <p className="text-red-500 text-sm">{errors.email}</p>}
 
@@ -154,7 +154,7 @@ function AddDriverForm({ onSubmit, editData, isEdit, onCancel }) {
         value={form.phoneNumber}
         onChange={handleChange}
         placeholder="Phone Number (optional)"
-        className="px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
+        className="bg-white text-ink placeholder:text-ink-muted/70 transition-shadow border-line min-h-11 px-3 py-2 border rounded-xl focus:outline-none focus:ring-4 focus:ring-brand-500/20"
       />
       {errors.phoneNumber && <p className="text-red-500 text-sm">{errors.phoneNumber}</p>}
 
@@ -165,7 +165,7 @@ function AddDriverForm({ onSubmit, editData, isEdit, onCancel }) {
         onChange={handleChange}
         placeholder="Driver Code"
     
-         className="px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
+         className="bg-white text-ink placeholder:text-ink-muted/70 transition-shadow border-line min-h-11 px-3 py-2 border rounded-xl focus:outline-none focus:ring-4 focus:ring-brand-500/20"
       />
       {errors.driver_code && (
         <p className="text-red-500 text-sm">{errors.driver_code}</p>
@@ -178,7 +178,7 @@ function AddDriverForm({ onSubmit, editData, isEdit, onCancel }) {
           value={form.password}
           onChange={handleChange}
           placeholder={isEdit ? "New Password (leave blank to keep current)" : "Password"}
-          className="px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
+          className="bg-white text-ink placeholder:text-ink-muted/70 transition-shadow border-line min-h-11 px-3 py-2 border rounded-xl focus:outline-none focus:ring-4 focus:ring-brand-500/20"
         />
         {isEdit && (
           <p className="text-xs text-gray-500 flex items-center gap-1">
@@ -197,7 +197,7 @@ function AddDriverForm({ onSubmit, editData, isEdit, onCancel }) {
         value={form.confirmPassword}
         onChange={handleChange}
         placeholder="Confirm Password"
-        className="px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
+        className="bg-white text-ink placeholder:text-ink-muted/70 transition-shadow border-line min-h-11 px-3 py-2 border rounded-xl focus:outline-none focus:ring-4 focus:ring-brand-500/20"
       />
       {errors.confirmPassword && (
         <p className="text-red-500 text-sm">{errors.confirmPassword}</p>
@@ -211,7 +211,7 @@ function AddDriverForm({ onSubmit, editData, isEdit, onCancel }) {
           value={form.city}
           name="city"
           onChange={handleChange}
-          className="w-full px-3 py-2 border rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-purple-500"
+          className="text-ink placeholder:text-ink-muted/70 transition-shadow border-line min-h-11 w-full px-3 py-2 border rounded-xl bg-white focus:outline-none focus:ring-4 focus:ring-brand-500/20"
         >
           <option value="">Select City</option>
 

@@ -9,7 +9,8 @@ import {
   manualResetAllDriversAvailability,
   clearMessages
 } from "../../redux/slice/driver/availabilitySlice.js";
-import { toast } from "react-toastify";
+import { toast } from "../../utils/toast";
+import { confirmDialog } from "../../utils/confirmDialog";
 
 import Header from "../../reuse/Header";
 import Nav from "../../reuse/Nav";
@@ -343,9 +344,12 @@ export default function AdminDriverAvailability() {
   };
 
   const handleManualReset = async () => {
-    if (window.confirm(
-      'WARNING: This will reset availability for ALL drivers (enabled and disabled) to unavailable.\n\nAre you sure you want to continue?'
-    )) {
+    if (await confirmDialog({
+      title: 'Reset availability for all drivers?',
+      text: 'This will reset availability for ALL drivers (enabled and disabled) to unavailable. Are you sure you want to continue?',
+      confirmText: 'Reset all drivers',
+      cancelText: 'Cancel',
+    })) {
       try {
         const result = await dispatch(manualResetAllDriversAvailability()).unwrap();
         toast.success(`${result.totalDriversReset} drivers reset successfully!`);
@@ -384,10 +388,10 @@ export default function AdminDriverAvailability() {
     <>
       <Header />
 
-      <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 p-3 sm:p-4 md:p-6 pb-32">
+      <div className="min-h-dvh bg-canvas p-3 sm:p-4 md:p-6 pb-32">
         <div className="max-w-7xl mx-auto">
           {/* Header Card */}
-          <div className="bg-white rounded-xl shadow-md border border-gray-200 p-4 sm:p-6 mb-4 sm:mb-6">
+          <div className="card-surface p-4 sm:p-6 mb-4 sm:mb-6">
             <div className="flex flex-col gap-4">
               <div className="flex items-start justify-between">
                 <div>
@@ -425,7 +429,7 @@ export default function AdminDriverAvailability() {
                       setSearchQuery(e.target.value);
                       setCurrentPage(1);
                     }}
-                    className="w-full pl-10 pr-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm transition-all"
+                    className="bg-white text-ink placeholder:text-ink-muted/70 focus:outline-none transition-shadow min-h-11 w-full pl-10 pr-4 py-2.5 border border-line rounded-xl focus:ring-4 focus:ring-brand-500/20 focus:border-brand-500 text-sm transition-all"
                   />
                   {searchQuery && (
                     <button
@@ -449,7 +453,7 @@ export default function AdminDriverAvailability() {
                     <select
                       value={filterDay}
                       onChange={(e) => handleFilterChange(e.target.value)}
-                      className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm appearance-none bg-white cursor-pointer transition-all"
+                      className="text-ink placeholder:text-ink-muted/70 focus:outline-none transition-shadow min-h-11 w-full px-4 py-2.5 border border-line rounded-xl focus:ring-4 focus:ring-brand-500/20 focus:border-brand-500 text-sm appearance-none bg-white cursor-pointer transition-all"
                     >
                       <option value="">All Days</option>
                       {daysOfWeek.map((day) => (
@@ -468,7 +472,7 @@ export default function AdminDriverAvailability() {
                     <select
                       value={filterAvailabilityStatus}
                       onChange={(e) => handleAvailabilityStatusChange(e.target.value)}
-                      className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm appearance-none bg-white cursor-pointer transition-all"
+                      className="text-ink placeholder:text-ink-muted/70 focus:outline-none transition-shadow min-h-11 w-full px-4 py-2.5 border border-line rounded-xl focus:ring-4 focus:ring-brand-500/20 focus:border-brand-500 text-sm appearance-none bg-white cursor-pointer transition-all"
                     >
                       <option value="">All Drivers</option>
                       <option value="available">
@@ -488,7 +492,7 @@ export default function AdminDriverAvailability() {
                     <select
                       value={filterCity}
                       onChange={(e) => handleCityFilterChange(e.target.value)}
-                      className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm appearance-none bg-white cursor-pointer transition-all"
+                      className="text-ink placeholder:text-ink-muted/70 focus:outline-none transition-shadow min-h-11 w-full px-4 py-2.5 border border-line rounded-xl focus:ring-4 focus:ring-brand-500/20 focus:border-brand-500 text-sm appearance-none bg-white cursor-pointer transition-all"
                       disabled={citiesLoading}
                     >
                       <option value="">All Cities</option>
@@ -508,7 +512,7 @@ export default function AdminDriverAvailability() {
                     <select
                       value={itemsPerPage}
                       onChange={(e) => handleItemsPerPageChange(parseInt(e.target.value))}
-                      className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm appearance-none bg-white cursor-pointer transition-all"
+                      className="text-ink placeholder:text-ink-muted/70 focus:outline-none transition-shadow min-h-11 w-full px-4 py-2.5 border border-line rounded-xl focus:ring-4 focus:ring-brand-500/20 focus:border-brand-500 text-sm appearance-none bg-white cursor-pointer transition-all"
                     >
                       <option value="5">5 per page</option>
                       <option value="10">10 per page</option>
@@ -538,7 +542,7 @@ export default function AdminDriverAvailability() {
 
               {/* Manual Reset Button (Superadmin only) */}
               {admin?.role === "superadmin" && (
-                <div className="pt-3 border-t border-gray-200">
+                <div className="pt-3 border-t border-line">
                   <button
                     onClick={handleManualReset}
                     disabled={resetLoading}
@@ -583,7 +587,7 @@ export default function AdminDriverAvailability() {
                     ? 'border-blue-500 bg-blue-50'
                     : filterDay === day
                       ? 'border-green-500 bg-green-50'
-                      : 'border-gray-200'
+                      : 'border-line'
                     }`}
                 >
                   <div className="text-center">
@@ -636,12 +640,12 @@ export default function AdminDriverAvailability() {
 
           {/* Drivers Table */}
           {loading ? (
-            <div className="bg-white rounded-xl shadow-md border border-gray-200 p-8 sm:p-12 flex flex-col items-center justify-center">
+            <div className="card-surface p-8 sm:p-12 flex flex-col items-center justify-center">
               <div className="animate-spin rounded-full h-12 w-12 border-4 border-blue-600 border-t-transparent mb-4"></div>
               <p className="text-gray-600 text-sm">Loading drivers...</p>
             </div>
           ) : filteredDrivers.length === 0 ? (
-            <div className="bg-white rounded-xl shadow-md border border-gray-200 p-8 sm:p-12 text-center">
+            <div className="card-surface p-8 sm:p-12 text-center">
               <svg className="w-16 h-16 mx-auto text-gray-400 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4" />
               </svg>
@@ -664,10 +668,10 @@ export default function AdminDriverAvailability() {
           ) : (
             <>
               {/* Desktop Table */}
-              <div className="hidden lg:block bg-white rounded-xl shadow-md border border-gray-200 overflow-hidden">
+              <div className="hidden lg:block card-surface overflow-hidden">
                 <div className="overflow-x-auto">
                   <table className="w-full">
-                    <thead className="bg-gradient-to-r from-blue-50 to-blue-100 border-b border-gray-200">
+                    <thead className="bg-brand-50/60 border-b border-line">
                       <tr>
                         <th className="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
                           Driver Info
@@ -685,7 +689,7 @@ export default function AdminDriverAvailability() {
                           Actions
                         </th>
                       </tr>
-                      <tr className="bg-gray-50 border-t border-gray-200">
+                      <tr className="bg-gray-50 border-t border-line">
                         <th colSpan={3}></th>
                         {daysOfWeek.map((day, index) => {
                           const isCurrentDay = index === currentDayIndex;
@@ -703,7 +707,7 @@ export default function AdminDriverAvailability() {
                         <th></th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-gray-200">
+                    <tbody className="divide-y divide-line">
                       {filteredDrivers.map((driver, driverIndex) => {
                         const isEditing = editingDriverId === driver.id;
                         const displayAvailability = isEditing ? editAvailability : driver.availability;
@@ -716,7 +720,7 @@ export default function AdminDriverAvailability() {
                           >
                             <td className="px-6 py-4 whitespace-nowrap">
                               <div className="flex items-center gap-3">
-                                <div className="flex-shrink-0 h-10 w-10 rounded-full bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center text-white font-bold">
+                                <div className="flex-shrink-0 h-10 w-10 rounded-full bg-brand-100 flex items-center justify-center text-brand-800 font-bold">
                                   {driver.name.charAt(0).toUpperCase()}
                                 </div>
                                 <div>
@@ -834,13 +838,13 @@ export default function AdminDriverAvailability() {
                   return (
                     <div
                       key={driver.id}
-                      className={`bg-white rounded-xl shadow-md border-2 p-4 transition-all ${isEditing ? 'border-blue-500 ring-2 ring-blue-200' : 'border-gray-200'
+                      className={`bg-white rounded-xl shadow-md border-2 p-4 transition-all ${isEditing ? 'border-blue-500 ring-2 ring-blue-200' : 'border-line'
                         }`}
                     >
                       {/* Driver Header */}
                       <div className="flex items-start justify-between mb-4">
                         <div className="flex items-center gap-3">
-                          <div className="flex-shrink-0 h-12 w-12 rounded-full bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center text-white font-bold text-lg">
+                          <div className="flex-shrink-0 h-12 w-12 rounded-full bg-brand-100 flex items-center justify-center text-brand-800 font-bold text-lg">
                             {driver.name.charAt(0).toUpperCase()}
                           </div>
                           <div>
@@ -948,7 +952,7 @@ export default function AdminDriverAvailability() {
 
               {/* Pagination */}
               {totalPages > 1 && (
-                <div className="bg-white rounded-xl shadow-md border border-gray-200 p-4 mt-6">
+                <div className="card-surface p-4 mt-6">
                   <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
                     <div className="text-sm text-gray-700">
                       Showing <span className="font-semibold">{((currentPage - 1) * itemsPerPage) + 1}</span> to{' '}
