@@ -1,6 +1,8 @@
 import express from 'express'
+import { sanitizeRouterParams } from '../middlewares/sanitize.js';
 import { upload, uploadAccessCodeImages } from "../middlewares/multerConfig.js"
 const router = express.Router()
+sanitizeRouterParams(router)
 import adminController from '../controllers/admin/adminController.js'
 import jobController from '../controllers/admin/jobController.js';
 import { createRoute, getRouteById, updateRoute, deleteRoute, toggleRouteStatus, fetchPaginatedRoutes, getAdminRoutes, getRoutesByDriver } from "../controllers/admin/routeController.js"
