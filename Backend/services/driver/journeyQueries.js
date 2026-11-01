@@ -50,23 +50,6 @@ export const insertJourney = async (data) => {
 };
 
 // ✅ Check for Sequence Conflicts
-// export const checkSequenceConflict = async (route_id, start_seq, end_seq, journey_date) => {
-//   try {
-//     const query = `
-//       SELECT * FROM dashboard_data
-//       WHERE route_id = $1
-//         AND journey_date = $4
-//         AND $2 <= end_seq
-//         AND $3 >= start_seq;
-//     `;
-//     const values = [route_id, start_seq, end_seq, journey_date];
-//     const result = await pool.query(query, values);
-//     return result.rows;
-//   } catch (error) {
-//     console.error("❌ checkSequenceConflict failed:", error.message);
-//     return [];
-//   }
-// };
 
 export const checkSequenceConflict = async (route_id, start_seq, end_seq, journey_date, excludedId = null) => {
   try {
@@ -157,19 +140,6 @@ export const addRangeOfSqeunceToDeliveries = async (driver_id, route_id, start_s
   }
 };
 
-
-// export const updateSeqRouteCodeToDeliveriesTable = async ()=>{
-//     try {
-//       const query = ` UPDATE deliveries d
-//         SET seq_route_code = d.sequence_number || '-' || r.route_code_in_string
-//         FROM routes r
-//         WHERE d.route_id = r.id;
-//       `
-//       await pool.query(query)
-//     } catch (error) {
-//       console.error(error,'error in updation seq_route_code for deliveries table')
-//     }
-// }
 
 // ✅ Mark No Address as No Scanned
 export const markNoAddressAsNoScanned = async () => {
