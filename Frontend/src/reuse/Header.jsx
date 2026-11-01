@@ -22,7 +22,7 @@ function Header() {
   };
 
   return (
-    <header className="sticky top-0 z-50 flex items-center justify-between h-16 bg-[#462976] text-white px-4 border-b border-white/10">
+    <header className="sticky top-0 z-50 flex items-center justify-between h-16 bg-brand text-white px-4 border-b border-white/10">
       {/* Left Side (Hide on mobile) */}
       <div className="hidden md:block font-semibold text-sm md:text-lg">
         Dashboard Admin
@@ -58,7 +58,12 @@ function Header() {
 
      {/* Hamburger Menu - Mobile (<768px) */}
 <div className="md:hidden relative ml-auto">
-  <button onClick={() => setMenuOpen(!menuOpen)}>
+  <button
+    onClick={() => setMenuOpen(!menuOpen)}
+    aria-label="Toggle menu"
+    aria-expanded={menuOpen}
+    className="p-2 -mr-2 rounded-md hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-white/60"
+  >
     {menuOpen ? <X size={24} /> : <Menu size={24} />}
   </button>
 
@@ -66,7 +71,7 @@ function Header() {
   {menuOpen && (
     <div className="absolute right-0 top-12 bg-white text-black rounded-md shadow-md w-48 p-3 space-y-3 z-50">
       {/* Dashboard title inside menu for mobile */}
-      <div className="font-semibold text-center text-[#462976]">
+      <div className="font-semibold text-center text-brand">
         Dashboard Admin
       </div>
 
@@ -78,7 +83,7 @@ function Header() {
       </div>
 
       <button
-        className="w-full bg-red-600 hover:bg-red-700 text-white px-3 py-2 rounded-md font-semibold"
+        className="w-full bg-red-600 hover:bg-red-700 text-white px-3 py-3 rounded-md font-semibold"
         onClick={handleLogout}
       >
         Logout
