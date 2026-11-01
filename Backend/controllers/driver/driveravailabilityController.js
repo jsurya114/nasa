@@ -6,6 +6,7 @@ import {
 } from "../../utils/timezoneUtils.js";
 import pool from "../../config/db.js";
 import { translateError } from "../../utils/backendI18n.js";
+import logger from '../../utils/logger.js';
 
 // Helper to get language from request
 const getLang = (req) => {
@@ -18,11 +19,11 @@ const driverAvailabilityController = {
             const lang = getLang(req);
             const driverId = req.driver.id;
             
-            console.log(`📋 ${translateError(lang, 'availability.fetchingAvailability')} ${driverId}`);
+            logger.debug('Fetching availability', { driverId });
             
             const availability = await availabilityService.getDriverAvailability(driverId);
             
-            console.log(`✅ ${translateError(lang, 'availability.fetchedFor')} ${driverId}`);
+            logger.debug('Availability fetched', { driverId });
             
             res.status(200).json({
                 success: true,
@@ -30,8 +31,7 @@ const driverAvailabilityController = {
             });
         } catch (err) {
             const lang = getLang(req);
-            console.error(`❌ Error in getAvailability for driver ${req.driver?.id}:`, err.message);
-            console.error("Error stack:", err.stack);
+            logger.error('getAvailability failed', err);
             res.status(500).json({
                 success: false,
                 message: translateError(lang, 'availability.failedToFetch'),
@@ -46,7 +46,7 @@ const driverAvailabilityController = {
             const driverId = req.driver.id;
             const { availability } = req.body;
 
-            console.log(`✏️ ${translateError(lang, 'availability.attemptingUpdate')} ${driverId}`);
+            logger.debug('Driver attempting availability update', { driverId });
 
             // Get driver's stored timezone from database
             const driverResult = await pool.query(
@@ -62,12 +62,12 @@ const driverAvailabilityController = {
             }
 
             const driverTimezone = driverResult.rows[0].timezone;
-            console.log(`   ${translateError(lang, 'availability.driverTimezone')}: ${driverTimezone}`);
+            logger.debug('Driver timezone', { driverTimezone });
 
             // Get current time in driver's timezone
             const currentTime = getCurrentTimeInTimezone(driverTimezone);
             
-            console.log(`📅 ${translateError(lang, 'availability.currentTimeIn')} ${driverTimezone}:`, {
+            logger.debug('Current time in the driver timezone', {
                 day: currentTime.dayName,
                 hour: currentTime.hour,
                 formatted: formatDateForTimezone(currentTime.date, driverTimezone)
@@ -77,7 +77,7 @@ const driverAvailabilityController = {
             const validDays = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
             
             if (!availability || typeof availability !== 'object') {
-                console.warn(`⚠️ ${translateError(lang, 'availability.invalidData')}`);
+                logger.warn('Invalid availability data');
                 return res.status(400).json({
                     success: false,
                     message: translateError(lang, 'availability.invalidData')
@@ -87,7 +87,7 @@ const driverAvailabilityController = {
             // Validate that all days are present and are boolean
             for (const day of validDays) {
                 if (!(day in availability) || typeof availability[day] !== 'boolean') {
-                    console.warn(`⚠️ ${translateError(lang, 'availability.invalidValueFor')} ${day}:`, availability[day]);
+                    logger.warn('Invalid availability value', { day });
                     return res.status(400).json({
                         success: false,
                         message: `${translateError(lang, 'availability.invalidValueFor')} ${day}. ${translateError(lang, 'availability.mustBeBoolean')}`
@@ -98,7 +98,7 @@ const driverAvailabilityController = {
             // Get current availability from database
             const currentAvailability = await availabilityService.getDriverAvailability(driverId);
             
-            console.log(`📋 ${translateError(lang, 'availability.currentAvailabilityInDB')}:`, currentAvailability.availability);
+            logger.debug('Current availability in the database', currentAvailability.availability);
             
             // Validate the update using timezone-aware logic
             // This only checks past/today/tomorrow restrictions
@@ -110,7 +110,7 @@ const driverAvailabilityController = {
             );
 
             if (!validation.isValid) {
-                console.warn(`⚠️ ${translateError(lang, 'availability.validationFailed')}:`, validation.errors);
+                logger.warn('Availability validation failed', validation.errors);
                 return res.status(403).json({
                     success: false,
                     message: validation.errors[0],
@@ -118,15 +118,15 @@ const driverAvailabilityController = {
                 });
             }
 
-            console.log(`✅ ${translateError(lang, 'availability.allChecksPassed')} ${driverId}`);
+            logger.debug('Availability update checks passed', { driverId });
 
             const updatedAvailability = await availabilityService.updateDriverAvailability(
                 driverId, 
                 availability
             );
             
-            console.log(`✅ ${translateError(lang, 'availability.fetchedFor')} ${driverId} ${translateError(lang, 'availability.updatedSuccessfully')}`);
-            console.log(`   ${translateError(lang, 'availability.updatedAvailabilityLog')}:`, updatedAvailability.availability);
+            logger.info('Driver availability updated', { driverId });
+            logger.debug('Updated availability', updatedAvailability.availability);
             
             res.status(200).json({
                 success: true,
@@ -135,8 +135,7 @@ const driverAvailabilityController = {
             });
         } catch (err) {
             const lang = getLang(req);
-            console.error(`❌ Error in updateAvailability for driver ${req.driver?.id}:`, err.message);
-            console.error("Error stack:", err.stack);
+            logger.error('updateAvailability failed', err);
             res.status(500).json({
                 success: false,
                 message: translateError(lang, 'availability.failedToUpdate'),
