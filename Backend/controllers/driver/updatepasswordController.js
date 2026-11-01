@@ -2,6 +2,7 @@
 import updatepasswordQueries from "../../services/driver/updatepasswordQueries.js";
 import HttpStatus from "../../utils/statusCodes.js";
 import { translateError } from "../../utils/backendI18n.js";
+import logger from '../../utils/logger.js';
 
 // Helper to get language from request
 const getLang = (req) => {
@@ -74,7 +75,7 @@ const passwordController = {
 
     } catch (error) {
       const lang = getLang(req);
-      console.error(translateError(lang, 'password.updateError') + ':', error);
+      logger.error('Driver password update failed', error);
 
       // Handle specific error cases
       if (error.message === 'Current password is incorrect') {

@@ -1,6 +1,7 @@
 import pool from '../../config/db.js';
 import HttpStatus from '../../utils/statusCodes.js';
 import { translateError } from "../../utils/backendI18n.js";
+import logger from '../../utils/logger.js';
 
 // Helper to get language from request
 const getLang = (req) => {
@@ -36,7 +37,7 @@ const languageController = {
       });
     } catch (error) {
       const lang = getLang(req);
-      console.error('Error fetching driver language:', error);
+      logger.error('Error fetching driver language', error);
       return res.status(HttpStatus.INTERNAL_SERVER_ERROR).json({
         message: translateError(lang, 'common.serverError')
       });
@@ -73,7 +74,7 @@ const languageController = {
         });
       }
 
-      console.log(`✅ ${translateError(lang, 'language.driverLanguageUpdated')}: ${language} (Driver ${driverId})`);
+      logger.debug('Driver language updated', { driverId, language });
 
       return res.status(HttpStatus.OK).json({
         message: translateError(lang, 'language.updatedSuccessfully'),
@@ -81,7 +82,7 @@ const languageController = {
       });
     } catch (error) {
       const lang = getLang(req);
-      console.error('Error updating driver language:', error);
+      logger.error('Error updating driver language', error);
       return res.status(HttpStatus.INTERNAL_SERVER_ERROR).json({
         message: translateError(lang, 'common.serverError')
       });

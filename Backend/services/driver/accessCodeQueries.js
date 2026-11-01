@@ -1,5 +1,6 @@
 // services/driver/accessCodeQueries.js
 import pool from "../../config/db.js";
+import logger from '../../utils/logger.js';
 
 const accessCodeQueries = {
   getAccessCodes: async (page = 1, limit = 10, search = '', zipCodeFilter = '') => {
@@ -64,7 +65,7 @@ const accessCodeQueries = {
         }
       };
     } catch (error) {
-      console.error('Driver Database error in getAccessCodes:', error);
+      logger.error('Driver Database error in getAccessCodes', error);
       throw error;
     }
   },
@@ -93,7 +94,7 @@ const accessCodeQueries = {
 
       return result.rows[0];
     } catch (error) {
-      console.error('Driver Database error in createAccessCode:', error);
+      logger.error('Driver Database error in createAccessCode', error);
       throw error;
     }
   },

@@ -1,4 +1,5 @@
 import pool from "../../config/db.js";
+import logger from '../../utils/logger.js';
 
 // A route that exists and has not been archived (deleted). New journeys may only use such a route.
 export const isRouteAvailable = async (route_id) => {
@@ -12,7 +13,7 @@ export const insertJourney = async (data) => {
   const { driver_id, route_id, packages, start_seq, end_seq, journey_date } = data;
 
   if (!journey_date) {
-    console.error("❌ journey_date is required but not provided");
+    logger.error("journey_date is required but not provided");
     return { 
       success: false, 
       message: "journey_date is required", 
@@ -39,7 +40,7 @@ export const insertJourney = async (data) => {
     const result = await pool.query(query, values);
     return result.rows[0];
   } catch (error) {
-    console.error("❌ insertJourney failed:", error.message);
+    logger.error("insertJourney failed", error);
     return { 
       success: false, 
       message: "Error inserting journey", 
@@ -73,7 +74,7 @@ export const checkSequenceConflict = async (route_id, start_seq, end_seq, journe
     const result = await pool.query(query, values);
     return result.rows;
   } catch (error) {
-    console.error("❌ checkSequenceConflict failed:", error.message);
+    logger.error("checkSequenceConflict failed", error);
     // Throwing error so controller knows validation actually failed technically
     throw error; 
   }
@@ -101,7 +102,7 @@ export const getTodayJourney = async (driver_id) => {
 
     return result.rows;
   } catch (error) {
-    console.error("❌ getTodayJourney failed:", error.message);
+    logger.error("getTodayJourney failed", error);
     return { success: false, message: "Error fetching today's journey", error: error.message };
   }
 };
@@ -135,7 +136,7 @@ export const addRangeOfSqeunceToDeliveries = async (driver_id, route_id, start_s
     return result.rows;
 
   } catch (error) {
-    console.error("❌ addRangeOfSqeunceToDeliveries failed:", error.message);
+    logger.error("addRangeOfSqeunceToDeliveries failed", error);
     return { success: false, message: "Error inserting deliveries", error: error.message };
   }
 };
@@ -151,7 +152,7 @@ export const markNoAddressAsNoScanned = async () => {
     `;
     await pool.query(query);
   } catch (error) {
-    console.error("❌ markNoAddressAsNoScanned failed:", error.message);
+    logger.error("markNoAddressAsNoScanned failed", error);
   }
 };
 
@@ -271,7 +272,7 @@ export const  syncJourneyDeliveries = async (journey_id, driver_id, route_id, st
 
   } catch (error) {
     await client.query('ROLLBACK');
-    console.error("❌ syncJourneyDeliveries failed:", error.message);
+    logger.error("syncJourneyDeliveries failed", error);
     throw new Error(`Failed to sync deliveries: ${error.message}`);
   } finally {
     client.release();
