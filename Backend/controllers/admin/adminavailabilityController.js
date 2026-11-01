@@ -4,7 +4,6 @@ import {
   validateAdminAvailabilityUpdate, 
   getCurrentTimeInTimezone 
 } from "../../utils/timezoneUtils.js";
-import pool from "../../config/db.js";
 import logger from '../../utils/logger.js';
 
 const adminAvailabilityController = {
@@ -151,19 +150,16 @@ const adminAvailabilityController = {
       }
 
       // Get driver's timezone from database
-      const driverResult = await pool.query(
-        'SELECT timezone FROM drivers WHERE id = $1',
-        [parseInt(driverId, 10)]
-      );
+      const driverRows = await availabilityService.getDriverTimezone(parseInt(driverId, 10));
 
-      if (driverResult.rows.length === 0) {
+      if (driverRows.length === 0) {
         return res.status(404).json({
           success: false,
           message: "Driver not found"
         });
       }
 
-      const driverTimezone = driverResult.rows[0].timezone;
+      const driverTimezone = driverRows[0].timezone;
       logger.debug(`Driver timezone: ${driverTimezone}`);
 
       // Get current time in driver's timezone
