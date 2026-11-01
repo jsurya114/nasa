@@ -2,7 +2,7 @@
 import pool from "../../config/db.js";
 
 const accessCodeQueries = {
-  getAccessCodes: async (page = 1, limit = 10, search = '') => {
+  getAccessCodes: async (page = 1, limit = 10, search = '', cityIds = null) => {
     try {
       const offset = (page - 1) * limit;
       
@@ -14,6 +14,14 @@ const accessCodeQueries = {
       if (search) {
         whereConditions.push(`(ac.address ILIKE $${paramIndex} OR ac.access_code ILIKE $${paramIndex} OR ac.zip_code ILIKE $${paramIndex})`);
         queryParams.push(`%${search}%`);
+        paramIndex++;
+      }
+
+      // cityIds is null for a superadmin (every code). Other admins see the codes of their cities
+      // and the codes that have no city yet.
+      if (cityIds !== null) {
+        whereConditions.push(`(ac.city_id IS NULL OR ac.city_id = ANY($${paramIndex}::int[]))`);
+        queryParams.push(cityIds);
         paramIndex++;
       }
 
@@ -37,7 +45,8 @@ const accessCodeQueries = {
                ac.image_url1,
                ac.image_url2,
                ac.image_url3,
-               ac.created_at 
+               ac.created_at,
+               ac.city_id
         FROM public.access_codes ac
         ${whereClause}
         ORDER BY ac.created_at DESC
@@ -64,7 +73,7 @@ const accessCodeQueries = {
     }
   },
 
-  createAccessCode: async (zipCode, address, accessCode, imageUrls = []) => {
+  createAccessCode: async (zipCode, address, accessCode, imageUrls = [], cityId = null) => {
     try {
       // Check if access code already exists
       const checkQuery = `
@@ -78,13 +87,13 @@ const accessCodeQueries = {
       // Insert new access code
       const insertQuery = `
         INSERT INTO public.access_codes (
-          zip_code, address, access_code, image_url1, image_url2, image_url3
+          zip_code, address, access_code, image_url1, image_url2, image_url3, city_id
         )
-        VALUES ($1, $2, $3, $4, $5, $6)
+        VALUES ($1, $2, $3, $4, $5, $6, $7)
         RETURNING *;
       `;
       const [u1, u2, u3] = imageUrls;
-      const result = await pool.query(insertQuery, [zipCode, address, accessCode, u1 || null, u2 || null, u3 || null]);
+      const result = await pool.query(insertQuery, [zipCode, address, accessCode, u1 || null, u2 || null, u3 || null, cityId]);
 
       return result.rows[0];
     } catch (error) {
@@ -96,7 +105,7 @@ const accessCodeQueries = {
   getAccessCodeById: async (id) => {
     try {
       const result = await pool.query(
-        'SELECT id, zip_code, address, access_code, image_url1, image_url2, image_url3 FROM public.access_codes WHERE id = $1',
+        'SELECT id, zip_code, address, access_code, image_url1, image_url2, image_url3, city_id FROM public.access_codes WHERE id = $1',
         [id]
       );
       if (result.rowCount === 0) throw new Error('Access code not found');
@@ -107,7 +116,7 @@ const accessCodeQueries = {
     }
   },
 
-  updateAccessCode: async (id, zipCode, address, accessCode, imageUrls = null) => {
+  updateAccessCode: async (id, zipCode, address, accessCode, imageUrls = null, cityId = null) => {
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
@@ -128,17 +137,17 @@ const accessCodeQueries = {
         result = await client.query(`
           UPDATE public.access_codes
           SET zip_code = $1, address = $2, access_code = $3,
-              image_url1 = $4, image_url2 = $5, image_url3 = $6
-          WHERE id = $7
+              image_url1 = $4, image_url2 = $5, image_url3 = $6, city_id = $7
+          WHERE id = $8
           RETURNING *;
-        `, [zipCode, address, accessCode, u1 || null, u2 || null, u3 || null, id]);
+        `, [zipCode, address, accessCode, u1 || null, u2 || null, u3 || null, cityId, id]);
       } else {
         result = await client.query(`
           UPDATE public.access_codes
-          SET zip_code = $1, address = $2, access_code = $3
-          WHERE id = $4
+          SET zip_code = $1, address = $2, access_code = $3, city_id = $4
+          WHERE id = $5
           RETURNING *;
-        `, [zipCode, address, accessCode, id]);
+        `, [zipCode, address, accessCode, cityId, id]);
       }
       
       await client.query('COMMIT');
