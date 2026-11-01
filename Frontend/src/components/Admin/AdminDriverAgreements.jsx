@@ -1,7 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import { FileText } from "lucide-react";
 import axios from '../../redux/slice/axiosInstance';
-import { toast } from 'react-toastify';
+import { toast } from "../../utils/toast";
+import { confirmDialog } from "../../utils/confirmDialog";
 import Header from '../../reuse/Header';
 import Nav from '../../reuse/Nav';
 import SearchBar from '../../reuse/Search';
@@ -29,7 +30,7 @@ const AgreementModal = ({ isOpen, onClose, driverName }) => {
         <div className="p-8 overflow-y-auto text-gray-700 text-sm leading-relaxed space-y-6 flex-1">
           <p>This Independent Contractor Agreement ("Agreement") is entered into by and between:</p>
           
-          <div className="bg-gray-50 p-4 rounded border border-gray-200">
+          <div className="bg-gray-50 p-4 rounded border border-line">
             <ul className="font-semibold text-gray-900 space-y-1">
               <li>Company: NASA LOGISTICS CARRIERS LLC</li>
               <li>Owner: Abdul Rahiman</li>
@@ -206,7 +207,12 @@ const AdminDriverAgreements = () => {
   const handleToggleAgreement = async (id, currentStatus) => {
     if (!currentStatus) return;
 
-    if (!window.confirm("Are you sure you want to revoke this driver's agreement? They will be forced to re-sign on their next login.")) {
+    if (!(await confirmDialog({
+      title: 'Revoke agreement?',
+      text: "Are you sure you want to revoke this driver's agreement? They will be forced to re-sign on their next login.",
+      confirmText: 'Revoke agreement',
+      cancelText: 'Cancel',
+    }))) {
       return;
     }
 
@@ -240,14 +246,14 @@ const AdminDriverAgreements = () => {
   return (
     <>
       <Header />
-      <div className="p-4 font-poppins min-h-screen bg-gray-50 mt-14 pb-28">
+      <div className="p-4 min-h-dvh bg-canvas mt-14 pb-28">
         <div className="max-w-7xl mx-auto">
           <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
             <div>
-              <h1 className="text-2xl font-bold text-gray-800">Driver Agreements</h1>
+              <h1 className="text-2xl font-bold tracking-tight text-ink">Driver Agreements</h1>
               <p className="text-gray-500 text-sm mt-1">Manage and revoke driver independent contractor agreements.</p>
             </div>
-            <div className="flex items-center gap-3">
+            <div className="flex w-full flex-col gap-3 sm:w-auto sm:flex-row sm:items-center">
               <button
                 onClick={() => handleViewAgreement('')}
                 className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition text-sm font-medium whitespace-nowrap inline-flex items-center gap-2"
@@ -265,7 +271,7 @@ const AdminDriverAgreements = () => {
             </div>
           </div>
 
-          <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
+          <div className="card-surface overflow-hidden">
             <div className="overflow-x-auto">
               <table className="w-full text-sm text-left text-gray-500">
                 <thead className="text-xs text-gray-700 uppercase bg-gray-50 border-b">

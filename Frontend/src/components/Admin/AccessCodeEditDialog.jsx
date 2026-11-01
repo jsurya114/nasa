@@ -89,7 +89,7 @@ export default function AccessCodeEditDialog({ open, onClose, accessCode, onSave
         <div className="flex min-h-full items-end justify-center p-4 text-center sm:items-center sm:p-0">
           <DialogPanel
             transition
-            className="relative transform overflow-hidden rounded-lg bg-white text-left shadow-xl outline-1 -outline-offset-1 outline-gray-200 transition-all data-closed:translate-y-4 data-closed:opacity-0 data-enter:duration-300 data-enter:ease-out data-leave:duration-200 data-leave:ease-in sm:my-8 sm:w-full sm:max-w-2xl data-closed:sm:translate-y-0 data-closed:sm:scale-95"
+            className="relative transform overflow-hidden rounded-3xl bg-white text-left shadow-[var(--shadow-float)] outline-1 -outline-offset-1 outline-gray-200 transition-all data-closed:translate-y-4 data-closed:opacity-0 data-enter:duration-300 data-enter:ease-out data-leave:duration-200 data-leave:ease-in sm:my-8 sm:w-full sm:max-w-2xl data-closed:sm:translate-y-0 data-closed:sm:scale-95"
           >
             <div className="px-6 pt-5 pb-4 sm:p-6 sm:pb-4">
               <DialogTitle as="h3" className="text-lg font-semibold text-gray-900">Edit Access Code</DialogTitle>
@@ -179,7 +179,7 @@ export default function AccessCodeEditDialog({ open, onClose, accessCode, onSave
                 type="button"
                 disabled={saving}
                 onClick={handleSubmit}
-                className="inline-flex w-full justify-center rounded-md bg-[#8200db] px-4 py-2 text-sm font-semibold text-white hover:bg-[#7300c4] sm:ml-3 sm:w-auto disabled:opacity-60"
+                className="inline-flex w-full justify-center rounded-md bg-brand px-4 py-2 text-sm font-semibold text-white hover:bg-brand-dark sm:ml-3 sm:w-auto disabled:opacity-60"
               >
                 {saving ? 'Saving...' : 'Save Changes'}
               </button>
