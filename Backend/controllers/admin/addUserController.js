@@ -1,5 +1,8 @@
 import HttpStatus from '../../utils/statusCodes.js';
 import { dbService } from '../../services/admin/dbQueries.js';
+import { canAccessJob, canAccessDriver } from '../../services/admin/cityAccess.js';
+
+const CITY_FORBIDDEN = { message: "You can only manage drivers in your assigned cities" };
 
 export const createUsers = async (req, res) => {
     try {
@@ -8,6 +11,9 @@ export const createUsers = async (req, res) => {
         if (!email || !password || !city || !driver_code) {
             return res.status(HttpStatus.UNAUTHORIZED).json({ message: "Email, password, city & driver code is required" })
         }
+
+        if (!(await canAccessJob(req.user, city)))
+            return res.status(HttpStatus.FORBIDDEN).json(CITY_FORBIDDEN);
 
         const driver = await dbService.getDriverByEmail(email);
         if (driver)
@@ -69,6 +75,8 @@ export const changeStatusUser = async (req, res) => {
         const checkUser = await dbService.getDriverById(id);
         if (!checkUser)
             return res.status(HttpStatus.NOT_FOUND).json({ message: "User does not exists" });
+        if (!(await canAccessDriver(req.user, id)))
+            return res.status(HttpStatus.FORBIDDEN).json(CITY_FORBIDDEN);
         const data = await dbService.changeStatus(id);
         return res.status(HttpStatus.OK).json({ message: "User updated successfully!!", data });
     } catch (err) {
@@ -81,6 +89,13 @@ export const updateUser = async (req, res) => {
     try {
         const id = req.params.id;
         const { name, email, city, enabled, phoneNumber, password, driver_code } = req.body;
+
+        const existing = await dbService.getDriverById(id);
+        if (!existing)
+            return res.status(HttpStatus.NOT_FOUND).json({ message: "User does not exists" });
+        // The driver must be in one of the admin's cities now, and so must the city they move to.
+        if (!(await canAccessDriver(req.user, id)) || !(await canAccessJob(req.user, city)))
+            return res.status(HttpStatus.FORBIDDEN).json(CITY_FORBIDDEN);
 
         // Check if driver_code is being changed and if it already exists for another driver
         if (driver_code) {
