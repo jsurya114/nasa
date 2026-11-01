@@ -104,7 +104,7 @@ router.put(
 // Manual reset all drivers availability (Superadmin only)
 router.post(
   "/drivers/availability/reset-all",
-
+  superAdminAuth,
   adminAvailabilityController.manualResetAllDriversAvailability
 );
 
