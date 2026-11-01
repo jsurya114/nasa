@@ -1,16 +1,26 @@
 import React from "react";
 import { NavLink } from "react-router-dom";
+import {
+  LayoutDashboard,
+  Users,
+  Compass,
+  Building2,
+  FileUp,
+  KeyRound,
+  CalendarDays,
+  FileText,
+} from "lucide-react";
 
 function Nav() {
   const links = [
-    { to: "/admin/dashboard", icon: "📊", label: "Dashboard" },
-    { to: "/admin/create-users", icon: "👥", label: "Users" },
-    { to: "/admin/routes", icon: "🧭", label: "Routes" },
-    { to: "/admin/jobs", icon: "📦", label: "Cities" },
-    { to: "/admin/double-stop", icon: "🔁", label: "File Upload" },
-    { to: "/admin/manage-access-codes", icon: "🔑", label: "Access Codes" },
-    { to: "/admin/driver-availability", icon: "📅", label: "Availability" },
-    { to: "/admin/agreements", icon: "📝", label: "Agreements" },
+    { to: "/admin/dashboard", Icon: LayoutDashboard, label: "Dashboard" },
+    { to: "/admin/create-users", Icon: Users, label: "Users" },
+    { to: "/admin/routes", Icon: Compass, label: "Routes" },
+    { to: "/admin/jobs", Icon: Building2, label: "Cities" },
+    { to: "/admin/double-stop", Icon: FileUp, label: "File Upload" },
+    { to: "/admin/manage-access-codes", Icon: KeyRound, label: "Access Codes" },
+    { to: "/admin/driver-availability", Icon: CalendarDays, label: "Availability" },
+    { to: "/admin/agreements", Icon: FileText, label: "Agreements" },
   ];
 
   return (
@@ -33,9 +43,7 @@ function Nav() {
                 ${isActive ? "bg-white text-brand shadow-md" : "text-white/85 hover:bg-white/10"}`
               }
             >
-              <span className="text-xl sm:text-2xl leading-none" aria-hidden="true">
-                {item.icon}
-              </span>
+              <item.Icon className="w-6 h-6 sm:w-7 sm:h-7" strokeWidth={2} aria-hidden="true" />
               <small className="font-semibold text-[10px] sm:text-[11px] md:text-[13px] leading-tight text-center whitespace-nowrap">
                 {item.label}
               </small>
