@@ -4,6 +4,9 @@ import { addRangeOfSqeunceToDeliveries,addRangeOfSequenceToDeliveriesForAdmin, c
 import HttpStatus from "../../utils/statusCodes.js";
 import pool from "../../config/db.js";
 import { getAllottedDrivers } from "../../services/admin/dashboardService.js";
+import { canAccessDriver, canAccessRoute, getJourneyDriverId } from "../../services/admin/journeyAccess.js";
+
+const CITY_FORBIDDEN = { success: false, message: "You can only manage journeys in your assigned cities" };
 
 const adminJourneyController = {
   fetchAllJourneys: async (req, res) => {
@@ -32,6 +35,11 @@ const adminJourneyController = {
           success: false,
           message: "Driver does not exist."
         });
+      }
+
+      // Both the driver and the route must be in one of the admin's cities.
+      if (!(await canAccessDriver(req.user, driver_id)) || !(await canAccessRoute(req.user, route_id))) {
+        return res.status(HttpStatus.FORBIDDEN).json(CITY_FORBIDDEN);
       }
 
       // 2. STRICT ROUTE OVERLAP CHECK
@@ -98,6 +106,16 @@ const adminJourneyController = {
       } 
       const journey_date = currentJourneyResult.rows[0].journey_date;
 
+      // The journey must be in one of the admin's cities now, and so must the driver and route it is changed to.
+      const currentDriverId = await getJourneyDriverId(journey_id);
+      if (
+        !(await canAccessDriver(req.user, currentDriverId)) ||
+        !(await canAccessDriver(req.user, driver_id)) ||
+        !(await canAccessRoute(req.user, route_id))
+      ) {
+        return res.status(HttpStatus.FORBIDDEN).json(CITY_FORBIDDEN);
+      }
+
       // 3. STRICT ROUTE OVERLAP CHECK (With Excluded ID)
       // This ensures 10-55 is rejected if 51-100 exists
       const conflictSequences = await checkSequenceConflict(
@@ -146,6 +164,11 @@ const adminJourneyController = {
   deleteJourney: async (req, res) => {
     try {
       const { journey_id } = req.params;
+
+      const ownerDriverId = await getJourneyDriverId(journey_id);
+      if (ownerDriverId !== null && !(await canAccessDriver(req.user, ownerDriverId))) {
+        return res.status(HttpStatus.FORBIDDEN).json(CITY_FORBIDDEN);
+      }
 
       const deleted = await AdminJourneyQuery.deleteJourneyById(journey_id);
 
