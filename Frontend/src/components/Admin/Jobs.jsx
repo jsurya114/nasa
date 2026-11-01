@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useCallback, useMemo, useRef } from "react";
+import { TriangleAlert, Info } from "lucide-react";
 import { useDispatch, useSelector } from "react-redux";
 import { toast, ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
@@ -351,10 +352,15 @@ export default function Jobs() {
                   <option value="WEEKLY">Weekly</option>
                 </select>
                 {errors.city_type && <p className="text-red-500 text-sm mt-1">{errors.city_type}</p>}
-                <p className="text-xs text-gray-500 mt-1">
-                  {form.city_type === 'WEEKLY' 
-                    ? '⚠️ Weekly cities have predefined routes and drivers cannot create journeys manually' 
-                    : 'ℹ️ Daily cities allow manual journey creation by drivers'}
+                <p className="text-xs text-gray-500 mt-1 flex items-start gap-1.5">
+                  {form.city_type === 'WEEKLY'
+                    ? <TriangleAlert className="w-3.5 h-3.5 mt-0.5 text-amber-600 flex-shrink-0" aria-hidden="true" />
+                    : <Info className="w-3.5 h-3.5 mt-0.5 flex-shrink-0" aria-hidden="true" />}
+                  <span>
+                    {form.city_type === 'WEEKLY'
+                      ? 'Weekly cities have predefined routes and drivers cannot create journeys manually'
+                      : 'Daily cities allow manual journey creation by drivers'}
+                  </span>
                 </p>
               </div>
 

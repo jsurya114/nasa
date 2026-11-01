@@ -1,5 +1,6 @@
 "use client";
 
+import { Camera } from "lucide-react";
 import { useState, useEffect } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import {
@@ -745,7 +746,8 @@ export default function AddAccessCodePage() {
                             {ac.zip_code}
                           </span>
                           <span className="inline-flex items-center justify-center px-2 py-1 rounded-full text-xs font-medium bg-indigo-100 text-indigo-800 border border-indigo-200">
-                            📷 {ac.imageCount ?? 0}
+                            <Camera className="w-3.5 h-3.5 mr-1" aria-hidden="true" />
+                            {ac.imageCount ?? 0}
                           </span>
                         </div>
 

@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Check, X, Circle, TriangleAlert, CircleCheck, CircleX, RefreshCw, Search } from "lucide-react";
 import { useDispatch, useSelector } from "react-redux";
 import {
   getAllDriversAvailability,
@@ -343,11 +344,11 @@ export default function AdminDriverAvailability() {
 
   const handleManualReset = async () => {
     if (window.confirm(
-      '⚠️ WARNING: This will reset availability for ALL drivers (enabled and disabled) to unavailable.\n\nAre you sure you want to continue?'
+      'WARNING: This will reset availability for ALL drivers (enabled and disabled) to unavailable.\n\nAre you sure you want to continue?'
     )) {
       try {
         const result = await dispatch(manualResetAllDriversAvailability()).unwrap();
-        toast.success(`✅ ${result.totalDriversReset} drivers reset successfully!`);
+        toast.success(`${result.totalDriversReset} drivers reset successfully!`);
 
         // Refresh the current page
         dispatch(getAllDriversAvailability({
@@ -471,10 +472,10 @@ export default function AdminDriverAvailability() {
                     >
                       <option value="">All Drivers</option>
                       <option value="available">
-                        ✓ Available {filterDay ? `on ${filterDay.charAt(0).toUpperCase() + filterDay.slice(1)}` : '(any day)'} ({selectedDayCounts.available})
+                        Available {filterDay ? `on ${filterDay.charAt(0).toUpperCase() + filterDay.slice(1)}` : '(any day)'} ({selectedDayCounts.available})
                       </option>
                       <option value="unavailable">
-                        ✕ Unavailable {filterDay ? `on ${filterDay.charAt(0).toUpperCase() + filterDay.slice(1)}` : '(all days)'} ({selectedDayCounts.unavailable})
+                        Unavailable {filterDay ? `on ${filterDay.charAt(0).toUpperCase() + filterDay.slice(1)}` : '(all days)'} ({selectedDayCounts.unavailable})
                       </option>
                     </select>
                     <svg className="absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -560,8 +561,9 @@ export default function AdminDriverAvailability() {
                       </>
                     )}
                   </button>
-                  <p className="text-xs text-gray-500 mt-2">
-                    ⚠️ This will reset availability for ALL drivers (enabled & disabled) to unavailable
+                  <p className="text-xs text-gray-500 mt-2 flex items-start gap-1.5">
+                    <TriangleAlert className="w-4 h-4 text-amber-600 flex-shrink-0" aria-hidden="true" />
+                    <span>This will reset availability for ALL drivers (enabled &amp; disabled) to unavailable</span>
                   </p>
                 </div>
               )}
@@ -610,14 +612,14 @@ export default function AdminDriverAvailability() {
               <div className="flex-1">
                 <h3 className="text-sm font-semibold text-blue-900 mb-1">Admin Permissions & Filters</h3>
                 <ul className="text-xs text-blue-800 space-y-1">
-                  <li>• ✅ <strong>You can edit availability for TODAY and all future days</strong></li>
-                  <li>• ❌ Past days (before today) cannot be edited</li>
-                  <li>• 🔄 Availability resets every Sunday at 12:00 PM in each driver's timezone</li>
+                  <li className="flex items-start gap-2"><CircleCheck className="w-4 h-4 mt-0.5 text-green-600 flex-shrink-0" aria-hidden="true" /><strong>You can edit availability for TODAY and all future days</strong></li>
+                  <li className="flex items-start gap-2"><CircleX className="w-4 h-4 mt-0.5 text-red-600 flex-shrink-0" aria-hidden="true" /><span>Past days (before today) cannot be edited</span></li>
+                  <li className="flex items-start gap-2"><RefreshCw className="w-4 h-4 mt-0.5 flex-shrink-0" aria-hidden="true" /><span>Availability resets every Sunday at 12:00 PM in each driver's timezone</span></li>
 
                   {/* Show filter status */}
                   {filterAvailabilityStatus && (
                     <li className="mt-2 pt-2 border-t border-blue-300">
-                      • 🔍 <strong>Active Filter:</strong> Showing <strong className={filterAvailabilityStatus === 'available' ? 'text-green-700' : 'text-red-700'}>
+                      <Search className="inline w-4 h-4 -mt-0.5 mr-1" aria-hidden="true" /><strong>Active Filter:</strong> Showing <strong className={filterAvailabilityStatus === 'available' ? 'text-green-700' : 'text-red-700'}>
                         {filterAvailabilityStatus === 'available' ? 'AVAILABLE' : 'UNAVAILABLE'}
                       </strong> drivers
                       {filterDay ? (
@@ -728,12 +730,16 @@ export default function AdminDriverAvailability() {
                             </td>
                             <td className="px-6 py-4 whitespace-nowrap">
                               <span
-                                className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold ${driver.enabled
+                                className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold ${driver.enabled
                                   ? 'bg-green-100 text-green-800'
                                   : 'bg-gray-100 text-gray-800'
                                   }`}
                               >
-                                {driver.enabled ? '✓ Enabled' : '○ Disabled'}
+                                {driver.enabled ? (
+                                  <><Check className="w-3.5 h-3.5" aria-hidden="true" /> Enabled</>
+                                ) : (
+                                  <><Circle className="w-3.5 h-3.5" aria-hidden="true" /> Disabled</>
+                                )}
                               </span>
                             </td>
 
@@ -763,7 +769,7 @@ export default function AdminDriverAvailability() {
                                           : 'Unavailable'
                                     }
                                   >
-                                    {isAvailable ? '✓' : '✕'}
+                                    {isAvailable ? <Check className="w-4 h-4" aria-hidden="true" /> : <X className="w-4 h-4" aria-hidden="true" />}
                                   </button>
                                 </td>
                               );
@@ -844,12 +850,16 @@ export default function AdminDriverAvailability() {
                           </div>
                         </div>
                         <span
-                          className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-semibold ${driver.enabled
+                          className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-semibold ${driver.enabled
                             ? 'bg-green-100 text-green-800'
                             : 'bg-gray-100 text-gray-800'
                             }`}
                         >
-                          {driver.enabled ? '✓ Enabled' : '○ Disabled'}
+                          {driver.enabled ? (
+                                  <><Check className="w-3.5 h-3.5" aria-hidden="true" /> Enabled</>
+                                ) : (
+                                  <><Circle className="w-3.5 h-3.5" aria-hidden="true" /> Disabled</>
+                                )}
                         </span>
                       </div>
 
@@ -883,7 +893,7 @@ export default function AdminDriverAvailability() {
                                       : 'Unavailable'
                                 }
                               >
-                                {isAvailable ? '✓' : '✕'}
+                                {isAvailable ? <Check className="w-4 h-4" aria-hidden="true" /> : <X className="w-4 h-4" aria-hidden="true" />}
                               </button>
                             </div>
                           );
