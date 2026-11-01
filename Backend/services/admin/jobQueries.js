@@ -145,6 +145,24 @@ export const jobService = {
     }
   },
 
+  // Enabled cities assigned to one admin (all other admins' cities stay hidden).
+  getCitiesForAdmin: async (adminId) => {
+    try {
+      const cities = await pool.query(
+        `SELECT c.id, c.job, c.city_type
+         FROM city c
+         JOIN admin_city_ref acr ON acr.city_id = c.id
+         WHERE c.enabled = true AND acr.admin_id = $1
+         ORDER BY c.id ASC`,
+        [adminId]
+      );
+      return cities.rows;
+    } catch (error) {
+      console.error("GETTING ADMIN CITIES ERROR:", error.message);
+      throw error;
+    }
+  },
+
   // New: Get city type by driver ID
   getCityTypeByDriverId: async (driverId) => {
     try {
