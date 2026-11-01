@@ -12,6 +12,9 @@ import {
   getRoutesByDriverCity
 } from "../../services/admin/routeQueries.js";
 import HttpStatus from "../../utils/statusCodes.js";
+import { canAccessJob, canAccessDriverCity } from "../../services/admin/routeAccess.js";
+
+const CITY_FORBIDDEN = { error: "You can only manage routes in your assigned cities" };
 
 
 const mapRoute = (r) => ({
@@ -148,6 +151,9 @@ export const getRouteById = async (req, res) => {
      
       return res.status(404).json({ error: "Route not found" });
     }
+    if (!(await canAccessJob(req.user, routeDb.job))) {
+      return res.status(HttpStatus.FORBIDDEN).json(CITY_FORBIDDEN);
+    }
     const route = mapRoute(routeDb);
     res.json(route);
   } catch (err) {
@@ -184,9 +190,17 @@ export const updateRoute = async (req, res) => {
       }
     }
 
+    const current = await getRouteByIdQuery(req.params.id);
+    if (!current) {
+      return res.status(404).json({ error: "Route not found" });
+    }
+    // The route must be in one of the admin's cities now, and so must the city it is moved to.
+    if (!(await canAccessJob(req.user, current.job)) || !(await canAccessJob(req.user, job))) {
+      return res.status(HttpStatus.FORBIDDEN).json(CITY_FORBIDDEN);
+    }
+
     const updatedDb = await updateRouteQuery(req.params.id, routeData);
     if (!updatedDb) {
-   
       return res.status(404).json({ error: "Route not found" });
     }
     const updated = mapRoute(updatedDb);
@@ -201,7 +215,14 @@ export const updateRoute = async (req, res) => {
 // Toggle route status
 export const toggleRouteStatus = async (req, res) => {
   try {
-  
+    const current = await getRouteByIdQuery(req.params.id);
+    if (!current) {
+      return res.status(404).json({ error: "Route not found" });
+    }
+    if (!(await canAccessJob(req.user, current.job))) {
+      return res.status(HttpStatus.FORBIDDEN).json(CITY_FORBIDDEN);
+    }
+
     const updatedDb = await toggleRouteStatusQuery(req.params.id);
     if (!updatedDb) {
   
@@ -219,7 +240,14 @@ export const toggleRouteStatus = async (req, res) => {
 // Delete route
 export const deleteRoute = async (req, res) => {
   try {
-   
+    const current = await getRouteByIdQuery(req.params.id);
+    if (!current) {
+      return res.status(404).json({ error: "Route not found" });
+    }
+    if (!(await canAccessJob(req.user, current.job))) {
+      return res.status(HttpStatus.FORBIDDEN).json(CITY_FORBIDDEN);
+    }
+
     const deletedDb = await deleteRouteQuery(req.params.id);
     if (!deletedDb) {
       
@@ -244,6 +272,10 @@ export const getRoutesByDriver = async (req, res) => {
       });
     }
     
+    if (!(await canAccessDriverCity(req.user, driverId))) {
+      return res.status(HttpStatus.FORBIDDEN).json({ success: false, ...CITY_FORBIDDEN });
+    }
+
     const routesDb = await getRoutesByDriverCity(driverId);
     const routes = routesDb.map(mapRoute);
     
