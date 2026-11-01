@@ -4,7 +4,7 @@ import { addRangeOfSqeunceToDeliveries,addRangeOfSequenceToDeliveriesForAdmin, c
 import HttpStatus from "../../utils/statusCodes.js";
 import pool from "../../config/db.js";
 import { getAllottedDrivers } from "../../services/admin/dashboardService.js";
-import { canAccessDriver, canAccessRoute, getJourneyDriverId } from "../../services/admin/journeyAccess.js";
+import { canAccessDriver, canAccessRoute, getJourneyDriverId, isRouteActive } from "../../services/admin/journeyAccess.js";
 
 // The journey id from the URL, as a positive whole number, or null. The same number is used for
 // the city check and for the change itself, so the two can never look at different journeys.
@@ -49,6 +49,14 @@ const adminJourneyController = {
       // Both the driver and the route must be in one of the admin's cities.
       if (!(await canAccessDriver(req.user, driver_id)) || !(await canAccessRoute(req.user, route_id))) {
         return res.status(HttpStatus.FORBIDDEN).json(CITY_FORBIDDEN);
+      }
+
+      // A new journey cannot use an archived (deleted) route.
+      if (!(await isRouteActive(route_id))) {
+        return res.status(HttpStatus.BAD_REQUEST).json({
+          success: false,
+          message: "Route does not exist."
+        });
       }
 
       // 2. STRICT ROUTE OVERLAP CHECK

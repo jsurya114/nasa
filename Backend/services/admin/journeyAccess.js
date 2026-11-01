@@ -41,3 +41,11 @@ export async function getJourneyDriverId(journeyId) {
   const { rows } = await pool.query('SELECT driver_id FROM dashboard_data WHERE id = $1', [journeyId]);
   return rows.length ? rows[0].driver_id : null;
 }
+
+// A route that exists and has not been archived. New journeys may only use such a route;
+// existing journeys on an archived route stay editable so history can be corrected.
+export async function isRouteActive(routeId) {
+  if (!isId(routeId)) return false;
+  const { rowCount } = await pool.query('SELECT 1 FROM routes WHERE id = $1 AND deleted_at IS NULL', [routeId]);
+  return rowCount > 0;
+}

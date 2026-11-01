@@ -100,9 +100,9 @@ export const getAllRoutesOfDriver = async (id) => {
   return result.rows;
 };
 
-// Get route by ID
+// Get route by ID. An archived route counts as gone: it can no longer be read, edited or switched here.
 export const getRouteByIdQuery = async (id) => {
-  const result = await pool.query("SELECT * FROM routes WHERE id = $1", [id]);
+  const result = await pool.query("SELECT * FROM routes WHERE id = $1 AND deleted_at IS NULL", [id]);
   return result.rows[0];
 };
 
@@ -143,7 +143,7 @@ export const updateRouteQuery = async (id, data) => {
     `UPDATE routes 
      SET name=$1, job=$2, company_route_price=$3, driver_route_price=$4, 
         company_doublestop_price=$5, driver_doublestop_price=$6, enabled=$7, route_code_in_string=$8 
-     WHERE id=$9 RETURNING *`,
+     WHERE id=$9 AND deleted_at IS NULL RETURNING *`,
     [
       name,
       job,
@@ -170,17 +170,22 @@ export const toggleRouteStatusQuery = async (id) => {
     return null;
   }
   const result = await pool.query(
-    "UPDATE routes SET enabled = NOT enabled WHERE id=$1 RETURNING *",
+    "UPDATE routes SET enabled = NOT enabled WHERE id=$1 AND deleted_at IS NULL RETURNING *",
     [id]
   );
  
   return result.rows[0];
 };
 
-// Delete route
+// "Delete" a route: archive it. The row stays so journeys, deliveries and payments that point at it keep
+// their history. Lists no longer show it (deleted_at is set) and it is switched off, so code that only
+// uses enabled routes (such as the weekly import) skips it, as it did when the row was removed.
 export const deleteRouteQuery = async (id) => {
 
-  const result = await pool.query("DELETE FROM routes WHERE id=$1 RETURNING *", [id]);
+  const result = await pool.query(
+    "UPDATE routes SET deleted_at = NOW(), enabled = false WHERE id=$1 AND deleted_at IS NULL RETURNING *",
+    [id]
+  );
 
   return result.rows[0];
 };

@@ -1,5 +1,12 @@
 import pool from "../../config/db.js";
 
+// A route that exists and has not been archived (deleted). New journeys may only use such a route.
+export const isRouteAvailable = async (route_id) => {
+  if (!/^\d{1,9}$/.test(String(route_id))) return false;
+  const result = await pool.query("SELECT 1 FROM routes WHERE id = $1 AND deleted_at IS NULL", [route_id]);
+  return result.rowCount > 0;
+};
+
 // ✅ Insert Journey
 export const insertJourney = async (data) => {
   const { driver_id, route_id, packages, start_seq, end_seq, journey_date } = data;

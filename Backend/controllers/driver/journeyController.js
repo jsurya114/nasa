@@ -4,6 +4,7 @@ import {
   getTodayJourney,
   addRangeOfSqeunceToDeliveries,
   checkSequenceConflict,
+  isRouteAvailable,
 } from "../../services/driver/journeyQueries.js";
 import { jobService } from "../../services/admin/jobQueries.js";
 import HttpStatus from "../../utils/statusCodes.js";
@@ -36,10 +37,18 @@ export const saveJourney = async (req, res) => {
     if (!start_seq || start_seq <= 0) errors.start_seq = translateError(lang, 'journey.startSeqInvalid');
     if (!end_seq || end_seq < start_seq) errors.end_seq = translateError(lang, 'journey.endSeqInvalid');
 
-    const conflictSequences = await checkSequenceConflict(route_id, start_seq, end_seq, journey_date);
+    // A route archived by an admin (even after the driver opened the form) cannot start a new journey.
+    if (route_id && !(await isRouteAvailable(route_id))) {
+      errors.route_id = translateError(lang, 'journey.routeUnavailable');
+    }
 
-    if (conflictSequences.length > 0) {
-      errors.sequenceConflict = translateError(lang, 'journey.sequenceConflict');
+    // The overlap check only makes sense for a usable route.
+    if (!errors.route_id) {
+      const conflictSequences = await checkSequenceConflict(route_id, start_seq, end_seq, journey_date);
+
+      if (conflictSequences.length > 0) {
+        errors.sequenceConflict = translateError(lang, 'journey.sequenceConflict');
+      }
     }
 
     if (Object.keys(errors).length > 0) {
