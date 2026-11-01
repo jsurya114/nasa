@@ -1,5 +1,6 @@
 import net from 'net';
 import client from '../config/redis.js';
+import logger from '../utils/logger.js';
 import HttpStatus from '../utils/statusCodes.js';
 import { translateError, getLangFromRequest } from '../utils/backendI18n.js';
 
@@ -103,7 +104,7 @@ async function bump(key, windowSeconds) {
       return { count, ttl };
     });
   } catch (error) {
-    console.log('redis Error: login limit is using memory:', error.message);
+    logger.warn('Login limit is using memory because Redis failed', { reason: error.message });
     return memoryBump(key, windowSeconds);
   }
 }

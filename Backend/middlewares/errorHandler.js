@@ -1,3 +1,5 @@
+import logger from '../utils/logger.js';
+
 // Centralized error handling middlewares
 // Usage: place notFound after routes that weren't matched, then errorHandler last
 
@@ -32,8 +34,8 @@ export function errorHandler(err, req, res, next) {
   };
 
   // Optionally log the error (truncate to keep logs tidy)
-  console.error('[ERROR]', {
-    path: req.originalUrl,
+  logger.error('Request failed', {
+    path: req.originalUrl.split('?')[0],
     method: req.method,
     status,
     message: safeMessage(err?.message),

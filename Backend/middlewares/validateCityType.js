@@ -1,3 +1,4 @@
+import logger from '../utils/logger.js';
 import HttpStatus from '../utils/statusCodes.js';
 import { jobService } from '../services/admin/jobQueries.js';
 
@@ -27,11 +28,11 @@ export default async function validateCityType(req, res, next) {
     // This ensures we always check current configuration
     const cityType = await jobService.getCityTypeByDriverId(driverId);
     
-    console.log(`[validateCityType] Driver ${driverId} has city type: ${cityType}`);
+    logger.debug('validateCityType: city type found', { driverId, cityType });
 
     // BLOCK if city is WEEKLY
     if (cityType === 'WEEKLY') {
-      console.warn(`[validateCityType] BLOCKED: Driver ${driverId} attempted journey operation on WEEKLY city`);
+      logger.warn('validateCityType: journey blocked, weekly city', { driverId });
       
       return res.status(HttpStatus.FORBIDDEN).json({
         success: false,
@@ -42,7 +43,7 @@ export default async function validateCityType(req, res, next) {
     }
 
     // ALLOW if city is DAILY or any other valid type
-    console.log(`[validateCityType] ALLOWED: Driver ${driverId} can proceed with journey operation`);
+    logger.debug('validateCityType: allowed', { driverId });
     
     // Attach city type to request for use in controller if needed
     req.cityType = cityType;
@@ -50,7 +51,7 @@ export default async function validateCityType(req, res, next) {
     next();
     
   } catch (error) {
-    console.error('[validateCityType] Middleware error:', error.message);
+    logger.error('validateCityType failed', error);
     
     // On error, fail-safe: block the operation
     return res.status(HttpStatus.INTERNAL_SERVER_ERROR).json({
@@ -78,7 +79,7 @@ export async function attachCityType(req, res, next) {
     
     next();
   } catch (error) {
-    console.error('[attachCityType] Error:', error.message);
+    logger.error('attachCityType failed', error);
     // Don't block on error for read operations
     next();
   }

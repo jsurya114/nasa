@@ -11,6 +11,7 @@ import rateLimit from './middlewares/rateLimit.js';
 import { trustProxyHops, assertTrustProxyConfigured } from './middlewares/loginRateLimit.js';
 import { initializeAvailabilityResetCron } from './utils/availabilityCronJob.js';
 import { assertAuthSecrets } from './services/jwtservice.js';
+import logger from './utils/logger.js';
 
 dotenv.config()
 
@@ -46,13 +47,13 @@ initializeAvailabilityResetCron()
 
 app.use('/admin', (req, _, next) => {
   // Log method and path only. Never the Authorization header or the query string.
-  console.log(req.method, req.originalUrl.split('?')[0], '**', Date().toString().slice(16, 25))
+  logger.info(`${req.method} ${req.originalUrl.split('?')[0]}`)
   next()
 }, adminRoutes);
 
 app.use('/driver', (req, _, next) => {
   // Log method and path only. Never the Authorization header or the query string.
-  console.log(req.method, req.originalUrl.split('?')[0], '**', Date().toString().slice(16, 25))
+  logger.info(`${req.method} ${req.originalUrl.split('?')[0]}`)
   next()
 }, driverRoutes)
 
@@ -63,7 +64,7 @@ app.use(errorHandler);
 
 app.listen(PORT, async () => {
   const { rows } = await pool.query('SELECT NOW()')
-  console.log('✅ Database connected')
-  console.log('🕒 DB Time:', rows[0].now)
-  console.log(`Server running on http://localhost:${PORT}`)
+  logger.info('Database connected')
+  logger.info('Database time', { time: rows[0].now })
+  logger.info(`Server running on http://localhost:${PORT}`)
 })
