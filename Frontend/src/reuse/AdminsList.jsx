@@ -16,11 +16,7 @@ function AdminsList({ onEdit }) {
   }, [dispatch, currentPage]);
 
   function handleToggleChange(id) {
-    try {
-      dispatch(toggleAvailAdmin(id));
-    } catch (err) {
-      console.error("Failed to toggle status:", err);
-    }
+    dispatch(toggleAvailAdmin(id));
   }
 
   function handleEdit(admin) {

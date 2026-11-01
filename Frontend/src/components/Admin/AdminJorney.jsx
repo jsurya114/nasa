@@ -327,7 +327,6 @@ useEffect(() => {
   const handleAddJourney = useCallback(
     async (e) => {
       if (isAdding) {
-        console.log("Already adding journey, ignoring duplicate click");
         return;
       }
 

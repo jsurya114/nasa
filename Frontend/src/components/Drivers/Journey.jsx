@@ -170,7 +170,6 @@ const Journey = () => {
       setIsJourneySaved(false);
       
       if (err.error === 'WEEKLY_CITY_RESTRICTION') {
-        console.log('Weekly city restriction detected from backend');
         setShowWeeklyRestriction(true);
         
         // dispatch(fetchDriverCityType());
@@ -186,7 +185,6 @@ const Journey = () => {
         }
       } else {
         toast.error(err.message || t('failedSaveJourney'));
-        console.error(err.message || t('failedSaveJourney'));
       }
     }
   }, [formData, driver, dispatch, isJourneySaved, t]);

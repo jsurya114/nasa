@@ -22,7 +22,6 @@ export const updatePassword = createAsyncThunk(
       return res.data;
     } catch (error) {
       const lang = getCurrentLanguage();
-      console.error("updatePassword error:", error.message);
       return rejectWithValue(error.response?.data || {
         success: false,
         message: error.message || translateError(lang, 'auth.networkError'),

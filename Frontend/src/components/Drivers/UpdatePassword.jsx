@@ -111,12 +111,9 @@ const UpdatePassword = () => {
     });
 
     // Dispatch update password action
-    const result = await dispatch(updatePassword(formData));
+    await dispatch(updatePassword(formData));
 
-    // If failed, errors will be shown via useEffect
-    if (updatePassword.rejected.match(result)) {
-      console.log("Password update failed:", result.payload);
-    }
+    // If it fails, the errors are shown via useEffect
   };
 
   const isLoading = status === "loading";

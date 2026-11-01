@@ -239,12 +239,6 @@ export default function Jobs() {
 
     try {
       if (isEditing) {
-        console.log('Updating city with data:', {
-          id: editingId,
-          job: form.job,
-          city_code: form.city_code,
-          city_type: form.city_type
-        });
         
         const res = await dispatch(updateJob({
           id: editingId,
@@ -258,7 +252,6 @@ export default function Jobs() {
           resetForm();
           fetchJobs({ pageNum: currentPage, q: search, statusFilter: filter });
         } else {
-          console.error('Update failed:', res);
           toast.error("Failed to update city");
         }
       } else {
@@ -275,8 +268,7 @@ export default function Jobs() {
           fetchJobs({ pageNum: 1, q: search, statusFilter: filter });
         }
       }
-    } catch (error) {
-      console.error('Submit error:', error);
+    } catch {
       toast.error("Failed to save city");
     }
   }, [validate, isEditing, editingId, form, dispatch, resetForm, fetchJobs, currentPage, search, filter]);

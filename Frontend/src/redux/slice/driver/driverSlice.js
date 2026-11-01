@@ -14,7 +14,6 @@ export const driverLogin = createAsyncThunk(
     try {
       // AUTO-DETECT TIMEZONE
       const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
-      console.log("🌍 Detected timezone:", timezone);
 
       const res = await axios.post(`/driver/login`, {
         ...credentials,

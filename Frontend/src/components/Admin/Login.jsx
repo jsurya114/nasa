@@ -54,7 +54,6 @@ const Login = () => {
           position: "top-right",
           autoClose: 3000,
         });
-        console.log('login suc, navigate to dashboard')
 
       // ✅ Fixed
 navigate("/admin/dashboard");

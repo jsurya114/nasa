@@ -94,8 +94,7 @@ axios.interceptors.response.use(
             return axios(originalRequest);
           }
         }
-      } catch (refreshError) {
-        console.error("Token refresh failed:", refreshError.message);
+      } catch {
         // If refresh fails, sign out of this area only. The other area keeps its session.
         localStorage.removeItem(`${area}Token`);
         localStorage.removeItem(`${area}RefreshToken`);
