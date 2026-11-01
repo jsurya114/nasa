@@ -23,3 +23,4 @@
 - The production triggers that fill the pay table are not in the repository; the guide says so and asks for a copy to be saved.
 - `Backend/config/dbquery.txt` is an older snapshot of the schema; the guide says so.
 - Jasil owns the Excel and pay sections and updates them when his work changes the code. Findings from reading that code were sent to the owner directly, not written here.
+- **Review fix (Jasil):** the first version said paid rows are never recalculated. That is true for the daily upload's recount and the weekly import, but not for the dashboard "Calculate payment" queries, which have no paid filter (confirmed by the reviewer on a temporary Postgres). The guide now separates the policy from what the code does today and says the fix is a separate pull request in Jasil's zone. No payroll code was changed.

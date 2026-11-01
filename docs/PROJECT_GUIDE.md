@@ -90,7 +90,7 @@ The production database also has triggers on `dashboard_data` that fill and upda
 3. Each row is matched to a delivery by `seq_route_code` and date. The delivery gets the address, unit, zip, tracking number, recipient and status.
 4. Final result per delivery: status `FAILED_ATTEMPT` is **failed_attempt**; `NEW`, `OUT_FOR_DELIVERY`, an empty status, or an untouched placeholder row is **no_scanned**; the rest is decided in step 5.
 5. For the remaining deliveries, group by driver, route, date, address and unit. A group with one delivery, or the lowest sequence in a group, is a **first_stop**. The others are **double_stop**.
-6. Counts on the unpaid journeys of that date are reset to 0 and recomputed from the deliveries: `delivered` is first stops plus double stops. Journeys already marked paid are not recounted.
+6. Counts on the unpaid journeys of that date are reset to 0 and recomputed from the deliveries: `delivered` is first stops plus double stops. Journeys already marked paid are not recounted by the upload itself.
 7. Any error rolls the whole upload back.
 
 ### Weekly upload (GOFO): `POST /admin/doubleStop/weekly-upload`
@@ -109,7 +109,11 @@ The production database also has triggers on `dashboard_data` that fill and upda
   - The journey is then marked **closed**.
 - **Prices** come from the route (`routes`). Drivers must never see company prices (the driver summary does not return them).
 - **Insurance:** the weekly import takes **$1.92 per driver per working day**, applied once to one journey row of that driver-day even if the driver drove several routes (constant `INSURANCE_RATE_PER_DAY` in the weekly queries).
-- **Mark as paid** (`POST /admin/dashboard/payDriver`): by driver name, optional date range, type (daily or weekly) and city. It only marks journeys that are **closed**. Paid rows are never recalculated.
+- **Mark as paid** (`POST /admin/dashboard/payDriver`): by driver name, optional date range, type (daily or weekly) and city. It only marks journeys that are **closed**.
+- **Paid history: the policy and what the code does today.**
+  - *Policy* ([ENGINEERING_STANDARD.md](ENGINEERING_STANDARD.md) section 4): rows already paid must never change when a rate or calculation changes.
+  - *Protected today:* the daily upload only recounts journeys that are not paid, and the weekly import only updates pay records that are neither paid nor closed.
+  - *Not protected today:* the dashboard "Calculate payment" queries (`updatePaymentTable` and `updatePaymentTableForDate` in `dashboardQueries.js`) recalculate every matching pay record and do **not** skip paid ones. A paid record's amount can change while it stays marked as paid. Until that is fixed, do not change route prices or run "Calculate payment" for dates that contain paid journeys without checking the totals first. The fix belongs in the Excel, pay and dashboard zone (Jasil), in its own pull request.
 - Pay, rate, deduction and import changes are high risk: show before and after totals in the pull request ([ENGINEERING_STANDARD.md](ENGINEERING_STANDARD.md) section 6).
 
 ## Where to find things
