@@ -85,6 +85,23 @@
   box-shadow: var(--shadow-float), inset 0 1px 0 rgb(255 255 255 / 0.8);
 }
 
+/* Solid card surface for forms, tables and money: easy to read, gently lifted. */
+@utility card-surface {
+  background-color: #ffffff;
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-card);
+}
+
+/* Sign-in background: deep violet with soft light, and a faint hint of the logo's orange. */
+@utility bg-aurora {
+  background-color: var(--color-brand-950);
+  background-image:
+    radial-gradient(48rem 32rem at 0% -10%, color-mix(in oklab, var(--color-brand-500) 50%, transparent), transparent 65%),
+    radial-gradient(40rem 28rem at 110% 110%, color-mix(in oklab, #f97316 18%, transparent), transparent 60%),
+    linear-gradient(160deg, var(--color-brand-800), var(--color-brand-950));
+}
+
 /* Readable fallbacks: browsers without blur, people who ask for less transparency or more contrast. */
 @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
   .glass-violet { background-color: var(--color-brand-800); }

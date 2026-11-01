@@ -119,11 +119,11 @@ const UpdatePassword = () => {
   const isLoading = status === "loading";
 
   return (
-    <div className="min-h-screen bg-gray-50 text-gray-900 font-poppins">
+    <div className="min-h-dvh bg-canvas text-ink">
       <Header />
 
       <main className="max-w-2xl mx-auto mt-6 mb-24 px-4 sm:px-6 pb-36">
-        <div className="bg-white border border-gray-200 rounded-lg shadow-sm overflow-hidden">
+        <div className="card-surface overflow-hidden">
           {/* Header */}
           <div className="bg-brand px-4 sm:px-6 py-4">
             <div className="flex items-center">
