@@ -151,7 +151,10 @@ const jobController = {
 
   getCities: async (req, res) => {
     try {
-      const cities = await jobService.getTotalCities();
+      // A superadmin sees every enabled city; any other admin only the cities assigned to them.
+      const cities = req.user?.role === 'superadmin'
+        ? await jobService.getTotalCities()
+        : await jobService.getCitiesForAdmin(req.user?.id);
       return res.status(HttpStatus.OK).json({ cities });
     } catch (error) {
       res.status(HttpStatus.INTERNAL_SERVER_ERROR).json({
