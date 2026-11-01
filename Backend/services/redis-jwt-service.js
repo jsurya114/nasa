@@ -1,3 +1,4 @@
+import logger from '../utils/logger.js';
 import jwt from 'jsonwebtoken'
 import client from '../config/redis.js'
 import { verifyRefreshToken } from './jwtservice.js'
@@ -18,10 +19,10 @@ const secondsLeft = (token) => {
 export async function blackListToken(token) {
     try {
         await client.set(token, 'revoked', { EX: secondsLeft(token) })
-        console.log('token added to blacklist')
+        logger.debug('Token added to the revoked list')
         return true
     } catch (error) {
-        console.log('redis Error: could not revoke token:', error.message)
+        logger.warn('Could not revoke token in Redis', { reason: error.message })
         return false
     }
 }
@@ -45,7 +46,7 @@ export  async function isTokenRevoked(jti){
         const reply = await client.get(jti)
         return reply === 'revoked'
     } catch (error) {
-        console.log("redis Error: ",error)
+        logger.warn('Redis error while checking a token', error)
         return false
     }
 }
