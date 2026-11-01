@@ -11,6 +11,15 @@ const VALID_DAYS = [
 ];
 
 export const availabilityService = {
+  // Rows with the driver's stored timezone (none when the driver does not exist).
+  getDriverTimezone: async (driverId) => {
+    const result = await pool.query(
+      'SELECT timezone FROM drivers WHERE id = $1',
+      [driverId]
+    );
+    return result.rows;
+  },
+
   // Driver: get own availability
   getDriverAvailability: async (driverId) => {
     const result = await pool.query(
