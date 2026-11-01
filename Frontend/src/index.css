@@ -1,7 +1,109 @@
 @import "tailwindcss";
 
-/* Brand colours. Same purple as before, named once so every screen can share it. */
+/*
+ * NASA Logistics design tokens (issue #23).
+ * Presentation only: colours, type, radius, depth and motion. No screen logic lives here.
+ */
 @theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+
+  /* Brand violet. --color-brand is the original NASA purple and stays exactly the same. */
   --color-brand: oklch(0.36 0.13 296.97);
   --color-brand-dark: var(--color-purple-900);
+  --color-brand-50: oklch(0.975 0.013 297);
+  --color-brand-100: oklch(0.945 0.03 297);
+  --color-brand-200: oklch(0.885 0.06 297);
+  --color-brand-300: oklch(0.8 0.1 297);
+  --color-brand-400: oklch(0.68 0.15 297);
+  --color-brand-500: oklch(0.56 0.18 297);
+  --color-brand-600: oklch(0.47 0.17 297);
+  --color-brand-700: oklch(0.41 0.15 297);
+  --color-brand-800: oklch(0.36 0.13 296.97);
+  --color-brand-900: oklch(0.29 0.1 297);
+  --color-brand-950: oklch(0.21 0.07 297);
+
+  /* Neutral surfaces with a faint violet tint. */
+  --color-ink: oklch(0.24 0.03 290);
+  --color-ink-muted: oklch(0.5 0.03 290);
+  --color-canvas: oklch(0.977 0.007 297);
+  --color-line: oklch(0.91 0.015 297);
+
+  --radius-card: 1.25rem;
+  --shadow-card: 0 1px 2px rgb(30 16 60 / 0.06), 0 4px 16px -4px rgb(30 16 60 / 0.08);
+  --shadow-float: 0 12px 32px -10px rgb(30 16 60 / 0.38), 0 2px 8px -2px rgb(30 16 60 / 0.18);
+  --ease-out-soft: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@layer base {
+  html {
+    -webkit-tap-highlight-color: transparent;
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+  }
+
+  body {
+    background-color: var(--color-canvas);
+    color: var(--color-ink);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  /* A clear keyboard focus ring everywhere. Mouse and touch clicks do not show it. */
+  :focus-visible {
+    outline: 2px solid var(--color-brand-500);
+    outline-offset: 2px;
+  }
+
+  ::selection {
+    background-color: var(--color-brand-200);
+    color: var(--color-brand-950);
+  }
+}
+
+/*
+ * Liquid glass, used only for navigation and floating controls.
+ * Forms, tables and money stay on solid surfaces so they remain easy to read.
+ */
+@utility glass-violet {
+  background-color: color-mix(in oklab, var(--color-brand-800) 80%, transparent);
+  -webkit-backdrop-filter: saturate(170%) blur(18px);
+  backdrop-filter: saturate(170%) blur(18px);
+  border: 1px solid rgb(255 255 255 / 0.16);
+  box-shadow: var(--shadow-float), inset 0 1px 0 rgb(255 255 255 / 0.18);
+}
+
+@utility glass-light {
+  background-color: rgb(255 255 255 / 0.8);
+  -webkit-backdrop-filter: saturate(180%) blur(20px);
+  backdrop-filter: saturate(180%) blur(20px);
+  border: 1px solid rgb(255 255 255 / 0.7);
+  box-shadow: var(--shadow-float), inset 0 1px 0 rgb(255 255 255 / 0.8);
+}
+
+/* Readable fallbacks: browsers without blur, people who ask for less transparency or more contrast. */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .glass-violet { background-color: var(--color-brand-800); }
+  .glass-light { background-color: #ffffff; }
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .glass-violet { background-color: var(--color-brand-800); backdrop-filter: none; -webkit-backdrop-filter: none; }
+  .glass-light { background-color: #ffffff; backdrop-filter: none; -webkit-backdrop-filter: none; }
+}
+
+@media (prefers-contrast: more) {
+  .glass-violet { background-color: var(--color-brand-900); border-color: #ffffff; }
+  .glass-light { background-color: #ffffff; border-color: var(--color-brand-800); }
+}
+
+/* Respect "reduce motion". Loading spinners keep turning so people can still see work is in progress. */
+@media (prefers-reduced-motion: reduce) {
+  *:not(.animate-spin),
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }
