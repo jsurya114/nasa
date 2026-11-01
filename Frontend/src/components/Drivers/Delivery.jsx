@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import { ShieldCheck } from "lucide-react";
 import Header from "../../reuse/driver/Header";
 import Nav from "../../reuse/driver/Nav";
 import { useDispatch, useSelector } from "react-redux";
@@ -248,8 +249,8 @@ const Deliveries = () => {
 
     // Always show insurance info and deduct from total when there's insurance
     if (summary?.insuranceDeduction > 0) {
-      labels['🛡️ Insurance Days'] = summary?.insuranceDays || 0;
-      labels['🛡️ Insurance ($1.92/day)'] = summary ? `-$${summary.insuranceDeduction.toFixed(2)}` : "$0.00";
+      labels['Insurance Days'] = summary?.insuranceDays || 0;
+      labels['Insurance ($1.92/day)'] = summary ? `-$${summary.insuranceDeduction.toFixed(2)}` : "$0.00";
       labels[t('totalEarning')] = summary ? `$${summary.netPayment.toFixed(2)}` : "$0.00";
     } else {
       labels[t('totalEarning')] = summary ? `$${summary.earning.toFixed(2)}` : "$0.00";
@@ -386,7 +387,10 @@ const Deliveries = () => {
                 <div className={`grid gap-3 ${currentDataType === 'weekly' ? 'grid-cols-2 sm:grid-cols-4' : 'grid-cols-2 sm:grid-cols-3 md:grid-cols-6'}`}>
                   {Object.entries(summaryLabels).map(([label, value]) => (
                     <div key={label}>
-                      <label className="block text-xs text-gray-600 mb-1">{label}</label>
+                      <label className="flex items-center gap-1 text-xs text-gray-600 mb-1">
+                        {label.startsWith('Insurance') && <ShieldCheck className="w-3.5 h-3.5 flex-shrink-0" aria-hidden="true" />}
+                        {label}
+                      </label>
                       <input
                         type="text"
                         value={value}

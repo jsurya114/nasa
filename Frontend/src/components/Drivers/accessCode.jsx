@@ -1,6 +1,7 @@
 // components/driver/DriverAccessCodePage.jsx
 "use client";
 
+import { MapPin, Camera, Lock } from "lucide-react";
 import { useState, useEffect } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import {
@@ -601,10 +602,12 @@ export default function DriverAccessCodePage() {
                       {/* Zip Code & Images Badge */}
                       <div className="flex items-center justify-between mb-3">
                         <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-semibold bg-blue-100 text-blue-800">
-                          📍 {ac.zip_code}
+                          <MapPin className="w-4 h-4 mr-1" aria-hidden="true" />
+                          {ac.zip_code}
                         </span>
                         <span className="inline-flex items-center justify-center px-2 py-1 rounded-full text-xs font-medium bg-indigo-100 text-indigo-800 border border-indigo-200">
-                          📷 {ac.imageCount}
+                          <Camera className="w-3.5 h-3.5 mr-1" aria-hidden="true" />
+                          {ac.imageCount}
                         </span>
                       </div>
 
@@ -620,7 +623,8 @@ export default function DriverAccessCodePage() {
                       <div className="mb-3">
                         <p className="text-xs font-semibold text-gray-500 uppercase mb-1">{t('accessCode')}</p>
                         <span className="inline-flex items-center px-3 py-1.5 rounded-lg text-sm font-medium bg-indigo-50 text-indigo-800 border border-indigo-200 break-all">
-                          🔒 {translateAccessCode(ac.access_code, currentLanguage)}
+                          <Lock className="w-4 h-4 mr-1.5 flex-shrink-0" aria-hidden="true" />
+                          {translateAccessCode(ac.access_code, currentLanguage)}
                         </span>
                       </div>
 

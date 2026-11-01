@@ -1,4 +1,5 @@
 import React from 'react';
+import { CheckCircle2 } from "lucide-react";
 import { useSelector } from 'react-redux';
 import Header from '../../reuse/driver/Header';
 import Nav from '../../reuse/driver/Nav';
@@ -156,7 +157,7 @@ const DriverViewAgreement = () => {
           {/* Signature Badge */}
           <div className="p-8 bg-white flex flex-col items-center justify-center space-y-4">
             <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center shadow-inner">
-              <span className="text-3xl">✅</span>
+              <CheckCircle2 className="w-9 h-9 text-green-600" aria-hidden="true" />
             </div>
             <div className="text-center">
               <h2 className="text-xl font-bold text-gray-900">Agreement Digitally Signed</h2>

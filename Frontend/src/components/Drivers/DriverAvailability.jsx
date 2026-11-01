@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Globe, RefreshCw, Clock } from "lucide-react";
 import { useDispatch, useSelector } from "react-redux";
 import {
   getDriverAvailability,
@@ -248,8 +249,9 @@ export default function DriverAvailability() {
                 <div className="text-xs text-gray-500">
 
                 </div>
-                <div className="text-xs text-blue-600 font-medium">
-                  🌍 {t('timezone')}: {userTimezone}
+                <div className="text-xs text-blue-600 font-medium flex items-center gap-1">
+                  <Globe className="w-3.5 h-3.5" aria-hidden="true" />
+                  {t('timezone')}: {userTimezone}
                 </div>
               </div>
             </div>
@@ -262,7 +264,10 @@ export default function DriverAvailability() {
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
               </svg>
               <div className="flex-1">
-                <h3 className="text-sm sm:text-base font-bold text-blue-900">🔄 {t('autoWeeklyReset')}</h3>
+                <h3 className="text-sm sm:text-base font-bold text-blue-900 flex items-center gap-2">
+                  <RefreshCw className="w-4 h-4" aria-hidden="true" />
+                  {t('autoWeeklyReset')}
+                </h3>
                 <p className="text-sm text-blue-700 mt-1 font-semibold">
                   {t('autoResetDesc')} ({userTimezone}).
                 </p>
@@ -492,10 +497,10 @@ export default function DriverAvailability() {
                       <li>• {t('infoColors')}</li>
                       <li>• {t('infoScheduling')}</li>
                       <li>• <strong>{t('infoTodayLocked')}</strong></li>
-                      <li>• <strong>⏰ {t('infoTomorrowCutoff')}</strong></li>
+                      <li>• <strong><Clock className="inline w-4 h-4 -mt-0.5 mr-1" aria-hidden="true" />{t('infoTomorrowCutoff')}</strong></li>
                       <li>• <strong>{t('infoPastLocked')}</strong></li>
                       <li>• <strong>{t('infoFutureUpdate')}</strong></li>
-                      <li>• <strong>🔄 {t('infoAutoReset')}</strong></li>
+                      <li>• <strong><RefreshCw className="inline w-4 h-4 -mt-0.5 mr-1" aria-hidden="true" />{t('infoAutoReset')}</strong></li>
                       <li>• <strong>{t('infoWeekRun')}</strong></li>
                     </ul>
                   </div>
