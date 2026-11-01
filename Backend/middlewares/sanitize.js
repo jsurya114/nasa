@@ -47,9 +47,31 @@ function sanitizeString(str) {
   return s.trim();
 }
 
-// Passwords and tokens are never shown as HTML, only hashed or compared, and people may already use
-// "<" in a password. They keep the surrounding-space trimming they always had and nothing else.
-const SECRET_KEYS = new Set(["password", "oldPassword", "newPassword", "confirmPassword", "refreshToken", "previousRefreshToken"]);
+// PASSWORDS KEEP THEIR OLD CLEANING. Before this file changed, every password was cleaned by the rules
+// below before it was hashed or compared, so some stored hashes stand for the cleaned text (for example
+// a password that contained "onclick=x" was stored without it). Cleaning passwords differently now
+// would lock those people out. These four fields therefore keep exactly the old rules, byte for byte,
+// until passwords are migrated on purpose (verify the old way, then re-hash). Do not "improve" this
+// function without that migration. Only the first LEGACY_CLEAN_LIMIT characters are cleaned, because
+// the old rules can be made very slow by a huge input and bcrypt only reads the first 72 bytes.
+const LEGACY_CLEAN_LIMIT = 2000;
+const LEGACY_CREDENTIAL_KEYS = new Set(["password", "oldPassword", "newPassword", "confirmPassword"]);
+// Tokens are never shown as HTML and cannot contain the old rules' patterns; they are only trimmed.
+const TOKEN_KEYS = new Set(["refreshToken", "previousRefreshToken"]);
+
+function legacyCredentialClean(str) {
+  const whole = String(str);
+  let s = whole.length > LEGACY_CLEAN_LIMIT ? whole.slice(0, LEGACY_CLEAN_LIMIT) : whole;
+  const rest = whole.length > LEGACY_CLEAN_LIMIT ? whole.slice(LEGACY_CLEAN_LIMIT) : "";
+  s = s.replace(/<\/(script|style)>/gi, "").replace(/<(script|style)[^>]*>[\s\S]*?<\/(script|style)>/gi, "");
+  s = s.replace(/on\w+\s*=\s*"[^"]*"/gi, "");
+  s = s.replace(/on\w+\s*=\s*'[^']*'/gi, "");
+  s = s.replace(/on\w+\s*=\s*[^\s>]+/gi, "");
+  s = s.replace(/javascript:\s*/gi, "");
+  s = s.replace(/<!--([\s\S]*?)-->/g, "");
+  s = s.replace(/<\/(iframe|object|embed)>/gi, "").replace(/<(iframe|object|embed)[^>]*>[\s\S]*?<\/(iframe|object|embed)>/gi, "");
+  return (s + rest).trim();
+}
 
 function sanitizeValue(value, depth = 0) {
   if (depth > 50) return undefined; // prevent cyclic/too deep structures
@@ -62,7 +84,10 @@ function sanitizeValue(value, depth = 0) {
     for (const [k, v] of Object.entries(value)) {
       if (DANGEROUS_KEYS.has(k)) continue;
       const nk = sanitizeString(k);
-      const nv = SECRET_KEYS.has(k) && typeof v === "string" ? v.trim() : sanitizeValue(v, depth + 1);
+      let nv;
+      if (typeof v === "string" && LEGACY_CREDENTIAL_KEYS.has(k)) nv = legacyCredentialClean(v);
+      else if (typeof v === "string" && TOKEN_KEYS.has(k)) nv = v.trim();
+      else nv = sanitizeValue(v, depth + 1);
       if (nv !== undefined) out[nk] = nv;
     }
     return out;
