@@ -6,7 +6,8 @@ Target develop. Only develop opens pull requests into main.
 AI assistants never open a pull request into main unless a team member
 tells them to in the current conversation (AGENTS.md).
 
-Merge with "Create a merge commit". Delete the feature branch after merging.
+Merge with "Squash and merge" (the title above becomes the commit message).
+Delete the feature branch after merging.
 This repository is public: no secrets, real data or exploit steps here.
 -->
 
