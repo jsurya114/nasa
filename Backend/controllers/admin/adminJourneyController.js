@@ -4,6 +4,18 @@ import { addRangeOfSqeunceToDeliveries,addRangeOfSequenceToDeliveriesForAdmin, c
 import HttpStatus from "../../utils/statusCodes.js";
 import pool from "../../config/db.js";
 import { getAllottedDrivers } from "../../services/admin/dashboardService.js";
+import { canAccessDriver, canAccessRoute, getJourneyDriverId } from "../../services/admin/journeyAccess.js";
+
+// The journey id from the URL, as a positive whole number, or null. The same number is used for
+// the city check and for the change itself, so the two can never look at different journeys.
+const parseJourneyId = (value) => {
+  if (!/^\d{1,9}$/.test(String(value))) return null;
+  const id = Number(value);
+  return id > 0 ? id : null;
+};
+const INVALID_JOURNEY_ID = { success: false, message: "Invalid journey id" };
+
+const CITY_FORBIDDEN = { success: false, message: "You can only manage journeys in your assigned cities" };
 
 const adminJourneyController = {
   fetchAllJourneys: async (req, res) => {
@@ -32,6 +44,11 @@ const adminJourneyController = {
           success: false,
           message: "Driver does not exist."
         });
+      }
+
+      // Both the driver and the route must be in one of the admin's cities.
+      if (!(await canAccessDriver(req.user, driver_id)) || !(await canAccessRoute(req.user, route_id))) {
+        return res.status(HttpStatus.FORBIDDEN).json(CITY_FORBIDDEN);
       }
 
       // 2. STRICT ROUTE OVERLAP CHECK
@@ -71,7 +88,10 @@ const adminJourneyController = {
 
   updateJourney: async (req, res) => {
     try {
-      const journey_id = req.params.journey_id;
+      const journey_id = parseJourneyId(req.params.journey_id);
+      if (journey_id === null) {
+        return res.status(HttpStatus.BAD_REQUEST).json(INVALID_JOURNEY_ID);
+      }
       const { start_seq, end_seq, route_id, driver_id } = req.body;
 
       // ... [Keep your existing input validations] ...
@@ -97,6 +117,16 @@ const adminJourneyController = {
         });
       } 
       const journey_date = currentJourneyResult.rows[0].journey_date;
+
+      // The journey must be in one of the admin's cities now, and so must the driver and route it is changed to.
+      const currentDriverId = await getJourneyDriverId(journey_id);
+      if (
+        !(await canAccessDriver(req.user, currentDriverId)) ||
+        !(await canAccessDriver(req.user, driver_id)) ||
+        !(await canAccessRoute(req.user, route_id))
+      ) {
+        return res.status(HttpStatus.FORBIDDEN).json(CITY_FORBIDDEN);
+      }
 
       // 3. STRICT ROUTE OVERLAP CHECK (With Excluded ID)
       // This ensures 10-55 is rejected if 51-100 exists
@@ -145,7 +175,18 @@ const adminJourneyController = {
   
   deleteJourney: async (req, res) => {
     try {
-      const { journey_id } = req.params;
+      const journey_id = parseJourneyId(req.params.journey_id);
+      if (journey_id === null) {
+        return res.status(HttpStatus.BAD_REQUEST).json(INVALID_JOURNEY_ID);
+      }
+
+      const ownerDriverId = await getJourneyDriverId(journey_id);
+      if (ownerDriverId === null) {
+        return res.status(404).json({ success: false, message: "Journey not found" });
+      }
+      if (!(await canAccessDriver(req.user, ownerDriverId))) {
+        return res.status(HttpStatus.FORBIDDEN).json(CITY_FORBIDDEN);
+      }
 
       const deleted = await AdminJourneyQuery.deleteJourneyById(journey_id);
 
