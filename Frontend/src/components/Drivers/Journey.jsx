@@ -204,22 +204,22 @@ const Journey = () => {
 
     return journeys.map((row) => (
       <tr key={row.id || row.journey_date} className="hover:bg-gray-50">
-        <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+        <td className="px-3 sm:px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
           {driver?.name}
         </td>
-        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+        <td className="px-3 sm:px-6 py-4 whitespace-nowrap text-sm text-gray-500">
           {row.journey_date}
         </td>
-        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+        <td className="px-3 sm:px-6 py-4 whitespace-nowrap text-sm text-gray-500">
           {row.route_name}
         </td>
-        <td className="px-6 py-4 whitespace-nowrap text-center text-sm text-gray-500">
+        <td className="px-3 sm:px-6 py-4 whitespace-nowrap text-center text-sm text-gray-500">
           {row.start_seq}
         </td>
-        <td className="px-6 py-4 whitespace-nowrap text-center text-sm text-gray-500">
+        <td className="px-3 sm:px-6 py-4 whitespace-nowrap text-center text-sm text-gray-500">
           {row.end_seq}
         </td>
-        <td className="px-6 py-4 whitespace-nowrap text-center text-sm font-medium text-gray-900">
+        <td className="px-3 sm:px-6 py-4 whitespace-nowrap text-center text-sm font-medium text-gray-900">
           {calculatePackages(row)}
         </td>
       </tr>
@@ -231,7 +231,7 @@ const Journey = () => {
     return (
       <div className="min-h-screen bg-gray-50 text-gray-900 font-poppins flex items-center justify-center">
         <div className="text-center">
-          <div className="w-16 h-16 border-4 border-blue-200 border-t-blue-600 rounded-full animate-spin mx-auto mb-4" />
+          <div className="w-16 h-16 border-4 border-purple-200 border-t-brand rounded-full animate-spin mx-auto mb-4" />
           <p className="text-gray-600">{t('loading')}</p>
         </div>
       </div>
@@ -243,7 +243,7 @@ const Journey = () => {
     return (
       <div className="min-h-screen bg-gray-50 text-gray-900 font-poppins">
         <Header />
-        <main className="max-w-5xl mx-auto mt-6 mb-24 px-6 pb-36">
+        <main className="max-w-5xl mx-auto mt-4 sm:mt-6 mb-24 px-4 sm:px-6 pb-36">
           <div className="bg-blue-50 border-2 border-blue-300 rounded-lg p-8 text-center shadow-md">
             <div className="mb-4">
               <svg className="w-20 h-20 mx-auto text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -276,39 +276,41 @@ const Journey = () => {
     <div className="min-h-screen bg-gray-50 text-gray-900 font-poppins">
       <Header />
 
-      <main className="max-w-5xl mx-auto mt-6 mb-24 px-6 pb-36">
+      <main className="max-w-5xl mx-auto mt-4 sm:mt-6 mb-24 px-4 sm:px-6 pb-36">
         <div className="bg-white border border-gray-200 rounded-lg shadow-sm mb-8">
-          <div className="px-6 py-4 border-b border-gray-200">
+          <div className="px-4 sm:px-6 py-4 border-b border-gray-200">
             <h1 className="text-lg font-semibold text-gray-900">
               {t('startYourJourney')}
             </h1>
           </div>
 
-          <div className="p-6 space-y-4">
+          <div className="p-4 sm:p-6 space-y-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
+              <label htmlFor="journey_date" className="block text-sm font-medium text-gray-700 mb-2">
                 {t('date')}
               </label>
               <input
                 type="date"
+                id="journey_date"
                 name="journey_date"
                 value={formData.journey_date}
                 readOnly
-                className="w-full px-3 py-2 border border-gray-300 rounded-md bg-gray-100 text-gray-500 cursor-not-allowed focus:outline-none"
+                className="w-full px-3 py-3 text-base border border-gray-300 rounded-md bg-gray-100 text-gray-500 cursor-not-allowed focus:outline-none"
               />
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
+              <label htmlFor="start_sequence" className="block text-sm font-medium text-gray-700 mb-2">
                 {t('startSequence')}
               </label>
               <input
                 type="number"
+                id="start_sequence"
                 name="start_sequence"
                 value={formData.start_sequence}
                 onChange={handleChange}
                 disabled={isJourneySaved}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-100 disabled:cursor-not-allowed"
+                className="w-full px-3 py-3 text-base border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-purple-600 focus:border-purple-600 disabled:bg-gray-100 disabled:cursor-not-allowed"
               />
               {errors.start_seq && (
                 <p className="text-red-500 text-sm mt-1">{errors.start_seq}</p>
@@ -316,16 +318,17 @@ const Journey = () => {
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
+              <label htmlFor="end_sequence" className="block text-sm font-medium text-gray-700 mb-2">
                 {t('endSequence')}
               </label>
               <input
                 type="number"
+                id="end_sequence"
                 name="end_sequence"
                 value={formData.end_sequence}
                 onChange={handleChange}
                 disabled={isJourneySaved}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-100 disabled:cursor-not-allowed"
+                className="w-full px-3 py-3 text-base border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-purple-600 focus:border-purple-600 disabled:bg-gray-100 disabled:cursor-not-allowed"
               />
               {errors.end_seq && (
                 <p className="text-red-500 text-sm mt-1">{errors.end_seq}</p>
@@ -333,15 +336,16 @@ const Journey = () => {
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
+              <label htmlFor="route" className="block text-sm font-medium text-gray-700 mb-2">
                 {t('route')}
               </label>
               <select
+                id="route"
                 name="route"
                 value={formData.route}
                 onChange={handleChange}
                 disabled={isJourneySaved || isLoadingRoutes}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-100 disabled:cursor-not-allowed"
+                className="w-full px-3 py-3 text-base border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-purple-600 focus:border-purple-600 disabled:bg-gray-100 disabled:cursor-not-allowed"
               >
                 <option value="">
                   {isLoadingRoutes ? t('loadingRoutes') : t('selectRoute')}
@@ -360,10 +364,10 @@ const Journey = () => {
             <button
               onClick={handleSubmit}
               disabled={isJourneySaved || isLoadingJourney}
-              className={`w-full py-2 px-4 rounded-md font-medium focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-colors ${
+              className={`w-full py-3 px-4 rounded-md font-medium focus:outline-none focus:ring-2 focus:ring-purple-600 focus:ring-offset-2 transition-colors ${
                 isJourneySaved || isLoadingJourney
                   ? "bg-gray-400 text-gray-700 cursor-not-allowed"
-                  : "bg-blue-600 text-white hover:bg-blue-700"
+                  : "bg-brand text-white hover:bg-brand-dark"
               }`}
             >
               {isLoadingJourney 
@@ -376,7 +380,7 @@ const Journey = () => {
         </div>
 
         <div className="bg-white border border-gray-200 rounded-lg shadow-sm">
-          <div className="px-6 py-4 border-b border-gray-200">
+          <div className="px-4 sm:px-6 py-4 border-b border-gray-200">
             <h2 className="text-lg font-semibold text-gray-900">{t('records')}</h2>
           </div>
 
@@ -384,22 +388,22 @@ const Journey = () => {
             <table className="w-full">
               <thead className="bg-gray-50">
                 <tr>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  <th className="px-3 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     {t('driver')}
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  <th className="px-3 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     {t('date')}
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  <th className="px-3 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     {t('route')}
                   </th>
-                  <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  <th className="px-3 sm:px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
                     {t('startSeq')}
                   </th>
-                  <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  <th className="px-3 sm:px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
                     {t('endSeq')}
                   </th>
-                  <th className="px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  <th className="px-3 sm:px-6 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
                     {t('packages')}
                   </th>
                 </tr>
