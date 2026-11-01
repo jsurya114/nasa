@@ -3,7 +3,7 @@ import logo from "../assets/logo.png";
 import { adminLogout } from "../redux/slice/admin/adminSlice";
 import { useDispatch, useSelector } from "react-redux";
 import { useNavigate } from "react-router-dom";
-import { Menu, X } from "lucide-react";
+import { Menu, X, User } from "lucide-react";
 
 function Header() {
   const dispatch = useDispatch();
@@ -41,7 +41,7 @@ function Header() {
       <div className="hidden md:flex items-center gap-3 text-sm md:text-base">
         <div className="flex flex-col items-center">
           <div className="w-7 h-7 md:w-8 md:h-8 rounded-full bg-yellow-400 text-black font-bold grid place-items-center">
-            👤
+            <User className="w-4 h-4 md:w-5 md:h-5" aria-hidden="true" />
           </div>
           <div className="font-semibold truncate max-w-[120px] md:max-w-[150px]">
             {admin?.name}
@@ -77,7 +77,7 @@ function Header() {
 
       <div className="flex flex-col items-center">
         <div className="w-8 h-8 rounded-full bg-yellow-400 text-black font-bold grid place-items-center">
-          👤
+          <User className="w-5 h-5" aria-hidden="true" />
         </div>
         <div className="font-semibold text-center">{admin?.name}</div>
       </div>

@@ -1,17 +1,18 @@
 import React from "react";
 import { NavLink } from "react-router-dom";
+import { LayoutDashboard, KeyRound, Truck, CalendarDays, FileText, Lock } from "lucide-react";
 import useTranslation from "../../hooks/useTranslation.js";
 
 function Nav() {
   const { t } = useTranslation();
 
   const links = [
-    { to: "/driver/dashboard", icon: "📊", label: t('dashboard') },
-    { to: "/driver/access-codes", icon: "🔑", label: t('Access codes') },
-    { to: "/driver/delivery", icon: "🚛", label: t('deliveries') },
-    { to: "/driver/availability", icon: "📅", label: t('Availability') },
-    { to: "/driver/view-agreement", icon: "📝", label: "Agreement" },
-    { to: "/driver/update-password", icon: "🔒", label: t('password') },
+    { to: "/driver/dashboard", Icon: LayoutDashboard, label: t('dashboard') },
+    { to: "/driver/access-codes", Icon: KeyRound, label: t('Access codes') },
+    { to: "/driver/delivery", Icon: Truck, label: t('deliveries') },
+    { to: "/driver/availability", Icon: CalendarDays, label: t('Availability') },
+    { to: "/driver/view-agreement", Icon: FileText, label: "Agreement" },
+    { to: "/driver/update-password", Icon: Lock, label: t('password') },
   ];
 
   return (
@@ -44,9 +45,7 @@ function Nav() {
                 }
               >
                 {/* Icon */}
-                <span className="text-xl sm:text-2xl leading-none" aria-hidden="true">
-                  {item.icon}
-                </span>
+                <item.Icon className="w-6 h-6 sm:w-7 sm:h-7" strokeWidth={2} aria-hidden="true" />
 
                 {/* Label */}
                 <small className="mt-1 text-[10px] sm:text-[13px] font-semibold leading-tight text-center whitespace-nowrap">

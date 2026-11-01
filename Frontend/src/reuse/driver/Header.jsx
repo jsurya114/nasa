@@ -4,7 +4,7 @@ import { accessDriver, driverLogout } from "../../redux/slice/driver/driverSlice
 import { saveDriverLanguage, loadDriverLanguage } from "../../redux/slice/languageSlice.js";
 import { useDispatch, useSelector } from "react-redux";
 import { useNavigate } from "react-router-dom";
-import { Menu, X, Globe } from "lucide-react";
+import { Menu, X, Globe, User } from "lucide-react";
 import useTranslation from "../../hooks/useTranslation.js";
 import { toast } from "react-toastify";
 import { getTranslation } from "../../hooks/translation.js";
@@ -112,7 +112,7 @@ function Header() {
         {/* User Profile */}
         <div className="flex flex-col items-center">
           <div className="w-7 h-7 md:w-8 md:h-8 rounded-full bg-yellow-400 text-black font-bold grid place-items-center">
-            👤
+            <User className="w-4 h-4 md:w-5 md:h-5" aria-hidden="true" />
           </div>
           <div className="font-semibold truncate max-w-[120px] md:max-w-[150px]">
             {driver?.name}
@@ -180,7 +180,7 @@ function Header() {
               {/* User Info */}
               <li className="px-4 py-2 flex items-center gap-2 border-b border-gray-200">
                 <span className="w-6 h-6 rounded-full bg-yellow-400 text-black text-xs grid place-items-center">
-                  👤
+                  <User className="w-4 h-4" aria-hidden="true" />
                 </span>
                 <span className="truncate">{driver?.name}</span>
               </li>
