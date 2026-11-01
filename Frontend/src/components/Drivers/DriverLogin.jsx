@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import { Globe } from "lucide-react";
 import logo from "../../assets/logo.png";
 import { useDispatch, useSelector } from "react-redux";
 import { driverLogin } from "../../redux/slice/driver/driverSlice.js";
@@ -192,7 +193,8 @@ const DriverLogin = () => {
           {detectedTimezone && (
             <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
               <p className="text-xs text-gray-600">
-                🌍 Your timezone: <span className="font-semibold text-blue-800">
+                <Globe className="inline w-4 h-4 mr-1 -mt-0.5" aria-hidden="true" />
+                Your timezone: <span className="font-semibold text-blue-800">
                   {detectedTimezone}
                 </span>
               </p>

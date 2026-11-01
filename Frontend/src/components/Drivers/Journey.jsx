@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import { TriangleAlert } from "lucide-react";
 import Header from "../../reuse/driver/Header";
 import Nav from "../../reuse/driver/Nav";
 import { useSelector, useDispatch } from "react-redux";
@@ -259,8 +260,9 @@ const Journey = () => {
             </p>
             {showWeeklyRestriction && (
               <div className="mt-4 p-3 bg-yellow-50 border border-yellow-200 rounded-md">
-                <p className="text-sm text-yellow-800">
-                  ⚠️ {t('recentlyUpdated')}
+                <p className="text-sm text-yellow-800 flex items-start gap-2">
+                  <TriangleAlert className="w-4 h-4 mt-0.5 flex-shrink-0" aria-hidden="true" />
+                  <span>{t('recentlyUpdated')}</span>
                 </p>
               </div>
             )}
