@@ -1,7 +1,7 @@
 import HttpStatus from '../../utils/statusCodes.js';
 import { loginService } from "../../services/driver/loginQueries.js";
 import { generateToken, verifyToken, generateRefreshToken, verifyRefreshToken } from '../../services/jwtservice.js';
-import { blackListToken } from '../../services/redis-jwt-service.js';
+import { blackListToken, revokeRefreshToken, isTokenRevoked } from '../../services/redis-jwt-service.js';
 import pool from '../../config/db.js';
 import { translateError } from "../../utils/backendI18n.js";
 import { DRIVER_ROLE } from '../../middlewares/requireRole.js';
@@ -152,7 +152,15 @@ const driverController = {
       : null;
 
     if (token) {
-      blackListToken(token);
+      await blackListToken(token);
+    }
+
+    // Also revoke the refresh token, so it cannot be used to sign in again.
+    // Only the caller's own refresh token is revoked. Old tokens have no role.
+    // An automatic refresh during logout replaces the refresh token, so the app also sends the one it replaced.
+    const ownsRefreshToken = (decoded) => decoded.id === req.driver?.id && (decoded.role === undefined || decoded.role === DRIVER_ROLE);
+    for (const refreshToken of [req.body?.refreshToken, req.body?.previousRefreshToken]) {
+      await revokeRefreshToken(refreshToken, ownsRefreshToken);
     }
 
     return res.status(HttpStatus.OK).json({
@@ -173,6 +181,13 @@ const driverController = {
       // An admin refresh token must never mint a driver token.
       // Old driver tokens have no role and are still accepted (issue #14 removes this).
       if (decoded.role !== undefined && decoded.role !== DRIVER_ROLE) {
+        return res.status(HttpStatus.UNAUTHORIZED).json({
+          message: translateError(lang, 'common.unauthorized')
+        });
+      }
+
+      // A refresh token revoked at logout can no longer be used.
+      if (await isTokenRevoked(refreshToken)) {
         return res.status(HttpStatus.UNAUTHORIZED).json({
           message: translateError(lang, 'common.unauthorized')
         });

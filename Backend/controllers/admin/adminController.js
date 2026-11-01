@@ -1,7 +1,7 @@
 import { dbService } from '../../services/admin/dbQueries.js'
 import { generateToken, verifyToken, generateRefreshToken, verifyRefreshToken } from '../../services/jwtservice.js'
 import HttpStatus from '../../utils/statusCodes.js'
-import { blackListToken } from '../../services/redis-jwt-service.js'
+import { blackListToken, revokeRefreshToken, isTokenRevoked } from '../../services/redis-jwt-service.js'
 import { ADMIN_ROLES } from '../../middlewares/requireRole.js'
 
 const adminController = {
@@ -74,7 +74,15 @@ const adminController = {
       : null;
 
     if (token) {
-      blackListToken(token)
+      await blackListToken(token)
+    }
+
+    // Also revoke the refresh token, so it cannot be used to sign in again.
+    // Only the caller's own refresh token is revoked.
+    // An automatic refresh during logout replaces the refresh token, so the app also sends the one it replaced.
+    const ownsRefreshToken = (decoded) => decoded.id === req.user?.id && ADMIN_ROLES.includes(decoded.role)
+    for (const refreshToken of [req.body?.refreshToken, req.body?.previousRefreshToken]) {
+      await revokeRefreshToken(refreshToken, ownsRefreshToken)
     }
 
     return res.status(HttpStatus.OK).json({ message: "Logged out successfully" });
@@ -129,6 +137,11 @@ const adminController = {
 
       // A driver refresh token must never mint an admin token.
       if (!ADMIN_ROLES.includes(decoded.role)) {
+        return res.status(HttpStatus.UNAUTHORIZED).json({ message: "UNAUTHORIZED" });
+      }
+
+      // A refresh token revoked at logout can no longer be used.
+      if (await isTokenRevoked(refreshToken)) {
         return res.status(HttpStatus.UNAUTHORIZED).json({ message: "UNAUTHORIZED" });
       }
 

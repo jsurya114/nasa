@@ -53,7 +53,9 @@ export const adminLogout = createAsyncThunk(
     "admin/logout",
     async (_, { rejectWithValue }) => {
         try {
-            const res = await axios.post(`/admin/logout`);
+            // Send the refresh token too, so the server can revoke it.
+            const refreshToken = localStorage.getItem('adminRefreshToken');
+            const res = await axios.post(`/admin/logout`, { refreshToken });
             // Cleanup tokens after successful logout request
             localStorage.removeItem('adminToken');
             localStorage.removeItem('adminRefreshToken');
