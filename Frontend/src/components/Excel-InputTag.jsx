@@ -48,7 +48,7 @@ const FileUpload = forwardRef(function FileUpload({ onFileSelect }, ref) {
           name="file"
           accept=".xls,.xlsx,.csv"
           onChange={handleChange}
-          className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-purple-600 ${
+          className={`file:mr-3 file:rounded-lg file:border-0 file:bg-brand-50 file:px-3 file:py-2 file:text-sm file:font-semibold file:text-brand-800 hover:file:bg-brand-100 file:cursor-pointer w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-purple-600 ${
             error ? "border-red-500" : "border-gray-300"
           }`}
         />

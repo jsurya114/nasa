@@ -5,9 +5,8 @@ import Nav from "../../reuse/driver/Nav";
 import { useDispatch, useSelector } from "react-redux";
 import { fetchDeliverySummary, resetDeliveries, setDeliveriesFromCache } from "../../redux/slice/driver/deliverySlice.js";
 import { accessDriver } from "../../redux/slice/driver/driverSlice.js";
-import { ToastContainer, toast } from "react-toastify";
+import { toast } from "../../utils/toast";
 import useTranslation from "../../hooks/useTranslation.js";
-import "react-toastify/dist/ReactToastify.css";
 
 const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes cache
 
@@ -260,12 +259,12 @@ const Deliveries = () => {
   }, [summary, currentDataType, selectedDataType, t]);
 
   return (
-    <div className="min-h-screen bg-gray-50 text-gray-900 font-poppins">
+    <div className="min-h-dvh bg-canvas text-ink">
       <Header />
 
       <main className="max-w-6xl mx-auto mt-4 sm:mt-6 mb-24 px-4 sm:px-6 pb-36">
-        <div className="bg-white border border-gray-200 rounded-lg shadow-sm mb-8">
-          <div className="p-4 sm:p-6 border-b border-gray-200">
+        <div className="card-surface mb-8">
+          <div className="p-4 sm:p-6 border-b border-line">
             <div className="flex items-center justify-between">
               <div>
                 <h2 className="text-xl font-semibold text-gray-800">{t('deliverySummary')}</h2>
@@ -283,7 +282,7 @@ const Deliveries = () => {
                 value={filters.from_date}
                 onChange={handleChange}
                 max={filters.to_date || undefined}
-                className="w-full px-3 py-3 text-base border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-purple-600 focus:border-purple-600"
+                className="bg-white text-ink placeholder:text-ink-muted/70 transition-shadow min-h-11 w-full px-3 py-3 text-base border border-line rounded-xl focus:outline-none focus:ring-4 focus:ring-brand-500/20 focus:border-brand-500"
               />
             </div>
 
@@ -295,7 +294,7 @@ const Deliveries = () => {
                 value={filters.to_date}
                 onChange={handleChange}
                 min={filters.from_date || undefined}
-                className="w-full px-3 py-3 text-base border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-purple-600 focus:border-purple-600"
+                className="bg-white text-ink placeholder:text-ink-muted/70 transition-shadow min-h-11 w-full px-3 py-3 text-base border border-line rounded-xl focus:outline-none focus:ring-4 focus:ring-brand-500/20 focus:border-brand-500"
               />
             </div>
 
@@ -382,24 +381,19 @@ const Deliveries = () => {
           {/* Summary */}
           {summary && (
             <div className="px-4 sm:px-6 pb-6">
-              <div className="bg-gradient-to-r from-blue-50 to-indigo-50 p-4 rounded-lg mb-4">
-                <h3 className="text-sm font-semibold text-gray-700 mb-3">{t('summaryStatistics')}</h3>
-                <div className={`grid gap-3 ${currentDataType === 'weekly' ? 'grid-cols-2 sm:grid-cols-4' : 'grid-cols-2 sm:grid-cols-3 md:grid-cols-6'}`}>
+              <div className="rounded-2xl bg-brand-50/70 p-4 mb-4">
+                <h3 className="text-sm font-semibold text-ink mb-3">{t('summaryStatistics')}</h3>
+                <dl className={`grid gap-3 ${currentDataType === 'weekly' ? 'grid-cols-2 sm:grid-cols-4' : 'grid-cols-2 sm:grid-cols-3 md:grid-cols-6'}`}>
                   {Object.entries(summaryLabels).map(([label, value]) => (
-                    <div key={label}>
-                      <label className="flex items-center gap-1 text-xs text-gray-600 mb-1">
+                    <div key={label} className="rounded-2xl border border-line bg-white px-3 py-3">
+                      <dt className="flex items-center gap-1 text-xs font-medium text-ink-muted">
                         {label.startsWith('Insurance') && <ShieldCheck className="w-3.5 h-3.5 flex-shrink-0" aria-hidden="true" />}
                         {label}
-                      </label>
-                      <input
-                        type="text"
-                        value={value}
-                        readOnly
-                        className="w-full px-3 py-2 text-center text-lg font-bold bg-white border rounded-md cursor-not-allowed"
-                      />
+                      </dt>
+                      <dd className="mt-1 text-lg font-semibold tabular-nums text-ink">{value}</dd>
                     </div>
                   ))}
-                </div>
+                </dl>
               </div>
             </div>
           )}
@@ -425,11 +419,68 @@ const Deliveries = () => {
         </div>
 
         {/* Table */}
+        {/* Phones: one card per day, with the route prices shown (the table shows them on hover). */}
         {filteredDeliveries && filteredDeliveries.length > 0 && (
-          <div className="bg-white border rounded-lg shadow-sm overflow-hidden">
+          <ul className="space-y-3 md:hidden">
+            {filteredDeliveries.map((d, i) => {
+              const counts = currentDataType === 'weekly'
+                ? [[t('packages'), d.packages], [t('firstStop'), d.first_stop], [t('doubleStop'), d.double_stop], [t('delivered'), d.delivered]]
+                : [[t('startSeq'), d.start_seq], [t('endSeq'), d.end_seq], [t('packages'), d.packages], [t('notScanned'), d.no_scanned], [t('failed'), d.failed_attempt], [t('doubleStop'), d.double_stop], [t('delivered'), d.delivered]];
+              return (
+                <li key={d.id || i} className="card-surface p-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="text-sm text-ink-muted">{formatDate(d.journey_date)}</p>
+                      <p className="truncate text-base font-semibold text-ink">
+                        {d.route_name}
+                        {d.route_code && (
+                          <span className="ml-2 rounded-md bg-brand-50 px-1.5 py-0.5 text-[11px] font-medium text-brand-700">{d.route_code}</span>
+                        )}
+                      </p>
+                    </div>
+                    <div className="shrink-0 text-right">
+                      <p className="text-xs text-ink-muted">{t('earning')}</p>
+                      <p className="text-lg font-semibold tabular-nums text-ink">${parseFloat(d.earning || 0).toFixed(2)}</p>
+                    </div>
+                  </div>
+                  <div className="mt-2 flex flex-wrap gap-2 text-xs font-medium">
+                    <span className={`rounded-full px-2.5 py-1 ${d.closed ? "bg-green-50 text-green-700" : "bg-red-50 text-red-700"}`}>
+                      {t('closed')}: {d.closed ? t('yes') : t('no')}
+                    </span>
+                    <span className={`rounded-full px-2.5 py-1 ${d.paid ? "bg-green-50 text-green-700" : "bg-red-50 text-red-700"}`}>
+                      {t('paid')}: {d.paid ? t('yes') : t('no')}
+                    </span>
+                  </div>
+                  <dl className="mt-3 grid grid-cols-3 gap-2">
+                    {counts.map(([label, value]) => (
+                      <div key={label} className="rounded-xl bg-brand-50/70 px-2.5 py-2">
+                        <dt className="text-[11px] leading-tight text-ink-muted">{label}</dt>
+                        <dd className="text-sm font-semibold tabular-nums text-ink">{value}</dd>
+                      </div>
+                    ))}
+                  </dl>
+                  <p className="mt-3 text-xs text-ink-muted">
+                    {t('routePrice')}:{' '}
+                    <span className="font-medium text-ink">
+                      {d.driver_route_price != null && d.driver_route_price > 0 ? `${parseFloat(d.driver_route_price).toFixed(2)}` : t('notSet')}
+                    </span>
+                    {' · '}
+                    {t('doubleStopPrice')}:{' '}
+                    <span className="font-medium text-ink">
+                      {d.driver_doublestop_price != null && d.driver_doublestop_price > 0 ? `${parseFloat(d.driver_doublestop_price).toFixed(2)}` : t('notSet')}
+                    </span>
+                  </p>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+
+        {filteredDeliveries && filteredDeliveries.length > 0 && (
+          <div className="card-surface hidden overflow-hidden md:block">
             <div className="overflow-x-auto">
               <table className="w-full">
-                <thead className="bg-gray-50 border-b">
+                <thead className="bg-brand-50/60 border-b">
                   <tr>
                     {tableHeaders.map((h) => (
                       <th key={h} className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase">
@@ -440,8 +491,8 @@ const Deliveries = () => {
                 </thead>
                 <tbody>
                   {filteredDeliveries.map((d, i) => (
-                    <tr key={d.id || i} className="hover:bg-gray-50 border-b border-gray-100">
-                      <td className="px-4 py-3 text-sm text-gray-900">{formatDate(d.journey_date)}</td>
+                    <tr key={d.id || i} className="hover:bg-brand-50/40 border-b border-line">
+                      <td className="px-4 py-3 text-sm text-ink">{formatDate(d.journey_date)}</td>
                       <td className="px-4 py-3 text-sm relative group">
                         <span className="cursor-help border-b border-dotted border-gray-400">
                           {d.route_name}
@@ -534,7 +585,6 @@ const Deliveries = () => {
       </main>
 
       <Nav />
-      <ToastContainer />
     </div>
   );
 };

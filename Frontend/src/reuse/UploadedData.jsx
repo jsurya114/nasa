@@ -56,7 +56,7 @@ const UploadedData = ({ viewType, loadData, selectedDate }) => {
   };
 
   return (
-    <section className="bg-white rounded-xl shadow p-4">
+    <section className="card-surface p-4">
       <style>{`
         .custom-select {
           appearance: none;
@@ -164,7 +164,7 @@ const UploadedData = ({ viewType, loadData, selectedDate }) => {
 
           {/* Pagination Controls */}
           {data?.dailyData?.length > 0 && pagination.totalPages > 0 && (
-            <div className="bg-gradient-to-r from-gray-50 to-gray-100 border-t-2 border-gray-200 mt-4">
+            <div className="bg-brand-50/40 border-t border-line mt-4">
               <div className="px-6 py-4">
                 {/* Top Row: Items per page and info */}
                 <div className="flex flex-col sm:flex-row justify-between items-center gap-4 mb-4">
@@ -174,7 +174,7 @@ const UploadedData = ({ viewType, loadData, selectedDate }) => {
                     <select
                       value={itemsPerPage}
                       onChange={handleItemsPerPageChange}
-                      className="custom-select border-2 border-gray-300 rounded-lg px-3 py-2 text-sm font-medium bg-white hover:border-blue-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 focus:outline-none transition-all cursor-pointer"
+                      className="text-ink placeholder:text-ink-muted/70 transition-shadow min-h-11 custom-select border border-line rounded-xl px-3 py-2 text-sm font-medium bg-white hover:border-blue-400 focus:border-brand-500 focus:ring-4 focus:ring-brand-500/20 focus:outline-none transition-all cursor-pointer"
                     >
                       <option value={5}>5</option>
                       <option value={10}>10</option>
@@ -200,7 +200,7 @@ const UploadedData = ({ viewType, loadData, selectedDate }) => {
                   <button
                     onClick={() => handlePageChange(1)}
                     disabled={currentPage === 1}
-                    className="p-2 rounded-lg border-2 border-gray-300 bg-white disabled:opacity-40 disabled:cursor-not-allowed hover:bg-blue-50 hover:border-blue-400 transition-all duration-200 group"
+                    className="p-2 rounded-xl border border-line bg-white disabled:opacity-40 disabled:cursor-not-allowed hover:bg-brand-50 hover:border-brand-300 transition-all duration-200 group"
                     title="First Page"
                   >
                     <svg className="w-5 h-5 text-gray-600 group-hover:text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -211,7 +211,7 @@ const UploadedData = ({ viewType, loadData, selectedDate }) => {
                   <button
                     onClick={() => handlePageChange(currentPage - 1)}
                     disabled={currentPage === 1}
-                    className="p-2 rounded-lg border-2 border-gray-300 bg-white disabled:opacity-40 disabled:cursor-not-allowed hover:bg-blue-50 hover:border-blue-400 transition-all duration-200 group"
+                    className="p-2 rounded-xl border border-line bg-white disabled:opacity-40 disabled:cursor-not-allowed hover:bg-brand-50 hover:border-brand-300 transition-all duration-200 group"
                     title="Previous Page"
                   >
                     <svg className="w-5 h-5 text-gray-600 group-hover:text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -246,7 +246,7 @@ const UploadedData = ({ viewType, loadData, selectedDate }) => {
                   <button
                     onClick={() => handlePageChange(currentPage + 1)}
                     disabled={currentPage === pagination.totalPages}
-                    className="p-2 rounded-lg border-2 border-gray-300 bg-white disabled:opacity-40 disabled:cursor-not-allowed hover:bg-blue-50 hover:border-blue-400 transition-all duration-200 group"
+                    className="p-2 rounded-xl border border-line bg-white disabled:opacity-40 disabled:cursor-not-allowed hover:bg-brand-50 hover:border-brand-300 transition-all duration-200 group"
                     title="Next Page"
                   >
                     <svg className="w-5 h-5 text-gray-600 group-hover:text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -257,7 +257,7 @@ const UploadedData = ({ viewType, loadData, selectedDate }) => {
                   <button
                     onClick={() => handlePageChange(pagination.totalPages)}
                     disabled={currentPage === pagination.totalPages}
-                    className="p-2 rounded-lg border-2 border-gray-300 bg-white disabled:opacity-40 disabled:cursor-not-allowed hover:bg-blue-50 hover:border-blue-400 transition-all duration-200 group"
+                    className="p-2 rounded-xl border border-line bg-white disabled:opacity-40 disabled:cursor-not-allowed hover:bg-brand-50 hover:border-brand-300 transition-all duration-200 group"
                     title="Last Page"
                   >
                     <svg className="w-5 h-5 text-gray-600 group-hover:text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
