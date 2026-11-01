@@ -1,4 +1,5 @@
 import express from "express"
+import { sanitizeRouterParams } from '../middlewares/sanitize.js';
 import { uploadAccessCodeImages } from "../middlewares/multerConfig.js";
 import driverController from "../controllers/driver/driverController.js";
 import jobController from "../controllers/admin/jobController.js";
@@ -15,6 +16,7 @@ import passwordController from "../controllers/driver/updatepasswordController.j
 import languageController from "../controllers/driver/languageController.js";
 
 const router = express.Router()
+sanitizeRouterParams(router)
 
 router.post('/login', loginRateLimit('driver'), driverController.Login)
 router.post('/refresh-token', driverController.RefreshToken)
