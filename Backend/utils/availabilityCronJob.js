@@ -1,5 +1,6 @@
 import cron from 'node-cron';
 import pool from '../config/db.js';
+import logger from './logger.js';
 
 /**
  * Check if it's currently Sunday 12:00 PM (noon) in a given timezone
@@ -30,14 +31,13 @@ const isSundayNoonInTimezone = (timezone) => {
     const isWithinHourWindow = minute >= 0 && minute < 60;
     
     if (isSunday && isNoonHour && isWithinHourWindow) {
-      console.log(`✅ Sunday 12:00 PM detected in ${timezone}`);
-      console.log(`   Weekday: ${weekday}, Hour: ${hour}, Minute: ${minute}`);
+      logger.info('Sunday 12:00 PM detected', { timezone, weekday, hour, minute });
       return true;
     }
     
     return false;
   } catch (error) {
-    console.error(`❌ Error checking timezone ${timezone}:`, error);
+    logger.error('Error checking timezone', { timezone, error });
     return false;
   }
 };
@@ -64,15 +64,13 @@ const resetDriversInTimezone = async (timezone) => {
     );
     
     if (result.rowCount > 0) {
-      console.log(`✅ Reset ${result.rowCount} enabled drivers in ${timezone}:`);
-      result.rows.forEach(driver => {
-        console.log(`   - Driver ${driver.id}`);
-      });
+      logger.info('Reset enabled drivers', { timezone, count: result.rowCount });
+      logger.debug('Reset driver ids', { timezone, ids: result.rows.map(driver => driver.id) });
     }
     
     return result.rowCount;
   } catch (error) {
-    console.error(`❌ Error resetting drivers in ${timezone}:`, error);
+    logger.error('Error resetting drivers', { timezone, error });
     throw error;
   }
 };
@@ -88,10 +86,7 @@ export const initializeAvailabilityResetCron = () => {
       const now = new Date();
       const utcTime = now.toISOString();
       
-      console.log('🔄 ========================================');
-      console.log(`🔄 Availability Reset Check`);
-      console.log(`🔄 UTC Time: ${utcTime}`);
-      console.log('🔄 ========================================');
+      logger.debug('Availability reset check', { utcTime });
       
       // Get all unique timezones from enabled drivers
       const timezonesResult = await pool.query(
@@ -103,7 +98,7 @@ export const initializeAvailabilityResetCron = () => {
       );
       
       const timezones = timezonesResult.rows.map(row => row.timezone);
-      console.log(`🌍 Checking ${timezones.length} unique timezones...`);
+      logger.debug('Checking timezones', { count: timezones.length });
       
       let totalReset = 0;
       const resetTimezones = [];
@@ -113,7 +108,7 @@ export const initializeAvailabilityResetCron = () => {
         try {
           // Check if it's Sunday 12:00 PM in this timezone
           if (isSundayNoonInTimezone(timezone)) {
-            console.log(`🎯 Triggering reset for timezone: ${timezone}`);
+            logger.info('Triggering availability reset', { timezone });
             
             const resetCount = await resetDriversInTimezone(timezone);
             totalReset += resetCount;
@@ -123,40 +118,28 @@ export const initializeAvailabilityResetCron = () => {
             }
           }
         } catch (tzError) {
-          console.error(`❌ Error processing timezone ${timezone}:`, tzError);
+          logger.error('Error processing timezone', { timezone, error: tzError });
           // Continue with other timezones even if one fails
         }
       }
       
       if (totalReset > 0) {
-        console.log('🎉 ========================================');
-        console.log(`🎉 RESET SUMMARY`);
-        console.log(`🎉 Total drivers reset: ${totalReset}`);
-        console.log(`🎉 Timezones affected:`);
-        resetTimezones.forEach(({ timezone, count }) => {
-          console.log(`🎉   - ${timezone}: ${count} drivers`);
-        });
-        console.log('🎉 ========================================');
+        logger.info('Availability reset summary', { totalReset, timezones: resetTimezones });
       } else {
-        console.log('ℹ️  No timezones at Sunday 12:00 PM right now');
+        logger.debug('No timezone is at Sunday 12:00 PM right now');
       }
       
     } catch (error) {
-      console.error('❌ ========================================');
-      console.error('❌ Error in availability reset cron:', error);
-      console.error('❌ Stack:', error.stack);
-      console.error('❌ ========================================');
+      logger.error('Error in availability reset cron', error);
     }
   }, {
     timezone: "UTC" // Cron runs in UTC, but we check each driver's local timezone
   });
 
-  console.log('📅 ========================================');
-  console.log('📅 Weekly Availability Reset Cron Initialized');
-  console.log('📅 Schedule: Every hour (checks all timezones)');
-  console.log('📅 Action: Reset to unavailable at Sunday 12:00 PM');
-  console.log('📅 Scope: Each driver in their own timezone');
-  console.log('📅 ========================================');
+  logger.info('Weekly availability reset cron initialized', {
+    schedule: 'every hour, checks all timezones',
+    action: 'reset to unavailable at Sunday 12:00 PM in each driver timezone',
+  });
 };
 
 /**
@@ -165,10 +148,7 @@ export const initializeAvailabilityResetCron = () => {
  */
 export const manualResetAllAvailability = async () => {
   try {
-    console.log('🔄 ========================================');
-    console.log('🔄 MANUAL RESET TRIGGERED');
-    console.log('🔄 Time:', new Date().toISOString());
-    console.log('🔄 ========================================');
+    logger.info('Manual availability reset triggered');
     
     const result = await pool.query(
       `UPDATE drivers
@@ -187,12 +167,7 @@ export const manualResetAllAvailability = async () => {
     const enabledCount = result.rows.filter(d => d.enabled).length;
     const disabledCount = result.rows.filter(d => !d.enabled).length;
 
-    console.log('✅ ========================================');
-    console.log('✅ Manual Reset Completed Successfully');
-    console.log(`✅ Total drivers reset: ${result.rowCount}`);
-    console.log(`✅   - Enabled: ${enabledCount}`);
-    console.log(`✅   - Disabled: ${disabledCount}`);
-    console.log('✅ ========================================');
+    logger.info('Manual availability reset completed', { total: result.rowCount, enabled: enabledCount, disabled: disabledCount });
 
     return {
       success: true,
@@ -203,7 +178,7 @@ export const manualResetAllAvailability = async () => {
       resetTimestamp: new Date().toISOString()
     };
   } catch (error) {
-    console.error('❌ Error in manual reset:', error);
+    logger.error('Error in manual reset', error);
     throw error;
   }
 };

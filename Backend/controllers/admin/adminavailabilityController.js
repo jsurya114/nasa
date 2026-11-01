@@ -5,6 +5,7 @@ import {
   getCurrentTimeInTimezone 
 } from "../../utils/timezoneUtils.js";
 import pool from "../../config/db.js";
+import logger from '../../utils/logger.js';
 
 const adminAvailabilityController = {
   getAllDriversAvailability: async (req, res) => {
@@ -12,14 +13,14 @@ const adminAvailabilityController = {
       const { id: adminId, role: adminRole } = req.admin;
       const { day, page = 1, limit = 10, searchQuery = "", city = "" } = req.query;
 
-      console.log(`📋 Admin ${adminId} (${adminRole}) fetching drivers availability`);
-      console.log(`   Filters - Day: ${day || 'all'}, City: ${city || 'all'}, Search: ${searchQuery || 'none'}, Page: ${page}, Limit: ${limit}`);
+      logger.debug(`Admin ${adminId} (${adminRole}) fetching drivers availability`);
+      logger.debug('Availability filters', { day: day || 'all', city: city || 'all', hasSearch: Boolean(searchQuery), page, limit });
 
       const pageNum = parseInt(page, 10);
       const limitNum = parseInt(limit, 10);
 
       if (pageNum < 1 || limitNum < 1) {
-        console.warn(`⚠️ Invalid pagination params: page=${page}, limit=${limit}`);
+        logger.warn(`Invalid pagination params: page=${page}, limit=${limit}`);
         return res.status(400).json({
           success: false,
           message: "page and limit must be positive integers"
@@ -37,7 +38,7 @@ const adminAvailabilityController = {
           city || null
         );
 
-      console.log(`✅ Fetched ${result.data.length} drivers (Total: ${result.pagination.totalRecords})`);
+      logger.debug(`Fetched ${result.data.length} drivers (Total: ${result.pagination.totalRecords})`);
 
       res.status(200).json({
         success: true,
@@ -46,8 +47,7 @@ const adminAvailabilityController = {
         pagination: result.pagination
       });
     } catch (err) {
-      console.error("❌ getAllDriversAvailability error:", err.message);
-      console.error("Error stack:", err.stack);
+      logger.error("getAllDriversAvailability error", err);
       res.status(500).json({
         success: false,
         message: "Failed to fetch drivers availability",
@@ -60,19 +60,18 @@ const adminAvailabilityController = {
     try {
       const { id: adminId, role: adminRole } = req.admin;
       
-      console.log(`🏙️ Admin ${adminId} (${adminRole}) fetching available cities`);
+      logger.debug(`Admin ${adminId} (${adminRole}) fetching available cities`);
       
       const cities = await availabilityService.getAvailableCities(adminId, adminRole);
       
-      console.log(`✅ Found ${cities.length} cities:`, cities.join(', '));
+      logger.debug('Available cities found', { count: cities.length });
       
       res.status(200).json({
         success: true,
         data: cities
       });
     } catch (err) {
-      console.error("❌ getAvailableCities error:", err.message);
-      console.error("Error stack:", err.stack);
+      logger.error("getAvailableCities error", err);
       res.status(500).json({
         success: false,
         message: "Failed to fetch cities",
@@ -87,8 +86,8 @@ const adminAvailabilityController = {
       const { id: adminId, role: adminRole } = req.admin;
       const { searchQuery = "", city = "" } = req.query;
 
-      console.log(`📊 Admin ${adminId} (${adminRole}) fetching global availability counts`);
-      console.log(`   Filters - City: ${city || 'all'}, Search: ${searchQuery || 'none'}`);
+      logger.debug(`Admin ${adminId} (${adminRole}) fetching global availability counts`);
+      logger.debug('Availability count filters', { city: city || 'all', hasSearch: Boolean(searchQuery) });
 
       const counts = await availabilityService.getGlobalAvailabilityCounts(
         adminId,
@@ -97,15 +96,14 @@ const adminAvailabilityController = {
         city || null
       );
 
-      console.log(`✅ Global counts fetched:`, counts);
+      logger.debug('Global counts fetched', counts);
 
       res.status(200).json({
         success: true,
         data: counts
       });
     } catch (err) {
-      console.error("❌ getGlobalAvailabilityCounts error:", err.message);
-      console.error("Error stack:", err.stack);
+      logger.error("getGlobalAvailabilityCounts error", err);
       res.status(500).json({
         success: false,
         message: "Failed to fetch global availability counts",
@@ -120,11 +118,11 @@ const adminAvailabilityController = {
       const { driverId } = req.params;
       const { availability } = req.body;
 
-      console.log(`✏️ Admin ${adminId} (${adminRole}) updating driver ${driverId} availability`);
-      console.log(`   New availability:`, availability);
+      logger.info(`Admin ${adminId} (${adminRole}) updating driver ${driverId} availability`);
+      logger.debug('New availability', availability);
 
       if (!driverId || isNaN(driverId)) {
-        console.warn(`⚠️ Invalid driver ID: ${driverId}`);
+        logger.warn(`Invalid driver ID: ${driverId}`);
         return res.status(400).json({
           success: false,
           message: "Valid driver ID is required"
@@ -144,7 +142,7 @@ const adminAvailabilityController = {
       // Validate that all days are present and are boolean
       for (const day of validDays) {
         if (typeof availability?.[day] !== "boolean") {
-          console.warn(`⚠️ Invalid value for ${day}:`, availability?.[day]);
+          logger.warn(`Invalid value for ${day}`, availability?.[day]);
           return res.status(400).json({
             success: false,
             message: `Invalid value for ${day}`
@@ -166,12 +164,12 @@ const adminAvailabilityController = {
       }
 
       const driverTimezone = driverResult.rows[0].timezone;
-      console.log(`   Driver timezone: ${driverTimezone}`);
+      logger.debug(`Driver timezone: ${driverTimezone}`);
 
       // Get current time in driver's timezone
       const currentTime = getCurrentTimeInTimezone(driverTimezone);
       
-      console.log(`📅 Current time in ${driverTimezone}:`, {
+      logger.debug(`Current time in ${driverTimezone}`, {
         day: currentTime.dayName,
         hour: currentTime.hour,
         dayIndex: currentTime.dayIndex
@@ -189,7 +187,7 @@ const adminAvailabilityController = {
       );
 
       if (!validation.isValid) {
-        console.warn(`⚠️ Admin validation failed:`, validation.errors);
+        logger.warn(`Admin validation failed`, validation.errors);
         return res.status(403).json({
           success: false,
           message: validation.errors[0],
@@ -197,7 +195,7 @@ const adminAvailabilityController = {
         });
       }
 
-      console.log(`✅ Admin validation passed. Updating availability for driver ${driverId}`);
+      logger.debug(`Admin validation passed. Updating availability for driver ${driverId}`);
 
       const updated =
         await availabilityService.updateDriverAvailabilityByAdmin(
@@ -207,7 +205,7 @@ const adminAvailabilityController = {
           adminRole
         );
 
-      console.log(`✅ Driver ${driverId} availability updated successfully by admin ${adminId}`);
+      logger.info(`Driver ${driverId} availability updated successfully by admin ${adminId}`);
 
       res.status(200).json({
         success: true,
@@ -215,8 +213,7 @@ const adminAvailabilityController = {
         data: updated
       });
     } catch (err) {
-      console.error("❌ updateDriverAvailability error:", err.message);
-      console.error("Error stack:", err.stack);
+      logger.error("updateDriverAvailability error", err);
 
       if (err.message === "Driver not found or access denied") {
         return res.status(404).json({
@@ -245,20 +242,11 @@ const adminAvailabilityController = {
     try {
       const { role: adminRole, id: adminId } = req.admin;
 
-      console.log('🔄 ========================================');
-      console.log(`🔄 MANUAL AVAILABILITY RESET TRIGGERED`);
-      console.log(`🔄 By: Admin ${adminId} (${adminRole})`);
-      console.log(`🔄 Time: ${new Date().toISOString()}`);
-      console.log('🔄 ========================================');
+      logger.info('Manual availability reset triggered', { adminId, adminRole });
 
       const result = await manualResetAllAvailability();
 
-      console.log('✅ ========================================');
-      console.log(`✅ MANUAL RESET COMPLETED SUCCESSFULLY`);
-      console.log(`✅ Total drivers reset: ${result.driversUpdated}`);
-      console.log(`✅ - Enabled drivers: ${result.enabledDrivers}`);
-      console.log(`✅ - Disabled drivers: ${result.disabledDrivers}`);
-      console.log('✅ ========================================');
+      logger.info('Manual availability reset completed', { total: result.driversUpdated, enabled: result.enabledDrivers, disabled: result.disabledDrivers });
 
       res.status(200).json({
         success: true,
@@ -275,12 +263,8 @@ const adminAvailabilityController = {
         }
       });
     } catch (err) {
-      console.error("❌ ========================================");
-      console.error("❌ MANUAL RESET FAILED");
-      console.error("❌ Error:", err.message);
-      console.error("❌ Stack:", err.stack);
-      console.error("❌ ========================================");
-      
+      logger.error('Manual availability reset failed', err);
+
       res.status(500).json({
         success: false,
         message: "Failed to reset all drivers availability",
