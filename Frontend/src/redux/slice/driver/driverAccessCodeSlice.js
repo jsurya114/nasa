@@ -132,7 +132,7 @@ const driverAccessCodeSlice = createSlice({
         state.status = "loading";
         state.error = null;
       })
-      .addCase(createAccessCode.fulfilled, (state, action) => {
+      .addCase(createAccessCode.fulfilled, (state) => {
         state.status = "succeeded";
         state.error = null;
       })

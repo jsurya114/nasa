@@ -96,7 +96,7 @@ export const driverLogout = createAsyncThunk(
 
 export const submitDriverAgreement = createAsyncThunk(
   "driver/submit-agreement",
-  async (agreementData, { rejectWithValue, getState }) => {
+  async (agreementData, { rejectWithValue }) => {
     try {
       const res = await axios.post(`/driver/agreement`, agreementData);
       return res.data;
