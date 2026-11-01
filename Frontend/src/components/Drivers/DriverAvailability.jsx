@@ -17,7 +17,6 @@ export default function DriverAvailability() {
 
   const {
     driverAvailability,
-    updatedAt,
     loading,
     error,
     successMessage
@@ -181,7 +180,6 @@ export default function DriverAvailability() {
 
   const handleToggle = (day, dayIndex) => {
     if (isDayLocked(dayIndex)) {
-      const dayName = daysOfWeek.find(d => d.index === dayIndex)?.label || day;
       const lockReason = getLockReason(dayIndex);
 
       if (lockReason === "pending_reset") {
@@ -214,17 +212,6 @@ export default function DriverAvailability() {
   const handleReset = () => {
     setAvailability(driverAvailability);
     setHasChanges(false);
-  };
-
-  const formatDate = (dateString) => {
-    if (!dateString) return t('neverUpdated');
-    return new Date(dateString).toLocaleString('en-US', {
-      month: 'short',
-      day: 'numeric',
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit'
-    });
   };
 
   const getAvailableDaysCount = () => {
