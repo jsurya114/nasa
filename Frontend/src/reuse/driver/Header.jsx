@@ -59,7 +59,7 @@ function Header() {
   };
 
   return (
-    <header className="sticky top-0 z-50 flex items-center justify-between h-16 bg-[#462976] text-white px-4 border-b border-white/10">
+    <header className="sticky top-0 z-50 flex items-center justify-between h-16 bg-brand text-white px-4 border-b border-white/10">
       {/* Left Side (Hide on mobile) */}
       <div className="hidden md:block font-semibold text-sm md:text-lg">
         {t('dashboardDriver')}
@@ -92,7 +92,7 @@ function Header() {
               <button
                 onClick={() => handleLanguageChange('en')}
                 className={`w-full text-left px-4 py-2 hover:bg-gray-100 transition-colors ${
-                  currentLanguage === 'en' ? 'bg-purple-50 text-[#462976] font-semibold' : ''
+                  currentLanguage === 'en' ? 'bg-purple-50 text-brand font-semibold' : ''
                 }`}
               >
                 English
@@ -100,7 +100,7 @@ function Header() {
               <button
                 onClick={() => handleLanguageChange('es')}
                 className={`w-full text-left px-4 py-2 hover:bg-gray-100 transition-colors ${
-                  currentLanguage === 'es' ? 'bg-purple-50 text-[#462976] font-semibold' : ''
+                  currentLanguage === 'es' ? 'bg-purple-50 text-brand font-semibold' : ''
                 }`}
               >
                 Español
@@ -130,7 +130,12 @@ function Header() {
 
       {/* Hamburger Menu - Mobile (<768px) */}
       <div className="md:hidden relative ml-auto">
-        <button onClick={() => setMenuOpen(!menuOpen)} aria-label="Toggle menu">
+        <button
+          onClick={() => setMenuOpen(!menuOpen)}
+          aria-label="Toggle menu"
+          aria-expanded={menuOpen}
+          className="p-2 -mr-2 rounded-md hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-white/60"
+        >
           {menuOpen ? <X size={24} /> : <Menu size={24} />}
         </button>
 
@@ -138,7 +143,7 @@ function Header() {
         {menuOpen && (
           <div className="absolute right-0 mt-2 w-48 bg-white text-black rounded-md shadow-lg z-50">
             <ul className="py-2 text-sm">
-              <li className="px-4 py-2 border-b border-gray-200 font-medium text-[#462976]">
+              <li className="px-4 py-2 border-b border-gray-200 font-medium text-brand">
                 {t('dashboardDriver')}
               </li>
               
@@ -151,9 +156,9 @@ function Header() {
                 <div className="flex gap-2">
                   <button
                     onClick={() => handleLanguageChange('en')}
-                    className={`flex-1 px-3 py-1 rounded text-xs font-medium transition-colors ${
+                    className={`flex-1 px-3 py-2 rounded text-sm font-medium transition-colors ${
                       currentLanguage === 'en'
-                        ? 'bg-[#462976] text-white'
+                        ? 'bg-brand text-white'
                         : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
                     }`}
                   >
@@ -161,9 +166,9 @@ function Header() {
                   </button>
                   <button
                     onClick={() => handleLanguageChange('es')}
-                    className={`flex-1 px-3 py-1 rounded text-xs font-medium transition-colors ${
+                    className={`flex-1 px-3 py-2 rounded text-sm font-medium transition-colors ${
                       currentLanguage === 'es'
-                        ? 'bg-[#462976] text-white'
+                        ? 'bg-brand text-white'
                         : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
                     }`}
                   >
@@ -184,7 +189,7 @@ function Header() {
               <li>
                 <button
                   onClick={handleLogout}
-                  className="w-full text-left px-4 py-2 text-red-600 hover:bg-red-50 font-medium transition-colors"
+                  className="w-full text-left px-4 py-3 text-red-600 hover:bg-red-50 font-medium transition-colors"
                 >
                   {t('logout')}
                 </button>
