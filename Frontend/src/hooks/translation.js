@@ -47,6 +47,9 @@ const translations = {
 
     // Messages
     loading: 'Loading...',
+    agreementTab: 'Agreement',
+    more: 'More',
+    mainNavigation: 'Main navigation',
     success: 'Success',
     error: 'Error',
     noData: 'No data available',
@@ -331,6 +334,9 @@ const translations = {
 
     // Messages
     loading: 'Cargando...',
+    agreementTab: 'Acuerdo',
+    more: 'Más',
+    mainNavigation: 'Navegación principal',
     success: 'Éxito',
     error: 'Error',
     noData: 'No hay datos disponibles',

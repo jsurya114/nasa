@@ -32,6 +32,11 @@
   --shadow-card: 0 1px 2px rgb(30 16 60 / 0.06), 0 4px 16px -4px rgb(30 16 60 / 0.08);
   --shadow-float: 0 12px 32px -10px rgb(30 16 60 / 0.38), 0 2px 8px -2px rgb(30 16 60 / 0.18);
   --ease-out-soft: cubic-bezier(0.22, 1, 0.36, 1);
+
+  --animate-sheet-in: sheet-in 220ms var(--ease-out-soft) both;
+  @keyframes sheet-in {
+    from { opacity: 0; transform: translateY(8px) scale(0.98); }
+  }
 }
 
 @layer base {
@@ -73,9 +78,9 @@
 }
 
 @utility glass-light {
-  background-color: rgb(255 255 255 / 0.8);
-  -webkit-backdrop-filter: saturate(180%) blur(20px);
-  backdrop-filter: saturate(180%) blur(20px);
+  background-color: rgb(255 255 255 / 0.86);
+  -webkit-backdrop-filter: saturate(180%) blur(24px);
+  backdrop-filter: saturate(180%) blur(24px);
   border: 1px solid rgb(255 255 255 / 0.7);
   box-shadow: var(--shadow-float), inset 0 1px 0 rgb(255 255 255 / 0.8);
 }

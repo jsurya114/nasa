@@ -58,8 +58,10 @@ function Header() {
     setMenuOpen(false);
   };
 
+  // The bar is solid #462976 because the logo image has that exact background colour.
+  // A see-through bar would show a box around the logo.
   return (
-    <header className="sticky top-0 z-50 flex items-center justify-between h-16 bg-brand text-white px-4 border-b border-white/10">
+    <header className="sticky top-0 z-50 flex items-center justify-between h-[calc(4rem+env(safe-area-inset-top))] pt-[env(safe-area-inset-top)] bg-[#462976] text-white px-4 sm:px-6 border-b border-white/10 shadow-[0_6px_24px_-14px_rgb(30_16_60/0.6)]">
       {/* Left Side (Hide on mobile) */}
       <div className="hidden md:block font-semibold text-sm md:text-lg">
         {t('dashboardDriver')}
@@ -88,19 +90,19 @@ function Header() {
           </button>
           
           {langMenuOpen && (
-            <div className="absolute right-0 mt-2 w-32 bg-white text-black rounded-md shadow-lg overflow-hidden z-50">
+            <div className="glass-light animate-sheet-in origin-top-right absolute right-0 mt-2 w-40 p-1 text-ink rounded-2xl overflow-hidden z-50">
               <button
                 onClick={() => handleLanguageChange('en')}
-                className={`w-full text-left px-4 py-2 hover:bg-gray-100 transition-colors ${
-                  currentLanguage === 'en' ? 'bg-purple-50 text-brand font-semibold' : ''
+                className={`w-full text-left px-3 py-2.5 rounded-xl hover:bg-brand-50 transition-colors ${
+                  currentLanguage === 'en' ? 'bg-brand-100 text-brand-800 font-semibold' : ''
                 }`}
               >
                 English
               </button>
               <button
                 onClick={() => handleLanguageChange('es')}
-                className={`w-full text-left px-4 py-2 hover:bg-gray-100 transition-colors ${
-                  currentLanguage === 'es' ? 'bg-purple-50 text-brand font-semibold' : ''
+                className={`w-full text-left px-3 py-2.5 rounded-xl hover:bg-brand-50 transition-colors ${
+                  currentLanguage === 'es' ? 'bg-brand-100 text-brand-800 font-semibold' : ''
                 }`}
               >
                 Español
@@ -121,7 +123,7 @@ function Header() {
 
         {/* Logout Button */}
         <button
-          className="bg-red-600 hover:bg-red-700 text-white px-3 py-2 rounded-md font-semibold transition-colors"
+          className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-xl font-semibold shadow-sm transition-colors"
           onClick={handleLogout}
         >
           {t('logout')}
@@ -141,14 +143,14 @@ function Header() {
 
         {/* Mobile dropdown */}
         {menuOpen && (
-          <div className="absolute right-0 mt-2 w-48 bg-white text-black rounded-md shadow-lg z-50">
+          <div className="glass-light animate-sheet-in origin-top-right absolute right-0 mt-2 w-60 text-ink rounded-2xl overflow-hidden z-50">
             <ul className="py-2 text-sm">
-              <li className="px-4 py-2 border-b border-gray-200 font-medium text-brand">
+              <li className="px-4 py-2 border-b border-black/5 font-medium text-brand">
                 {t('dashboardDriver')}
               </li>
               
               {/* Language Selection in Mobile */}
-              <li className="px-4 py-2 border-b border-gray-200">
+              <li className="px-4 py-2 border-b border-black/5">
                 <div className="flex items-center gap-2 mb-2 text-gray-600">
                   <Globe size={16} />
                   <span className="font-medium">{t('language')}</span>
@@ -156,20 +158,20 @@ function Header() {
                 <div className="flex gap-2">
                   <button
                     onClick={() => handleLanguageChange('en')}
-                    className={`flex-1 px-3 py-2 rounded text-sm font-medium transition-colors ${
+                    className={`flex-1 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
                       currentLanguage === 'en'
                         ? 'bg-brand text-white'
-                        : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                        : 'bg-white/70 text-gray-700 hover:bg-white'
                     }`}
                   >
                     EN
                   </button>
                   <button
                     onClick={() => handleLanguageChange('es')}
-                    className={`flex-1 px-3 py-2 rounded text-sm font-medium transition-colors ${
+                    className={`flex-1 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
                       currentLanguage === 'es'
                         ? 'bg-brand text-white'
-                        : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                        : 'bg-white/70 text-gray-700 hover:bg-white'
                     }`}
                   >
                     ES
@@ -178,7 +180,7 @@ function Header() {
               </li>
               
               {/* User Info */}
-              <li className="px-4 py-2 flex items-center gap-2 border-b border-gray-200">
+              <li className="px-4 py-2 flex items-center gap-2 border-b border-black/5">
                 <span className="w-6 h-6 rounded-full bg-yellow-400 text-black text-xs grid place-items-center">
                   <User className="w-4 h-4" aria-hidden="true" />
                 </span>
