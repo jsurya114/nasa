@@ -10,7 +10,7 @@ function DPublicRoutes() {
 
     useEffect(() => {
         dispatch(accessDriver())
-    }, []);
+    }, [dispatch]);
 
     if (isAuthenticated === null) {
         return null;

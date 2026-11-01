@@ -87,6 +87,9 @@ const useInactivityLogout = () => {
                 window.removeEventListener(event, handleActivity);
             });
         };
+        // The two helper functions used above are re-created on every render and read the two flags listed here, so this effect restarts when the flags change.
+        // Listing the helpers would restart it on every render and keep resetting the logout timer.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [isAdminAuthenticated, isDriverAuthenticated, dispatch]);
 
     return null;
