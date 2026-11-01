@@ -322,7 +322,7 @@ export default function DriverAvailability() {
           {loading ? (
             <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-8 sm:p-12">
               <div className="flex flex-col items-center justify-center gap-4">
-                <div className="animate-spin rounded-full h-12 w-12 sm:h-16 sm:w-16 border-4 border-blue-500 border-t-transparent"></div>
+                <div className="animate-spin rounded-full h-12 w-12 sm:h-16 sm:w-16 border-4 border-brand border-t-transparent"></div>
                 <p className="text-sm sm:text-base text-gray-600 font-medium">{t('loadingAvailability')}</p>
               </div>
             </div>
@@ -401,7 +401,7 @@ export default function DriverAvailability() {
                         <button
                           onClick={() => handleToggle(key, index)}
                           disabled={isLocked}
-                          className={`relative inline-flex h-8 w-16 items-center rounded-full transition-all duration-300 focus:outline-none focus:ring-2 focus:ring-blue-500 ${isLocked
+                          className={`relative inline-flex h-8 w-16 items-center rounded-full transition-all duration-300 focus:outline-none focus:ring-2 focus:ring-purple-600 ${isLocked
                               ? 'opacity-50 cursor-not-allowed bg-gray-300'
                               : availability[key]
                                 ? 'bg-green-500'
@@ -427,8 +427,8 @@ export default function DriverAvailability() {
                   <button
                     onClick={handleSave}
                     disabled={!hasChanges || loading}
-                    className={`flex-1 py-2.5 sm:py-3 px-4 sm:px-6 rounded-lg font-semibold transition-all flex items-center justify-center gap-2 text-sm sm:text-base ${hasChanges && !loading
-                        ? 'bg-blue-600 text-white hover:bg-blue-700 shadow-lg hover:shadow-xl active:scale-95'
+                    className={`flex-1 py-3 px-4 sm:px-6 rounded-lg font-semibold transition-all flex items-center justify-center gap-2 text-sm sm:text-base ${hasChanges && !loading
+                        ? 'bg-brand text-white hover:bg-brand-dark shadow-lg hover:shadow-xl active:scale-95'
                         : 'bg-gray-100 text-gray-400 cursor-not-allowed'
                       }`}
                   >
@@ -450,7 +450,7 @@ export default function DriverAvailability() {
                   <button
                     onClick={handleReset}
                     disabled={!hasChanges || loading}
-                    className={`flex-1 py-2.5 sm:py-3 px-4 sm:px-6 rounded-lg font-semibold transition-all flex items-center justify-center gap-2 text-sm sm:text-base ${hasChanges && !loading
+                    className={`flex-1 py-3 px-4 sm:px-6 rounded-lg font-semibold transition-all flex items-center justify-center gap-2 text-sm sm:text-base ${hasChanges && !loading
                         ? 'bg-gray-100 text-gray-700 hover:bg-gray-200 border border-gray-300 active:scale-95'
                         : 'bg-gray-50 text-gray-400 cursor-not-allowed border border-gray-200'
                       }`}
