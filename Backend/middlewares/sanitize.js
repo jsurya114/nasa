@@ -1,6 +1,6 @@
 // Global sanitization and basic validation middleware
 // - Recursively sanitizes req.body and req.query; URL parameters through sanitizeRouterParams
-// - Strips script tags and dangerous characters from strings
+// - Removes the "<" that starts an HTML tag, so no tag can be formed (see removeTagStarts)
 // - Removes prototype pollution keys
 // - Ensures only plain JSON-compatible types pass through
 
@@ -12,94 +12,44 @@ function isPlainObject(value) {
 
 const DANGEROUS_KEYS = new Set(["__proto__", "constructor", "prototype"]);
 
-// Tags whose whole content is removed.
-const BLOCK_TAGS = new Set(["script", "style", "iframe", "object", "embed"]);
-const TAG_NAME = /<\/?([a-z][a-z0-9]*)/y;
-// Inside a tag: event handler attributes (after a space, "/", or a closing quote, like a browser reads
-// them) and javascript: URLs (browsers ignore tabs and line breaks inside the word).
-const EVENT_HANDLERS = /(?<=[\s/"'`])on\w+\s*=\s*("[^"]*"|'[^']*'|[^\s>]*)/gi;
-const JAVASCRIPT_URL = /j[\t\n\r ]*a[\t\n\r ]*v[\t\n\r ]*a[\t\n\r ]*s[\t\n\r ]*c[\t\n\r ]*r[\t\n\r ]*i[\t\n\r ]*p[\t\n\r ]*t[\t\n\r ]*:[\t\n\r ]*/gi;
-
-// Where the tag starting at `start` ends: just after the first ">" outside quotes, just before the next
-// "<" outside quotes, or the end of the text. Whatever follows is scanned as its own tag, so no part of
-// the text is skipped.
-function tagEnd(s, start) {
-  let quote = "";
-  for (let j = start + 1; j < s.length; j++) {
-    const c = s[j];
-    if (quote) {
-      if (c === quote) quote = "";
-    } else if (c === '"' || c === "'" || c === "`") {
-      quote = c;
-    } else if (c === ">") {
-      return j + 1;
-    } else if (c === "<") {
-      return j; // a new "<" starts the next tag, which is then looked at on its own
-    }
-  }
-  return s.length;
-}
-
-// Walks the text once and, at each tag ("<" followed by a letter, "/", "!" or "?"):
-//  - drops comments, and script/style/iframe/object/embed tags with everything up to their closing tag
-//    (to the end of the text when it is never closed);
-//  - removes event handlers and javascript: URLs from every other tag.
-// Each character is looked at a bounded number of times, so hostile input cannot make it slow.
-function cleanTags(s) {
-  const lower = s.replace(/[A-Z]/g, (c) => c.toLowerCase()); // same length as s
+// HTML tags cannot start without a "<" followed by a letter, "/", "!" or "?". Instead of trying to read
+// tags the way a browser does (which always leaves some difference to exploit), this removes every
+// such "<" and leaves the rest of the text alone. Without that "<" no browser starts a tag, whatever
+// quotes, slashes or odd characters follow, so there is nothing to bypass. A run of "<" before the
+// tag start goes together ("<<img" cannot leave "<img"). One pass over the text, no backtracking.
+function removeTagStarts(s) {
+  if (!s.includes("<")) return s;
   let out = "";
   let i = 0;
   while (i < s.length) {
-    const start = s.indexOf("<", i);
-    if (start === -1) {
-      out += s.slice(i);
-      break;
-    }
-    out += s.slice(i, start);
-    if (!/[a-zA-Z/!?]/.test(s[start + 1] ?? "")) {
-      out += "<";
-      i = start + 1;
+    if (s[i] !== "<") {
+      const next = s.indexOf("<", i);
+      const stop = next === -1 ? s.length : next;
+      out += s.slice(i, stop);
+      i = stop;
       continue;
     }
-    if (lower.startsWith("<!--", start)) {
-      const close = lower.indexOf("-->", start + 4);
-      i = close === -1 ? s.length : close + 3;
-      continue;
-    }
-    TAG_NAME.lastIndex = start;
-    const name = TAG_NAME.exec(lower)?.[1];
-    const end = tagEnd(s, start);
-    if (name && BLOCK_TAGS.has(name)) {
-      if (s[start + 1] === "/") {
-        i = end;
-      } else {
-        const close = lower.indexOf(`</${name}`, end);
-        i = close === -1 ? s.length : tagEnd(s, close);
-      }
-      continue;
-    }
-    out += s.slice(start, end).replace(EVENT_HANDLERS, "").replace(JAVASCRIPT_URL, "");
-    i = end;
+    let j = i;
+    while (j < s.length && s[j] === "<") j++;
+    const startsTag = j < s.length && /[a-zA-Z/!?]/.test(s[j]);
+    if (!startsTag) out += s.slice(i, j);
+    i = j;
   }
   return out;
 }
 
-// Removes active HTML from a string and leaves ordinary text alone. Plain text that merely
-// contains "on...=" or the word "javascript:" (such as "online=yes") is not touched; those
-// patterns are removed only inside an HTML tag, or when the whole value starts like a URL.
-// This is a safety net, not the main protection: the screens must still escape what they show,
-// and queries use parameters.
+// Removes the way into active HTML from a string and leaves everything else alone: ordinary text,
+// addresses, "&", quotes, "=", and "<" or ">" in sentences ("2 < 4") are kept. A value that starts
+// with "javascript:" (a link) loses that prefix. This is a safety net, not the main protection: the
+// screens must still escape what they show, and queries use parameters.
 function sanitizeString(str) {
-  let s = String(str);
-  // Repeat until nothing changes, so "<scr<script></script>ipt>" cannot rebuild a tag.
-  for (let i = 0; i < 5; i++) {
-    const before = s;
-    s = cleanTags(s);
-    s = s.replace(/^\s*javascript:\s*/i, "");
-    if (s === before) break;
-  }
+  const s = removeTagStarts(String(str)).replace(/^\s*javascript:\s*/i, "");
   return s.trim();
 }
+
+// Passwords and tokens are never shown as HTML, only hashed or compared, and people may already use
+// "<" in a password. They keep the surrounding-space trimming they always had and nothing else.
+const SECRET_KEYS = new Set(["password", "oldPassword", "newPassword", "confirmPassword", "refreshToken", "previousRefreshToken"]);
 
 function sanitizeValue(value, depth = 0) {
   if (depth > 50) return undefined; // prevent cyclic/too deep structures
@@ -112,7 +62,7 @@ function sanitizeValue(value, depth = 0) {
     for (const [k, v] of Object.entries(value)) {
       if (DANGEROUS_KEYS.has(k)) continue;
       const nk = sanitizeString(k);
-      const nv = sanitizeValue(v, depth + 1);
+      const nv = SECRET_KEYS.has(k) && typeof v === "string" ? v.trim() : sanitizeValue(v, depth + 1);
       if (nv !== undefined) out[nk] = nv;
     }
     return out;
