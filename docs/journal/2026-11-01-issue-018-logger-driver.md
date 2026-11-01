@@ -8,7 +8,7 @@
 - **Files touched:** driver controllers `driverController`, `accessCodeControllers`, `journeyController`, `languageController`, `deliveryController`, `updatepasswordController`, and driver services `journeyQueries`, `updatepasswordQueries`, `accessCodeQueries`, `routeQueries` (all under `Backend/controllers/driver` and `Backend/services/driver`). No reserved files.
 - **Needs first:** part 1 (`Backend/utils/logger.js`). Until it is merged this pull request also shows that commit.
 
-**What and why.** 38 `console` calls in the driver module now use the logger.
+**What and why.** 32 `console` calls in the driver module now use the logger.
 - Errors are logged as `logger.error('<what failed>', error)`: the logger keeps the error's name, message and code and drops everything else attached to it.
 - Logs that were translated into the driver's language (delivery, password, language, timezone) are now fixed English messages, so logs read the same whatever language the app is in.
 - Two lines that printed data are now counts: the failed Cloudinary uploads (file objects with names) and the uploaded image links.
