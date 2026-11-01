@@ -262,9 +262,9 @@ const Deliveries = () => {
     <div className="min-h-screen bg-gray-50 text-gray-900 font-poppins">
       <Header />
 
-      <main className="max-w-6xl mx-auto mt-6 mb-24 px-6 pb-36">
+      <main className="max-w-6xl mx-auto mt-4 sm:mt-6 mb-24 px-4 sm:px-6 pb-36">
         <div className="bg-white border border-gray-200 rounded-lg shadow-sm mb-8">
-          <div className="p-6 border-b border-gray-200">
+          <div className="p-4 sm:p-6 border-b border-gray-200">
             <div className="flex items-center justify-between">
               <div>
                 <h2 className="text-xl font-semibold text-gray-800">{t('deliverySummary')}</h2>
@@ -273,7 +273,7 @@ const Deliveries = () => {
             </div>
           </div>
 
-          <div className="p-6 grid grid-cols-1 sm:grid-cols-4 gap-4">
+          <div className="p-4 sm:p-6 grid grid-cols-1 sm:grid-cols-4 gap-4">
             <div>
               <label className="block text-sm font-medium mb-2 text-gray-700">{t('fromDate')}</label>
               <input
@@ -282,7 +282,7 @@ const Deliveries = () => {
                 value={filters.from_date}
                 onChange={handleChange}
                 max={filters.to_date || undefined}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500"
+                className="w-full px-3 py-3 text-base border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-purple-600 focus:border-purple-600"
               />
             </div>
 
@@ -294,14 +294,14 @@ const Deliveries = () => {
                 value={filters.to_date}
                 onChange={handleChange}
                 min={filters.from_date || undefined}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500"
+                className="w-full px-3 py-3 text-base border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-purple-600 focus:border-purple-600"
               />
             </div>
 
             <div className="flex items-end">
               <button
                 onClick={handleFilter}
-                className="w-full px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition disabled:bg-gray-400"
+                className="w-full px-4 py-3 bg-brand text-white rounded-md hover:bg-brand-dark transition disabled:bg-gray-400"
                 disabled={status === "loading"}
               >
                 {status === "loading" ? t('loading') : t('filter')}
@@ -311,7 +311,7 @@ const Deliveries = () => {
             <div className="flex items-end">
               <button
                 onClick={handleReset}
-                className="w-full px-4 py-2 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300 transition"
+                className="w-full px-4 py-3 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300 transition"
                 disabled={status === "loading"}
               >
                 {t('reset')}
@@ -326,15 +326,15 @@ const Deliveries = () => {
           {/* Data Type Filter Buttons */}
           {hasFiltered && deliveries && deliveries.length > 0 && 
            availableDataTypes.daily && availableDataTypes.weekly && (
-            <div className="px-6 pb-4">
-              <div className="flex items-center gap-3">
+            <div className="px-4 sm:px-6 pb-4">
+              <div className="flex flex-wrap items-center gap-3">
                 <span className="text-sm font-medium text-gray-700">{t('view')}:</span>
-                <div className="flex gap-2">
+                <div className="flex flex-wrap gap-2">
                   <button
                     onClick={() => setSelectedDataType("all")}
-                    className={`px-4 py-2 rounded-md text-sm font-semibold transition ${
+                    className={`px-4 py-2.5 rounded-md text-sm font-semibold transition ${
                       selectedDataType === "all"
-                        ? "bg-blue-600 text-white shadow-md"
+                        ? "bg-brand text-white shadow-md"
                         : "bg-gray-100 text-gray-700 hover:bg-gray-200"
                     }`}
                   >
@@ -342,9 +342,9 @@ const Deliveries = () => {
                   </button>
                   <button
                     onClick={() => setSelectedDataType("daily")}
-                    className={`px-4 py-2 rounded-md text-sm font-semibold transition ${
+                    className={`px-4 py-2.5 rounded-md text-sm font-semibold transition ${
                       selectedDataType === "daily"
-                        ? "bg-blue-600 text-white shadow-md"
+                        ? "bg-brand text-white shadow-md"
                         : "bg-gray-100 text-gray-700 hover:bg-gray-200"
                     }`}
                   >
@@ -352,7 +352,7 @@ const Deliveries = () => {
                   </button>
                   <button
                     onClick={() => setSelectedDataType("weekly")}
-                    className={`px-4 py-2 rounded-md text-sm font-semibold transition ${
+                    className={`px-4 py-2.5 rounded-md text-sm font-semibold transition ${
                       selectedDataType === "weekly"
                         ? "bg-purple-600 text-white shadow-md"
                         : "bg-gray-100 text-gray-700 hover:bg-gray-200"
@@ -367,7 +367,7 @@ const Deliveries = () => {
 
           {/* Current Data Type Badge */}
           {currentDataType && filteredDeliveries.length > 0 && (
-            <div className="px-6 pb-4">
+            <div className="px-4 sm:px-6 pb-4">
               <div className={`inline-flex px-4 py-2 rounded-full font-semibold text-sm ${
                 currentDataType === 'weekly' 
                   ? 'bg-purple-100 text-purple-700 border border-purple-300' 
@@ -380,7 +380,7 @@ const Deliveries = () => {
 
           {/* Summary */}
           {summary && (
-            <div className="px-6 pb-6">
+            <div className="px-4 sm:px-6 pb-6">
               <div className="bg-gradient-to-r from-blue-50 to-indigo-50 p-4 rounded-lg mb-4">
                 <h3 className="text-sm font-semibold text-gray-700 mb-3">{t('summaryStatistics')}</h3>
                 <div className={`grid gap-3 ${currentDataType === 'weekly' ? 'grid-cols-2 sm:grid-cols-4' : 'grid-cols-2 sm:grid-cols-3 md:grid-cols-6'}`}>
