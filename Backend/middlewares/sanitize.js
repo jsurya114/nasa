@@ -12,24 +12,89 @@ function isPlainObject(value) {
 
 const DANGEROUS_KEYS = new Set(["__proto__", "constructor", "prototype"]);
 
-// Tags whose whole content is removed, and attributes that are unsafe inside any tag.
-const BLOCK_TAGS = /<(script|style|iframe|object|embed)\b[^>]*>[\s\S]*?<\/\1\s*>/gi;
-const STRAY_TAGS = /<\/?(script|style|iframe|object|embed)\b[^>]*>/gi;
-const HTML_COMMENTS = /<!--[\s\S]*?-->/g;
-const ANY_TAG = /<[^<>]*>/g;
-const EVENT_HANDLERS = /\son\w+\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)/gi;
-const JAVASCRIPT_URL = /javascript:\s*/gi;
+// Tags whose whole content is removed.
+const BLOCK_TAGS = new Set(["script", "style", "iframe", "object", "embed"]);
+const TAG_NAME = /<\/?([a-z][a-z0-9]*)/y;
+// Inside a tag: event handler attributes (after a space, "/", or a closing quote, like a browser reads
+// them) and javascript: URLs (browsers ignore tabs and line breaks inside the word).
+const EVENT_HANDLERS = /(?<=[\s/"'`])on\w+\s*=\s*("[^"]*"|'[^']*'|[^\s>]*)/gi;
+const JAVASCRIPT_URL = /j[\t\n\r ]*a[\t\n\r ]*v[\t\n\r ]*a[\t\n\r ]*s[\t\n\r ]*c[\t\n\r ]*r[\t\n\r ]*i[\t\n\r ]*p[\t\n\r ]*t[\t\n\r ]*:[\t\n\r ]*/gi;
+
+// Where the tag starting at `start` ends: just after the first ">" outside quotes, just before the next
+// "<" outside quotes, or the end of the text. Whatever follows is scanned as its own tag, so no part of
+// the text is skipped.
+function tagEnd(s, start) {
+  let quote = "";
+  for (let j = start + 1; j < s.length; j++) {
+    const c = s[j];
+    if (quote) {
+      if (c === quote) quote = "";
+    } else if (c === '"' || c === "'" || c === "`") {
+      quote = c;
+    } else if (c === ">") {
+      return j + 1;
+    } else if (c === "<") {
+      return j; // a new "<" starts the next tag, which is then looked at on its own
+    }
+  }
+  return s.length;
+}
+
+// Walks the text once and, at each tag ("<" followed by a letter, "/", "!" or "?"):
+//  - drops comments, and script/style/iframe/object/embed tags with everything up to their closing tag
+//    (to the end of the text when it is never closed);
+//  - removes event handlers and javascript: URLs from every other tag.
+// Each character is looked at a bounded number of times, so hostile input cannot make it slow.
+function cleanTags(s) {
+  const lower = s.replace(/[A-Z]/g, (c) => c.toLowerCase()); // same length as s
+  let out = "";
+  let i = 0;
+  while (i < s.length) {
+    const start = s.indexOf("<", i);
+    if (start === -1) {
+      out += s.slice(i);
+      break;
+    }
+    out += s.slice(i, start);
+    if (!/[a-zA-Z/!?]/.test(s[start + 1] ?? "")) {
+      out += "<";
+      i = start + 1;
+      continue;
+    }
+    if (lower.startsWith("<!--", start)) {
+      const close = lower.indexOf("-->", start + 4);
+      i = close === -1 ? s.length : close + 3;
+      continue;
+    }
+    TAG_NAME.lastIndex = start;
+    const name = TAG_NAME.exec(lower)?.[1];
+    const end = tagEnd(s, start);
+    if (name && BLOCK_TAGS.has(name)) {
+      if (s[start + 1] === "/") {
+        i = end;
+      } else {
+        const close = lower.indexOf(`</${name}`, end);
+        i = close === -1 ? s.length : tagEnd(s, close);
+      }
+      continue;
+    }
+    out += s.slice(start, end).replace(EVENT_HANDLERS, "").replace(JAVASCRIPT_URL, "");
+    i = end;
+  }
+  return out;
+}
 
 // Removes active HTML from a string and leaves ordinary text alone. Plain text that merely
 // contains "on...=" or the word "javascript:" (such as "online=yes") is not touched; those
 // patterns are removed only inside an HTML tag, or when the whole value starts like a URL.
+// This is a safety net, not the main protection: the screens must still escape what they show,
+// and queries use parameters.
 function sanitizeString(str) {
   let s = String(str);
   // Repeat until nothing changes, so "<scr<script></script>ipt>" cannot rebuild a tag.
   for (let i = 0; i < 5; i++) {
     const before = s;
-    s = s.replace(BLOCK_TAGS, "").replace(STRAY_TAGS, "").replace(HTML_COMMENTS, "");
-    s = s.replace(ANY_TAG, (tag) => tag.replace(EVENT_HANDLERS, "").replace(JAVASCRIPT_URL, ""));
+    s = cleanTags(s);
     s = s.replace(/^\s*javascript:\s*/i, "");
     if (s === before) break;
   }
