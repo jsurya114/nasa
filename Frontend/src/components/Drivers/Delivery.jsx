@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
-import { ShieldCheck } from "lucide-react";
+import { ShieldCheck, CalendarDays, CalendarRange } from "lucide-react";
 import Header from "../../reuse/driver/Header";
 import Nav from "../../reuse/driver/Nav";
 import { useDispatch, useSelector } from "react-redux";
@@ -332,7 +332,7 @@ const Deliveries = () => {
                 <div className="flex flex-wrap gap-2">
                   <button
                     onClick={() => setSelectedDataType("all")}
-                    className={`px-4 py-2.5 rounded-md text-sm font-semibold transition ${
+                    className={`px-4 py-2.5 rounded-xl text-sm font-semibold transition ${
                       selectedDataType === "all"
                         ? "bg-brand text-white shadow-md"
                         : "bg-gray-100 text-gray-700 hover:bg-gray-200"
@@ -342,23 +342,29 @@ const Deliveries = () => {
                   </button>
                   <button
                     onClick={() => setSelectedDataType("daily")}
-                    className={`px-4 py-2.5 rounded-md text-sm font-semibold transition ${
+                    className={`px-4 py-2.5 rounded-xl text-sm font-semibold transition ${
                       selectedDataType === "daily"
                         ? "bg-brand text-white shadow-md"
                         : "bg-gray-100 text-gray-700 hover:bg-gray-200"
                     }`}
                   >
-                    {t('showDaily')} ({deliveries.filter(d => d.data_type === 'daily').length})
+                    <span className="inline-flex items-center gap-1.5">
+                      <CalendarDays className="h-4 w-4" aria-hidden="true" />
+                      {t('showDaily')} ({deliveries.filter(d => d.data_type === 'daily').length})
+                    </span>
                   </button>
                   <button
                     onClick={() => setSelectedDataType("weekly")}
-                    className={`px-4 py-2.5 rounded-md text-sm font-semibold transition ${
+                    className={`px-4 py-2.5 rounded-xl text-sm font-semibold transition ${
                       selectedDataType === "weekly"
                         ? "bg-purple-600 text-white shadow-md"
                         : "bg-gray-100 text-gray-700 hover:bg-gray-200"
                     }`}
                   >
-                    {t('showWeekly')} ({deliveries.filter(d => d.data_type === 'weekly').length})
+                    <span className="inline-flex items-center gap-1.5">
+                      <CalendarRange className="h-4 w-4" aria-hidden="true" />
+                      {t('showWeekly')} ({deliveries.filter(d => d.data_type === 'weekly').length})
+                    </span>
                   </button>
                 </div>
               </div>
@@ -368,11 +374,14 @@ const Deliveries = () => {
           {/* Current Data Type Badge */}
           {currentDataType && filteredDeliveries.length > 0 && (
             <div className="px-4 sm:px-6 pb-4">
-              <div className={`inline-flex px-4 py-2 rounded-full font-semibold text-sm ${
+              <div className={`inline-flex items-center gap-1.5 px-4 py-2 rounded-full font-semibold text-sm ${
                 currentDataType === 'weekly' 
                   ? 'bg-purple-100 text-purple-700 border border-purple-300' 
                   : 'bg-blue-100 text-blue-700 border border-blue-300'
               }`}>
+                {currentDataType === 'weekly'
+                  ? <CalendarRange className="h-4 w-4" aria-hidden="true" />
+                  : <CalendarDays className="h-4 w-4" aria-hidden="true" />}
                 {currentDataType === 'weekly' ? t('showingGofoData') : t('showingSpeedxData')}
               </div>
             </div>

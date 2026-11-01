@@ -720,7 +720,7 @@ export default function AdminDriverAvailability() {
                           >
                             <td className="px-6 py-4 whitespace-nowrap">
                               <div className="flex items-center gap-3">
-                                <div className="flex-shrink-0 h-10 w-10 rounded-full bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center text-white font-bold">
+                                <div className="flex-shrink-0 h-10 w-10 rounded-full bg-brand-100 flex items-center justify-center text-brand-800 font-bold">
                                   {driver.name.charAt(0).toUpperCase()}
                                 </div>
                                 <div>
@@ -844,7 +844,7 @@ export default function AdminDriverAvailability() {
                       {/* Driver Header */}
                       <div className="flex items-start justify-between mb-4">
                         <div className="flex items-center gap-3">
-                          <div className="flex-shrink-0 h-12 w-12 rounded-full bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center text-white font-bold text-lg">
+                          <div className="flex-shrink-0 h-12 w-12 rounded-full bg-brand-100 flex items-center justify-center text-brand-800 font-bold text-lg">
                             {driver.name.charAt(0).toUpperCase()}
                           </div>
                           <div>

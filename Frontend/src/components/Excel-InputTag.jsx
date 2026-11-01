@@ -1,6 +1,6 @@
 import { useState, useRef, forwardRef, useImperativeHandle } from "react";
 
-// import { X } from "lucide-react";
+import { X } from "lucide-react";
 
 const FileUpload = forwardRef(function FileUpload({ onFileSelect }, ref) {
   const [file, setFile] = useState(null);
@@ -56,9 +56,10 @@ const FileUpload = forwardRef(function FileUpload({ onFileSelect }, ref) {
           <button
             type="button"
             onClick={clearInput}
-            className="absolute right-2 bg-gray-200 hover:bg-gray-300 p-1 rounded-full"
+            className="absolute right-2 grid h-8 w-8 place-items-center rounded-full bg-gray-100 text-gray-600 hover:bg-red-50 hover:text-red-600"
+            aria-label="Remove selected file"
           >
-            <span size={16}>❌</span>
+            <X className="h-4 w-4" aria-hidden="true" />
           </button>
         )}
       </div>
