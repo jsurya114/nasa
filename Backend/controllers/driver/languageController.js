@@ -1,4 +1,4 @@
-import pool from '../../config/db.js';
+import languageQueries from '../../services/driver/languageQueries.js';
 import HttpStatus from '../../utils/statusCodes.js';
 import { translateError } from "../../utils/backendI18n.js";
 import logger from '../../utils/logger.js';
@@ -21,19 +21,16 @@ const languageController = {
         });
       }
 
-      const result = await pool.query(
-        'SELECT preferred_language FROM drivers WHERE id = $1',
-        [driverId]
-      );
+      const rows = await languageQueries.getPreferredLanguage(driverId);
 
-      if (result.rows.length === 0) {
+      if (rows.length === 0) {
         return res.status(HttpStatus.NOT_FOUND).json({
           message: translateError(lang, 'driver.driverNotFound')
         });
       }
 
       return res.status(HttpStatus.OK).json({
-        preferredLanguage: result.rows[0].preferred_language || 'en'
+        preferredLanguage: rows[0].preferred_language || 'en'
       });
     } catch (error) {
       const lang = getLang(req);
@@ -63,12 +60,9 @@ const languageController = {
         });
       }
 
-      const result = await pool.query(
-        'UPDATE drivers SET preferred_language = $1 WHERE id = $2 RETURNING id, preferred_language',
-        [language, driverId]
-      );
+      const rows = await languageQueries.updatePreferredLanguage(driverId, language);
 
-      if (result.rows.length === 0) {
+      if (rows.length === 0) {
         return res.status(HttpStatus.NOT_FOUND).json({
           message: translateError(lang, 'driver.driverNotFound')
         });
@@ -78,7 +72,7 @@ const languageController = {
 
       return res.status(HttpStatus.OK).json({
         message: translateError(lang, 'language.updatedSuccessfully'),
-        preferredLanguage: result.rows[0].preferred_language
+        preferredLanguage: rows[0].preferred_language
       });
     } catch (error) {
       const lang = getLang(req);
