@@ -2,7 +2,7 @@ import React, { useState } from "react";
 import logo from "../../assets/logo.png"; // adjust path according to your folder structure
 
 import { useDispatch, useSelector } from 'react-redux'
-import { adminLogin, clearError } from "../../redux/slice/admin/adminSlice.js";
+import { adminLogin } from "../../redux/slice/admin/adminSlice.js";
 import { useNavigate } from "react-router-dom";
 import { toast } from "react-toastify";
 import { AiOutlineEye, AiOutlineEyeInvisible } from "react-icons/ai";
@@ -19,7 +19,7 @@ const Login = () => {
   const dispatch = useDispatch();
   const navigate = useNavigate();
 
-  const { loading, error, isAuthenticated } = useSelector((state) => state.admin);
+  const { loading, error } = useSelector((state) => state.admin);
   const handleSubmit = async (e) => {
     e.preventDefault();
 

@@ -31,7 +31,6 @@ const AdminJourney = () => {
     pagination 
   } = useSelector((state) => state.journey);
 const [isAdding, setIsAdding] = useState(false);
-const [selectedDriverForRoutes, setSelectedDriverForRoutes] = useState(null);
 
   const [editableJourneyId, setEditableJourneyId] = useState(null);
   const [formData, setFormData] = useState({});
@@ -92,6 +91,8 @@ const [selectedDriverForRoutes, setSelectedDriverForRoutes] = useState(null);
         if (timeout) clearTimeout(timeout);
       };
     }
+    // errorTimeout is deliberately not a dependency: this effect sets it, so listing it would restart the timer in a loop.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [validationErrors]);
 
   useEffect(() => {
@@ -325,7 +326,7 @@ useEffect(() => {
 }, [validationErrors]);
 
   const handleAddJourney = useCallback(
-    async (e) => {
+    async () => {
       if (isAdding) {
         return;
       }
@@ -426,10 +427,10 @@ useEffect(() => {
     [isAdding, dispatch, newJourneyData, validateSequenceOverlap, errorTimeout, currentPage, itemsPerPage, filters]
   );
 
-  const handleDelete = async (id) => {
+  const handleDelete = useCallback((id) => {
     setJourneyToDelete(id);
     setShowDeleteModal(true);
-  };
+  }, []);
 
   const confirmDelete = async () => {
     if (!journeyToDelete) return;

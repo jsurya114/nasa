@@ -11,7 +11,6 @@ import {
   setPage,
   setPageLimit,
   setSearchTerm,
-  setZipCodeFilter,
 } from "../../redux/slice/admin/accessCodeSlice";
 import { getAdminCities } from "../../redux/slice/admin/userLoadSlice";
 import Header from "../../reuse/Header";
@@ -31,7 +30,6 @@ export default function AddAccessCodePage() {
   const {
     accessCodes = [],
     status = "idle",
-    error: reduxError,
     currentPage,
     pageLimit,
     totalPages,
@@ -55,7 +53,7 @@ export default function AddAccessCodePage() {
   const [errors, setErrors] = useState({});
   const [touched, setTouched] = useState({});
   const [localSearch, setLocalSearch] = useState("");
-  const [localZipCodeFilter, setLocalZipCodeFilter] = useState("");
+  const [localZipCodeFilter] = useState("");
   const [images, setImages] = useState([]);
   const [imageError, setImageError] = useState("");
   const [showDetails, setShowDetails] = useState(false);
@@ -66,6 +64,8 @@ export default function AddAccessCodePage() {
     if (status === "idle") {
       dispatch(fetchAccessCodes({ page: currentPage, limit: pageLimit, search: searchTerm, zipCodeFilter }));
     }
+    // Loads the list once, when it has not been loaded yet. Page and filter changes fetch on their own, so they are not dependencies.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dispatch, status]);
 
   useEffect(() => {
@@ -264,13 +264,6 @@ export default function AddAccessCodePage() {
     dispatch(setSearchTerm(localSearch));
     dispatch(setPage(1));
     dispatch(fetchAccessCodes({ page: 1, limit: pageLimit, search: localSearch, zipCodeFilter: localZipCodeFilter }));
-  };
-
-  const handleFilterChange = (filter) => {
-    setLocalZipCodeFilter(filter);
-    dispatch(setZipCodeFilter(filter));
-    dispatch(setPage(1));
-    dispatch(fetchAccessCodes({ page: 1, limit: pageLimit, search: localSearch, zipCodeFilter: filter }));
   };
 
   const handlePageChange = (newPage) => {
@@ -737,7 +730,7 @@ export default function AddAccessCodePage() {
 
                 {/* Mobile Card View - Shown only on mobile */}
                 <div className="md:hidden space-y-4">
-                  {accessCodes.map((ac, index) => (
+                  {accessCodes.map((ac) => (
                     <div
                       key={ac.id}
                       className="bg-white border border-gray-200 rounded-xl shadow-sm p-4 hover:shadow-md transition-shadow"

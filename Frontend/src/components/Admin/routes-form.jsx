@@ -4,14 +4,14 @@ import { toast, ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
 import Header from "../../reuse/Header";
 import Nav from "../../reuse/Nav";
-import { fetchRoutes, addRoute, toggleRouteStatus, deleteRoute, updateRoute } from "../../redux/slice/admin/routeSlice";
+import { fetchRoutes, addRoute, toggleRouteStatus, updateRoute } from "../../redux/slice/admin/routeSlice";
 import { fetchPaginatedJobs } from "../../redux/slice/admin/jobSlice";
 import Pagination from "../../reuse/Pagination.jsx";
 import SearchBar from "../../reuse/Search.jsx";
 
 export default function RoutesForm() {
   const dispatch = useDispatch();
-  const { routes, status: routesStatus, error: routesError, page, totalPages, limit } = useSelector((state) => state.routes);
+  const { routes, status: routesStatus, error: routesError, page, totalPages } = useSelector((state) => state.routes);
   const { cities, status: jobsStatus, error: jobsError } = useSelector((state) => state.jobs);
 
   const [formData, setFormData] = useState({
@@ -26,7 +26,7 @@ export default function RoutesForm() {
   });
   const [editingId, setEditingId] = useState(null);
   const [submitError, setSubmitError] = useState(null);
-  const [submitSuccess, setSubmitSuccess] = useState(null);
+  const [submitSuccess] = useState(null);
   const [searchTerm, setSearchTerm] = useState("");
   const [cityFilter, setCityFilter] = useState(""); // ✅ NEW: City filter state
 
@@ -162,27 +162,8 @@ export default function RoutesForm() {
         position: "top-right",
         autoClose: 2000,
       });
-    } catch (error) {
+    } catch {
       toast.error('Failed to update route status. Please try again.', {
-        position: "top-right",
-        autoClose: 3000,
-      });
-    }
-  }, [dispatch]);
-
-  // Memoized delete handler
-  const handleDelete = useCallback(async (id) => {
-    const confirmDelete = window.confirm("Are you sure you want to delete this route?");
-    if (!confirmDelete) return;
-
-    try {
-      await dispatch(deleteRoute(id)).unwrap();
-      toast.success('Route deleted successfully!', {
-        position: "top-right",
-        autoClose: 3000,
-      });
-    } catch (error) {
-      toast.error('Failed to delete route. Please try again.', {
         position: "top-right",
         autoClose: 3000,
       });
