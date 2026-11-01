@@ -1,8 +1,7 @@
 import React, { useEffect, useState, useCallback, useMemo, useRef } from "react";
 import { TriangleAlert, Info } from "lucide-react";
 import { useDispatch, useSelector } from "react-redux";
-import { toast, ToastContainer } from 'react-toastify';
-import 'react-toastify/dist/ReactToastify.css';
+import { toast } from "../../utils/toast";
 import Header from "../../reuse/Header";
 import Nav from "../../reuse/Nav";
 import SearchBar from "../../reuse/Search.jsx";
@@ -494,7 +493,6 @@ export default function Jobs() {
 
       </main>
       <Nav />
-      <ToastContainer position="top-right" autoClose={3000} />
     </div>
   );
 }

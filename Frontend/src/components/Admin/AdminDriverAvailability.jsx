@@ -9,7 +9,8 @@ import {
   manualResetAllDriversAvailability,
   clearMessages
 } from "../../redux/slice/driver/availabilitySlice.js";
-import { toast } from "react-toastify";
+import { toast } from "../../utils/toast";
+import { confirmDialog } from "../../utils/confirmDialog";
 
 import Header from "../../reuse/Header";
 import Nav from "../../reuse/Nav";
@@ -343,9 +344,12 @@ export default function AdminDriverAvailability() {
   };
 
   const handleManualReset = async () => {
-    if (window.confirm(
-      'WARNING: This will reset availability for ALL drivers (enabled and disabled) to unavailable.\n\nAre you sure you want to continue?'
-    )) {
+    if (await confirmDialog({
+      title: 'Reset availability for all drivers?',
+      text: 'This will reset availability for ALL drivers (enabled and disabled) to unavailable. Are you sure you want to continue?',
+      confirmText: 'Reset all drivers',
+      cancelText: 'Cancel',
+    })) {
       try {
         const result = await dispatch(manualResetAllDriversAvailability()).unwrap();
         toast.success(`${result.totalDriversReset} drivers reset successfully!`);

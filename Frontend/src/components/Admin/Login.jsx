@@ -4,7 +4,7 @@ import logo from "../../assets/logo.png"; // adjust path according to your folde
 import { useDispatch, useSelector } from 'react-redux'
 import { adminLogin } from "../../redux/slice/admin/adminSlice.js";
 import { useNavigate } from "react-router-dom";
-import { toast } from "react-toastify";
+import { toast } from "../../utils/toast";
 import { AiOutlineEye, AiOutlineEyeInvisible } from "react-icons/ai";
 
 

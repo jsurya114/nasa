@@ -1,7 +1,224 @@
 @import "tailwindcss";
 
-/* Brand colours. Same purple as before, named once so every screen can share it. */
+/*
+ * NASA Logistics design tokens (issue #23).
+ * Presentation only: colours, type, radius, depth and motion. No screen logic lives here.
+ */
 @theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+
+  /* Brand violet. --color-brand is the original NASA purple and stays exactly the same. */
   --color-brand: oklch(0.36 0.13 296.97);
   --color-brand-dark: var(--color-purple-900);
+  --color-brand-50: oklch(0.975 0.013 297);
+  --color-brand-100: oklch(0.945 0.03 297);
+  --color-brand-200: oklch(0.885 0.06 297);
+  --color-brand-300: oklch(0.8 0.1 297);
+  --color-brand-400: oklch(0.68 0.15 297);
+  --color-brand-500: oklch(0.56 0.18 297);
+  --color-brand-600: oklch(0.47 0.17 297);
+  --color-brand-700: oklch(0.41 0.15 297);
+  --color-brand-800: oklch(0.36 0.13 296.97);
+  --color-brand-900: oklch(0.29 0.1 297);
+  --color-brand-950: oklch(0.21 0.07 297);
+
+  /* Neutral surfaces with a faint violet tint. */
+  --color-ink: oklch(0.24 0.03 290);
+  --color-ink-muted: oklch(0.5 0.03 290);
+  --color-canvas: oklch(0.977 0.007 297);
+  --color-line: oklch(0.91 0.015 297);
+
+  --radius-card: 1.25rem;
+  --shadow-card: 0 1px 2px rgb(30 16 60 / 0.06), 0 4px 16px -4px rgb(30 16 60 / 0.08);
+  --shadow-float: 0 12px 32px -10px rgb(30 16 60 / 0.38), 0 2px 8px -2px rgb(30 16 60 / 0.18);
+  --ease-out-soft: cubic-bezier(0.22, 1, 0.36, 1);
+
+  --animate-sheet-in: sheet-in 220ms var(--ease-out-soft) both;
+  @keyframes sheet-in {
+    from { opacity: 0; transform: translateY(8px) scale(0.98); }
+  }
 }
+
+@layer base {
+  html {
+    -webkit-tap-highlight-color: transparent;
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+  }
+
+  body {
+    background-color: var(--color-canvas);
+    color: var(--color-ink);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  /* A clear keyboard focus ring everywhere. Mouse and touch clicks do not show it. */
+  :focus-visible {
+    outline: 2px solid var(--color-brand-500);
+    outline-offset: 2px;
+  }
+
+  ::selection {
+    background-color: var(--color-brand-200);
+    color: var(--color-brand-950);
+  }
+}
+
+/*
+ * Liquid glass, used only for navigation and floating controls.
+ * Forms, tables and money stay on solid surfaces so they remain easy to read.
+ */
+@utility glass-violet {
+  background-color: color-mix(in oklab, var(--color-brand-800) 80%, transparent);
+  -webkit-backdrop-filter: saturate(170%) blur(18px);
+  backdrop-filter: saturate(170%) blur(18px);
+  border: 1px solid rgb(255 255 255 / 0.16);
+  box-shadow: var(--shadow-float), inset 0 1px 0 rgb(255 255 255 / 0.18);
+}
+
+@utility glass-light {
+  background-color: rgb(255 255 255 / 0.86);
+  -webkit-backdrop-filter: saturate(180%) blur(24px);
+  backdrop-filter: saturate(180%) blur(24px);
+  border: 1px solid rgb(255 255 255 / 0.7);
+  box-shadow: var(--shadow-float), inset 0 1px 0 rgb(255 255 255 / 0.8);
+}
+
+/* Readable fallbacks: browsers without blur, people who ask for less transparency or more contrast. */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .glass-violet { background-color: var(--color-brand-800); }
+  .glass-light { background-color: #ffffff; }
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .glass-violet { background-color: var(--color-brand-800); backdrop-filter: none; -webkit-backdrop-filter: none; }
+  .glass-light { background-color: #ffffff; backdrop-filter: none; -webkit-backdrop-filter: none; }
+}
+
+@media (prefers-contrast: more) {
+  .glass-violet { background-color: var(--color-brand-900); border-color: #ffffff; }
+  .glass-light { background-color: #ffffff; border-color: var(--color-brand-800); }
+}
+
+/* Respect "reduce motion". Loading spinners keep turning so people can still see work is in progress. */
+@media (prefers-reduced-motion: reduce) {
+  *:not(.animate-spin),
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* ---------------------------------------------------------------------------
+ * Notifications (react-toastify), one look for the whole app.
+ * Solid white so messages stay easy to read; the coloured edge and icon give the kind.
+ * ------------------------------------------------------------------------- */
+:root:root {
+  --toastify-font-family: var(--font-sans);
+  --toastify-toast-width: 380px;
+  --toastify-toast-top: calc(env(safe-area-inset-top) + 4.75rem);
+  --toastify-toast-right: 1rem;
+  --toastify-toast-min-height: 3.5rem;
+  --toastify-toast-padding: 0.75rem 0.5rem 0.875rem 0.875rem;
+  --toastify-toast-bd-radius: 1rem;
+  --toastify-toast-shadow: var(--shadow-float);
+  --toastify-color-light: #ffffff;
+  --toastify-text-color-light: var(--color-ink);
+  --toastify-z-index: 9999;
+}
+
+/* The library stylesheet loads after this file, so these rules start with ":root" to win. */
+:root .Toastify__toast {
+  --toast-accent: var(--color-brand-600);
+  align-items: flex-start;
+  gap: 0.25rem;
+  border: 1px solid var(--color-line);
+  border-left: 4px solid var(--toast-accent);
+  font-size: 0.875rem;
+  font-weight: 500;
+  line-height: 1.4;
+}
+:root .Toastify__toast--success { --toast-accent: #15803d; }
+:root .Toastify__toast--error { --toast-accent: #dc2626; }
+:root .Toastify__toast--warning { --toast-accent: #b45309; }
+:root .Toastify__toast--info,
+:root .Toastify__toast--default { --toast-accent: var(--color-brand-600); }
+
+:root .Toastify__toast-icon { margin-top: 0.0625rem; margin-inline-end: 0.5rem; }
+:root .toast-icon { width: 22px; height: 22px; color: var(--toast-accent); }
+:root .Toastify__toast-body { padding-top: 0.125rem; }
+
+:root .Toastify__progress-bar--wrp { height: 3px; }
+:root .Toastify__progress-bar { background: var(--toast-accent); opacity: 0.55; }
+
+:root .toast-close {
+  display: grid;
+  margin-left: auto;
+  place-items: center;
+  flex-shrink: 0;
+  min-width: 2.75rem;
+  min-height: 2.75rem;
+  margin-block: -0.5rem;
+  margin-right: -0.25rem;
+  border-radius: 0.75rem;
+  color: var(--color-ink-muted);
+}
+:root .toast-close:hover { background-color: var(--color-brand-50); color: var(--color-ink); }
+
+/* Phones: full width with side margins, under the header, never over the bottom navigation. */
+@media only screen and (max-width: 480px) {
+  :root .Toastify__toast-container {
+    width: auto;
+    left: calc(env(safe-area-inset-left) + 0.75rem);
+    right: calc(env(safe-area-inset-right) + 0.75rem);
+  }
+  :root .Toastify__toast-container--top-left,
+  :root .Toastify__toast-container--top-center,
+  :root .Toastify__toast-container--top-right {
+    top: calc(env(safe-area-inset-top) + 4.5rem);
+  }
+  :root .Toastify__toast {
+    margin-bottom: 0.5rem;
+    border-radius: 1rem;
+  }
+}
+
+/* ---------------------------------------------------------------------------
+ * Confirmation dialogs (SweetAlert2 through utils/confirmDialog.js).
+ * ------------------------------------------------------------------------- */
+.ui-dialog {
+  width: min(28rem, calc(100vw - 2rem));
+  padding: 1.5rem;
+  border-radius: 1.5rem;
+  box-shadow: var(--shadow-float);
+  font-family: var(--font-sans);
+  color: var(--color-ink);
+}
+.ui-dialog-title { padding: 0.5rem 0 0; font-size: 1.25rem; font-weight: 700; color: var(--color-ink); }
+.ui-dialog-text { margin: 0.75rem 0 0; padding: 0; font-size: 0.9375rem; line-height: 1.5; color: var(--color-ink-muted); }
+.ui-dialog-actions { width: 100%; margin: 1.5rem 0 0; gap: 0.75rem; flex-wrap: wrap-reverse; }
+.ui-dialog-actions > button { flex: 1 1 10rem; margin: 0; }
+.ui-dialog-backdrop { background: rgb(20 10 40 / 0.45) !important; -webkit-backdrop-filter: blur(4px); backdrop-filter: blur(4px); }
+
+.ui-btn {
+  display: inline-flex;
+  min-height: 2.875rem;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  border-radius: 0.875rem;
+  padding: 0.625rem 1.125rem;
+  font-weight: 600;
+  font-size: 0.9375rem;
+  transition: background-color 150ms var(--ease-out-soft), box-shadow 150ms var(--ease-out-soft);
+}
+.ui-btn-primary { background: var(--color-brand-800); color: #fff; box-shadow: 0 6px 16px -8px rgb(59 31 107 / 0.7); }
+.ui-btn-primary:hover { background: var(--color-brand-900); }
+.ui-btn-danger { background: #dc2626; color: #fff; box-shadow: 0 6px 16px -8px rgb(220 38 38 / 0.7); }
+.ui-btn-danger:hover { background: #b91c1c; }
+.ui-btn-ghost { background: #fff; color: var(--color-ink); border: 1px solid var(--color-line); }
+.ui-btn-ghost:hover { background: var(--color-brand-50); }
