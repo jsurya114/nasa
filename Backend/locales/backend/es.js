@@ -61,6 +61,7 @@ export const backendEs = {
   // Journey errors
   journey: {
     routeRequired: "La ruta es requerida",
+    routeUnavailable: "Esta ruta ya no está disponible. Elija otra ruta.",
     startSeqInvalid: "La secuencia inicial debe ser mayor que 0",
     endSeqInvalid: "La secuencia final debe ser >= secuencia inicial",
     sequenceConflict: "Algunos paquetes en este rango de secuencia ya están tomados por otro conductor",
