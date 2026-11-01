@@ -59,6 +59,18 @@
     outline-offset: 2px;
   }
 
+  /*
+   * Tailwind 4 draws a bare "border" in the text colour; the screens were written for the old light-grey
+   * default, which showed as heavy black lines. Restore a soft default; explicit border colours still win.
+   */
+  *,
+  ::after,
+  ::before,
+  ::backdrop,
+  ::file-selector-button {
+    border-color: var(--color-line, currentColor);
+  }
+
   ::selection {
     background-color: var(--color-brand-200);
     color: var(--color-brand-950);

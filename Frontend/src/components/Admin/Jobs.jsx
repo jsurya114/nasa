@@ -310,7 +310,7 @@ export default function Jobs() {
 
         {isSuperAdmin && (
           <section className="card-surface mb-4 p-4 sm:p-6">
-            <h2 className="font-bold text-gray-900 bg-gray-50 border-b border-line px-4 py-3 -mx-6 -mt-6 rounded-t-xl">
+            <h2 className="font-bold text-ink bg-brand-50/60 border-b border-line px-4 sm:px-6 py-3 -mx-4 -mt-4 sm:-mx-6 sm:-mt-6 rounded-t-[var(--radius-card)]">
               {isEditing ? 'Edit City' : 'Add City'}
             </h2>
 
@@ -322,7 +322,7 @@ export default function Jobs() {
                   value={form.job}
                   onChange={onChangeField}
                   placeholder="Enter City"
-                  className={`w-full px-3 py-3 sm:py-2 border rounded-lg focus:ring-2 focus:ring-purple-600 ${errors.job ? 'border-red-500' : 'border-gray-300'}`}
+                  className={`bg-white text-ink placeholder:text-ink-muted/70 focus:outline-none transition-shadow min-h-11 w-full px-3 py-3 sm:py-2 border rounded-xl focus:ring-4 focus:ring-brand-500/20 ${errors.job ? 'border-red-500' : 'border-line'}`}
                 />
                 {errors.job && <p className="text-red-500 text-sm mt-1">{errors.job}</p>}
               </div>
@@ -334,7 +334,7 @@ export default function Jobs() {
                   value={form.city_code}
                   onChange={onChangeField}
                   placeholder="Enter city code"
-                  className={`w-full px-3 py-3 sm:py-2 border rounded-lg focus:ring-2 focus:ring-purple-600 ${errors.city_code ? 'border-red-500' : 'border-gray-300'}`}
+                  className={`bg-white text-ink placeholder:text-ink-muted/70 focus:outline-none transition-shadow min-h-11 w-full px-3 py-3 sm:py-2 border rounded-xl focus:ring-4 focus:ring-brand-500/20 ${errors.city_code ? 'border-red-500' : 'border-line'}`}
                 />
                 {errors.city_code && <p className="text-red-500 text-sm mt-1">{errors.city_code}</p>}
               </div>
@@ -345,7 +345,7 @@ export default function Jobs() {
                   name="city_type"
                   value={form.city_type}
                   onChange={onChangeField}
-                  className={`w-full px-3 py-3 sm:py-2 border rounded-lg focus:ring-2 focus:ring-purple-600 ${errors.city_type ? 'border-red-500' : 'border-gray-300'}`}
+                  className={`bg-white text-ink placeholder:text-ink-muted/70 focus:outline-none transition-shadow min-h-11 w-full px-3 py-3 sm:py-2 border rounded-xl focus:ring-4 focus:ring-brand-500/20 ${errors.city_type ? 'border-red-500' : 'border-line'}`}
                 >
                   <option value="DAILY">Daily</option>
                   <option value="WEEKLY">Weekly</option>

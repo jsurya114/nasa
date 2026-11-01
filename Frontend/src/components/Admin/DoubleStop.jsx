@@ -177,7 +177,7 @@ const DoubleStop = () => {
       <main className="max-w-[1450px] mx-auto p-4 pb-40">
         {/* Weekly Form */}
         {activeView === "weekly" && (
-          <section className="bg-white border border-gray-200 rounded-xl shadow-sm mb-4 p-6">
+          <section className="card-surface mb-4 p-6">
             <h2 className="font-bold text-gray-900 bg-gray-50 border-b border-gray-200 px-4 py-3 -mx-6 -mt-6 rounded-t-xl">
               Weekly Upload
             </h2>
@@ -234,7 +234,7 @@ const DoubleStop = () => {
 
         {/* Daily Form */}
         {activeView === "daily" && (
-          <section className="bg-white border border-gray-200 rounded-xl shadow-sm mb-4 p-6">
+          <section className="card-surface mb-4 p-6">
             <h2 className="font-bold text-gray-900 bg-gray-50 border-b border-gray-200 px-4 py-3 -mx-6 -mt-6 rounded-t-xl">
               Daily Upload
             </h2>
@@ -248,7 +248,7 @@ const DoubleStop = () => {
                   type="date"
                   value={selectedDate}
                   onChange={handleDateChange}
-                  className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-purple-600"
+                  className="bg-white text-ink placeholder:text-ink-muted/70 focus:outline-none transition-shadow border-line min-h-11 w-full px-3 py-2 border rounded-xl focus:ring-4 focus:ring-brand-500/20"
                 />
               </div>
 
@@ -304,7 +304,7 @@ const DoubleStop = () => {
 
         {/* Uploaded Data - Only show for the current view */}
         {activeView === "weekly" && (
-          <section className="bg-white border mb-3 border-gray-200 rounded-xl shadow-sm overflow-x-auto">
+          <section className="card-surface mb-3 overflow-x-auto">
             <h2 className="font-bold text-gray-900 bg-gray-50 border-b border-gray-200 px-4 py-3 rounded-t-xl">
               Weekly Data
             </h2>
@@ -315,7 +315,7 @@ const DoubleStop = () => {
         )}
 
         {activeView === "daily" && (
-          <section className="bg-white border mb-3 border-gray-200 rounded-xl shadow-sm overflow-x-auto">
+          <section className="card-surface mb-3 overflow-x-auto">
             <h2 className="font-bold text-gray-900 bg-gray-50 border-b border-gray-200 px-4 py-3 rounded-t-xl">
               Daily Data
             </h2>

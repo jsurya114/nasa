@@ -287,8 +287,8 @@ export default function DriverAccessCodePage() {
                 value={zipCode}
                 onChange={(e) => handleFieldChange("zipCode", e.target.value)}
                 onBlur={() => handleBlur("zipCode")}
-                className={`w-full px-4 py-3 border-2 ${touched.zipCode && errors.zipCode ? "border-red-500" : "border-line"
-                  } rounded-xl focus:ring-4 focus:ring-purple-100 focus:border-brand bg-white text-ink transition-all`}
+                className={`placeholder:text-ink-muted/70 focus:outline-none transition-shadow min-h-11 w-full px-4 py-3 border ${touched.zipCode && errors.zipCode ? "border-red-500" : "border-line"
+                  } rounded-xl focus:ring-4 focus:ring-brand-500/20 focus:border-brand-500 bg-white text-ink transition-all`}
                 disabled={status === "loading"}
               />
               {touched.zipCode && errors.zipCode && (
@@ -318,8 +318,8 @@ export default function DriverAccessCodePage() {
                 value={address}
                 onChange={(e) => handleFieldChange("address", e.target.value)}
                 onBlur={() => handleBlur("address")}
-                className={`w-full px-4 py-3 border-2 ${touched.address && errors.address ? "border-red-500" : "border-line"
-                  } rounded-xl focus:ring-4 focus:ring-purple-100 focus:border-brand text-ink transition-all`}
+                className={`bg-white placeholder:text-ink-muted/70 focus:outline-none transition-shadow min-h-11 w-full px-4 py-3 border ${touched.address && errors.address ? "border-red-500" : "border-line"
+                  } rounded-xl focus:ring-4 focus:ring-brand-500/20 focus:border-brand-500 text-ink transition-all`}
                 disabled={status === "loading"}
               />
               {touched.address && errors.address && (
@@ -348,8 +348,8 @@ export default function DriverAccessCodePage() {
                 value={accessCode}
                 onChange={(e) => handleFieldChange("accessCode", e.target.value)}
                 onBlur={() => handleBlur("accessCode")}
-                className={`w-full px-4 py-3 border-2 ${touched.accessCode && errors.accessCode ? "border-red-500" : "border-line"
-                  } rounded-xl focus:ring-4 focus:ring-purple-100 focus:border-brand text-ink transition-all`}
+                className={`bg-white placeholder:text-ink-muted/70 focus:outline-none transition-shadow min-h-11 w-full px-4 py-3 border ${touched.accessCode && errors.accessCode ? "border-red-500" : "border-line"
+                  } rounded-xl focus:ring-4 focus:ring-brand-500/20 focus:border-brand-500 text-ink transition-all`}
                 disabled={status === "loading"}
               />
               {touched.accessCode && errors.accessCode && (
@@ -378,7 +378,7 @@ export default function DriverAccessCodePage() {
                 multiple
                 accept="image/jpeg,image/png,image/webp,image/jpg"
                 onChange={onFilesChange}
-                className="w-full px-4 py-3 text-base border-2 border-line rounded-xl focus:ring-4 focus:ring-purple-100 focus:border-brand bg-white text-ink transition-all"
+                className="file:mr-3 file:rounded-lg file:border-0 file:bg-brand-50 file:px-3 file:py-2 file:text-sm file:font-semibold file:text-brand-800 hover:file:bg-brand-100 file:cursor-pointer w-full px-4 py-3 text-base border-2 border-line rounded-xl focus:ring-4 focus:ring-purple-100 focus:border-brand bg-white text-ink transition-all"
                 disabled={status === "loading"}
               />
               {fileError && <p className="text-red-500 text-sm mt-1">{fileError}</p>}
@@ -437,7 +437,7 @@ export default function DriverAccessCodePage() {
                 <select
                   value={pageLimit}
                   onChange={(e) => handleLimitChange(Number(e.target.value))}
-                  className="px-3 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 text-base"
+                  className="bg-white text-ink placeholder:text-ink-muted/70 focus:outline-none transition-shadow min-h-11 px-3 py-3 border border-line rounded-xl focus:ring-4 focus:ring-brand-500/20 text-base"
                 >
                   <option value={5}>5</option>
                   <option value={10}>10</option>
@@ -459,7 +459,7 @@ export default function DriverAccessCodePage() {
                     value={localSearch}
                     onChange={(e) => setLocalSearch(e.target.value)}
                     onKeyPress={(e) => e.key === "Enter" && handleSearch()}
-                    className="w-full px-4 py-3 pr-10 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 text-base"
+                    className="bg-white text-ink placeholder:text-ink-muted/70 focus:outline-none transition-shadow min-h-11 w-full px-4 py-3 pr-10 border border-line rounded-xl focus:ring-4 focus:ring-brand-500/20 text-base"
                   />
                   <button
                     onClick={handleSearch}
@@ -483,7 +483,7 @@ export default function DriverAccessCodePage() {
                   placeholder={t('filterByZipCode')}
                   value={localZipCodeFilter}
                   onChange={(e) => handleFilterChange(e.target.value)}
-                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 text-base"
+                  className="bg-white text-ink placeholder:text-ink-muted/70 focus:outline-none transition-shadow min-h-11 w-full px-4 py-3 border border-line rounded-xl focus:ring-4 focus:ring-brand-500/20 text-base"
                 />
               </div>
             </div>
@@ -535,7 +535,7 @@ export default function DriverAccessCodePage() {
                 <div className="hidden md:block w-full overflow-hidden">
                   <div className="shadow ring-1 ring-black ring-opacity-5 md:rounded-lg">
                     <table className="w-full divide-y divide-line">
-                      <thead className="bg-gradient-to-r from-gray-50 to-gray-100">
+                      <thead className="bg-brand-50/60">
                         <tr>
                           <th className="px-3 lg:px-4 py-3 sm:py-4 text-left text-xs font-bold text-gray-600 uppercase tracking-wider whitespace-nowrap">
                             {t('zipCode')}

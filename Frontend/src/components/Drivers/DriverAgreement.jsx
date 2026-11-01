@@ -69,7 +69,7 @@ const DriverAgreement = () => {
         <div className="p-8 h-96 overflow-y-auto text-gray-700 text-sm leading-relaxed space-y-6 bg-gray-50 border-b">
           <p>This Independent Contractor Agreement (“Agreement”) is entered into by and between:</p>
           
-          <div className="bg-white p-4 rounded border border-line">
+          <div className="bg-white p-4 rounded-xl border border-line">
             <ul className="font-semibold text-ink space-y-1">
               <li>Company: NASA LOGISTICS CARRIERS LLC</li>
               <li>Owner: Abdul Rahiman</li>
@@ -214,7 +214,7 @@ const DriverAgreement = () => {
                   name="name"
                   value={formData.name}
                   onChange={handleChange}
-                  className="w-full px-4 py-3 text-base border border-line rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-600 focus:border-purple-600"
+                  className="bg-white text-ink placeholder:text-ink-muted/70 transition-shadow min-h-11 w-full px-4 py-3 text-base border border-line rounded-xl focus:outline-none focus:ring-4 focus:ring-brand-500/20 focus:border-brand-500"
                   placeholder="Enter your full name"
                   required
                 />
@@ -226,7 +226,7 @@ const DriverAgreement = () => {
                   name="joining_date"
                   value={formData.joining_date}
                   onChange={handleChange}
-                  className="w-full px-4 py-3 text-base border border-line rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-600 focus:border-purple-600"
+                  className="bg-white text-ink placeholder:text-ink-muted/70 transition-shadow min-h-11 w-full px-4 py-3 text-base border border-line rounded-xl focus:outline-none focus:ring-4 focus:ring-brand-500/20 focus:border-brand-500"
                   required
                 />
               </div>

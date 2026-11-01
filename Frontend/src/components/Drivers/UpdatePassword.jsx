@@ -175,10 +175,10 @@ const UpdatePassword = () => {
                   onChange={handleChange}
                   onBlur={() => handleBlur("oldPassword")}
                   placeholder={t('enterCurrentPassword')}
-                  className={`w-full px-4 py-3 pr-12 border-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-600 transition-colors ${
+                  className={`bg-white text-ink placeholder:text-ink-muted/70 transition-shadow min-h-11 w-full px-4 py-3 pr-12 border rounded-xl focus:outline-none focus:ring-4 focus:ring-brand-500/20 transition-colors ${
                     touched.oldPassword && errors.oldPassword
                       ? "border-red-500 focus:ring-red-500"
-                      : "border-gray-300"
+                      : "border-line"
                   }`}
                   disabled={isLoading}
                 />
@@ -243,10 +243,10 @@ const UpdatePassword = () => {
                   onChange={handleChange}
                   onBlur={() => handleBlur("newPassword")}
                   placeholder={t('enterNewPassword')}
-                  className={`w-full px-4 py-3 pr-12 border-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-600 transition-colors ${
+                  className={`bg-white text-ink placeholder:text-ink-muted/70 transition-shadow min-h-11 w-full px-4 py-3 pr-12 border rounded-xl focus:outline-none focus:ring-4 focus:ring-brand-500/20 transition-colors ${
                     touched.newPassword && errors.newPassword
                       ? "border-red-500 focus:ring-red-500"
-                      : "border-gray-300"
+                      : "border-line"
                   }`}
                   disabled={isLoading}
                 />
@@ -312,10 +312,10 @@ const UpdatePassword = () => {
                   onChange={handleChange}
                   onBlur={() => handleBlur("confirmPassword")}
                   placeholder={t('reEnterNewPassword')}
-                  className={`w-full px-4 py-3 pr-12 border-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-600 transition-colors ${
+                  className={`bg-white text-ink placeholder:text-ink-muted/70 transition-shadow min-h-11 w-full px-4 py-3 pr-12 border rounded-xl focus:outline-none focus:ring-4 focus:ring-brand-500/20 transition-colors ${
                     touched.confirmPassword && errors.confirmPassword
                       ? "border-red-500 focus:ring-red-500"
-                      : "border-gray-300"
+                      : "border-line"
                   }`}
                   disabled={isLoading}
                 />

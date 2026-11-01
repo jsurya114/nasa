@@ -142,7 +142,7 @@ navigate("/admin/dashboard");
                   setFieldErrors((prev) => ({ ...prev, email: "" })); // clear email error
                 }}
 
-                className="w-full h-12 px-4 text-base border border-line rounded-xl focus:outline-none focus:ring-4 focus:ring-brand-500/20 focus:border-brand-500 transition-shadow"
+                className="bg-white text-ink placeholder:text-ink-muted/70 min-h-11 w-full h-12 px-4 text-base border border-line rounded-xl focus:outline-none focus:ring-4 focus:ring-brand-500/20 focus:border-brand-500 transition-shadow"
               />
               {fieldErrors.email && (
                 <p className="text-red-600 text-sm mt-1">{fieldErrors.email}</p>
@@ -161,7 +161,7 @@ navigate("/admin/dashboard");
       setPassword(e.target.value);
       setFieldErrors((prev) => ({ ...prev, password: "" }));
     }}
-    className="w-full h-12 px-4 pr-12 text-base border border-line rounded-xl focus:outline-none focus:ring-4 focus:ring-brand-500/20 focus:border-brand-500 transition-shadow"
+    className="bg-white text-ink placeholder:text-ink-muted/70 min-h-11 w-full h-12 px-4 pr-12 text-base border border-line rounded-xl focus:outline-none focus:ring-4 focus:ring-brand-500/20 focus:border-brand-500 transition-shadow"
   />
 
   <button
