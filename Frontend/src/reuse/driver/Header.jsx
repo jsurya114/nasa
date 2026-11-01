@@ -48,7 +48,7 @@ function Header() {
       // NOT the old language
       const successMessage = getTranslation('updateSuccess', newLang);
       toast.success(successMessage);
-    } catch (error) {
+    } catch {
       // Show error in the NEW language as well, since that's what user wanted
       const errorMessage = getTranslation('actionFailed', newLang);
       toast.error(errorMessage);

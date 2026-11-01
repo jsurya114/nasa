@@ -91,7 +91,7 @@ function AddAdminForm({ onSubmit, editData, isEdit, onCancel }) {
       return;
     }
 
-    const { confirmPassword, ...adminData } = form;
+    const { confirmPassword: _confirmPassword, ...adminData } = form; // leaves confirmPassword out of what is sent
     
     // If editing and password is empty, don't send password field
     if (isEdit && !adminData.password.trim()) {

@@ -1,6 +1,6 @@
-import React, { useEffect, useState } from "react";
+import React, { useState } from "react";
 import logo from "../assets/logo.png";
-import { accessAdminUser, adminLogout } from "../redux/slice/admin/adminSlice";
+import { adminLogout } from "../redux/slice/admin/adminSlice";
 import { useDispatch, useSelector } from "react-redux";
 import { useNavigate } from "react-router-dom";
 import { Menu, X } from "lucide-react";
