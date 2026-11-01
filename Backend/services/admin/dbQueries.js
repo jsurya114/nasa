@@ -1,6 +1,7 @@
 import pool  from "../../config/db.js";
 import bcrypt from "bcrypt";
 import { jobService } from "./jobQueries.js";
+import logger from '../../utils/logger.js';
 
 /**
  * Turns the city list sent by the admin form (`[{ value: 3, label: "..." }]`)
@@ -169,7 +170,7 @@ export const dbService = {
             
             return driverWithCity.rows[0];
         } catch (err) {
-            console.error("Error inserting user:", err.message);
+            logger.error("Error inserting user", err);
             throw err;
         }
     },
@@ -216,7 +217,7 @@ export const dbService = {
             return adminWithCities.rows[0];
         } catch (err) {
             await client.query('ROLLBACK');
-            console.error("Error inserting new admin:", err.message);
+            logger.error("Error inserting new admin", err);
             throw err;
         } finally {
             client.release();
@@ -403,7 +404,7 @@ updateParams = [
             return joined.rows[0];
         } catch (err) {
             await client.query('ROLLBACK');
-            console.error("Error updating admin:", err.message);
+            logger.error("Error updating admin", err);
             throw err;
         } finally {
             client.release();
@@ -424,7 +425,7 @@ updateParams = [
    
             return result.rows;
         } catch (error) {
-            console.error("Error in getAdminCities:", error.message);
+            logger.error("Error in getAdminCities", error);
             throw error;
         }
     },
@@ -459,7 +460,7 @@ updateParams = [
             const result = await pool.query(query, params);
             return result.rows;
         } catch (error) {
-            console.error("Error in getDriversByAdminCities:", error.message);
+            logger.error("Error in getDriversByAdminCities", error);
             throw error;
         }
     },
@@ -491,7 +492,7 @@ updateParams = [
             const result = await pool.query(query, params);
             return parseInt(result.rows[0].count, 10);
         } catch (error) {
-            console.error("Error in getCountOfDriversByAdminCities:", error.message);
+            logger.error("Error in getCountOfDriversByAdminCities", error);
             throw error;
         }
     }

@@ -2,6 +2,7 @@ import express from 'express'
 import HttpStatus from '../../utils/statusCodes.js'
 import { jobService } from '../../services/admin/jobQueries.js'
 import pool from '../../config/db.js'
+import logger from '../../utils/logger.js';
 
 const jobController = {
   getJob: async (req, res) => {
@@ -61,7 +62,7 @@ const jobController = {
       const { id } = req.params
       const { job, city_code, city_type } = req.body
 
-      console.log('Update job request:', { id, job, city_code, city_type });
+      logger.debug('Update job request', { id, job, city_code, city_type });
 
       // Validate city_type if provided
       if (city_type) {
@@ -80,10 +81,10 @@ const jobController = {
         return res.status(HttpStatus.NOT_FOUND).json({ message: "City not found" })
       }
 
-      console.log('City updated successfully:', updatedCity);
+      logger.info('City updated', { id: updatedCity.id });
       res.json(updatedCity)
     } catch (error) {
-      console.error('Update city error:', error);
+      logger.error('Update city error', error);
       res.status(HttpStatus.INTERNAL_SERVER_ERROR).json({ error: error.message })
     }
   },
@@ -169,11 +170,11 @@ const jobController = {
     try {
       const driverId = req.driver.id; // From driverAuth middleware
       
-      console.log('Fetching city type for driver:', driverId);
+      logger.debug('Fetching city type for driver', { driverId });
       
       const cityType = await jobService.getCityTypeByDriverId(driverId);
       
-      console.log('City type found:', cityType);
+      logger.debug('City type found', { driverId, cityType });
       
       res.json({ 
         success: true, 
@@ -182,7 +183,7 @@ const jobController = {
         isDaily: cityType === 'DAILY'
       });
     } catch (error) {
-      console.error("Error fetching driver city type:", error);
+      logger.error("Error fetching driver city type", error);
       res.status(HttpStatus.INTERNAL_SERVER_ERROR).json({ 
         success: false, 
         message: "Error fetching city type",

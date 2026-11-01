@@ -1,6 +1,7 @@
 import pool from "../../config/db.js";
 import HttpStatus from "../../utils/statusCodes.js";
 import { checkDriverAccess, isSuperAdmin } from "../../services/admin/agreementAccess.js";
+import logger from '../../utils/logger.js';
 
 // The driver id from the URL: digits only. The same number is used for the city check and the change.
 const parseDriverId = (value) => (/^\d{1,9}$/.test(String(value)) && Number(value) > 0 ? Number(value) : null);
@@ -37,7 +38,7 @@ const agreementController = {
         data: rows
       });
     } catch (error) {
-      console.error("❌ Fetch Agreements Error:", error);
+      logger.error("Fetch Agreements Error", error);
       return res.status(HttpStatus.INTERNAL_SERVER_ERROR).json({
         success: false,
         message: "Failed to fetch driver agreements"
@@ -107,7 +108,7 @@ const agreementController = {
         message: status ? "Agreement marked as signed" : "Agreement revoked successfully"
       });
     } catch (error) {
-      console.error("❌ Toggle Agreement Error:", error);
+      logger.error("Toggle Agreement Error", error);
       return res.status(HttpStatus.INTERNAL_SERVER_ERROR).json({
         success: false,
         message: "Failed to update agreement status"

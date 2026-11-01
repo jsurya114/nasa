@@ -1,4 +1,5 @@
 import pool from "../../config/db.js"
+import logger from '../../utils/logger.js';
 
 export const jobService = {
   getCityByJob: async (job) => {
@@ -30,7 +31,7 @@ export const jobService = {
   },
 
   updateCity: async (id, job, city_code, city_type) => {
-    console.log('updateCity called with:', { id, job, city_code, city_type });
+    logger.debug('updateCity called', { id, job, city_code, city_type });
     
     let query, params;
     
@@ -42,9 +43,8 @@ export const jobService = {
       params = [job, city_code, id];
     }
     
-    console.log('Executing query:', query, 'with params:', params);
     const result = await pool.query(query, params);
-    console.log('Update result:', result.rows[0]);
+    logger.debug('City update result', { id: result.rows[0]?.id });
     
     return result.rows[0];
   },
@@ -128,7 +128,7 @@ export const jobService = {
         total: parseInt(total.rows[0].count),
       };
     } catch (error) {
-      console.error("jobPagination error:", error.message);
+      logger.error("jobPagination error", error);
       throw error;
     }
   },
@@ -140,7 +140,7 @@ export const jobService = {
       );
       return cities.rows;
     } catch (error) {
-      console.error("GETTING CITIES ERROR:", error.message);
+      logger.error("GETTING CITIES ERROR", error);
       throw error;
     }
   },
@@ -158,7 +158,7 @@ export const jobService = {
       );
       return cities.rows;
     } catch (error) {
-      console.error("GETTING ADMIN CITIES ERROR:", error.message);
+      logger.error("GETTING ADMIN CITIES ERROR", error);
       throw error;
     }
   },
@@ -180,7 +180,7 @@ export const jobService = {
       
       return result.rows[0].city_type;
     } catch (error) {
-      console.error("getCityTypeByDriverId error:", error.message);
+      logger.error("getCityTypeByDriverId error", error);
       throw error;
     }
   },
