@@ -7,6 +7,14 @@ export const loginService = {
     return result.rows[0];
   },
 
+  // Saves the timezone the driver signed in from.
+  updateTimezone: async (driverId, timezone) => {
+    await pool.query(
+      'UPDATE drivers SET timezone = $1 WHERE id = $2',
+      [timezone, driverId]
+    );
+  },
+
   checkPassword: async (password, hashedPassword) => {
     return await bcrypt.compare(password, hashedPassword);
   },
