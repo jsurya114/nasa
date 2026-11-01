@@ -460,7 +460,7 @@ const journeySlice = createSlice({
         state.paginatedStatus = "loading";
         state.paginatedError = null;
       })
-      .addCase(addJourney.fulfilled, (state, action) => {
+      .addCase(addJourney.fulfilled, (state) => {
         state.paginatedStatus = "succeeded";
         // Don't modify paginatedJourneys here
         // Component will refetch to get accurate paginated data

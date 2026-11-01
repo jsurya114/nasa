@@ -159,7 +159,7 @@ const accessCodeSlice = createSlice({
         state.status = "loading";
         state.error = null;
       })
-      .addCase(createAccessCode.fulfilled, (state, action) => {
+      .addCase(createAccessCode.fulfilled, (state) => {
         state.status = "succeeded";
         state.error = null;
       })
@@ -172,7 +172,7 @@ const accessCodeSlice = createSlice({
         state.status = "loading";
         state.error = null;
       })
-      .addCase(updateAccessCode.fulfilled, (state, action) => {
+      .addCase(updateAccessCode.fulfilled, (state) => {
         state.status = "succeeded";
         state.error = null;
       })
@@ -185,7 +185,7 @@ const accessCodeSlice = createSlice({
         state.status = "loading";
         state.error = null;
       })
-      .addCase(deleteAccessCode.fulfilled, (state, action) => {
+      .addCase(deleteAccessCode.fulfilled, (state) => {
         state.status = "succeeded";
         state.error = null;
       })
