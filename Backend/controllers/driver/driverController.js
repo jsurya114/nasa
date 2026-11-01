@@ -2,7 +2,7 @@ import HttpStatus from '../../utils/statusCodes.js';
 import { loginService } from "../../services/driver/loginQueries.js";
 import { generateToken, verifyToken, generateRefreshToken, verifyRefreshToken } from '../../services/jwtservice.js';
 import { blackListToken, revokeRefreshToken, isTokenRevoked } from '../../services/redis-jwt-service.js';
-import pool from '../../config/db.js';
+import agreementQueries from '../../services/driver/agreementQueries.js';
 import { translateError } from "../../utils/backendI18n.js";
 import { DRIVER_ROLE } from '../../middlewares/requireRole.js';
 import logger from '../../utils/logger.js';
@@ -57,10 +57,7 @@ const driverController = {
       }
 
       // UPDATE: Save driver's timezone on login
-      await pool.query(
-        'UPDATE drivers SET timezone = $1 WHERE id = $2',
-        [timezone, driver.id]
-      );
+      await loginService.updateTimezone(driver.id, timezone);
 
       logger.debug('Driver timezone updated', { driverId: driver.id, timezone });
 
@@ -229,15 +226,7 @@ const driverController = {
         });
       }
 
-      await pool.query(
-        `UPDATE drivers 
-         SET agreement_signed = TRUE, 
-             agreement_signed_at = NOW(), 
-             agreement_signature_name = $1, 
-             agreement_joining_date = $2 
-         WHERE id = $3`,
-        [name, joining_date, driverId]
-      );
+      await agreementQueries.signAgreement(driverId, name, joining_date);
 
       return res.status(HttpStatus.OK).json({
         success: true,
