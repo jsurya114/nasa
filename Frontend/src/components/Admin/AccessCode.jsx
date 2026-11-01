@@ -37,9 +37,11 @@ export default function AddAccessCodePage() {
   // The cities this admin may use (every city for a superadmin).
   const cities = useSelector((state) => state.users?.city) || [];
   const isSuperAdmin = useSelector((state) => state.admin?.isSuperAdmin);
-  // One assigned city is filled in by the server. Several need a choice.
+  // Several selectable cities need a choice. With exactly one, the picker is hidden and that city is
+  // sent, because the server counts every assigned city (also switched-off ones) before filling one in.
   const mustChooseCity = !isSuperAdmin && cities.length > 1;
   const showCityPicker = isSuperAdmin || cities.length > 1;
+  const soleCityId = !isSuperAdmin && cities.length === 1 ? String(cities[0].id) : "";
 
   const [address, setAddress] = useState("");
   const [accessCode, setAccessCode] = useState("");
@@ -169,7 +171,8 @@ export default function AddAccessCodePage() {
       formData.append("zip_code", zipCode.trim());
       formData.append("address", address.trim());
       formData.append("access_code", accessCode.trim());
-      if (cityId) formData.append("city_id", cityId);
+      const chosenCityId = cityId || soleCityId;
+      if (chosenCityId) formData.append("city_id", chosenCityId);
       images.forEach((file) => formData.append("images", file));
 
       await dispatch(createAccessCode(formData)).unwrap();
