@@ -13,9 +13,9 @@ const DriverViewAgreement = () => {
         <div className="max-w-3xl w-full bg-white shadow-xl rounded-2xl overflow-hidden border border-gray-100">
           
           {/* Header */}
-          <div className="bg-blue-900 text-white p-6 text-center">
+          <div className="bg-brand text-white p-6 text-center">
             <h1 className="text-2xl font-bold uppercase tracking-wider">Independent Contractor Agreement</h1>
-            <p className="mt-2 text-blue-200">NASA LOGISTICS CARRIERS LLC</p>
+            <p className="mt-2 text-purple-200">NASA LOGISTICS CARRIERS LLC</p>
           </div>
 
           {/* Agreement Content - Scrollable */}

@@ -58,9 +58,9 @@ const DriverAgreement = () => {
       <div className="max-w-3xl w-full bg-white shadow-xl rounded-2xl overflow-hidden border border-gray-100">
         
         {/* Header */}
-        <div className="bg-blue-900 text-white p-6 text-center">
+        <div className="bg-brand text-white p-6 text-center">
           <h1 className="text-2xl font-bold uppercase tracking-wider">Independent Contractor Agreement</h1>
-          <p className="mt-2 text-blue-200">NASA LOGISTICS CARRIERS LLC</p>
+          <p className="mt-2 text-purple-200">NASA LOGISTICS CARRIERS LLC</p>
         </div>
 
         {/* Agreement Content - Scrollable */}
@@ -201,8 +201,8 @@ const DriverAgreement = () => {
 
         {/* Signature Form */}
         <form onSubmit={handleSubmit} className="p-8 bg-white space-y-6">
-          <div className="bg-blue-50 border border-blue-100 rounded-lg p-5">
-            <h3 className="text-sm font-bold text-blue-900 mb-4">12. Acknowledgment & Signature</h3>
+          <div className="bg-purple-50 border border-purple-100 rounded-lg p-4 sm:p-5">
+            <h3 className="text-sm font-bold text-brand mb-4">12. Acknowledgment & Signature</h3>
             
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
               <div>
@@ -212,7 +212,7 @@ const DriverAgreement = () => {
                   name="name"
                   value={formData.name}
                   onChange={handleChange}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
+                  className="w-full px-4 py-3 text-base border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-purple-600 focus:border-purple-600"
                   placeholder="Enter your full name"
                   required
                 />
@@ -224,7 +224,7 @@ const DriverAgreement = () => {
                   name="joining_date"
                   value={formData.joining_date}
                   onChange={handleChange}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
+                  className="w-full px-4 py-3 text-base border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-purple-600 focus:border-purple-600"
                   required
                 />
               </div>
@@ -238,7 +238,7 @@ const DriverAgreement = () => {
                   type="checkbox"
                   checked={formData.agreed}
                   onChange={handleChange}
-                  className="w-5 h-5 text-blue-600 border-gray-300 rounded focus:ring-blue-500 cursor-pointer"
+                  className="w-5 h-5 accent-brand border-gray-300 rounded focus:ring-purple-600 cursor-pointer"
                   required
                 />
               </div>
@@ -254,7 +254,7 @@ const DriverAgreement = () => {
           <button
             type="submit"
             disabled={loading || !formData.agreed || !formData.name || !formData.joining_date}
-            className={`w-full flex justify-center py-3 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-colors ${
+            className={`w-full flex justify-center py-3 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-brand hover:bg-brand-dark focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-purple-600 transition-colors ${
               (loading || !formData.agreed || !formData.name || !formData.joining_date) ? 'opacity-50 cursor-not-allowed' : ''
             }`}
           >
