@@ -176,11 +176,12 @@ export const toggleRouteStatusQuery = async (id) => {
 };
 
 // "Delete" a route: archive it. The row stays so journeys, deliveries and payments that point at it keep
-// their history. Lists no longer show it (deleted_at is set).
+// their history. Lists no longer show it (deleted_at is set) and it is switched off, so code that only
+// uses enabled routes (such as the weekly import) skips it, as it did when the row was removed.
 export const deleteRouteQuery = async (id) => {
 
   const result = await pool.query(
-    "UPDATE routes SET deleted_at = NOW() WHERE id=$1 AND deleted_at IS NULL RETURNING *",
+    "UPDATE routes SET deleted_at = NOW(), enabled = false WHERE id=$1 AND deleted_at IS NULL RETURNING *",
     [id]
   );
 
