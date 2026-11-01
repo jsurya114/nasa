@@ -84,7 +84,7 @@ const DriverLogin = () => {
   return (
     <div className="min-h-screen flex items-center justify-center bg-gray-100 font-poppins">
       <div className="bg-white rounded-2xl shadow-lg w-full max-w-md">
-        <div className="bg-[oklch(0.36_0.13_296.97)] rounded-t-2xl py-6 flex justify-center">
+        <div className="bg-brand rounded-t-2xl py-6 flex justify-center">
           <img src={logo} alt="Nasa Logistic Carriers Logo" className="w-44" />
         </div>
 
@@ -100,6 +100,7 @@ const DriverLogin = () => {
                 type="email"
                 id="email"
                 name="email"
+                autoComplete="email"
                 placeholder="Enter your driver email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
@@ -123,6 +124,7 @@ const DriverLogin = () => {
               <input
                 type={showPassword ? "text" : "password"}
                 id="password"
+                autoComplete="current-password"
                 value={password}
                 onChange={(e) => {
                   setPassword(e.target.value);
@@ -137,12 +139,14 @@ const DriverLogin = () => {
                   }`}
               />
 
-              <span
+              <button
+                type="button"
                 onClick={() => setShowPassword(!showPassword)}
-                className="absolute right-4 top-10 cursor-pointer text-gray-600"
+                aria-label={showPassword ? "Hide password" : "Show password"}
+                className="absolute right-2 top-9 p-2 cursor-pointer text-gray-600 hover:text-gray-800 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-600"
               >
                 {showPassword ? <AiOutlineEyeInvisible size={22} /> : <AiOutlineEye size={22} />}
-              </span>
+              </button>
 
               {fieldErrors.password && (
                 <p className="text-red-600 text-sm mt-1">{fieldErrors.password}</p>
@@ -152,7 +156,7 @@ const DriverLogin = () => {
             <button
               type="submit"
               disabled={loading}
-              className="w-full bg-[oklch(0.36_0.13_296.97)] hover:bg-purple-900 text-white font-semibold py-3 rounded-lg shadow-md mt-4 transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
+              className="w-full bg-brand hover:bg-brand-dark text-white font-semibold py-3 rounded-lg shadow-md mt-4 transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
             >
               {loading ? (
                 <>
