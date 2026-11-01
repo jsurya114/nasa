@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import logo from "../../assets/logo.png";
 import { useDispatch, useSelector } from "react-redux";
-import { driverLogin, clearError } from "../../redux/slice/driver/driverSlice.js";
+import { driverLogin } from "../../redux/slice/driver/driverSlice.js";
 import { useNavigate } from "react-router-dom";
 import { toast } from "react-toastify";
 import { AiOutlineEye, AiOutlineEyeInvisible } from "react-icons/ai";
@@ -16,7 +16,7 @@ const DriverLogin = () => {
   const dispatch = useDispatch();
   const navigate = useNavigate();
 
-  const { loading, error, isAuthenticated } = useSelector((state) => state.driver);
+  const { loading } = useSelector((state) => state.driver);
 
   // DETECT TIMEZONE ON COMPONENT MOUNT
   useEffect(() => {
@@ -28,12 +28,16 @@ const DriverLogin = () => {
     if (email && fieldErrors.email) {
       setFieldErrors((prev) => ({ ...prev, email: "" }));
     }
+    // Clears the email error when the person types. It must not run again when the error itself is set, or an error from the server would vanish at once.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [email]);
 
   useEffect(() => {
     if (password && fieldErrors.password) {
       setFieldErrors((prev) => ({ ...prev, password: "" }));
     }
+    // Same as the email effect above: only typing clears the password error.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [password]);
 
   const handleSubmit = async (e) => {
@@ -49,7 +53,7 @@ const DriverLogin = () => {
     }
 
     try {
-      const res = await dispatch(driverLogin({ email, password })).unwrap();
+      await dispatch(driverLogin({ email, password })).unwrap();
 
       toast.success(`Login successful! Timezone: ${detectedTimezone}`, {
         position: "top-right",

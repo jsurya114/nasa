@@ -25,7 +25,6 @@ export default function DriverAccessCodePage() {
   const {
     accessCodes = [],
     status = "idle",
-    error: reduxError,
     currentPage,
     pageLimit,
     totalPages,
@@ -51,6 +50,8 @@ export default function DriverAccessCodePage() {
     if (status === "idle") {
       dispatch(fetchAccessCodes({ page: currentPage, limit: pageLimit, search: searchTerm, zipCodeFilter }));
     }
+    // Loads the list once, when it has not been loaded yet. Page and filter changes fetch on their own, so they are not dependencies.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dispatch, status]);
 
   useEffect(() => {
@@ -591,7 +592,7 @@ export default function DriverAccessCodePage() {
 
                 {/* Mobile Card View - Shown only on mobile */}
                 <div className="md:hidden space-y-4">
-                  {accessCodes.map((ac, index) => (
+                  {accessCodes.map((ac) => (
                     <div
                       key={ac.id}
                       onClick={() => openDetails(ac)}
