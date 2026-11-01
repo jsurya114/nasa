@@ -11,15 +11,15 @@
 - Adding a journey needs both the driver and the route to be in one of the admin's cities.
 - Editing needs the journey's current driver, and the driver and route it is changed to, to be in the admin's cities.
 - Deleting needs the journey's driver to be in the admin's cities.
-Otherwise the answer is 403 and nothing is written. A superadmin may act in every city. The "missing journey" (404) and "missing driver" (400) answers are unchanged.
+Otherwise the answer is 403 and nothing is written. The journey id in the URL must be a whole number (digits only), otherwise 400. The same number is used for the city check and the change, and a journey that does not exist answers 404 instead of skipping the check (the automated security review of the first commit pointed out that the check was skipped for an unusable id). A superadmin may act in every city. The "missing journey" (404) and "missing driver" (400) answers are unchanged.
 
 **Database.** None.
 
 **Config and dependencies.** None.
 
-**Money impact.** None. The change only adds checks before the existing code. It adds 23 lines and removes none, so the queries that write journeys and deliveries, the sequence-overlap check and the delivery sync are untouched. No Excel, payment or dashboard file was edited. To prove it, the old controller (from `develop`) and the new one were run on the same starting data with the same allowed actions (add, edit, delete, as admin and as superadmin). The `dashboard_data` and `deliveries` tables came out identical, row for row, and every answer code was the same.
+**Money impact.** None. The change only adds checks before the existing code. It only adds checks and the id handling around the existing calls, so the queries that write journeys and deliveries, the sequence-overlap check and the delivery sync are untouched. No Excel, payment or dashboard file was edited. To prove it, the old controller (from `develop`) and the new one were run on the same starting data with the same allowed actions (add, edit, delete, as admin and as superadmin). The `dashboard_data` and `deliveries` tables came out identical, row for row, and every answer code was the same.
 
-**Tested.** Throwaway scripts (not committed) on a temporary local Postgres with a minimal copy of the tables (15 checks, all passed): the old-versus-new comparison above, and for an admin: add for a driver or a route in another city, edit a journey in another city, move own journey to a driver or route in another city, pull another city's journey into their own, and delete another city's journey are all 403 with `dashboard_data` and `deliveries` unchanged; missing journey 404; missing driver 400.
+**Tested.** Throwaway scripts (not committed) on a temporary local Postgres with a minimal copy of the tables (15 checks, plus 16 on bad journey ids such as `abc`, `0x2`, `1e0`, `-1`, `0`, `1.5` and empty, all passed): the old-versus-new comparison above, and for an admin: add for a driver or a route in another city, edit a journey in another city, move own journey to a driver or route in another city, pull another city's journey into their own, and delete another city's journey are all 403 with `dashboard_data` and `deliveries` unchanged; missing journey 404; missing driver 400.
 
 **Not tested:** the real database. The test database has no pay triggers (production has triggers on `dashboard_data` that fill the payment table; they are not stored in this repository), so payment amounts were not run. They cannot be affected by this change because the statements that fire those triggers are unchanged and run only after the new checks pass, with the same values as before. The admin screens in a browser were not tested.
 

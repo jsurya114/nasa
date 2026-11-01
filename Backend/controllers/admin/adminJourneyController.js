@@ -6,6 +6,15 @@ import pool from "../../config/db.js";
 import { getAllottedDrivers } from "../../services/admin/dashboardService.js";
 import { canAccessDriver, canAccessRoute, getJourneyDriverId } from "../../services/admin/journeyAccess.js";
 
+// The journey id from the URL, as a positive whole number, or null. The same number is used for
+// the city check and for the change itself, so the two can never look at different journeys.
+const parseJourneyId = (value) => {
+  if (!/^\d{1,9}$/.test(String(value))) return null;
+  const id = Number(value);
+  return id > 0 ? id : null;
+};
+const INVALID_JOURNEY_ID = { success: false, message: "Invalid journey id" };
+
 const CITY_FORBIDDEN = { success: false, message: "You can only manage journeys in your assigned cities" };
 
 const adminJourneyController = {
@@ -79,7 +88,10 @@ const adminJourneyController = {
 
   updateJourney: async (req, res) => {
     try {
-      const journey_id = req.params.journey_id;
+      const journey_id = parseJourneyId(req.params.journey_id);
+      if (journey_id === null) {
+        return res.status(HttpStatus.BAD_REQUEST).json(INVALID_JOURNEY_ID);
+      }
       const { start_seq, end_seq, route_id, driver_id } = req.body;
 
       // ... [Keep your existing input validations] ...
@@ -163,10 +175,16 @@ const adminJourneyController = {
   
   deleteJourney: async (req, res) => {
     try {
-      const { journey_id } = req.params;
+      const journey_id = parseJourneyId(req.params.journey_id);
+      if (journey_id === null) {
+        return res.status(HttpStatus.BAD_REQUEST).json(INVALID_JOURNEY_ID);
+      }
 
       const ownerDriverId = await getJourneyDriverId(journey_id);
-      if (ownerDriverId !== null && !(await canAccessDriver(req.user, ownerDriverId))) {
+      if (ownerDriverId === null) {
+        return res.status(404).json({ success: false, message: "Journey not found" });
+      }
+      if (!(await canAccessDriver(req.user, ownerDriverId))) {
         return res.status(HttpStatus.FORBIDDEN).json(CITY_FORBIDDEN);
       }
 
