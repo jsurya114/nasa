@@ -504,7 +504,7 @@ useEffect(() => {
       return (
         <tr
           key={journey.id}
-          className="border-b hover:bg-blue-50 transition-colors duration-200"
+          className="border-b hover:bg-purple-50 transition-colors duration-200"
         >
           <td className="px-4 py-3">
             <span className="font-medium text-gray-800">{journey.driver_name}</span>
@@ -527,7 +527,7 @@ useEffect(() => {
                   className={`w-20 border-2 rounded px-2 py-1 text-center focus:outline-none focus:ring-2 ${
                     editValidationErrors.start_seq 
                       ? 'border-red-500 focus:ring-red-500' 
-                      : 'border-blue-500 focus:ring-blue-500'
+                      : 'border-purple-600 focus:ring-purple-600'
                   }`}
                   min="1"
                 />
@@ -553,7 +553,7 @@ useEffect(() => {
                   className={`w-20 border-2 rounded px-2 py-1 text-center focus:outline-none focus:ring-2 ${
                     editValidationErrors.end_seq 
                       ? 'border-red-500 focus:ring-red-500' 
-                      : 'border-blue-500 focus:ring-blue-500'
+                      : 'border-purple-600 focus:ring-purple-600'
                   }`}
                   min="1"
                 />
@@ -618,7 +618,7 @@ useEffect(() => {
               <div className="flex justify-center gap-2">
                 <button
                   onClick={() => handleEdit(journey)}
-                  className="bg-blue-500 text-white px-4 py-2 rounded-lg hover:bg-blue-600 transition-colors font-medium flex items-center gap-1"
+                  className="bg-brand text-white px-4 py-2 rounded-lg hover:bg-brand-dark transition-colors font-medium flex items-center gap-1"
                 >
                   <svg
                     xmlns="http://www.w3.org/2000/svg"
@@ -659,7 +659,7 @@ useEffect(() => {
     });
   }, [paginatedJourneys, editableJourneyId, formData, handleEdit, handleCancel, handleSave, handleChange, handleDelete, editValidationErrors]);
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-purple-50">
+    <div className="min-h-screen bg-gradient-to-br from-purple-50 via-white to-purple-50">
       <Header />
 
       <main className="max-w-[1450px] mx-auto p-4 pt-16 pb-40">
@@ -690,7 +690,7 @@ useEffect(() => {
 
             <button
               onClick={handleRefresh}
-              className="bg-blue-500 text-white px-4 py-2 rounded-lg hover:bg-blue-600 flex items-center gap-2 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              className="bg-brand text-white px-4 py-2 rounded-lg hover:bg-brand-dark flex items-center gap-2 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               disabled={paginatedStatus === "loading"}
             >
               <svg
@@ -710,9 +710,9 @@ useEffect(() => {
           </div>
         </div>
 
-        <div className="bg-white rounded-xl shadow-sm p-6 mb-4 border-2 border-blue-200">
+        <div className="bg-white rounded-xl shadow-sm p-4 sm:p-6 mb-4 border-2 border-purple-200">
           <div className="flex justify-between items-center mb-4">
-            <h2 className="text-lg font-semibold text-blue-700">Filter Journeys</h2>
+            <h2 className="text-lg font-semibold text-brand">Filter Journeys</h2>
             <button
               onClick={handleClearFilters}
               className="text-sm bg-gray-200 hover:bg-gray-300 text-gray-700 px-3 py-1 rounded-lg transition-colors flex items-center gap-1"
@@ -782,7 +782,7 @@ useEffect(() => {
                 name="driver_name_filter"
                 value={filters.driver_name}
                 onChange={(e) => handleFilterChange('driver_name', e.target.value)}
-                className="w-full border-2 border-blue-300 rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full border-2 border-purple-300 rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-purple-600"
                 placeholder="Enter driver name..."
               />
             </div>
@@ -794,13 +794,13 @@ useEffect(() => {
                 name="journey_date_filter"
                 value={filters.journey_date}
                 onChange={(e) => handleFilterChange('journey_date', e.target.value)}
-                className="w-full border-2 border-blue-300 rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full border-2 border-purple-300 rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-purple-600"
               />
             </div>
           </div>
         </div>
 
-        <div className="bg-white rounded-xl shadow-sm p-6 mb-4 border-2 border-green-200">
+        <div className="bg-white rounded-xl shadow-sm p-4 sm:p-6 mb-4 border-2 border-green-200">
           <h2 className="text-lg font-semibold mb-4 text-green-700">Add New Journey</h2>
           
           {validationErrors.general && (
@@ -1039,8 +1039,8 @@ useEffect(() => {
                     <td colSpan="7" className="text-center py-16">
                       <div className="flex flex-col items-center justify-center gap-3">
                         <div className="relative w-16 h-16">
-                          <div className="absolute top-0 left-0 w-full h-full border-4 border-blue-100 rounded-full"></div>
-                          <div className="absolute top-0 left-0 w-full h-full border-4 border-blue-500 rounded-full border-t-transparent animate-spin"></div>
+                          <div className="absolute top-0 left-0 w-full h-full border-4 border-purple-100 rounded-full"></div>
+                          <div className="absolute top-0 left-0 w-full h-full border-4 border-brand rounded-full border-t-transparent animate-spin"></div>
                         </div>
                         <span className="text-gray-600 font-medium text-lg">Loading journeys...</span>
                       </div>
@@ -1066,14 +1066,14 @@ useEffect(() => {
           </div>
           {paginatedStatus === "succeeded" && paginatedJourneys.length > 0 && (
             <div className="bg-gradient-to-r from-gray-50 to-gray-100 border-t-2 border-gray-200">
-              <div className="px-6 py-4">
+              <div className="px-4 sm:px-6 py-4">
                 <div className="flex flex-col sm:flex-row justify-between items-center gap-4 mb-4">
                   <div className="flex items-center gap-3">
                     <span className="text-sm font-medium text-gray-700">Rows per page:</span>
                     <select
                       value={itemsPerPage}
                       onChange={handleItemsPerPageChange}
-                      className="custom-select border-2 border-gray-300 rounded-lg px-3 py-2 text-sm font-medium bg-white hover:border-blue-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 focus:outline-none transition-all cursor-pointer"
+                      className="custom-select border-2 border-gray-300 rounded-lg px-3 py-2 text-sm font-medium bg-white hover:border-purple-400 focus:border-purple-600 focus:ring-2 focus:ring-purple-200 focus:outline-none transition-all cursor-pointer"
                     >
                       <option value={5}>5</option>
                       <option value={10}>10</option>
@@ -1084,11 +1084,11 @@ useEffect(() => {
                   </div>
 
                   <div className="text-sm font-medium text-gray-700">
-                    Showing <span className="font-bold text-blue-600">{((currentPage - 1) * itemsPerPage) + 1}</span> to{' '}
-                    <span className="font-bold text-blue-600">
+                    Showing <span className="font-bold text-brand">{((currentPage - 1) * itemsPerPage) + 1}</span> to{' '}
+                    <span className="font-bold text-brand">
                       {Math.min(currentPage * itemsPerPage, pagination.total)}
                     </span> of{' '}
-                    <span className="font-bold text-blue-600">{pagination.total}</span> entries
+                    <span className="font-bold text-brand">{pagination.total}</span> entries
                   </div>
                 </div>
 
@@ -1096,10 +1096,10 @@ useEffect(() => {
                   <button
                     onClick={() => handlePageChange(1)}
                     disabled={currentPage === 1}
-                    className="p-2 rounded-lg border-2 border-gray-300 bg-white disabled:opacity-40 disabled:cursor-not-allowed hover:bg-blue-50 hover:border-blue-400 transition-all duration-200 group"
+                    className="p-2 rounded-lg border-2 border-gray-300 bg-white disabled:opacity-40 disabled:cursor-not-allowed hover:bg-purple-50 hover:border-purple-400 transition-all duration-200 group"
                     title="First Page"
                   >
-                    <svg className="w-5 h-5 text-gray-600 group-hover:text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <svg className="w-5 h-5 text-gray-600 group-hover:text-brand" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 19l-7-7 7-7m8 14l-7-7 7-7" />
                     </svg>
                   </button>
@@ -1107,10 +1107,10 @@ useEffect(() => {
                   <button
                     onClick={() => handlePageChange(currentPage - 1)}
                     disabled={currentPage === 1}
-                    className="p-2 rounded-lg border-2 border-gray-300 bg-white disabled:opacity-40 disabled:cursor-not-allowed hover:bg-blue-50 hover:border-blue-400 transition-all duration-200 group"
+                    className="p-2 rounded-lg border-2 border-gray-300 bg-white disabled:opacity-40 disabled:cursor-not-allowed hover:bg-purple-50 hover:border-purple-400 transition-all duration-200 group"
                     title="Previous Page"
                   >
-                    <svg className="w-5 h-5 text-gray-600 group-hover:text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <svg className="w-5 h-5 text-gray-600 group-hover:text-brand" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
                     </svg>
                   </button>
@@ -1127,8 +1127,8 @@ useEffect(() => {
                           onClick={() => handlePageChange(pageNum)}
                           className={`min-w-[40px] px-3 py-2 rounded-lg font-semibold transition-all duration-200 ${
                             currentPage === pageNum
-                              ? 'bg-blue-500 text-white shadow-lg scale-110 border-2 border-blue-600'
-                              : 'bg-white text-gray-700 border-2 border-gray-300 hover:bg-blue-50 hover:border-blue-400 hover:text-blue-600'
+                              ? 'bg-brand text-white shadow-lg scale-110 border-2 border-brand'
+                              : 'bg-white text-gray-700 border-2 border-gray-300 hover:bg-purple-50 hover:border-purple-400 hover:text-brand'
                           }`}
                         >
                           {pageNum}
@@ -1140,10 +1140,10 @@ useEffect(() => {
                   <button
                     onClick={() => handlePageChange(currentPage + 1)}
                     disabled={currentPage === pagination.totalPages}
-                    className="p-2 rounded-lg border-2 border-gray-300 bg-white disabled:opacity-40 disabled:cursor-not-allowed hover:bg-blue-50 hover:border-blue-400 transition-all duration-200 group"
+                    className="p-2 rounded-lg border-2 border-gray-300 bg-white disabled:opacity-40 disabled:cursor-not-allowed hover:bg-purple-50 hover:border-purple-400 transition-all duration-200 group"
                     title="Next Page"
                   >
-                    <svg className="w-5 h-5 text-gray-600 group-hover:text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <svg className="w-5 h-5 text-gray-600 group-hover:text-brand" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
                     </svg>
                   </button>
@@ -1151,10 +1151,10 @@ useEffect(() => {
                   <button
                     onClick={() => handlePageChange(pagination.totalPages)}
                     disabled={currentPage === pagination.totalPages}
-                    className="p-2 rounded-lg border-2 border-gray-300 bg-white disabled:opacity-40 disabled:cursor-not-allowed hover:bg-blue-50 hover:border-blue-400 transition-all duration-200 group"
+                    className="p-2 rounded-lg border-2 border-gray-300 bg-white disabled:opacity-40 disabled:cursor-not-allowed hover:bg-purple-50 hover:border-purple-400 transition-all duration-200 group"
                     title="Last Page"
                   >
-                    <svg className="w-5 h-5 text-gray-600 group-hover:text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <svg className="w-5 h-5 text-gray-600 group-hover:text-brand" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 5l7 7-7 7M5 5l7 7-7 7" />
                     </svg>
                   </button>
@@ -1202,7 +1202,7 @@ useEffect(() => {
               <div className="flex gap-3 justify-end">
                 <button
                   onClick={cancelDelete}
-                  className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-colors"
+                  className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-purple-600 transition-colors"
                 >
                   Cancel
                 </button>
