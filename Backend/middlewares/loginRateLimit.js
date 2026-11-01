@@ -24,6 +24,9 @@ import { translateError, getLangFromRequest } from '../utils/backendI18n.js';
  */
 
 const WINDOW_SECONDS = 15 * 60;
+// While Redis reconnects, its client queues commands and never rejects them. Waiting longer than
+// this for an answer means "Redis is down": the memory counters are used instead.
+const REDIS_WAIT_MS = 500;
 const MAX_ATTEMPTS_PER_ACCOUNT_AND_ADDRESS = 5;
 const MAX_ATTEMPTS_PER_ACCOUNT = 20;
 const MAX_FAILED_PER_ADDRESS = 50;
@@ -72,16 +75,33 @@ const memoryBump = (key, windowSeconds) => {
   return { count: entry.count, ttl: Math.max(1, Math.ceil((entry.resetAt - now) / 1000)) };
 };
 
+// Runs a Redis job only when the connection is ready, and gives up after REDIS_WAIT_MS.
+// A job that gives up may still run later, once Redis returns; at worst a counter is off by one.
+async function withRedis(job) {
+  if (!client.isReady) throw new Error('Redis is not connected');
+  let timer;
+  const timeout = new Promise((_, reject) => {
+    timer = setTimeout(() => reject(new Error('Redis did not answer in time')), REDIS_WAIT_MS);
+  });
+  try {
+    return await Promise.race([job(), timeout]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 // Adds one to the counter and returns { count, ttl }. The window starts at the first attempt.
 async function bump(key, windowSeconds) {
   try {
-    const count = await client.incr(key);
-    let ttl = await client.ttl(key);
-    if (count === 1 || ttl < 0) {
-      await client.expire(key, windowSeconds);
-      ttl = windowSeconds;
-    }
-    return { count, ttl };
+    return await withRedis(async () => {
+      const count = await client.incr(key);
+      let ttl = await client.ttl(key);
+      if (count === 1 || ttl < 0) {
+        await client.expire(key, windowSeconds);
+        ttl = windowSeconds;
+      }
+      return { count, ttl };
+    });
   } catch (error) {
     console.log('redis Error: login limit is using memory:', error.message);
     return memoryBump(key, windowSeconds);
@@ -90,13 +110,13 @@ async function bump(key, windowSeconds) {
 
 async function clear(key) {
   memory.delete(key);
-  try { await client.del(key); } catch { /* counter expires by itself */ }
+  try { await withRedis(() => client.del(key)); } catch { /* counter expires by itself */ }
 }
 
 async function giveBack(key) {
   const entry = memory.get(key);
   if (entry && entry.count > 0) entry.count -= 1;
-  try { await client.decr(key); } catch { /* counter expires by itself */ }
+  try { await withRedis(() => client.decr(key)); } catch { /* counter expires by itself */ }
 }
 
 /**
