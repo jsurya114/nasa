@@ -5,9 +5,8 @@ import Nav from "../../reuse/driver/Nav";
 import { useDispatch, useSelector } from "react-redux";
 import { fetchDeliverySummary, resetDeliveries, setDeliveriesFromCache } from "../../redux/slice/driver/deliverySlice.js";
 import { accessDriver } from "../../redux/slice/driver/driverSlice.js";
-import { ToastContainer, toast } from "react-toastify";
+import { toast } from "../../utils/toast";
 import useTranslation from "../../hooks/useTranslation.js";
-import "react-toastify/dist/ReactToastify.css";
 
 const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes cache
 
@@ -534,7 +533,6 @@ const Deliveries = () => {
       </main>
 
       <Nav />
-      <ToastContainer />
     </div>
   );
 };

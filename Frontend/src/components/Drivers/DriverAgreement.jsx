@@ -1,10 +1,12 @@
 import React, { useState } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { submitDriverAgreement } from '../../redux/slice/driver/driverSlice';
-import { toast } from 'react-toastify';
+import { toast } from "../../utils/toast";
+import useTranslation from "../../hooks/useTranslation.js";
 import { useNavigate } from 'react-router-dom';
 
 const DriverAgreement = () => {
+  const { t } = useTranslation();
   const dispatch = useDispatch();
   const navigate = useNavigate();
   const { loading, driver } = useSelector(state => state.driver);
@@ -32,11 +34,11 @@ const DriverAgreement = () => {
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!formData.agreed) {
-      toast.error('You must agree to the terms to continue.');
+      toast.error(t('agreeTermsRequired'));
       return;
     }
     if (!formData.name.trim() || !formData.joining_date) {
-      toast.error('Please enter your name and joining date.');
+      toast.error(t('agreementNameDateRequired'));
       return;
     }
 
@@ -46,10 +48,10 @@ const DriverAgreement = () => {
         joining_date: formData.joining_date
       })).unwrap();
       
-      toast.success('Agreement signed successfully!');
+      toast.success(t('agreementSigned'));
       navigate('/driver/dashboard');
     } catch (error) {
-      toast.error(error.message || 'Failed to submit agreement');
+      toast.error(error.message || t('agreementSubmitFailed'));
     }
   };
 

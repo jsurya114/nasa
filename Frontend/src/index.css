@@ -112,3 +112,113 @@
     scroll-behavior: auto !important;
   }
 }
+
+/* ---------------------------------------------------------------------------
+ * Notifications (react-toastify), one look for the whole app.
+ * Solid white so messages stay easy to read; the coloured edge and icon give the kind.
+ * ------------------------------------------------------------------------- */
+:root:root {
+  --toastify-font-family: var(--font-sans);
+  --toastify-toast-width: 380px;
+  --toastify-toast-top: calc(env(safe-area-inset-top) + 4.75rem);
+  --toastify-toast-right: 1rem;
+  --toastify-toast-min-height: 3.5rem;
+  --toastify-toast-padding: 0.75rem 0.5rem 0.875rem 0.875rem;
+  --toastify-toast-bd-radius: 1rem;
+  --toastify-toast-shadow: var(--shadow-float);
+  --toastify-color-light: #ffffff;
+  --toastify-text-color-light: var(--color-ink);
+  --toastify-z-index: 9999;
+}
+
+/* The library stylesheet loads after this file, so these rules start with ":root" to win. */
+:root .Toastify__toast {
+  --toast-accent: var(--color-brand-600);
+  align-items: flex-start;
+  gap: 0.25rem;
+  border: 1px solid var(--color-line);
+  border-left: 4px solid var(--toast-accent);
+  font-size: 0.875rem;
+  font-weight: 500;
+  line-height: 1.4;
+}
+:root .Toastify__toast--success { --toast-accent: #15803d; }
+:root .Toastify__toast--error { --toast-accent: #dc2626; }
+:root .Toastify__toast--warning { --toast-accent: #b45309; }
+:root .Toastify__toast--info,
+:root .Toastify__toast--default { --toast-accent: var(--color-brand-600); }
+
+:root .Toastify__toast-icon { margin-top: 0.0625rem; margin-inline-end: 0.5rem; }
+:root .toast-icon { width: 22px; height: 22px; color: var(--toast-accent); }
+:root .Toastify__toast-body { padding-top: 0.125rem; }
+
+:root .Toastify__progress-bar--wrp { height: 3px; }
+:root .Toastify__progress-bar { background: var(--toast-accent); opacity: 0.55; }
+
+:root .toast-close {
+  display: grid;
+  margin-left: auto;
+  place-items: center;
+  flex-shrink: 0;
+  min-width: 2.75rem;
+  min-height: 2.75rem;
+  margin-block: -0.5rem;
+  margin-right: -0.25rem;
+  border-radius: 0.75rem;
+  color: var(--color-ink-muted);
+}
+:root .toast-close:hover { background-color: var(--color-brand-50); color: var(--color-ink); }
+
+/* Phones: full width with side margins, under the header, never over the bottom navigation. */
+@media only screen and (max-width: 480px) {
+  :root .Toastify__toast-container {
+    width: auto;
+    left: calc(env(safe-area-inset-left) + 0.75rem);
+    right: calc(env(safe-area-inset-right) + 0.75rem);
+  }
+  :root .Toastify__toast-container--top-left,
+  :root .Toastify__toast-container--top-center,
+  :root .Toastify__toast-container--top-right {
+    top: calc(env(safe-area-inset-top) + 4.5rem);
+  }
+  :root .Toastify__toast {
+    margin-bottom: 0.5rem;
+    border-radius: 1rem;
+  }
+}
+
+/* ---------------------------------------------------------------------------
+ * Confirmation dialogs (SweetAlert2 through utils/confirmDialog.js).
+ * ------------------------------------------------------------------------- */
+.ui-dialog {
+  width: min(28rem, calc(100vw - 2rem));
+  padding: 1.5rem;
+  border-radius: 1.5rem;
+  box-shadow: var(--shadow-float);
+  font-family: var(--font-sans);
+  color: var(--color-ink);
+}
+.ui-dialog-title { padding: 0.5rem 0 0; font-size: 1.25rem; font-weight: 700; color: var(--color-ink); }
+.ui-dialog-text { margin: 0.75rem 0 0; padding: 0; font-size: 0.9375rem; line-height: 1.5; color: var(--color-ink-muted); }
+.ui-dialog-actions { width: 100%; margin: 1.5rem 0 0; gap: 0.75rem; flex-wrap: wrap-reverse; }
+.ui-dialog-actions > button { flex: 1 1 10rem; margin: 0; }
+.ui-dialog-backdrop { background: rgb(20 10 40 / 0.45) !important; -webkit-backdrop-filter: blur(4px); backdrop-filter: blur(4px); }
+
+.ui-btn {
+  display: inline-flex;
+  min-height: 2.875rem;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  border-radius: 0.875rem;
+  padding: 0.625rem 1.125rem;
+  font-weight: 600;
+  font-size: 0.9375rem;
+  transition: background-color 150ms var(--ease-out-soft), box-shadow 150ms var(--ease-out-soft);
+}
+.ui-btn-primary { background: var(--color-brand-800); color: #fff; box-shadow: 0 6px 16px -8px rgb(59 31 107 / 0.7); }
+.ui-btn-primary:hover { background: var(--color-brand-900); }
+.ui-btn-danger { background: #dc2626; color: #fff; box-shadow: 0 6px 16px -8px rgb(220 38 38 / 0.7); }
+.ui-btn-danger:hover { background: #b91c1c; }
+.ui-btn-ghost { background: #fff; color: var(--color-ink); border: 1px solid var(--color-line); }
+.ui-btn-ghost:hover { background: var(--color-brand-50); }

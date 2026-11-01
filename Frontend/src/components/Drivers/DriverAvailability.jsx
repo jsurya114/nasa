@@ -6,7 +6,7 @@ import {
   updateDriverAvailability,
   clearMessages
 } from "../../redux/slice/driver/availabilitySlice.js";
-import { toast } from "react-toastify";
+import { toast } from "../../utils/toast";
 import useTranslation from "../../hooks/useTranslation.js";
 
 import Header from "../../reuse/driver/Header";
