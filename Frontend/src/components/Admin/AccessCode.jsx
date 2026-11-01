@@ -21,6 +21,11 @@ import { toast } from "react-toastify";
 import AccessCodeDetailsDialog from "../AccessCodeDetailsDialog";
 import AccessCodeEditDialog from "./AccessCodeEditDialog";
 
+// The delete dialog is built as HTML, so every stored value shown in it must be escaped first.
+// Drivers can create access codes too, so the text is not always typed by an admin.
+const escapeHtml = (value) =>
+  String(value ?? "").replace(/[&<>"'`]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;", "`": "&#96;" }[c]));
+
 export default function AddAccessCodePage() {
   const dispatch = useDispatch();
   const {
@@ -232,9 +237,9 @@ export default function AddAccessCodePage() {
       title: 'Delete Access Code?',
       html: `
         <div class="text-left">
-          <p class="mb-2"><strong>Address:</strong> ${ac.address}</p>
-          <p class="mb-2"><strong>Zip Code:</strong> ${ac.zip_code}</p>
-          <p class="mb-2"><strong>Access Code:</strong> ${ac.access_code}</p>
+          <p class="mb-2"><strong>Address:</strong> ${escapeHtml(ac.address)}</p>
+          <p class="mb-2"><strong>Zip Code:</strong> ${escapeHtml(ac.zip_code)}</p>
+          <p class="mb-2"><strong>Access Code:</strong> ${escapeHtml(ac.access_code)}</p>
         </div>
       `,
       icon: 'warning',

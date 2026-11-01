@@ -47,11 +47,6 @@ export const createAdmins = async(req, res) => {
             });
         }
 
-        // Prevent creating multiple superadmins without proper authorization
-        // if (role === 'superadmin') {
-        //     console.log(`⚠️ Superadmin creation attempt by ${req.user.email}`);
-        // }
-
         const insertAdmin = await dbService.insertAdmin({name, email, password, role, city});    
         
        

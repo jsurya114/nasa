@@ -51,12 +51,6 @@ export const createAccessCode = async (req, res) => {
     });
   }
 
-  // if (!/^[a-zA-Z0-9]+$/.test(access_code)) {
-  //   return res.status(400).json({ 
-  //     message: translateError(lang, 'accessCode.accessCodeMustBeAlphanumeric')
-  //   });
-  // }
-
   try {
     // ✅ FIXED: Use Cloudinary URLs from f.path instead of local paths
     // Cloudinary URLs are globally accessible from any device
