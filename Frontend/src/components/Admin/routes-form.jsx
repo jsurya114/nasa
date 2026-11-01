@@ -199,7 +199,7 @@ export default function RoutesForm() {
       <Header />
       <main className="max-w-[1450px] mx-auto p-4 pb-40">
         {/* Form Section */}
-        <section className="bg-white border border-gray-200 rounded-xl shadow-sm mb-4 p-6">
+        <section className="bg-white border border-gray-200 rounded-xl shadow-sm mb-4 p-4 sm:p-6">
           <div className="flex items-center justify-between mb-4">
             <h2 className="font-bold text-gray-900 bg-gray-50 border-b border-gray-200 px-4 py-3 -mx-6 -mt-6 rounded-t-xl flex-1">
               {editingId ? 'Edit Route' : 'Add Route'}
@@ -221,7 +221,7 @@ export default function RoutesForm() {
                 placeholder="Enter route name"
                 value={formData.route}
                 onChange={(e) => handleInputChange("route", e.target.value)}
-                className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-purple-600"
+                className="w-full px-3 py-3 sm:py-2 border rounded-lg focus:ring-2 focus:ring-purple-600"
               />
             </div>
 
@@ -232,7 +232,7 @@ export default function RoutesForm() {
                 placeholder="Enter route code string (optional)"
                 value={formData.routeCodeInString}
                 onChange={(e) => handleInputChange("routeCodeInString", e.target.value)}
-                className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-purple-600"
+                className="w-full px-3 py-3 sm:py-2 border rounded-lg focus:ring-2 focus:ring-purple-600"
               />
             </div>
 
@@ -241,7 +241,7 @@ export default function RoutesForm() {
               <select
                 value={formData.job}
                 onChange={(e) => handleInputChange("job", e.target.value)}
-                className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-purple-600 bg-white"
+                className="w-full px-3 py-3 sm:py-2 border rounded-lg focus:ring-2 focus:ring-purple-600 bg-white"
               >
                 <option value="">Select City</option>
                 {enabledJobs.length > 0 ? (
@@ -275,7 +275,7 @@ export default function RoutesForm() {
                   type="number"
                   value={formData[field]}
                   onChange={(e) => handleInputChange(field, e.target.value)}
-                  className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-purple-600"
+                  className="w-full px-3 py-3 sm:py-2 border rounded-lg focus:ring-2 focus:ring-purple-600"
                   min="0"
                   step="0.01"
                 />
@@ -389,7 +389,7 @@ export default function RoutesForm() {
             )}
           </div>
           
-          <div className="px-6 py-4">
+          <div className="px-4 sm:px-6 py-4">
             <table className="w-full border-collapse text-sm">
               <thead>
                 <tr className="bg-gray-50 text-left">
@@ -486,7 +486,7 @@ export default function RoutesForm() {
                           
                           <button
                             onClick={() => handleEdit(route)}
-                            className="group relative px-3 py-1 bg-gradient-to-r from-blue-500 to-blue-600 text-white text-xs font-medium rounded-md hover:from-blue-600 hover:to-blue-700 transition-all duration-200 shadow-sm hover:shadow-md flex items-center gap-1"
+                            className="group relative px-3 py-1.5 bg-brand text-white text-xs font-medium rounded-md hover:bg-brand-dark transition-all duration-200 shadow-sm hover:shadow-md flex items-center gap-1"
                             title="Edit Route"
                           >
                             <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">

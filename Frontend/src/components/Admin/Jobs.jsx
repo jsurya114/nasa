@@ -81,7 +81,7 @@ const CityRow = React.memo(function CityRow({
 
             <button 
               onClick={() => onEdit({ id, job, city_code, enabled, city_type })} 
-              className="group relative px-4 py-1.5 bg-gradient-to-r from-blue-500 to-blue-600 text-white text-xs font-medium rounded-md hover:from-blue-600 hover:to-blue-700 transition-all duration-200 shadow-sm hover:shadow-md flex items-center gap-1.5"
+              className="group relative px-4 py-2 bg-brand text-white text-xs font-medium rounded-md hover:bg-brand-dark transition-all duration-200 shadow-sm hover:shadow-md flex items-center gap-1.5"
             >
               <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
@@ -309,7 +309,7 @@ export default function Jobs() {
       <main className="max-w-[1450px] mx-auto p-4 pb-40">
 
         {isSuperAdmin && (
-          <section className="bg-white border border-gray-200 rounded-xl shadow-sm mb-4 p-6">
+          <section className="bg-white border border-gray-200 rounded-xl shadow-sm mb-4 p-4 sm:p-6">
             <h2 className="font-bold text-gray-900 bg-gray-50 border-b border-gray-200 px-4 py-3 -mx-6 -mt-6 rounded-t-xl">
               {isEditing ? 'Edit City' : 'Add City'}
             </h2>
@@ -322,7 +322,7 @@ export default function Jobs() {
                   value={form.job}
                   onChange={onChangeField}
                   placeholder="Enter City"
-                  className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-purple-600 ${errors.job ? 'border-red-500' : 'border-gray-300'}`}
+                  className={`w-full px-3 py-3 sm:py-2 border rounded-lg focus:ring-2 focus:ring-purple-600 ${errors.job ? 'border-red-500' : 'border-gray-300'}`}
                 />
                 {errors.job && <p className="text-red-500 text-sm mt-1">{errors.job}</p>}
               </div>
@@ -334,7 +334,7 @@ export default function Jobs() {
                   value={form.city_code}
                   onChange={onChangeField}
                   placeholder="Enter city code"
-                  className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-purple-600 ${errors.city_code ? 'border-red-500' : 'border-gray-300'}`}
+                  className={`w-full px-3 py-3 sm:py-2 border rounded-lg focus:ring-2 focus:ring-purple-600 ${errors.city_code ? 'border-red-500' : 'border-gray-300'}`}
                 />
                 {errors.city_code && <p className="text-red-500 text-sm mt-1">{errors.city_code}</p>}
               </div>
@@ -345,7 +345,7 @@ export default function Jobs() {
                   name="city_type"
                   value={form.city_type}
                   onChange={onChangeField}
-                  className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-purple-600 ${errors.city_type ? 'border-red-500' : 'border-gray-300'}`}
+                  className={`w-full px-3 py-3 sm:py-2 border rounded-lg focus:ring-2 focus:ring-purple-600 ${errors.city_type ? 'border-red-500' : 'border-gray-300'}`}
                 >
                   <option value="DAILY">Daily</option>
                   <option value="WEEKLY">Weekly</option>
@@ -377,7 +377,7 @@ export default function Jobs() {
                     Cancel
                   </button>
                 )}
-                <button onClick={onSubmit} className="px-6 py-2 bg-purple-700 text-white rounded-lg">
+                <button onClick={onSubmit} className="px-6 py-2.5 bg-brand hover:bg-brand-dark text-white rounded-lg">
                   {isEditing ? 'Update City' : 'Add City'}
                 </button>
               </div>
@@ -394,7 +394,7 @@ export default function Jobs() {
             <button
               onClick={handleRefresh}
               disabled={loading}
-              className={`flex items-center gap-2 px-4 py-2 bg-purple-700 text-white rounded-lg ${loading ? 'opacity-50 cursor-not-allowed' : ''}`}
+              className={`flex items-center gap-2 px-4 py-2.5 bg-brand hover:bg-brand-dark text-white rounded-lg ${loading ? 'opacity-50 cursor-not-allowed' : ''}`}
             >
               <IconRefresh spinning={isRefreshing} />
               <span>Refresh</span>
@@ -410,7 +410,7 @@ export default function Jobs() {
               <div className="relative" ref={dropdownRef}>
                 <button
                   onClick={() => setShowDropdown(s => !s)}
-                  className={`flex items-center gap-2 px-4 py-2 border rounded-lg ${filter !== FILTER.ALL ? 'bg-purple-600 text-white' : 'bg-white text-gray-700'}`}
+                  className={`flex items-center gap-2 px-4 py-2 border rounded-lg ${filter !== FILTER.ALL ? 'bg-brand text-white' : 'bg-white text-gray-700'}`}
                 >
                   <span className="font-medium">
                     {filter === FILTER.ENABLED ? 'Enabled' :
@@ -439,7 +439,7 @@ export default function Jobs() {
             )}
           </div>
 
-          <div className="relative min-h-[300px] px-6 py-4">
+          <div className="relative min-h-[300px] px-4 sm:px-6 py-4">
             {loading && (
               <div className="absolute inset-0 bg-white bg-opacity-75 flex items-center justify-center z-10">
                 <Loading />
