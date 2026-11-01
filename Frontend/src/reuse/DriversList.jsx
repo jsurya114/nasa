@@ -9,8 +9,6 @@ function DriversList({ onEdit }) {
   const { 
     drivers = [], 
     loading: usersLoad, 
-    error: usersError, 
-    page, 
     totalPages,
     city,
     searchTerm: reduxSearchTerm,

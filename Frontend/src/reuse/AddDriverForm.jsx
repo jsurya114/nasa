@@ -1,12 +1,10 @@
 import { useState, useEffect } from "react";
-import { useSelector, useDispatch } from "react-redux";
+import { useSelector } from "react-redux";
 
 function AddDriverForm({ onSubmit, editData, isEdit, onCancel }) {
 
-  const dispatch = useDispatch();
-
-  const { admin, isSuperAdmin } = useSelector((state) => state.admin);
-  const { city, loading, error } = useSelector((state) => state.users);
+  const { isSuperAdmin } = useSelector((state) => state.admin);
+  const { city, loading } = useSelector((state) => state.users);
 
   const [form, setForm] = useState({
     name: "",
@@ -88,7 +86,7 @@ function AddDriverForm({ onSubmit, editData, isEdit, onCancel }) {
       return;
     }
 
-    const { confirmPassword, ...driverData } = form;
+    const { confirmPassword: _confirmPassword, ...driverData } = form; // leaves confirmPassword out of what is sent
     
     // If editing and password is empty, don't send password field
     if (isEdit && !driverData.password.trim()) {

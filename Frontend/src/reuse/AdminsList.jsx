@@ -1,12 +1,12 @@
 import { useState, useEffect } from "react";
 import { useDispatch, useSelector } from "react-redux";
-import { clearPaginateTerms, getAdmins, toggleAvailAdmin, toggleAdminRole } from "../redux/slice/admin/userLoadSlice";
+import { clearPaginateTerms, getAdmins, toggleAvailAdmin } from "../redux/slice/admin/userLoadSlice";
 import Pagination from "./Pagination";
 import { toast } from "react-toastify";
 
 function AdminsList({ onEdit }) {
   const dispatch = useDispatch();
-  const { admins, loading: adminsLoad, error: adminsError, page, totalPages } = useSelector((state) => state.users);
+  const { admins, loading: adminsLoad, totalPages } = useSelector((state) => state.users);
   const { isSuperAdmin } = useSelector((state) => state.admin);
   const [currentPage, setCurrentPage] = useState(1);
 
