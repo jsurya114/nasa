@@ -2,7 +2,6 @@ import AdminJourneyQuery from "../../services/admin/AjourneyQuery.js";
 import { addRangeOfSqeunceToDeliveries,addRangeOfSequenceToDeliveriesForAdmin, checkSequenceConflict,syncJourneyDeliveries } from "../../services/driver/journeyQueries.js";
 
 import HttpStatus from "../../utils/statusCodes.js";
-import pool from "../../config/db.js";
 import { getAllottedDrivers } from "../../services/admin/dashboardService.js";
 import { canAccessDriver, canAccessRoute, getJourneyDriverId, isRouteActive } from "../../services/admin/journeyAccess.js";
 import logger from '../../utils/logger.js';
@@ -115,17 +114,14 @@ const adminJourneyController = {
       }
 
       // 2. Get Current Date (Needed for overlap check)
-      const currentJourneyResult = await pool.query(
-        `SELECT TO_CHAR(journey_date, 'YYYY-MM-DD') as journey_date FROM dashboard_data WHERE id = $1`,
-        [journey_id]
-      );
+      const currentJourneyRows = await AdminJourneyQuery.getJourneyDateById(journey_id);
 
-      if (currentJourneyResult.rows.length === 0) {
+      if (currentJourneyRows.length === 0) {
         return res.status(HttpStatus.NOT_FOUND).json({
           success: false, errors: { general: "Journey not found" }
         });
       } 
-      const journey_date = currentJourneyResult.rows[0].journey_date;
+      const journey_date = currentJourneyRows[0].journey_date;
 
       // The journey must be in one of the admin's cities now, and so must the driver and route it is changed to.
       const currentDriverId = await getJourneyDriverId(journey_id);

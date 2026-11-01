@@ -52,6 +52,15 @@ const AdminJourneyQuery = {
     return result.rows[0];
   },
 
+  // Rows with the journey's date as YYYY-MM-DD (none when the journey does not exist).
+  getJourneyDateById: async (journey_id) => {
+    const result = await pool.query(
+      `SELECT TO_CHAR(journey_date, 'YYYY-MM-DD') as journey_date FROM dashboard_data WHERE id = $1`,
+      [journey_id]
+    );
+    return result.rows;
+  },
+
   checkDriverExists: async (driver_id) => {
     const result = await pool.query(
       `SELECT id FROM drivers WHERE id = $1`,
