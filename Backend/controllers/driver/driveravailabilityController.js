@@ -4,7 +4,6 @@ import {
   getCurrentTimeInTimezone, 
   formatDateForTimezone
 } from "../../utils/timezoneUtils.js";
-import pool from "../../config/db.js";
 import { translateError } from "../../utils/backendI18n.js";
 import logger from '../../utils/logger.js';
 
@@ -49,19 +48,16 @@ const driverAvailabilityController = {
             logger.debug('Driver attempting availability update', { driverId });
 
             // Get driver's stored timezone from database
-            const driverResult = await pool.query(
-                'SELECT timezone FROM drivers WHERE id = $1',
-                [driverId]
-            );
+            const driverRows = await availabilityService.getDriverTimezone(driverId);
 
-            if (driverResult.rows.length === 0) {
+            if (driverRows.length === 0) {
                 return res.status(404).json({
                     success: false,
                     message: translateError(lang, 'driver.driverNotFound')
                 });
             }
 
-            const driverTimezone = driverResult.rows[0].timezone;
+            const driverTimezone = driverRows[0].timezone;
             logger.debug('Driver timezone', { driverTimezone });
 
             // Get current time in driver's timezone
