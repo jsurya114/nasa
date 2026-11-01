@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useCallback, useMemo } from "react";
+import { SkeletonTableRows } from "../../reuse/Skeleton.jsx";
 import { useSelector, useDispatch } from "react-redux";
 import {
   fetchPaginatedJourneys,
@@ -1035,17 +1036,7 @@ useEffect(() => {
               </thead>
               <tbody>
                 {paginatedStatus === "loading" ? (
-                  <tr>
-                    <td colSpan="7" className="text-center py-16">
-                      <div className="flex flex-col items-center justify-center gap-3">
-                        <div className="relative w-16 h-16">
-                          <div className="absolute top-0 left-0 w-full h-full border-4 border-purple-100 rounded-full"></div>
-                          <div className="absolute top-0 left-0 w-full h-full border-4 border-brand rounded-full border-t-transparent animate-spin"></div>
-                        </div>
-                        <span className="text-gray-600 font-medium text-lg">Loading journeys...</span>
-                      </div>
-                    </td>
-                  </tr>
+                  <SkeletonTableRows rows={6} cols={7} label="Loading journeys..." />
                 ) : paginatedJourneys.length === 0 ? (
                   <tr>
                     <td colSpan="7" className="text-center py-12">

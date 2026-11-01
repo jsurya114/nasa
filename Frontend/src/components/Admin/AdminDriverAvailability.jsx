@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { SkeletonList } from "../../reuse/Skeleton.jsx";
 import { Check, X, Circle, TriangleAlert, CircleCheck, CircleX, RefreshCw, Search } from "lucide-react";
 import { useDispatch, useSelector } from "react-redux";
 import {
@@ -640,10 +641,7 @@ export default function AdminDriverAvailability() {
 
           {/* Drivers Table */}
           {loading ? (
-            <div className="card-surface p-8 sm:p-12 flex flex-col items-center justify-center">
-              <div className="animate-spin rounded-full h-12 w-12 border-4 border-blue-600 border-t-transparent mb-4"></div>
-              <p className="text-gray-600 text-sm">Loading drivers...</p>
-            </div>
+            <SkeletonList rows={5} label="Loading drivers..." />
           ) : filteredDrivers.length === 0 ? (
             <div className="card-surface p-8 sm:p-12 text-center">
               <svg className="w-16 h-16 mx-auto text-gray-400 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">

@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Skeleton } from "../../reuse/Skeleton.jsx";
 import { Globe, RefreshCw, Clock } from "lucide-react";
 import { useDispatch, useSelector } from "react-redux";
 import {
@@ -325,11 +326,18 @@ export default function DriverAvailability() {
 
           {/* Days List */}
           {loading ? (
-            <div className="card-surface p-8 sm:p-12">
-              <div className="flex flex-col items-center justify-center gap-4">
-                <div className="animate-spin rounded-full h-12 w-12 sm:h-16 sm:w-16 border-4 border-brand border-t-transparent"></div>
-                <p className="text-sm sm:text-base text-gray-600 font-medium">{t('loadingAvailability')}</p>
-              </div>
+            <div role="status" className="space-y-3">
+              <span className="sr-only">{t('loadingAvailability')}</span>
+              {Array.from({ length: 7 }, (_, i) => (
+                <div key={i} aria-hidden="true" className="card-surface flex items-center gap-3 p-4 sm:p-5">
+                  <Skeleton className="h-12 w-12 shrink-0 rounded-lg" />
+                  <div className="flex-1 space-y-2">
+                    <Skeleton className="h-4 w-28" />
+                    <Skeleton className="h-3 w-20" />
+                  </div>
+                  <Skeleton className="h-8 w-16 shrink-0 rounded-full" />
+                </div>
+              ))}
             </div>
           ) : (
             <>

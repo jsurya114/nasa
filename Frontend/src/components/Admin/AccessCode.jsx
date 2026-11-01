@@ -1,5 +1,6 @@
 "use client";
 
+import { SkeletonList } from "../../reuse/Skeleton.jsx";
 import { Camera, KeyRound, ListChecks, Save, LoaderCircle } from "lucide-react";
 import { useState, useEffect } from "react";
 import { useDispatch, useSelector } from "react-redux";
@@ -574,25 +575,7 @@ export default function AddAccessCodePage() {
 
           <div className="p-2 sm:p-3 lg:p-6">
             {status === "loading" ? (
-              <div className="text-center py-16">
-                <svg className="animate-spin h-12 w-12 text-brand mx-auto mb-4" viewBox="0 0 24 24">
-                  <circle
-                    cx="12"
-                    cy="12"
-                    r="10"
-                    stroke="currentColor"
-                    strokeWidth="4"
-                    fill="none"
-                    className="opacity-25"
-                  ></circle>
-                  <path
-                    fill="currentColor"
-                    d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                    className="opacity-75"
-                  ></path>
-                </svg>
-                <p className="text-gray-600">Loading access codes...</p>
-              </div>
+              <SkeletonList rows={4} label="Loading access codes..." className="py-2" />
             ) : accessCodes.length === 0 ? (
               <div className="text-center py-16">
                 <div className="bg-gray-100 rounded-full p-6 w-24 h-24 mx-auto mb-6 flex items-center justify-center">

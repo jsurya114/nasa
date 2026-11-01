@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useCallback, useMemo } from "react";
+import { SkeletonTableRows } from "../../reuse/Skeleton.jsx";
 import { useDispatch, useSelector } from "react-redux";
 import { toast } from "../../utils/toast";
 import Header from "../../reuse/Header";
@@ -401,17 +402,7 @@ export default function RoutesForm() {
               </thead>
               <tbody>
                 {routesStatus === "loading" && routes.length === 0 ? (
-                  <tr>
-                    <td colSpan="7" className="text-center py-4 text-gray-500 font-medium">
-                      <div className="flex items-center justify-center">
-                        <svg className="animate-spin h-6 w-6 mr-2 text-purple-600" viewBox="0 0 24 24">
-                          <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
-                          <path fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
-                        </svg>
-                        Loading routes...
-                      </div>
-                    </td>
-                  </tr>
+                  <SkeletonTableRows rows={5} cols={7} label="Loading routes..." />
                 ) : routesStatus === "failed" ? (
                   <tr>
                     <td colSpan="7" className="text-center py-4 text-red-500 font-medium">

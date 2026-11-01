@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react";
+import { SkeletonList } from "./Skeleton.jsx";
 import { useSelector } from "react-redux";
 
 const UploadedData = ({ viewType, loadData, selectedDate }) => {
@@ -91,13 +92,7 @@ const UploadedData = ({ viewType, loadData, selectedDate }) => {
       </div>
 
       {loading && (
-        <div className="flex flex-col items-center justify-center py-16">
-          <div className="relative w-16 h-16">
-            <div className="absolute top-0 left-0 w-full h-full border-4 border-blue-100 rounded-full"></div>
-            <div className="absolute top-0 left-0 w-full h-full border-4 border-blue-500 rounded-full border-t-transparent animate-spin"></div>
-          </div>
-          <span className="text-gray-600 font-medium text-lg mt-3">Loading...</span>
-        </div>
+        <SkeletonList rows={5} label="Loading..." className="py-4" />
       )}
 
       {error && <p className="text-red-500 bg-red-50 p-3 rounded">{error}</p>}
