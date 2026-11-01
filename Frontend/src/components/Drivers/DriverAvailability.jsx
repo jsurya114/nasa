@@ -352,8 +352,8 @@ export default function DriverAvailability() {
                               : 'border-line'
                         }`}
                     >
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-3 flex-1">
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="flex min-w-0 items-center gap-3 flex-1">
                           <div className={`flex-shrink-0 h-12 w-12 rounded-lg flex items-center justify-center font-bold text-sm ${isCurrentDay
                               ? 'bg-blue-100 text-blue-700 ring-2 ring-blue-300'
                               : isLocked
@@ -364,8 +364,8 @@ export default function DriverAvailability() {
                             }`}>
                             {short.toUpperCase()}
                           </div>
-                          <div className="flex-1">
-                            <div className="flex items-center gap-2">
+                          <div className="min-w-0 flex-1">
+                            <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
                               <div className="text-base font-semibold text-ink">
                                 {label}
                               </div>
@@ -406,7 +406,7 @@ export default function DriverAvailability() {
                         <button
                           onClick={() => handleToggle(key, index)}
                           disabled={isLocked}
-                          className={`relative inline-flex h-8 w-16 items-center rounded-full transition-all duration-300 focus:outline-none focus:ring-2 focus:ring-purple-600 ${isLocked
+                          className={`relative inline-flex h-8 w-16 shrink-0 items-center rounded-full transition-all duration-300 focus:outline-none focus:ring-2 focus:ring-purple-600 ${isLocked
                               ? 'opacity-50 cursor-not-allowed bg-gray-300'
                               : availability[key]
                                 ? 'bg-green-500'
