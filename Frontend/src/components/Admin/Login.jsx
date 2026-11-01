@@ -119,7 +119,7 @@ navigate("/admin/dashboard");
   return (
     <div className="min-h-screen flex items-center justify-center bg-gray-100 font-poppins">
       <div className="bg-white rounded-2xl shadow-lg w-full max-w-md">
-        <div className="bg-[oklch(0.36_0.13_296.97)] rounded-t-2xl py-6 flex justify-center">
+        <div className="bg-brand rounded-t-2xl py-6 flex justify-center">
           <img
             src={logo}
             alt="Nasa Logistic Carriers Logo"
@@ -131,10 +131,11 @@ navigate("/admin/dashboard");
           <h2 className="text-2xl font-semibold text-blue-900 mb-6">Login</h2>
           <form onSubmit={handleSubmit}>
             <div className="text-left mb-4">
-              <label htmlFor="email">Email Address</label>
+              <label htmlFor="email" className="block text-gray-700 mb-1 font-medium">Email Address</label>
               <input
                 type="email"
                 id="email"
+                autoComplete="email"
                 value={email}
                 onChange={(e) => {
                   setEmail(e.target.value);
@@ -144,16 +145,17 @@ navigate("/admin/dashboard");
                 className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-600"
               />
               {fieldErrors.email && (
-                <p className="text-red-600 text-sm">{fieldErrors.email}</p>
+                <p className="text-red-600 text-sm mt-1">{fieldErrors.email}</p>
               )}
             </div>
 
            <div className="text-left mb-4 relative">
-  <label htmlFor="password">Password</label>
+  <label htmlFor="password" className="block text-gray-700 mb-1 font-medium">Password</label>
 
   <input
     type={showPassword ? "text" : "password"}
     id="password"
+    autoComplete="current-password"
     value={password}
     onChange={(e) => {
       setPassword(e.target.value);
@@ -162,27 +164,29 @@ navigate("/admin/dashboard");
     className="w-full px-4 py-3 pr-12 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-600"
   />
 
-  <span
+  <button
+    type="button"
     onClick={() => setShowPassword(!showPassword)}
-    className="absolute right-4 top-10 cursor-pointer text-gray-600"
+    aria-label={showPassword ? "Hide password" : "Show password"}
+    className="absolute right-2 top-9 p-2 cursor-pointer text-gray-600 hover:text-gray-800 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-600"
   >
     {showPassword ? <AiOutlineEyeInvisible size={22} /> : <AiOutlineEye size={22} />}
-  </span>
+  </button>
 
   {fieldErrors.password && (
-    <p className="text-red-600 text-sm">{fieldErrors.password}</p>
+    <p className="text-red-600 text-sm mt-1">{fieldErrors.password}</p>
   )}
 </div>
 
 
             <button
               type="submit"
-              className="w-full bg-[oklch(0.36_0.13_296.97)] hover:bg-purple-900 text-white font-semibold py-3 rounded-lg shadow-md mt-4"
+              className="w-full bg-brand hover:bg-brand-dark text-white font-semibold py-3 rounded-lg shadow-md mt-4"
             >
               {loading ? "Logging in..." : "Login"}
             </button>
 
-            {error && <p className="text-red-600 mt-2">{error}</p>}
+            {error && <p className="text-red-600 text-sm mt-3">{error}</p>}
           </form>
 
           <div className="mt-4 text-sm">

@@ -1,1 +1,7 @@
 @import "tailwindcss";
+
+/* Brand colours. Same purple as before, named once so every screen can share it. */
+@theme {
+  --color-brand: oklch(0.36 0.13 296.97);
+  --color-brand-dark: var(--color-purple-900);
+}
