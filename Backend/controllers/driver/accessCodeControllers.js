@@ -1,6 +1,7 @@
 // controllers/driver/accessCodeControllers.js
 import accessCodeQueries from "../../services/driver/accessCodeQueries.js";
 import { translateError } from "../../utils/backendI18n.js";
+import logger from '../../utils/logger.js';
 
 // Helper to get language from request
 const getLang = (req) => {
@@ -28,7 +29,7 @@ export const getAccessCodes = async (req, res) => {
     res.json(result);
   } catch (err) {
     const lang = getLang(req);
-    console.error("Driver Controller error in getAccessCodes:", err);
+    logger.error("Driver Controller error in getAccessCodes", err);
     res.status(500).json({ message: err.message });
   }
 };
@@ -59,13 +60,13 @@ export const createAccessCode = async (req, res) => {
     // ✅ VALIDATION: Ensure all images were successfully uploaded to Cloudinary
     const failedUploads = files.filter((f) => !f.path);
     if (failedUploads.length > 0) {
-      console.error('Failed to upload images to Cloudinary:', failedUploads);
+      logger.error('Failed to upload images to Cloudinary', { failed: failedUploads.length });
       return res.status(500).json({ 
         message: translateError(lang, 'accessCode.imageUploadFailed')
       });
     }
 
-    console.log('✅ ' + translateError(lang, 'accessCode.imagesUploaded') + ':', imageUrls);
+    logger.debug('Access code images uploaded', { count: imageUrls.length });
 
     const newAccessCode = await accessCodeQueries.createAccessCode(
       zip_code, 
@@ -89,7 +90,7 @@ export const createAccessCode = async (req, res) => {
       images: imageFiles 
     });
   } catch (err) {
-    console.error("Driver Controller error in createAccessCode:", err);
+    logger.error("Driver Controller error in createAccessCode", err);
     if (err.message === "Access code already exists") {
       res.status(409).json({ message: translateError(lang, 'accessCode.alreadyExists') });
     } else {

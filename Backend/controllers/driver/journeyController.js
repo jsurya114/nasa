@@ -9,6 +9,7 @@ import {
 import { jobService } from "../../services/admin/jobQueries.js";
 import HttpStatus from "../../utils/statusCodes.js";
 import { translateError } from "../../utils/backendI18n.js";
+import logger from '../../utils/logger.js';
 
 // Helper to get language from request
 const getLang = (req) => {
@@ -102,7 +103,7 @@ export const saveJourney = async (req, res) => {
     return res.status(201).json({ success: true, data: journey });
   } catch (error) {
     const lang = getLang(req);
-    console.error("saveJourney error:", error);
+    logger.error("saveJourney error", error);
     return res.status(500).json({
       success: false,
       message: translateError(lang, 'journey.errorInserting'),

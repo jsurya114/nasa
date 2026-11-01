@@ -5,6 +5,7 @@ import { blackListToken, revokeRefreshToken, isTokenRevoked } from '../../servic
 import pool from '../../config/db.js';
 import { translateError } from "../../utils/backendI18n.js";
 import { DRIVER_ROLE } from '../../middlewares/requireRole.js';
+import logger from '../../utils/logger.js';
 
 // Token payload for a driver. The role keeps driver tokens out of admin routes.
 const driverTokenPayload = (driver) => ({
@@ -61,7 +62,7 @@ const driverController = {
         [timezone, driver.id]
       );
 
-      console.log(`✅ ${translateError(lang, 'driver.timezoneUpdated')}: ${timezone} (Driver ${driver.id})`);
+      logger.debug('Driver timezone updated', { driverId: driver.id, timezone });
 
       let accessToken = generateToken(driverTokenPayload(driver));
       let refreshToken = generateRefreshToken(driverTokenPayload(driver));
@@ -86,7 +87,7 @@ const driverController = {
       });
     } catch (error) {
       const lang = getLang(req);
-      console.error(error.message);
+      logger.error('Driver login failed', error);
       res.status(HttpStatus.INTERNAL_SERVER_ERROR).json({
         message: translateError(lang, 'common.serverError')
       });
@@ -136,7 +137,7 @@ const driverController = {
       });
     } catch (error) {
       const lang = getLang(req);
-      console.error(error.message);
+      logger.error('getDriver failed', error);
       res.status(HttpStatus.INTERNAL_SERVER_ERROR).json({
         message: translateError(lang, 'common.serverError')
       });
@@ -210,7 +211,7 @@ const driverController = {
       });
     } catch (error) {
       const lang = getLang(req);
-      console.error("❌ Refresh Token Error:", error);
+      logger.error("Refresh Token Error", error);
       return res.status(HttpStatus.UNAUTHORIZED).json({
         message: translateError(lang, 'common.unauthorized')
       });
@@ -243,7 +244,7 @@ const driverController = {
         message: "Agreement signed successfully"
       });
     } catch (error) {
-      console.error("❌ Submit Agreement Error:", error);
+      logger.error("Submit Agreement Error", error);
       return res.status(HttpStatus.INTERNAL_SERVER_ERROR).json({
         message: "Internal server error"
       });
