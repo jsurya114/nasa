@@ -72,6 +72,23 @@ axios.interceptors.response.use(
             localStorage.setItem(`${area}Token`, accessToken);
             localStorage.setItem(`${area}RefreshToken`, newRefreshToken);
 
+            // A logout that triggered this refresh carries the old refresh token. Send the new one
+            // as well, so the whole session is revoked and no usable token is left behind.
+            if (originalRequest.url.endsWith('/logout')) {
+              try {
+                const body = JSON.parse(originalRequest.data || '{}');
+                originalRequest.data = JSON.stringify({
+                  ...body,
+                  refreshToken: newRefreshToken,
+                  previousRefreshToken: body.refreshToken,
+                });
+                // The body is longer now; let axios work out its length again.
+                originalRequest.headers.delete?.('Content-Length');
+              } catch {
+                originalRequest.data = JSON.stringify({ refreshToken: newRefreshToken });
+              }
+            }
+
             // Retry the original request with the new token
             originalRequest.headers.Authorization = `Bearer ${accessToken}`;
             return axios(originalRequest);

@@ -157,10 +157,11 @@ const driverController = {
 
     // Also revoke the refresh token, so it cannot be used to sign in again.
     // Only the caller's own refresh token is revoked. Old tokens have no role.
-    await revokeRefreshToken(
-      req.body?.refreshToken,
-      (decoded) => decoded.id === req.driver?.id && (decoded.role === undefined || decoded.role === DRIVER_ROLE)
-    );
+    // An automatic refresh during logout replaces the refresh token, so the app also sends the one it replaced.
+    const ownsRefreshToken = (decoded) => decoded.id === req.driver?.id && (decoded.role === undefined || decoded.role === DRIVER_ROLE);
+    for (const refreshToken of [req.body?.refreshToken, req.body?.previousRefreshToken]) {
+      await revokeRefreshToken(refreshToken, ownsRefreshToken);
+    }
 
     return res.status(HttpStatus.OK).json({
       message: translateError(lang, 'auth.logoutSuccessful')

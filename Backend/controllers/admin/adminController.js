@@ -79,10 +79,11 @@ const adminController = {
 
     // Also revoke the refresh token, so it cannot be used to sign in again.
     // Only the caller's own refresh token is revoked.
-    await revokeRefreshToken(
-      req.body?.refreshToken,
-      (decoded) => decoded.id === req.user?.id && ADMIN_ROLES.includes(decoded.role)
-    )
+    // An automatic refresh during logout replaces the refresh token, so the app also sends the one it replaced.
+    const ownsRefreshToken = (decoded) => decoded.id === req.user?.id && ADMIN_ROLES.includes(decoded.role)
+    for (const refreshToken of [req.body?.refreshToken, req.body?.previousRefreshToken]) {
+      await revokeRefreshToken(refreshToken, ownsRefreshToken)
+    }
 
     return res.status(HttpStatus.OK).json({ message: "Logged out successfully" });
   },
