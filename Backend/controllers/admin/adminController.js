@@ -3,6 +3,7 @@ import { generateToken, verifyToken, generateRefreshToken, verifyRefreshToken } 
 import HttpStatus from '../../utils/statusCodes.js'
 import { blackListToken, revokeRefreshToken, isTokenRevoked } from '../../services/redis-jwt-service.js'
 import { ADMIN_ROLES } from '../../middlewares/requireRole.js'
+import logger from '../../utils/logger.js';
 
 const adminController = {
   Login: async (req, res) => {
@@ -56,7 +57,7 @@ const adminController = {
       });
 
     } catch (error) {
-      console.error("❌ Login Error:", error);
+      logger.error("Login Error", error);
 
       const isDev = process.env.NODE_ENV !== 'production';
       return res.status(HttpStatus.INTERNAL_SERVER_ERROR).json({
@@ -121,7 +122,7 @@ const adminController = {
       return res.status(HttpStatus.OK).json({ admin: decoded });
 
     } catch (err) {
-      console.error(err.message)
+      logger.error('getUser failed', err)
       res.status(HttpStatus.INTERNAL_SERVER_ERROR).json({ message: "Server error" })
     }
   },
@@ -159,7 +160,7 @@ const adminController = {
         refreshToken: newRefreshToken
       });
     } catch (error) {
-      console.error("❌ Refresh Token Error:", error);
+      logger.error("Refresh Token Error", error);
       return res.status(HttpStatus.UNAUTHORIZED).json({ message: "Invalid refresh token" });
     }
   }

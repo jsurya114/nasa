@@ -13,6 +13,7 @@ import {
 } from "../../services/admin/routeQueries.js";
 import HttpStatus from "../../utils/statusCodes.js";
 import { canAccessJob, canAccessDriverCity } from "../../services/admin/routeAccess.js";
+import logger from '../../utils/logger.js';
 
 const CITY_FORBIDDEN = { error: "You can only manage routes in your assigned cities" };
 
@@ -70,7 +71,7 @@ export const createRoute = async (req, res) => {
     res.status(HttpStatus.CREATED).json(newRoute);
 
   } catch (err) {
-    console.error("❌ createRoute error:", err.message);
+    logger.error("createRoute error", err);
     res.status(HttpStatus.INTERNAL_SERVER_ERROR).json({ error: `Failed to create route: ${err.message}` });
   }
 };
@@ -87,7 +88,7 @@ export const fetchPaginatedRoutes = async (req, res) => {
     const isSuperAdmin = req.user?.role === 'superadmin';
     const adminId = req.user?.id;
     
-    console.log('Fetching routes with filters:', { page, limit, search, cityFilter, isSuperAdmin, adminId });
+    logger.debug('Fetching routes with filters', { page, limit, search, cityFilter, isSuperAdmin, adminId });
     
     const { routes, total } = await routePagination(page, limit, search, cityFilter, isSuperAdmin, adminId);
 
@@ -100,7 +101,7 @@ export const fetchPaginatedRoutes = async (req, res) => {
       isSuperAdmin // Send this to frontend
     });
   } catch (error) {
-    console.error("❌ fetchPaginatedRoutes error:", error.message);
+    logger.error("fetchPaginatedRoutes error", error);
     res.status(HttpStatus.INTERNAL_SERVER_ERROR).json({
       success: false,
       message: error.message,
@@ -126,7 +127,7 @@ export const getAdminRoutes = async (req, res) => {
     
     res.json({ routes });
   } catch (err) {
-    console.error("❌ getAdminRoutes error:", err.message);
+    logger.error("getAdminRoutes error", err);
     res.status(HttpStatus.INTERNAL_SERVER_ERROR).json({ error: err.message });
   }
 };
@@ -138,7 +139,7 @@ export const getDriverRoutes = async (req, res) => {
     const routes = routesDb.map(mapRoute);
     res.json({ routes });
   } catch (err) {
-    console.error("❌ getDriverRoutes error:", err.message);
+    logger.error("getDriverRoutes error", err);
     res.status(HttpStatus.INTERNAL_SERVER_ERROR).json({ error: err.message });
   }
 };
@@ -157,7 +158,7 @@ export const getRouteById = async (req, res) => {
     const route = mapRoute(routeDb);
     res.json(route);
   } catch (err) {
-    console.error("❌ getRouteById error:", err.message);
+    logger.error("getRouteById error", err);
     res.status(HttpStatus.INTERNAL_SERVER_ERROR).json({ error: err.message });
   }
 };
@@ -207,7 +208,7 @@ export const updateRoute = async (req, res) => {
     
     res.json(updated);
   } catch (err) {
-    console.error("❌ updateRoute error:", err.message);
+    logger.error("updateRoute error", err);
     res.status(400).json({ error: `Failed to update route: ${err.message}` });
   }
 };
@@ -232,7 +233,7 @@ export const toggleRouteStatus = async (req, res) => {
   
     res.json(updated);
   } catch (err) {
-    console.error("❌ toggleRouteStatus error:", err.message);
+    logger.error("toggleRouteStatus error", err);
     res.status(500).json({ error: `Failed to toggle route status: ${err.message}` });
   }
 };
@@ -256,7 +257,7 @@ export const deleteRoute = async (req, res) => {
     
     res.json({ message: "Route deleted successfully" });
   } catch (err) {
-    console.error("❌ deleteRoute error:", err.message);
+    logger.error("deleteRoute error", err);
     res.status(500).json({ error: `Failed to delete route: ${err.message}` });
   }
 };
@@ -284,7 +285,7 @@ export const getRoutesByDriver = async (req, res) => {
       routes 
     });
   } catch (err) {
-    console.error("❌ getRoutesByDriver error:", err.message);
+    logger.error("getRoutesByDriver error", err);
     res.status(500).json({ 
       success: false,
       error: err.message 

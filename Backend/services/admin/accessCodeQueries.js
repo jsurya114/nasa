@@ -1,5 +1,6 @@
 // Updated accessCodeQueries.js
 import pool from "../../config/db.js";
+import logger from '../../utils/logger.js';
 
 const accessCodeQueries = {
   getAccessCodes: async (page = 1, limit = 10, search = '', cityIds = null) => {
@@ -68,7 +69,7 @@ const accessCodeQueries = {
         }
       };
     } catch (error) {
-      console.error('Database error in getAccessCodes:', error);
+      logger.error('Database error in getAccessCodes', error);
       throw error;
     }
   },
@@ -97,7 +98,7 @@ const accessCodeQueries = {
 
       return result.rows[0];
     } catch (error) {
-      console.error('Database error in createAccessCode:', error);
+      logger.error('Database error in createAccessCode', error);
       throw error;
     }
   },
@@ -111,7 +112,7 @@ const accessCodeQueries = {
       if (result.rowCount === 0) throw new Error('Access code not found');
       return result.rows[0];
     } catch (error) {
-      console.error('Database error in getAccessCodeById:', error);
+      logger.error('Database error in getAccessCodeById', error);
       throw error;
     }
   },
@@ -168,7 +169,7 @@ const accessCodeQueries = {
       }
       return result.rows[0];
     } catch (error) {
-      console.error('Database error in deleteAccessCode:', error);
+      logger.error('Database error in deleteAccessCode', error);
       throw error;
     }
   },

@@ -1,6 +1,7 @@
 import HttpStatus from '../../utils/statusCodes.js';
 import { dbService } from '../../services/admin/dbQueries.js';
 import { canAccessJob, canAccessDriver } from '../../services/admin/cityAccess.js';
+import logger from '../../utils/logger.js';
 
 const CITY_FORBIDDEN = { message: "You can only manage drivers in your assigned cities" };
 
@@ -27,7 +28,7 @@ export const createUsers = async (req, res) => {
 
         return res.status(HttpStatus.OK).json({ message: "User Added Successfully!!", insertUser });
     } catch (err) {
-        console.log("Error while inserting data ", err.message)
+        logger.error("Error while inserting driver", err)
         return res.status(HttpStatus.INTERNAL_SERVER_ERROR).json({ message: "Server error" })
     }
 }
@@ -63,7 +64,7 @@ export const getUsers = async (req, res) => {
             totalPages
         });
     } catch (err) {
-        console.error("Get users error:", err.message);
+        logger.error("Get users error", err);
         res.status(HttpStatus.INTERNAL_SERVER_ERROR).json({ message: "Server error" });
     }
 }
@@ -80,7 +81,7 @@ export const changeStatusUser = async (req, res) => {
         const data = await dbService.changeStatus(id);
         return res.status(HttpStatus.OK).json({ message: "User updated successfully!!", data });
     } catch (err) {
-        console.error(err.message);
+        logger.error('Error changing driver status', err);
         res.status(HttpStatus.INTERNAL_SERVER_ERROR).json({ message: "Server error" });
     }
 }
@@ -130,7 +131,7 @@ export const updateUser = async (req, res) => {
             updatedUser,
         });
     } catch (err) {
-        console.error("Update user error:", err.message);
+        logger.error("Update user error", err);
         res.status(500).json({ message: "Server error" });
     }
 };

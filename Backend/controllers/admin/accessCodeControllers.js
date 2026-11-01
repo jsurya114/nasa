@@ -3,6 +3,7 @@ import accessCodeQueries from "../../services/admin/accessCodeQueries.js";
 import path from "path";
 import fs from "fs";
 import { isSuperAdmin, assignedCityIds, canChangeCode, resolveCodeCity } from "../../services/admin/accessCodeAccess.js";
+import logger from '../../utils/logger.js';
 
 const CITY_FORBIDDEN = { message: "You can only manage access codes in your assigned cities" };
 
@@ -35,7 +36,7 @@ export const getAccessCodes = async (req, res) => {
     
     res.json(result);
   } catch (err) {
-    console.error("Controller error in getAccessCodes:", err);
+    logger.error("Controller error in getAccessCodes", err);
     res.status(500).json({ message: err.message });
   }
 };
@@ -76,7 +77,7 @@ export const createAccessCode = async (req, res) => {
       images: imageUrls,
     });
   } catch (err) {
-    console.error("createAccessCode error:", err);
+    logger.error("createAccessCode error", err);
     if (err.message === "Access code already exists") {
       res.status(409).json({ message: err.message });
     } else {
@@ -156,7 +157,7 @@ export const updateAccessCode = async (req, res) => {
       },
     });
   } catch (err) {
-    console.error("updateAccessCode error:", err);
+    logger.error("updateAccessCode error", err);
     if (err.message === "Access code not found") {
       res.status(404).json({ message: err.message });
     } else if (err.message === "Access code already exists") {
@@ -182,7 +183,7 @@ export const deleteAccessCode = async (req, res) => {
     await accessCodeQueries.deleteAccessCode(id);
     res.json({ message: "Access code deleted successfully" });
   } catch (err) {
-    console.error("Controller error in deleteAccessCode:", err);
+    logger.error("Controller error in deleteAccessCode", err);
     if (err.message === "Access code not found") {
       res.status(404).json({ message: err.message });
     } else {

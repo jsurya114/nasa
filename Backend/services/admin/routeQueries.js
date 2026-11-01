@@ -1,4 +1,5 @@
 import pool from "../../config/db.js";
+import logger from '../../utils/logger.js';
 
 // Insert route with job and price validation
 export const insertRoute = async (data) => {
@@ -389,8 +390,7 @@ export const routePagination = async (page, limit, search = "", cityFilter = "",
       total: parseInt(total.rows[0].count)
     };
   } catch (error) {
-    console.error("routePagination error:", error.message);
-    console.error("Stack:", error.stack);
+    logger.error("routePagination error", error);
     throw error;
   }
 };
@@ -412,7 +412,7 @@ export const getRoutesByDriverCity = async (driverId) => {
   
     return result.rows;
   } catch (error) {
-    console.error("getRoutesByDriverCity error:", error.message);
+    logger.error("getRoutesByDriverCity error", error);
     throw error;
   }
 };

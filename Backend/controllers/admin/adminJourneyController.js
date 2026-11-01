@@ -5,6 +5,7 @@ import HttpStatus from "../../utils/statusCodes.js";
 import pool from "../../config/db.js";
 import { getAllottedDrivers } from "../../services/admin/dashboardService.js";
 import { canAccessDriver, canAccessRoute, getJourneyDriverId, isRouteActive } from "../../services/admin/journeyAccess.js";
+import logger from '../../utils/logger.js';
 
 // The journey id from the URL, as a positive whole number, or null. The same number is used for
 // the city check and for the change itself, so the two can never look at different journeys.
@@ -173,7 +174,7 @@ const adminJourneyController = {
       });
 
     } catch (error) {
-      console.error("updateJourney error:", error);
+      logger.error("updateJourney error", error);
       res.status(HttpStatus.INTERNAL_SERVER_ERROR).json({
         success: false,
         message: error.message
@@ -211,7 +212,7 @@ const adminJourneyController = {
       });
 
     } catch (error) {
-      console.error("deleteJourney error:", error);
+      logger.error("deleteJourney error", error);
       res.status(500).json({
         success: false,
         message: error.message
