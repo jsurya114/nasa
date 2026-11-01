@@ -55,7 +55,7 @@ export const insertRoute = async (data) => {
 
 // Get all routes - for superadmin
 export const getAllRoutes = async () => {
-  const result = await pool.query("SELECT * FROM routes ORDER BY id ASC");
+  const result = await pool.query("SELECT * FROM routes WHERE deleted_at IS NULL ORDER BY id ASC");
   return result.rows;
 };
 
@@ -69,6 +69,7 @@ export const getRoutesForAdmin = async (adminId) => {
     INNER JOIN admin_city_ref acr ON c.id = acr.city_id
     WHERE acr.admin_id = $1
       AND c.enabled = true
+      AND r.deleted_at IS NULL
     ORDER BY r.id ASC
   `, [adminId]);
   
@@ -93,7 +94,8 @@ export const getAllRoutesOfDriver = async (id) => {
     JOIN routes r ON r.job = c.job
     WHERE d.id = $1
       AND d.enabled = true
-      AND r.enabled = true;
+      AND r.enabled = true
+      AND r.deleted_at IS NULL;
   `, [id]);
   return result.rows;
 };
@@ -199,43 +201,50 @@ export const routePagination = async (page, limit, search = "", cityFilter = "",
           SELECT * FROM routes
           WHERE (job ILIKE $1 OR name ILIKE $1)
             AND job = $2
+            AND deleted_at IS NULL
           ORDER BY id ASC
           LIMIT $3 OFFSET $4`;
         values = [`%${search}%`, cityFilter, limit, offset];
         countQuery = `
           SELECT COUNT(*) FROM routes
           WHERE (job ILIKE $1 OR name ILIKE $1)
-            AND job = $2`;
+            AND job = $2
+            AND deleted_at IS NULL`;
       } else if (search) {
         // Only search
         routeQuery = `
           SELECT * FROM routes
-          WHERE job ILIKE $1 OR name ILIKE $1
+          WHERE (job ILIKE $1 OR name ILIKE $1)
+            AND deleted_at IS NULL
           ORDER BY id ASC
           LIMIT $2 OFFSET $3`;
         values = [`%${search}%`, limit, offset];
         countQuery = `
           SELECT COUNT(*) FROM routes
-          WHERE job ILIKE $1 OR name ILIKE $1`;
+          WHERE (job ILIKE $1 OR name ILIKE $1)
+            AND deleted_at IS NULL`;
       } else if (cityFilter) {
         // Only city filter
         routeQuery = `
           SELECT * FROM routes
           WHERE job = $1
+            AND deleted_at IS NULL
           ORDER BY id ASC
           LIMIT $2 OFFSET $3`;
         values = [cityFilter, limit, offset];
         countQuery = `
           SELECT COUNT(*) FROM routes
-          WHERE job = $1`;
+          WHERE job = $1
+            AND deleted_at IS NULL`;
       } else {
         // No filters
         routeQuery = `
           SELECT * FROM routes
+          WHERE deleted_at IS NULL
           ORDER BY id ASC
           LIMIT $1 OFFSET $2`;
         values = [limit, offset];
-        countQuery = `SELECT COUNT(*) FROM routes`;
+        countQuery = `SELECT COUNT(*) FROM routes WHERE deleted_at IS NULL`;
       }
     } else {
       // Normal admin sees only routes for their assigned cities
@@ -251,6 +260,7 @@ export const routePagination = async (page, limit, search = "", cityFilter = "",
             AND r.job = $3
             AND r.enabled = true
             AND c.enabled = true
+            AND r.deleted_at IS NULL
           ORDER BY r.id ASC
           LIMIT $4 OFFSET $5`;
         values = [adminId, `%${search}%`, cityFilter, limit, offset];
@@ -263,7 +273,8 @@ export const routePagination = async (page, limit, search = "", cityFilter = "",
             AND (r.job ILIKE $2 OR r.name ILIKE $2)
             AND r.job = $3
             AND r.enabled = true
-            AND c.enabled = true`;
+            AND c.enabled = true
+            AND r.deleted_at IS NULL`;
       } else if (search) {
         // Only search
         routeQuery = `
@@ -275,6 +286,7 @@ export const routePagination = async (page, limit, search = "", cityFilter = "",
             AND (r.job ILIKE $2 OR r.name ILIKE $2)
             AND r.enabled = true
             AND c.enabled = true
+            AND r.deleted_at IS NULL
           ORDER BY r.id ASC
           LIMIT $3 OFFSET $4`;
         values = [adminId, `%${search}%`, limit, offset];
@@ -286,7 +298,8 @@ export const routePagination = async (page, limit, search = "", cityFilter = "",
           WHERE acr.admin_id = $1
             AND (r.job ILIKE $2 OR r.name ILIKE $2)
             AND r.enabled = true
-            AND c.enabled = true`;
+            AND c.enabled = true
+            AND r.deleted_at IS NULL`;
       } else if (cityFilter) {
         // Only city filter
         routeQuery = `
@@ -298,6 +311,7 @@ export const routePagination = async (page, limit, search = "", cityFilter = "",
             AND r.job = $2
             AND r.enabled = true
             AND c.enabled = true
+            AND r.deleted_at IS NULL
           ORDER BY r.id ASC
           LIMIT $3 OFFSET $4`;
         values = [adminId, cityFilter, limit, offset];
@@ -309,7 +323,8 @@ export const routePagination = async (page, limit, search = "", cityFilter = "",
           WHERE acr.admin_id = $1
             AND r.job = $2
             AND r.enabled = true
-            AND c.enabled = true`;
+            AND c.enabled = true
+            AND r.deleted_at IS NULL`;
       } else {
         // No filters
         routeQuery = `
@@ -320,6 +335,7 @@ export const routePagination = async (page, limit, search = "", cityFilter = "",
           WHERE acr.admin_id = $1
             AND r.enabled = true
             AND c.enabled = true
+            AND r.deleted_at IS NULL
           ORDER BY r.id ASC
           LIMIT $2 OFFSET $3`;
         values = [adminId, limit, offset];
@@ -330,7 +346,8 @@ export const routePagination = async (page, limit, search = "", cityFilter = "",
           INNER JOIN admin_city_ref acr ON c.id = acr.city_id
           WHERE acr.admin_id = $1
             AND r.enabled = true
-            AND c.enabled = true`;
+            AND c.enabled = true
+            AND r.deleted_at IS NULL`;
       }
     }
 
@@ -383,6 +400,7 @@ export const getRoutesByDriverCity = async (driverId) => {
       WHERE d.id = $1
         AND r.enabled = true
         AND c.enabled = true
+        AND r.deleted_at IS NULL
       ORDER BY r.id ASC
     `, [driverId]);
     
