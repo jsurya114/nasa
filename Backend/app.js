@@ -8,6 +8,7 @@ import cookieParser from 'cookie-parser';
 import sanitizeMiddleware from './middlewares/sanitize.js';
 import { notFound, errorHandler } from './middlewares/errorHandler.js';
 import rateLimit from './middlewares/rateLimit.js';
+import { trustProxyHops, assertTrustProxyConfigured } from './middlewares/loginRateLimit.js';
 import { initializeAvailabilityResetCron } from './utils/availabilityCronJob.js';
 import { assertAuthSecrets } from './services/jwtservice.js';
 
@@ -18,6 +19,11 @@ assertAuthSecrets()
 
 const PORT = process.env.PORT;
 const app = express();
+
+// How many proxies sit in front of the app (TRUST_PROXY: 0 for none, 1 behind a single hosting proxy).
+// Login limits use the client address, which is only correct when this matches reality.
+assertTrustProxyConfigured();
+app.set('trust proxy', trustProxyHops() || false);
 
 // CORS configuration - credentials set to false since we're using localStorage
 app.use(cors({

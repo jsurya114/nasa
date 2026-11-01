@@ -9,13 +9,14 @@ import getDeliverySummary from "../controllers/driver/deliveryController.js";
 import driverAuth from '../middlewares/driverAuth.js';
 import validateCityType, { attachCityType } from '../middlewares/validateCityType.js';
 import { requireSelf } from '../middlewares/requireSelf.js';
+import { loginRateLimit } from '../middlewares/loginRateLimit.js';
 import driverAvailabilityController from "../controllers/driver/driveravailabilityController.js";
 import passwordController from "../controllers/driver/updatepasswordController.js";
 import languageController from "../controllers/driver/languageController.js";
 
 const router = express.Router()
 
-router.post('/login', driverController.Login)
+router.post('/login', loginRateLimit('driver'), driverController.Login)
 router.post('/refresh-token', driverController.RefreshToken)
 
 // Protect all routes below this line

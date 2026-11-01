@@ -11,6 +11,7 @@ export const backendEn = {
     accountDisabled: "Account has been disabled",
     unauthorized: "UNAUTHORIZED",
     authTokenMissing: "Authentication token missing",
+    tooManyAttempts: "Too many login attempts. Please try again in {minutes} minutes.",
   },
 
   // Driver errors
