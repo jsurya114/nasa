@@ -202,6 +202,8 @@ export default function Jobs() {
   useEffect(() => {
     if (!mountedRef.current) return;
     fetchJobs({ pageNum: currentPage, q: search, statusFilter: filter });
+    // Runs when the page changes. Search and filter changes are handled (with a delay) by the effect above, so they are not dependencies here.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentPage, fetchJobs]);
 
   useEffect(() => {

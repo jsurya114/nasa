@@ -254,10 +254,6 @@ export default function AdminDriverAvailability() {
     return pages;
   };
 
-  const getAvailableDays = (availability) => {
-    return Object.values(availability).filter(Boolean).length;
-  };
-
   /**
    * FIXED: Admin day locking logic
    * Admins can edit today and future days
@@ -338,7 +334,7 @@ export default function AdminDriverAvailability() {
       } else {
         toast.error(res.error?.message || "Failed to update availability");
       }
-    } catch (err) {
+    } catch {
       toast.error("An error occurred while updating");
     } finally {
       setIsSaving(false);
@@ -709,7 +705,6 @@ export default function AdminDriverAvailability() {
                       {filteredDrivers.map((driver, driverIndex) => {
                         const isEditing = editingDriverId === driver.id;
                         const displayAvailability = isEditing ? editAvailability : driver.availability;
-                        const availableDaysCount = getAvailableDays(displayAvailability);
 
                         return (
                           <tr
@@ -829,7 +824,6 @@ export default function AdminDriverAvailability() {
                 {filteredDrivers.map((driver) => {
                   const isEditing = editingDriverId === driver.id;
                   const displayAvailability = isEditing ? editAvailability : driver.availability;
-                  const availableDaysCount = getAvailableDays(displayAvailability);
 
                   return (
                     <div

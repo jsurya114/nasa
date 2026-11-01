@@ -13,7 +13,6 @@ import {
   updateDriver,
   updateAdmin,
   clearMessages,
-  getCities,
   getAdminCities
 } from '../../redux/slice/admin/userLoadSlice';
 
