@@ -195,11 +195,11 @@ Skipping those rows dropped valid deliveries from the weekly total.
 ## 5. Pull requests
 
 - **Target:** feature branches target `develop`. Only `develop` targets `main`.
-- **Title:** use the commit header format, `<type>(<scope>): <subject>`, at most 72 characters.
+- **Title:** use the commit header format, `<type>(<scope>): <subject>`, at most 72 characters. It becomes the commit message when the pull request is squashed.
 - **Description:** fill in [the template](.github/pull_request_template.md), including how you tested it, whether it is AI-assisted, and any limitations.
 - **Review:** the other developer approves. The author never approves or merges their own pull request. The reviewer runs the branch before approving anything that touches pay, Excel uploads, login or the database.
 - **CI:** every pull request into `develop` runs `.github/workflows/ci.yml`: commit messages, frontend lint and build, backend syntax check and a dependency audit. Lint and the audit are non-blocking for now. **Never merge a pull request with failing CI.** We have no branch protection, so GitHub will not stop you; the rule is ours to keep. Fix the failure, or ask the other developer, before merging.
-- **Merge method:** **"Create a merge commit"**. It keeps every commit and its author. Don't squash or rebase.
+- **Merge method:** **"Squash and merge"** for every pull request into `develop`. One pull request becomes one commit on `develop`, so the history reads one line per change and a bad change can be reverted in one step. The squashed commit takes the pull request **title**, so the title must follow the commit header format above. Don't use "Create a merge commit" or "Rebase and merge" for these. The release pull request from `develop` into `main` is a separate decision (see `docs/journal/2026-11-01-pr-062-squash-merge.md`); until the owner decides, ask before merging it.
 - **After merging:** delete the feature branch. Never delete `develop`.
 - **Size:** about 300 changed lines or fewer. Anything bigger is split. Deleting dead code doesn't count towards the limit.
 
