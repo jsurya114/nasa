@@ -247,7 +247,7 @@ export default function DriverAccessCodePage() {
 
   return (
     <div
-      className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50 overflow-x-hidden"
+      className="min-h-screen bg-gradient-to-br from-slate-50 via-purple-50 to-slate-50 overflow-x-hidden"
       style={{ fontFamily: "Poppins, sans-serif" }}
     >
       <Header />
@@ -256,7 +256,7 @@ export default function DriverAccessCodePage() {
         {/* Add New Access Code Card */}
         <div className="bg-white/80 backdrop-blur-sm border border-white/20 rounded-2xl shadow-xl p-4 sm:p-8 mb-6 sm:mb-8">
           <div className="flex flex-col sm:flex-row sm:items-center mb-6 sm:mb-8">
-            <div className="bg-gradient-to-r from-[#8200db] to-[#9d00ff] p-3 rounded-xl mb-4 sm:mb-0 sm:mr-4 w-fit">
+            <div className="bg-brand p-3 rounded-xl mb-4 sm:mb-0 sm:mr-4 w-fit">
               <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
               </svg>
@@ -285,7 +285,7 @@ export default function DriverAccessCodePage() {
                 onChange={(e) => handleFieldChange("zipCode", e.target.value)}
                 onBlur={() => handleBlur("zipCode")}
                 className={`w-full px-4 py-3 border-2 ${touched.zipCode && errors.zipCode ? "border-red-500" : "border-gray-200"
-                  } rounded-xl focus:ring-4 focus:ring-purple-100 focus:border-[#8200db] bg-white text-gray-900 transition-all`}
+                  } rounded-xl focus:ring-4 focus:ring-purple-100 focus:border-brand bg-white text-gray-900 transition-all`}
                 disabled={status === "loading"}
               />
               {touched.zipCode && errors.zipCode && (
@@ -316,7 +316,7 @@ export default function DriverAccessCodePage() {
                 onChange={(e) => handleFieldChange("address", e.target.value)}
                 onBlur={() => handleBlur("address")}
                 className={`w-full px-4 py-3 border-2 ${touched.address && errors.address ? "border-red-500" : "border-gray-200"
-                  } rounded-xl focus:ring-4 focus:ring-purple-100 focus:border-[#8200db] text-gray-900 transition-all`}
+                  } rounded-xl focus:ring-4 focus:ring-purple-100 focus:border-brand text-gray-900 transition-all`}
                 disabled={status === "loading"}
               />
               {touched.address && errors.address && (
@@ -346,7 +346,7 @@ export default function DriverAccessCodePage() {
                 onChange={(e) => handleFieldChange("accessCode", e.target.value)}
                 onBlur={() => handleBlur("accessCode")}
                 className={`w-full px-4 py-3 border-2 ${touched.accessCode && errors.accessCode ? "border-red-500" : "border-gray-200"
-                  } rounded-xl focus:ring-4 focus:ring-purple-100 focus:border-[#8200db] text-gray-900 transition-all`}
+                  } rounded-xl focus:ring-4 focus:ring-purple-100 focus:border-brand text-gray-900 transition-all`}
                 disabled={status === "loading"}
               />
               {touched.accessCode && errors.accessCode && (
@@ -375,7 +375,7 @@ export default function DriverAccessCodePage() {
                 multiple
                 accept="image/jpeg,image/png,image/webp,image/jpg"
                 onChange={onFilesChange}
-                className="w-full px-4 py-2 border-2 border-gray-200 rounded-xl focus:ring-4 focus:ring-purple-100 focus:border-[#8200db] bg-white text-gray-900 transition-all"
+                className="w-full px-4 py-3 text-base border-2 border-gray-200 rounded-xl focus:ring-4 focus:ring-purple-100 focus:border-brand bg-white text-gray-900 transition-all"
                 disabled={status === "loading"}
               />
               {fileError && <p className="text-red-500 text-sm mt-1">{fileError}</p>}
@@ -393,7 +393,7 @@ export default function DriverAccessCodePage() {
             <div className="flex justify-end pt-4">
               <button
                 type="submit"
-                className={`px-6 sm:px-8 py-3 bg-gradient-to-r from-[#8200db] to-[#9d00ff] text-white rounded-xl shadow-lg hover:from-[#7300c4] hover:to-[#8a00e6] focus:outline-none focus:ring-4 focus:ring-purple-200 transition-all font-semibold ${status === "loading"
+                className={`px-6 sm:px-8 py-3 bg-brand text-white rounded-xl shadow-lg hover:bg-brand-dark focus:outline-none focus:ring-4 focus:ring-purple-200 transition-all font-semibold ${status === "loading"
                     ? "opacity-50 cursor-not-allowed"
                     : "hover:shadow-xl transform hover:-translate-y-0.5"
                   }`}
@@ -434,7 +434,7 @@ export default function DriverAccessCodePage() {
                 <select
                   value={pageLimit}
                   onChange={(e) => handleLimitChange(Number(e.target.value))}
-                  className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 text-sm"
+                  className="px-3 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 text-base"
                 >
                   <option value={5}>5</option>
                   <option value={10}>10</option>
@@ -456,11 +456,11 @@ export default function DriverAccessCodePage() {
                     value={localSearch}
                     onChange={(e) => setLocalSearch(e.target.value)}
                     onKeyPress={(e) => e.key === "Enter" && handleSearch()}
-                    className="w-full px-4 py-2 pr-10 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 text-sm"
+                    className="w-full px-4 py-3 pr-10 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 text-base"
                   />
                   <button
                     onClick={handleSearch}
-                    className="absolute right-2 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-[#8200db] p-1"
+                    className="absolute right-2 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-brand p-2"
                   >
                     <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path
@@ -480,7 +480,7 @@ export default function DriverAccessCodePage() {
                   placeholder={t('filterByZipCode')}
                   value={localZipCodeFilter}
                   onChange={(e) => handleFilterChange(e.target.value)}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 text-sm"
+                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 text-base"
                 />
               </div>
             </div>
@@ -489,7 +489,7 @@ export default function DriverAccessCodePage() {
           <div className="p-2 sm:p-3 lg:p-6">
             {status === "loading" ? (
               <div className="text-center py-16">
-                <svg className="animate-spin h-12 w-12 text-[#8200db] mx-auto mb-4" viewBox="0 0 24 24">
+                <svg className="animate-spin h-12 w-12 text-brand mx-auto mb-4" viewBox="0 0 24 24">
                   <circle
                     cx="12"
                     cy="12"
@@ -696,7 +696,7 @@ export default function DriverAccessCodePage() {
                               group relative inline-flex items-center justify-center w-8 h-8 sm:w-10 sm:h-10 text-xs sm:text-sm font-semibold 
                               rounded-lg border transition-all duration-200 ease-out transform
                               ${page === currentPage
-                                ? "bg-blue-600 text-white border-blue-600 shadow-lg shadow-blue-600/25 scale-105"
+                                ? "bg-brand text-white border-brand shadow-lg scale-105"
                                 : "bg-white text-gray-700 border-gray-300 hover:bg-gray-50 hover:text-gray-900 hover:border-gray-400 hover:shadow-md hover:scale-[1.02]"
                               }
                             `}
