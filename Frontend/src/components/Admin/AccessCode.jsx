@@ -13,6 +13,7 @@ import {
   setSearchTerm,
   setZipCodeFilter,
 } from "../../redux/slice/admin/accessCodeSlice";
+import { getAdminCities } from "../../redux/slice/admin/userLoadSlice";
 import Header from "../../reuse/Header";
 import Nav from "../../reuse/Nav";
 import Swal from "sweetalert2";
@@ -33,10 +34,17 @@ export default function AddAccessCodePage() {
     searchTerm,
     zipCodeFilter,
   } = useSelector((state) => state.accessCodes || {});
+  // The cities this admin may use (every city for a superadmin).
+  const cities = useSelector((state) => state.users?.city) || [];
+  const isSuperAdmin = useSelector((state) => state.admin?.isSuperAdmin);
+  // One assigned city is filled in by the server. Several need a choice.
+  const mustChooseCity = !isSuperAdmin && cities.length > 1;
+  const showCityPicker = isSuperAdmin || cities.length > 1;
 
   const [address, setAddress] = useState("");
   const [accessCode, setAccessCode] = useState("");
   const [zipCode, setZipCode] = useState("");
+  const [cityId, setCityId] = useState("");
   const [errors, setErrors] = useState({});
   const [touched, setTouched] = useState({});
   const [localSearch, setLocalSearch] = useState("");
@@ -52,6 +60,10 @@ export default function AddAccessCodePage() {
       dispatch(fetchAccessCodes({ page: currentPage, limit: pageLimit, search: searchTerm, zipCodeFilter }));
     }
   }, [dispatch, status]);
+
+  useEffect(() => {
+    dispatch(getAdminCities());
+  }, [dispatch]);
 
   useEffect(() => {
     return () => {
@@ -132,6 +144,11 @@ export default function AddAccessCodePage() {
       return;
     }
 
+    if (mustChooseCity && !cityId) {
+      toast.error("Please choose a city", { position: "top-right" });
+      return;
+    }
+
     // Validate images (optional): max 3 and valid types
     if (images.length > 3) {
       setImageError("You can upload up to 3 images only");
@@ -152,6 +169,7 @@ export default function AddAccessCodePage() {
       formData.append("zip_code", zipCode.trim());
       formData.append("address", address.trim());
       formData.append("access_code", accessCode.trim());
+      if (cityId) formData.append("city_id", cityId);
       images.forEach((file) => formData.append("images", file));
 
       await dispatch(createAccessCode(formData)).unwrap();
@@ -161,6 +179,7 @@ export default function AddAccessCodePage() {
       setAddress("");
       setAccessCode("");
       setZipCode("");
+      setCityId("");
       setImages([]);
       setImageError("");
       setErrors({});
@@ -388,6 +407,29 @@ export default function AddAccessCodePage() {
                 </p>
               )}
             </div>
+
+            {/* City: shown when the admin has several cities (or is a superadmin) */}
+            {showCityPicker && (
+              <div className="space-y-2">
+                <label htmlFor="cityId" className="block text-sm font-semibold text-gray-800 mb-2">
+                  City {mustChooseCity && <span className="text-red-500">*</span>}
+                </label>
+                <select
+                  id="cityId"
+                  value={cityId}
+                  onChange={(e) => setCityId(e.target.value)}
+                  className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:ring-4 focus:ring-purple-100 focus:border-[#8200db] text-gray-900 transition-all bg-white"
+                  disabled={status === "loading"}
+                >
+                  <option value="">{mustChooseCity ? "Select a city" : "No city"}</option>
+                  {cities.map((city) => (
+                    <option key={city.id} value={city.id}>
+                      {city.job}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
 
             {/* Access Code Input */}
             <div className="space-y-2">
