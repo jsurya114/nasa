@@ -47,6 +47,15 @@ const translations = {
 
     // Messages
     loading: 'Loading...',
+    agreementTab: 'Agreement',
+    more: 'More',
+    mainNavigation: 'Main navigation',
+    dismissNotification: 'Dismiss notification',
+    savingAccessCode: 'Saving access code...',
+    agreeTermsRequired: 'You must agree to the terms to continue.',
+    agreementNameDateRequired: 'Please enter your name and joining date.',
+    agreementSigned: 'Agreement signed successfully!',
+    agreementSubmitFailed: 'Failed to submit agreement',
     success: 'Success',
     error: 'Error',
     noData: 'No data available',
@@ -331,6 +340,15 @@ const translations = {
 
     // Messages
     loading: 'Cargando...',
+    agreementTab: 'Acuerdo',
+    more: 'Más',
+    mainNavigation: 'Navegación principal',
+    dismissNotification: 'Cerrar notificación',
+    savingAccessCode: 'Guardando código de acceso...',
+    agreeTermsRequired: 'Debes aceptar los términos para continuar.',
+    agreementNameDateRequired: 'Ingresa tu nombre y la fecha de ingreso.',
+    agreementSigned: '¡Acuerdo firmado correctamente!',
+    agreementSubmitFailed: 'No se pudo enviar el acuerdo',
     success: 'Éxito',
     error: 'Error',
     noData: 'No hay datos disponibles',

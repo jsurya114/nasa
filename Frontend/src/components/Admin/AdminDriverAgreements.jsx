@@ -1,7 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import { FileText } from "lucide-react";
 import axios from '../../redux/slice/axiosInstance';
-import { toast } from 'react-toastify';
+import { toast } from "../../utils/toast";
+import { confirmDialog } from "../../utils/confirmDialog";
 import Header from '../../reuse/Header';
 import Nav from '../../reuse/Nav';
 import SearchBar from '../../reuse/Search';
@@ -206,7 +207,12 @@ const AdminDriverAgreements = () => {
   const handleToggleAgreement = async (id, currentStatus) => {
     if (!currentStatus) return;
 
-    if (!window.confirm("Are you sure you want to revoke this driver's agreement? They will be forced to re-sign on their next login.")) {
+    if (!(await confirmDialog({
+      title: 'Revoke agreement?',
+      text: "Are you sure you want to revoke this driver's agreement? They will be forced to re-sign on their next login.",
+      confirmText: 'Revoke agreement',
+      cancelText: 'Cancel',
+    }))) {
       return;
     }
 

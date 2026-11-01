@@ -21,8 +21,10 @@ function Header() {
     navigate("/admin/login");
   };
 
+  // The bar is solid #462976 because the logo image has that exact background colour.
+  // A see-through bar would show a box around the logo.
   return (
-    <header className="sticky top-0 z-50 flex items-center justify-between h-16 bg-brand text-white px-4 border-b border-white/10">
+    <header className="sticky top-0 z-50 flex items-center justify-between h-[calc(4rem+env(safe-area-inset-top))] pt-[env(safe-area-inset-top)] bg-[#462976] text-white px-4 sm:px-6 border-b border-white/10 shadow-[0_6px_24px_-14px_rgb(30_16_60/0.6)]">
       {/* Left Side (Hide on mobile) */}
       <div className="hidden md:block font-semibold text-sm md:text-lg">
         Dashboard Admin
@@ -49,7 +51,7 @@ function Header() {
         </div>
 
         <button
-          className="bg-red-600 hover:bg-red-700 text-white px-3 py-2 rounded-md font-semibold"
+          className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-xl font-semibold shadow-sm"
           onClick={handleLogout}
         >
           Logout
@@ -69,7 +71,7 @@ function Header() {
 
   {/* Dropdown */}
   {menuOpen && (
-    <div className="absolute right-0 top-12 bg-white text-black rounded-md shadow-md w-48 p-3 space-y-3 z-50">
+    <div className="glass-light animate-sheet-in origin-top-right absolute right-0 top-12 text-ink rounded-2xl w-56 p-3 space-y-3 z-50">
       {/* Dashboard title inside menu for mobile */}
       <div className="font-semibold text-center text-brand">
         Dashboard Admin
@@ -83,7 +85,7 @@ function Header() {
       </div>
 
       <button
-        className="w-full bg-red-600 hover:bg-red-700 text-white px-3 py-3 rounded-md font-semibold"
+        className="w-full bg-red-600 hover:bg-red-700 text-white px-3 py-3 rounded-xl font-semibold"
         onClick={handleLogout}
       >
         Logout
