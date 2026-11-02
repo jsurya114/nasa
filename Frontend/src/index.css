@@ -145,9 +145,11 @@
   .glass-light { background-color: #ffffff; border-color: var(--color-brand-800); }
 }
 
-/* Respect "reduce motion". Loading spinners keep turning so people can still see work is in progress. */
+/* Respect "reduce motion". Loading spinners keep turning so people can still see work is in progress.
+   The toast progress bar is a timer, not decoration: Toastify closes the message when its animation ends,
+   so it must keep its real duration or messages vanish at once. */
 @media (prefers-reduced-motion: reduce) {
-  *:not(.animate-spin),
+  *:not(.animate-spin):not(.Toastify__progress-bar),
   *::before,
   *::after {
     animation-duration: 0.01ms !important;
