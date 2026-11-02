@@ -18,17 +18,20 @@ const memory = { admin: null, driver: null };
 const pendingKey = (area) => `nasa.signOutPending.${area}`;
 const signOutListeners = new Set();
 
-const readPending = (area) => {
+// "1" while the shell is still clearing, "2" once it failed to confirm. Both block any restore of the old session.
+// Only "2" is shown to the person.
+const readState = (area) => {
   try {
-    return localStorage.getItem(pendingKey(area)) === "1";
+    return localStorage.getItem(pendingKey(area));
   } catch {
-    return false;
+    return null;
   }
 };
+const readPending = (area) => readState(area) !== null;
 
-const writePending = (area, pending) => {
+const writePending = (area, state) => {
   try {
-    if (pending) localStorage.setItem(pendingKey(area), "1");
+    if (state) localStorage.setItem(pendingKey(area), state);
     else localStorage.removeItem(pendingKey(area));
   } catch {
     // Without storage the flag only lives for this page load
@@ -36,13 +39,15 @@ const writePending = (area, pending) => {
   signOutListeners.forEach((listener) => listener());
 };
 
-// True only inside the app, for an area whose last sign-out could not be confirmed on the phone.
+// True only inside the app, for an area whose last sign-out has not been confirmed by the phone yet.
 export const isSignOutPending = (area) => isNativeShell() && readPending(area);
+// True only once the phone failed to confirm it. This is what the sign-in screen tells the person about.
+export const isSignOutFailed = (area) => isNativeShell() && readState(area) === "2";
 export const subscribeSignOut = (listener) => {
   signOutListeners.add(listener);
   return () => signOutListeners.delete(listener);
 };
-export const signOutSnapshot = () => AREAS.map((area) => (isSignOutPending(area) ? area : "")).join("|");
+export const signOutSnapshot = () => AREAS.map((area) => (isSignOutFailed(area) ? area : "")).join("|");
 const refreshing = new Map();
 const retriedPending = new Set();
 let hydration = null;
@@ -103,7 +108,7 @@ export const saveSession = async (area, { accessToken, refreshToken }) => {
   await callNative("session.set", { area, accessToken, refreshToken });
   memory[area] = accessToken;
   // A new sign-in replaces whatever the shell was still holding
-  writePending(area, false);
+  writePending(area, null);
 };
 
 // Browser: used after the page's own refresh call. The app never calls this.
@@ -146,13 +151,18 @@ export const clearSession = async (area) => {
   memory[area] = null;
   refreshing.delete(area);
   // Pending until the shell confirms. If it never does, the flag stays and blocks any restore.
-  writePending(area, true);
+  writePending(area, "1");
   try {
-    await callNative("session.clear", { area });
-  } catch {
-    await callNative("session.clear", { area });
+    try {
+      await callNative("session.clear", { area });
+    } catch {
+      await callNative("session.clear", { area });
+    }
+  } catch (error) {
+    writePending(area, "2");
+    throw error;
   }
-  writePending(area, false);
+  writePending(area, null);
 };
 
 // Browser only, for places that used to remove the tokens after any failed check. In the app a failed check

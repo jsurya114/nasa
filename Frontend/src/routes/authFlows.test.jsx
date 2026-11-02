@@ -24,6 +24,7 @@ const mount = async (initialPath) => {
   const { default: DPublicRoutes } = await import("./driver/DPublicRoutes.jsx");
   const { default: ProtectedRoutes } = await import("./admin/ProtectedRoute.jsx");
   const { default: SignOutNotice } = await import("../native/SignOutNotice.jsx");
+  const { default: DriverHeader } = await import("../reuse/driver/Header.jsx");
 
   const store = configureStore({
     reducer: { driver: driverSlice.default, admin: adminSlice.default, language: languageReducer },
@@ -34,7 +35,15 @@ const mount = async (initialPath) => {
       <MemoryRouter initialEntries={[initialPath]}>
         <Routes>
           <Route element={<DProtectRoutes />}>
-            <Route path="/driver/dashboard" element={<div>Driver dashboard</div>} />
+            <Route
+              path="/driver/dashboard"
+              element={
+                <div>
+                  <DriverHeader />
+                  Driver dashboard
+                </div>
+              }
+            />
           </Route>
           <Route element={<DPublicRoutes />}>
             <Route
@@ -143,5 +152,45 @@ describe("a sign-out the phone could not confirm", () => {
     shell.set("session.clear", {});
     fireEvent.click(screen.getByRole("button", { name: "Try again" }));
     await waitFor(() => expect(screen.queryByText("Sign-out not confirmed")).toBeNull());
+  });
+});
+
+describe("signing out through the real driver header", () => {
+  it("failed: lands on the sign-in screen with the notice, and the old session does not come back", async () => {
+    const shell = installShell({
+      "session.get": { accessToken: GOOD },
+      "session.refresh": { accessToken: GOOD },
+      "session.clear": { error: "native_error" },
+    });
+    const net = await installServer(accessServer());
+    await mount("/driver/dashboard");
+    expect(await screen.findByText("Driver dashboard")).toBeTruthy();
+
+    fireEvent.click(screen.getAllByRole("button", { name: /logout/i })[0]);
+
+    expect(await screen.findByText("Driver login form")).toBeTruthy();
+    expect(await screen.findByText("Sign-out not confirmed")).toBeTruthy();
+    expect(screen.queryByText("Driver dashboard")).toBeNull();
+    const checks = net.calls.filter((c) => c.url.includes("access-driver")).length;
+    // give the public route time to recheck: it must not call the server or go back to the dashboard
+    await new Promise((r) => setTimeout(r, 150));
+    expect(screen.queryByText("Driver dashboard")).toBeNull();
+    expect(net.calls.filter((c) => c.url.includes("access-driver")).length).toBe(checks);
+
+    shell.set("session.clear", {});
+    fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+    await waitFor(() => expect(screen.queryByText("Sign-out not confirmed")).toBeNull());
+    expect(screen.getByText("Driver login form")).toBeTruthy();
+  });
+
+  it("succeeded: lands on the sign-in screen with no notice", async () => {
+    installShell({ "session.get": { accessToken: GOOD }, "session.refresh": { accessToken: GOOD }, "session.clear": {} });
+    await installServer(accessServer());
+    await mount("/driver/dashboard");
+    expect(await screen.findByText("Driver dashboard")).toBeTruthy();
+    fireEvent.click(screen.getAllByRole("button", { name: /logout/i })[0]);
+    expect(await screen.findByText("Driver login form")).toBeTruthy();
+    await new Promise((r) => setTimeout(r, 100));
+    expect(screen.queryByText("Sign-out not confirmed")).toBeNull();
   });
 });
