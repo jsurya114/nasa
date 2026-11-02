@@ -73,7 +73,7 @@ The bridge is `window.ReactNativeWebView.postMessage` from web to shell, and `in
 **Message from web:**
 
 ```json
-{ "v": 1, "id": "uuid", "action": "session.refresh", "payload": { "area": "driver" } }
+{ "v": 1, "id": "uuid", "nonce": "<page-load secret>", "action": "session.refresh", "payload": { "area": "driver" } }
 ```
 
 **Reply from shell:**
@@ -84,7 +84,7 @@ The bridge is `window.ReactNativeWebView.postMessage` from web to shell, and `in
 ```
 
 **Shell checks before acting** (reject silently with `ok:false` otherwise):
-1. The message came from the **top frame** and its URL origin is in the allowlist (section 7).
+1. The message came from a page whose URL origin is in the allowlist (section 7) **and** carries `nonce`: a random secret the shell generates for each page load and injects into the main frame only (`window.__NASA_BRIDGE_NONCE__`). A frame from another site, which on Android may be able to see the bridge object, cannot read it, so its messages get no answer at all.
 2. The JSON parses, `v` is a supported number, `id` is a string of at most 64 characters, `action` is in the table below, and `payload` matches that action's shape and size limits.
 3. The `id` is unused (replay protection) and the call is not rate-limited.
 
