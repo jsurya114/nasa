@@ -3,6 +3,7 @@ import { useEffect } from "react";
 import { useSelector, useDispatch } from "react-redux";
 import { accessDriver } from "../../redux/slice/driver/driverSlice.js";
 import AuthCheckRetry from "../../native/AuthCheckRetry.jsx";
+import PushSetup from "../../native/PushSetup.jsx";
 
 function DProtectRoutes() {
     const dispatch = useDispatch()
@@ -31,7 +32,12 @@ function DProtectRoutes() {
         return <Navigate to="/driver/dashboard" />;
     }
 
-    return <Outlet />;
+    return (
+        <>
+            <PushSetup area="driver" />
+            <Outlet />
+        </>
+    );
 }
 
 export default DProtectRoutes

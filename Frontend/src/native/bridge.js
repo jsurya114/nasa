@@ -16,6 +16,11 @@ export const ACTIONS = Object.freeze([
   "file.pickDocument",
   "file.share",
   "link.openExternal",
+  "push.status",
+  "push.requestPermission",
+  "push.getToken",
+  "push.openSettings",
+  "push.takePendingTap",
 ]);
 
 const REPLY_EVENT = "nasa-native-reply";
