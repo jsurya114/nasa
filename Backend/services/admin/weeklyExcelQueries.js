@@ -1,4 +1,6 @@
 import pool from "../../config/db.js";
+import logger from "../../utils/logger.js";
+import { lockUploads } from "./uploadSafety.js";
 
         export const WeeklyExcelQueries={
             fetchDashboardDataByDates : async(dates)=>{
@@ -22,9 +24,8 @@ import pool from "../../config/db.js";
         return res.rows;
             },
 
-        createWeeklyTable:async(table_name)=>{
-        try {
-            await pool.query(`
+        createWeeklyTable:async(table_name, db = pool)=>{
+            await db.query(`
                         CREATE TABLE ${table_name} (
                           id SERIAL PRIMARY KEY,
                           courier_name VARCHAR(100) NOT NULL,
@@ -37,21 +38,12 @@ import pool from "../../config/db.js";
                           CONSTRAINT weeklycount_unique UNIQUE (driver_id, del_date, del_route)
                       );
                     `);
-          
-            } catch (error) {
-            console.error("❌ Error creating table:", error);
-            }
         },
 
-        deleteWeeklyTableIfExists: async (table_name) => {
-        try {
-      await pool.query(`
+        deleteWeeklyTableIfExists: async (table_name, db = pool) => {
+      await db.query(`
                 DROP TABLE IF EXISTS ${table_name}
             `);
-
-    } catch (error) {
-      console.error(error);
-    }
   },
 
 
@@ -314,14 +306,16 @@ deleteWeeklyData: async () => {
 
   
 
-createEntriesFromWeeklyCount: async () => {
-  console.log("⏳ Starting dashboard_data insertion...");
+// beforeInsert(client) runs inside the transaction, after the upload lock is taken and before anything
+// is inserted, so a check on the staged data cannot go stale. The staging table is cleared in the same
+// transaction, so nothing can be uploaded in between.
+createEntriesFromWeeklyCount: async ({ beforeInsert = null } = {}) => {
   const client = await pool.connect();
 
   try {
     await client.query('BEGIN');
-
-    
+    await lockUploads(client);
+    if (beforeInsert) await beforeInsert(client);
 
     //QUERY 1: Insert into dashboard_data (triggers the function)
     const insertQuery = `
@@ -439,9 +433,13 @@ createEntriesFromWeeklyCount: async () => {
     `;
 
     const insuranceResult = await client.query(insuranceQuery, [INSURANCE_RATE_PER_DAY, insertedIds]);
-    console.log(`🛡️ Insurance deduction applied to ${insuranceResult.rowCount} driver-day(s) at $${INSURANCE_RATE_PER_DAY}/day`);
+    await WeeklyExcelQueries.deleteWeeklyTableIfExists('weeklycount', client);
 
     await client.query('COMMIT');
+    logger.info('Weekly data added to the dashboard', {
+      inserted: insertResult.rowCount,
+      insuranceApplied: insuranceResult.rowCount
+    });
 
     return {
       inserted: insertResult.rowCount,
@@ -451,7 +449,6 @@ createEntriesFromWeeklyCount: async () => {
     };
   } catch (err) {
     await client.query('ROLLBACK');
-    console.error("❌ Error in createEntriesFromWeeklyCount:", err);
     throw err;
   } finally {
     client.release();
