@@ -117,9 +117,9 @@ navigate("/admin/dashboard");
   //     }
   //   };
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-100 font-poppins">
-      <div className="bg-white rounded-2xl shadow-lg w-full max-w-md">
-        <div className="bg-brand rounded-t-2xl py-6 flex justify-center">
+    <div className="bg-aurora min-h-dvh flex items-center justify-center px-4 py-10 pt-[calc(env(safe-area-inset-top)+2.5rem)] pb-[calc(env(safe-area-inset-bottom)+2.5rem)]">
+      <div className="bg-white rounded-3xl shadow-[var(--shadow-float)] ring-1 ring-white/20 w-full max-w-md overflow-hidden">
+        <div className="bg-[#462976] py-7 flex justify-center">
           <img
             src={logo}
             alt="Nasa Logistic Carriers Logo"
@@ -127,11 +127,11 @@ navigate("/admin/dashboard");
           />
         </div>
 
-        <div className="px-10 py-6 text-center">
-          <h2 className="text-2xl font-semibold text-blue-900 mb-6">Login</h2>
+        <div className="px-6 sm:px-10 pt-7 pb-8 text-center">
+          <h2 className="text-2xl font-semibold tracking-tight text-ink mb-6">Login</h2>
           <form onSubmit={handleSubmit}>
             <div className="text-left mb-4">
-              <label htmlFor="email" className="block text-gray-700 mb-1 font-medium">Email Address</label>
+              <label htmlFor="email" className="block text-sm text-ink mb-1.5 font-medium">Email Address</label>
               <input
                 type="email"
                 id="email"
@@ -142,7 +142,7 @@ navigate("/admin/dashboard");
                   setFieldErrors((prev) => ({ ...prev, email: "" })); // clear email error
                 }}
 
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-600"
+                className="w-full h-12 px-4 text-base border border-line rounded-xl focus:outline-none focus:ring-4 focus:ring-brand-500/20 focus:border-brand-500 transition-shadow"
               />
               {fieldErrors.email && (
                 <p className="text-red-600 text-sm mt-1">{fieldErrors.email}</p>
@@ -150,7 +150,7 @@ navigate("/admin/dashboard");
             </div>
 
            <div className="text-left mb-4 relative">
-  <label htmlFor="password" className="block text-gray-700 mb-1 font-medium">Password</label>
+  <label htmlFor="password" className="block text-sm text-ink mb-1.5 font-medium">Password</label>
 
   <input
     type={showPassword ? "text" : "password"}
@@ -161,14 +161,14 @@ navigate("/admin/dashboard");
       setPassword(e.target.value);
       setFieldErrors((prev) => ({ ...prev, password: "" }));
     }}
-    className="w-full px-4 py-3 pr-12 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-600"
+    className="w-full h-12 px-4 pr-12 text-base border border-line rounded-xl focus:outline-none focus:ring-4 focus:ring-brand-500/20 focus:border-brand-500 transition-shadow"
   />
 
   <button
     type="button"
     onClick={() => setShowPassword(!showPassword)}
     aria-label={showPassword ? "Hide password" : "Show password"}
-    className="absolute right-2 top-9 p-2 cursor-pointer text-gray-600 hover:text-gray-800 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-600"
+    className="absolute right-1.5 top-[1.85rem] p-2.5 cursor-pointer text-ink-muted hover:text-ink rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
   >
     {showPassword ? <AiOutlineEyeInvisible size={22} /> : <AiOutlineEye size={22} />}
   </button>
@@ -181,7 +181,7 @@ navigate("/admin/dashboard");
 
             <button
               type="submit"
-              className="w-full bg-brand hover:bg-brand-dark text-white font-semibold py-3 rounded-lg shadow-md mt-4"
+              className="w-full bg-brand hover:bg-brand-900 text-white font-semibold h-12 rounded-xl shadow-[0_10px_24px_-12px_rgb(59_31_107/0.8)] mt-6"
             >
               {loading ? "Logging in..." : "Login"}
             </button>
