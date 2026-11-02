@@ -40,6 +40,7 @@ module.exports = {
         monochromeImage: "./assets/android-icon-monochrome.png",
       },
     },
+    plugins: ["expo-secure-store"],
     extra: { appEnv, webOrigin, apiOrigin },
   },
 };
