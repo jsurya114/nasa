@@ -33,3 +33,7 @@ Main decisions proposed, all for review:
 - **Biometric unlock** is explained in section 8 and stays undecided.
 
 Nothing in code changed in this revision. The current shell still replaces the WebView on a load error; the follow-up change is listed in section 6.
+
+## Biometric decision (2 Nov, later)
+
+Jasil confirmed that Face ID / fingerprint session unlock is **out of the initial release**: optional for NASA's workflows and extra implementation, device testing and maintenance. The design now says so (section 8). Session security is unchanged: normal sign-in, refresh token in the phone's secure storage, refresh, expiry and logout, and backend RBAC. No biometric prompt or permission string is added. Nothing in code needed to change, because biometrics were never built.

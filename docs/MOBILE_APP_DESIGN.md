@@ -166,13 +166,13 @@ Apple's guideline 4.2 expects a real app, not a repackaged website. A WebView al
 | 2 | Camera or photo picker for the access-code images | Drivers photograph gate or mailbox access details | Low | **In MVP** |
 | 3 | Document picker for the admin Excel upload | Admins upload daily and weekly files from a phone | Low | **In MVP** |
 | 4 | Share sheet for downloaded files | Send a pay breakdown or export | Low | In MVP if an export exists; ask |
-| 5 | Biometric unlock of the stored session | Drivers reopen the app often | Low | **Undecided.** See the explanation below. Not a blocker for testing |
+| 5 | Biometric unlock of the stored session | Optional for NASA's workflows | Low, but adds device testing and upkeep | **Out of the initial release** (Jasil, 2 Nov). Not built; no biometric prompts or permissions |
 | 6 | Push notifications | Reminders and updates on existing NASA workflows | High | **Approved by Jasil.** Design in section 10 |
 | 7 | Deep links from notifications | Open the right screen from a tap | Medium | Part of 6 |
 
 Features 2 and 3 already work as plain `<input type="file">` in a WebView. The bridge versions give a better experience (camera choice, native picker) and are the fallback target for browsers. Push (item 6) is the strongest answer to Apple's guideline 4.2.
 
-**What biometric unlock means.** After a person has signed in, the app keeps the session in secure storage. Today the app opens straight into that session. With biometric unlock, the app would ask for Face ID, Touch ID or a fingerprint each time it is reopened after being in the background for a while, before showing any NASA data. The login password is not replaced, and the session is not stored any differently. It protects a lost or borrowed unlocked phone. It adds a step for drivers, needs a fallback to the phone passcode, and adds an iOS permission string. It is optional and off by default if we build it.
+**Biometric unlock is not part of the initial release.** Jasil decided that Face ID or fingerprint unlock of the stored session is optional for NASA's workflows and not worth the implementation, device-testing and upkeep cost. The session requirements are unchanged: normal NASA sign-in, the refresh token in the phone's secure storage, correct refresh, expiry and logout, and backend role and city checks. The app adds no biometric prompt and no biometric permission string (for example no Face ID usage description).
 
 ## 9. Store readiness (separate checklist, tracked on issue #22)
 
@@ -259,4 +259,4 @@ Acceptance checks follow Jasil's list: role and city isolation checked on the se
 
 ## 13. Not tested, decisions
 
-The shell has not run on a phone (section 11). Open decisions: biometric unlock (explained in section 8, undecided), which screens may show stale data (section 6), developer-account ownership (later), and approval of the `Idempotency-Key` backend change.
+The shell has not run on a phone (section 11). Decided: biometric unlock is out of the initial release (section 8). Open decisions: which screens may show stale data (section 6), developer-account ownership (later), and approval of the `Idempotency-Key` backend change.
