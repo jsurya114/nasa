@@ -1,7 +1,7 @@
 import { createSlice, createAsyncThunk } from "@reduxjs/toolkit";
 import axios from "../axiosInstance";
 import { isNativeShell } from "../../../native/bridge";
-import { clearBrowserTokens, clearSession, getRefreshToken, isSignOutPending, saveSession } from "../../../native/sessionStore";
+import { clearBrowserTokens, clearSession, getRefreshToken, isSignOutPending, recoverPendingSignOut, saveSession } from "../../../native/sessionStore";
 
 const DEVICE_SIGN_IN_ERROR = "Could not sign in on this device. Please try again.";
 const DEVICE_SIGN_OUT_ERROR = "Signed out here, but the app could not confirm it on this phone. Please restart the app and sign out again.";
@@ -52,7 +52,11 @@ export const accessDriver = createAsyncThunk(
   "driver/access-driver",
   async (_, { rejectWithValue }) => {
     // While the phone has not confirmed a sign-out, the old session is never used again
-    if (isSignOutPending('driver')) return rejectWithValue({ message: "Signed out", status: 401 });
+    if (isSignOutPending('driver')) {
+      // Also the place where an interrupted sign-out is picked up again after a restart
+      recoverPendingSignOut('driver');
+      return rejectWithValue({ message: "Signed out", status: 401 });
+    }
     try {
       const res = await axios.get(`/driver/access-driver`);
       const data = res.data;
