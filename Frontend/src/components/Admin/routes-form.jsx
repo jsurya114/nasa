@@ -9,6 +9,8 @@ import { fetchPaginatedJobs } from "../../redux/slice/admin/jobSlice";
 import Pagination from "../../reuse/Pagination.jsx";
 import SearchBar from "../../reuse/Search.jsx";
 
+const ROUTES_PER_PAGE = 10;
+
 export default function RoutesForm() {
   const dispatch = useDispatch();
   const { routes, status: routesStatus, error: routesError, page, totalPages } = useSelector((state) => state.routes);
@@ -38,7 +40,7 @@ export default function RoutesForm() {
   // ✅ ENHANCED: Debounced search with city filter
   useEffect(() => {
     const timer = setTimeout(() => {
-      dispatch(fetchRoutes({ page: 1, limit: 4, search: searchTerm, city: cityFilter }));
+      dispatch(fetchRoutes({ page: 1, limit: ROUTES_PER_PAGE, search: searchTerm, city: cityFilter }));
     }, 400);
     return () => clearTimeout(timer);
   }, [searchTerm, cityFilter, dispatch]);
@@ -53,7 +55,7 @@ export default function RoutesForm() {
 
   // ✅ ENHANCED: Page change handler with city filter
   const handlePageChange = useCallback((newPage) => {
-    dispatch(fetchRoutes({ page: newPage, limit: 4, search: searchTerm, city: cityFilter }));
+    dispatch(fetchRoutes({ page: newPage, limit: ROUTES_PER_PAGE, search: searchTerm, city: cityFilter }));
   }, [dispatch, searchTerm, cityFilter]);
 
   // Memoized input change handler
@@ -144,7 +146,7 @@ export default function RoutesForm() {
       setSubmitError(null);
       
       // Refresh with current filters
-      dispatch(fetchRoutes({ page: page || 1, limit: 4, search: searchTerm, city: cityFilter }));
+      dispatch(fetchRoutes({ page: page || 1, limit: ROUTES_PER_PAGE, search: searchTerm, city: cityFilter }));
     } catch (error) {
       setSubmitError(error.message || `Failed to ${editingId ? 'update' : 'add'} route`);
       toast.error(error.message || `Failed to ${editingId ? 'update' : 'add'} route. Please try again.`, {
