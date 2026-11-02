@@ -151,7 +151,7 @@ jobs:
       - name: Install
         run: npm ci
 
-      # `npm test` is still a placeholder that always fails, so check syntax instead.
+      # Every .js file must at least parse.
       - name: Check syntax of every .js file
         run: |
           failed=0
@@ -162,6 +162,10 @@ jobs:
             fi
           done < <(find . -name node_modules -prune -o -type f -name '*.js' -print0)
           exit "$failed"
+
+      # Checks that need no database. The ones that do skip themselves unless PUSH_TEST_DB=1 is set.
+      - name: Unit tests
+        run: npm test
 
       # Non-blocking for now. `xlsx` keeps failing until issue #25 is done.
       - name: Dependency audit (non-blocking)

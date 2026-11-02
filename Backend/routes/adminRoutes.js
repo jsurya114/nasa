@@ -20,6 +20,7 @@ import { getWeeklyTempData, weeklyExcelUpload } from '../controllers/admin/weekl
 import { getAnalyticsData } from '../controllers/admin/analyticsController.js';
 import adminAvailabilityController from '../controllers/admin/adminavailabilityController.js';
 import { loginRateLimit } from '../middlewares/loginRateLimit.js';
+import { adminPushTokens } from '../controllers/pushTokenController.js';
 
 
 router.post('/login', loginRateLimit('admin'), adminController.Login);
@@ -117,6 +118,10 @@ import agreementController from '../controllers/admin/agreementController.js';
 router.get('/drivers/agreements', agreementController.getAllAgreements);
 router.put('/drivers/:id/agreement/toggle', agreementController.toggleAgreement);
 router.post('/logout', adminController.Logout);
+
+// Push notifications: this admin's own phones only (the id comes from the token)
+router.post('/push-token', adminPushTokens.register);
+router.post('/push-token/remove', adminPushTokens.remove);
 
 router.get('/access-admin', adminController.getUser);
 
