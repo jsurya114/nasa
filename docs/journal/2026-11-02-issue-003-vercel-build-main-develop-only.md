@@ -15,4 +15,4 @@
 
 **Tested.** `vercel.json` parses. The command was run locally with `VERCEL_GIT_COMMIT_REF` set to `main`, `develop` (both exit 1, build), and `feat/mobile-web-session`, `fix/something`, `style/ui-x` and an empty value (all exit 0, skip). Not tested: a real Vercel run. After merging, a pull request from a feature branch should show Vercel as skipped or canceled, and the first push to `develop` should still build.
 
-**Risks and follow-ups.** Low. Preview links for feature branches will no longer exist: reviewers run the branch locally or wait for `develop`. If a preview of a feature branch is needed once, push it to a branch named `develop`-prefixed would not work; use the Vercel dashboard or temporarily change the command in a pull request. The build limit itself is a plan limit and is not changed here.
+**Risks and follow-ups.** Low. Feature branches no longer get a Vercel preview link, so reviewers run the branch locally or look at it on `develop`. If one preview is needed, change the command in a pull request or use the Vercel dashboard. The build limit itself is a plan limit and is not changed here.
