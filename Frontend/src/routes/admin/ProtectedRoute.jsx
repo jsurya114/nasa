@@ -3,6 +3,7 @@ import { useEffect } from "react";
 import { useSelector, useDispatch } from "react-redux";
 import { accessAdminUser } from "../../redux/slice/admin/adminSlice";
 import AuthCheckRetry from "../../native/AuthCheckRetry.jsx";
+import PushSetup from "../../native/PushSetup.jsx";
 
 const ProtectedRoutes = () => {
   const dispatch = useDispatch();
@@ -23,7 +24,14 @@ const ProtectedRoutes = () => {
     return authCheckFailed ? <AuthCheckRetry onRetry={() => dispatch(accessAdminUser())} /> : null;
   }
 
-  return isAuthenticated ? <Outlet /> : <Navigate to="/admin/login" />;
+  return isAuthenticated ? (
+    <>
+      <PushSetup area="admin" />
+      <Outlet />
+    </>
+  ) : (
+    <Navigate to="/admin/login" />
+  );
 };
 
 export default ProtectedRoutes;
