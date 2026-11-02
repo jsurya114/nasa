@@ -76,7 +76,7 @@ Nothing below has run on a phone or simulator. This Mac has no Xcode and the And
 | Interrupted requests: the journey form's saved, not saved and could-not-confirm paths, including reloading the page while a save is unconfirmed | Built (simulated drops and reloads in tests); **needs a device** with a real weak connection |
 | File pickers: the camera choice, a photo, an Excel file through the system pickers; blocking the Android storage permissions does not break the chooser on older Android | Needs a device |
 | Push: permission prompt (including Android's first run, where the system reports denied but askable, and the Android 13 runtime permission), denied state, lock-screen text, tap routing (presentation), and removal at sign-out while a registration is still in flight | Needs a development build on a device |
-| Push, the real path: registration, targeting, delivery through Expo, receipts, removal at sign-out | Needs the owner's Expo, Firebase and (iPhone) Apple accounts |
+| Push, the real path: registration (a registration from a finished sign-in is refused by the server, covered by database tests and an HTTP run on a throwaway database), targeting, delivery through Expo, receipts, removal at sign-out. Both push migrations (`device_tokens`, `device_token_removals`) must be run, on a copy first, before the backend that uses them is deployed | Needs the owner's Expo, Firebase and (iPhone) Apple accounts |
 | Role and city checks, same totals before and after, paid history unchanged | Server rules are unchanged and covered elsewhere; **needs a run through the app** |
 
 ## 6. Not built, on purpose
