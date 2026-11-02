@@ -6,7 +6,7 @@
 | Owner | Jasil (see [OWNERSHIP.md](OWNERSHIP.md)) |
 | Related | [MOBILE_APP_DESIGN.md](MOBILE_APP_DESIGN.md) (sections 7 to 13) |
 
-Legend: **Done** is built and covered by tests or by a generated-project check. **Needs a device** is built but never run on a phone. **Needs the owner** waits on an account, an identifier or a decision. **Not started**.
+Legend: **Done** is built and covered by tests or by a check of the generated project files. **Pending** is something that has to be checked and has not been. **Needs a device** is built but never run on a phone. **Needs the owner** waits on an account, an identifier or a decision. **Not started**.
 
 ## 1. Decisions and accounts (all "Needs the owner")
 
@@ -20,15 +20,17 @@ Legend: **Done** is built and covered by tests or by a generated-project check. 
 | Account deletion: who may request it, how long records are kept, what stays on paid history | Both stores ask whether people can create accounts in the app; admins create driver and admin accounts inside the app | Assessment is in the design, section 9; keep deliveries, payments and paid history, remove sign-in access and contact details |
 | Which screens may show old data on a weak connection | Needed before the read-only cache | The proposal in design section 6 |
 
-## 2. What the build ships (verified in the generated native projects, 2 Nov)
+## 2. What the build ships (checked in the generated native projects, 2 Nov; the Android merged manifest is **not** checked yet)
 
 | Item | State |
 |---|---|
-| Permissions: iOS camera reason text only; Android declares none of its own (`INTERNET` and `VIBRATE` come from the platform and notifications); storage and overlay permissions blocked | Done |
-| No Face ID or biometric text, no location, no microphone, no background modes | Done |
-| Page access to the camera and microphone denied on iOS; cannot be granted on Android because the app holds no such permission | Done (test keeps it in place) |
-| Cleartext http only in development builds; preview and production refuse it | Done |
-| Development client's local-network entries removed from preview and production | Done |
+| iOS permissions: the camera reason text is the only usage text, in development, preview and production (tests generate the iOS project and read the Info.plist); no Face ID text, no location, no microphone, no background modes | Done |
+| Android **project** manifest (from `expo prebuild`, before any library is merged in): declares `INTERNET` and `VIBRATE`, marks `READ_EXTERNAL_STORAGE`, `WRITE_EXTERNAL_STORAGE` and `SYSTEM_ALERT_WINDOW` for removal, and has no camera or microphone permission | Done (project file only) |
+| Android permissions the **libraries** declare in their own manifests (read from the locked packages): `expo-notifications` 58.1.7 declares `POST_NOTIFICATIONS` (the runtime notification permission on Android 13 and later; the app asks for it with its own explanation first) and `RECEIVE_BOOT_COMPLETED` (to restore scheduled notifications after a restart; this app schedules none, so whether to remove it is a decision for the owner after the merged check); `expo-file-system` declares `INTERNET`, `READ_EXTERNAL_STORAGE` and `WRITE_EXTERNAL_STORAGE` (the last two are removed by the project manifest) | Done as a list of what is declared in the package files. It is **not** the final answer: the Android libraries that Gradle downloads (React Native, Firebase messaging pulled in by `expo-notifications`) can add more |
+| Android **merged release manifest** (what the store build really contains and what the Play Console permission and data-safety forms must match) | **Pending.** Needs a Gradle build, for example `./gradlew :app:processReleaseMainManifest` in the generated project, or `aapt dump permissions` on a built release file. Not run: this Mac has no usable Android build path yet. Fill the permission rows in section 4 from this, not from the lists above |
+| Page access to the camera and microphone denied on iOS (a test keeps it in place); on Android the project declares neither permission, to be confirmed in the merged manifest | Done on iOS; Android pending the merged manifest |
+| Cleartext http only in development builds; preview and production refuse it, on both platforms (the generated iOS Info.plist and the Android build setting are checked) | Done |
+| Development client's local-network entries (`NSAllowsLocalNetworking`, `NSLocalNetworkUsageDescription`, `NSBonjourServices`) removed from preview and production; the first version of this checklist missed `NSAllowsLocalNetworking` and was corrected after review | Done (checked in the generated Info.plist) |
 | Origins and secrets from build settings only; no signing material in the repository | Done |
 | App name, version, orientation, light interface | Done; icons and splash are **Expo placeholders** (needs the client's artwork) |
 | Android notification small icon (white, transparent) | Not started (needs artwork) |
@@ -58,7 +60,7 @@ Legend: **Done** is built and covered by tests or by a generated-project check. 
 | Data safety form (same data as the Apple answers, plus the camera used through the system picker) | Not started |
 | Content rating, target audience | Not started |
 | Account deletion: the in-app route and a public web page, if applicable | Not started; decision above |
-| Permission declarations | None needed beyond the platform defaults |
+| Permission declarations | The notification runtime permission (`POST_NOTIFICATIONS`) and whatever else the **merged release manifest** lists (section 2: `INTERNET`, `VIBRATE`, `RECEIVE_BOOT_COMPLETED` and anything the downloaded libraries add). **Pending** the merged-manifest check; do not fill the form from the project manifest |
 | Internal testing track, then closed testing if the account type requires it | Needs the owner |
 | Current target API level requirement when submitting | Check at submission time |
 
@@ -71,9 +73,9 @@ Nothing below has run on a phone or simulator. This Mac has no Xcode and the And
 | App starts and loads the web app in the real WebView; sign-in, restore after restart, expiry, refresh, logout, user change; role and city isolation as each role | Needs a device |
 | Keyboard, safe areas, text scaling, Reduce Motion, Android Back, background and resume, WebView crash recovery | Needs a device |
 | The nonce keeps a cross-origin frame out on Android | Needs a device |
-| Interrupted requests: the journey form's saved, not saved and could-not-confirm paths | Built (simulated drops in tests); **needs a device** with a real weak connection |
+| Interrupted requests: the journey form's saved, not saved and could-not-confirm paths, including reloading the page while a save is unconfirmed | Built (simulated drops and reloads in tests); **needs a device** with a real weak connection |
 | File pickers: the camera choice, a photo, an Excel file through the system pickers; blocking the Android storage permissions does not break the chooser on older Android | Needs a device |
-| Push: permission prompt, denied state, lock-screen text, tap routing (presentation) | Needs a development build on a device |
+| Push: permission prompt (including Android's first run, where the system reports denied but askable, and the Android 13 runtime permission), denied state, lock-screen text, tap routing (presentation), and removal at sign-out while a registration is still in flight | Needs a development build on a device |
 | Push, the real path: registration, targeting, delivery through Expo, receipts, removal at sign-out | Needs the owner's Expo, Firebase and (iPhone) Apple accounts |
 | Role and city checks, same totals before and after, paid history unchanged | Server rules are unchanged and covered elsewhere; **needs a run through the app** |
 
