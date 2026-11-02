@@ -16,4 +16,4 @@ Build settings come from environment variables (see `.env.example`). `preview` a
 
 ## Status
 
-Step 5 of the plan in the design document, in parts: the project and the bridge rules (this folder), then the WebView container and session storage. Nothing here has run on a phone yet.
+Step 5 of the plan in the design document. Done: the project, the bridge rules, the secure session store, the bridge host and the WebView container with its no-connection screen. Next: the phone features (camera or photo picker, document picker, share sheet), reviewable builds on real devices, and the store checklist. It has bundled for iOS and Android and passes `expo-doctor`, but it has not run on a phone or simulator yet.
