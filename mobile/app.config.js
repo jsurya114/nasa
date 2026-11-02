@@ -1,3 +1,5 @@
+const { withInfoPlist } = require("expo/config-plugins");
+
 // Build configuration. Everything that differs between development, preview (staging) and production
 // comes from environment variables set by the EAS build profile. No secrets live here.
 
@@ -22,6 +24,21 @@ if (appEnv !== "development") {
 
 const appId = process.env.NASA_APP_ID || "com.example.nasalogistics";
 
+// Plain http to a computer on the local network is allowed in development builds only. Preview and production
+// builds keep both platforms' default of refusing it.
+const isDevelopment = appEnv === "development";
+
+// The native iOS template itself ships NSAllowsLocalNetworking, and the development client adds its local-network
+// and Bonjour entries, so leaving the setting out of `infoPlist` is not enough: the generated Info.plist keeps them.
+// Outside development they are removed from the generated file, leaving iOS's default of refusing plain http.
+const withoutLocalNetworkExceptions = (config) =>
+  withInfoPlist(config, (c) => {
+    if (c.modResults.NSAppTransportSecurity) delete c.modResults.NSAppTransportSecurity.NSAllowsLocalNetworking;
+    delete c.modResults.NSLocalNetworkUsageDescription;
+    delete c.modResults.NSBonjourServices;
+    return c;
+  });
+
 // Push notifications need the Expo project that owns the push credentials. It is created by the owner's Expo account
 // (`eas init`); until then push reports itself unavailable and everything else works. The Firebase file for Android
 // push is passed as a path (an EAS secret file) and is never committed.
@@ -36,7 +53,11 @@ module.exports = {
     orientation: "portrait",
     icon: "./assets/icon.png",
     userInterfaceStyle: "light",
-    ios: { supportsTablet: false, bundleIdentifier: appId },
+    ios: {
+      supportsTablet: false,
+      bundleIdentifier: appId,
+      infoPlist: isDevelopment ? { NSAppTransportSecurity: { NSAllowsLocalNetworking: true } } : {},
+    },
     android: {
       package: appId,
       ...(googleServicesFile ? { googleServicesFile } : {}),
@@ -47,7 +68,12 @@ module.exports = {
         monochromeImage: "./assets/android-icon-monochrome.png",
       },
     },
-    plugins: ["expo-secure-store", ["expo-notifications", { color: "#4C2A85" }]],
+    plugins: [
+      "expo-secure-store",
+      ["expo-notifications", { color: "#4C2A85" }],
+      ["expo-build-properties", { android: { usesCleartextTraffic: isDevelopment } }],
+      ...(isDevelopment ? [] : [withoutLocalNetworkExceptions]),
+    ],
     extra: { appEnv, webOrigin, apiOrigin, ...(easProjectId ? { eas: { projectId: easProjectId } } : {}) },
   },
 };
