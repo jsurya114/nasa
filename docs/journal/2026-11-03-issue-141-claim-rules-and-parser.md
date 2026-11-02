@@ -51,5 +51,5 @@ Parser (`claimsParser.js`): finds the "Claims Detail" sheet and matches column t
 **Not tested.** Offsets and prior-period lookups (they need the waybill history from #140 and part 2). A DFW GOFO workbook (none supplied; covered by synthetic tests only). SpeedX claims (no sample).
 
 **Risks and follow-ups.**
-- **The exempt city name needs confirming.** The rule matches a city stored as "DFW GOFO". The local copy of production (1 Nov) has **"Dallas GOFO"**, which does *not* match, so Tracking-interruption claims there would be chargeable. If "Dallas GOFO" is the DFW GOFO city, the owner must confirm it before part 2 is used; the fix is one line in `EXEMPTIONS`.
+- **Exempt city name: settled.** The local copy of production (1 Nov) stores the city as "Dallas GOFO", not "DFW GOFO". The owner confirmed on 3 Nov 2026 that they are the same city, so `EXEMPTIONS` lists both keys (`dfwgofo`, `dallasgofo`). "Dallas SpeedX" and every other city stay chargeable; tests cover both.
 - Claim identity is provisional: it assumes one waybill cannot carry two separate claims of the same type (open decision in #138).

@@ -35,7 +35,10 @@ test('case, space and punctuation variants still match; other cities stay distin
   for (const city of ['dfw gofo', ' DFW  GOFO ', 'Dfw-Gofo', 'DFWGOFO']) assert.equal(isExempt(city, 'Tracking interruption'), true, city);
   for (const type of ['tracking interruption', ' TRACKING   Interruption ', 'Tracking Interruption']) assert.equal(isExempt('DFW GOFO', type), true, type);
   assert.equal(cityKey('DFW'), 'dfw');
-  for (const city of ['DFW', 'DFW SpeedX', 'Dallas GOFO', 'GOFO', 'DFW GOFO 2', '', null, undefined]) {
+  // Owner confirmed: the stored "Dallas GOFO" is the DFW GOFO city.
+  for (const city of ['Dallas GOFO', 'dallas gofo', ' DALLAS-GOFO ']) assert.equal(isExempt(city, 'Tracking interruption'), true, city);
+  assert.equal(isExempt('Dallas GOFO', 'Damaged Item'), false);
+  for (const city of ['DFW', 'DFW SpeedX', 'Dallas', 'Dallas SpeedX', 'GOFO', 'DFW GOFO 2', 'Dallas GOFO 2', '', null, undefined]) {
     assert.equal(isExempt(city, 'Tracking interruption'), false, String(city));
   }
   for (const type of ['Tracking', 'interruption', 'Tracking interruption fee', '', null]) assert.equal(isExempt('DFW GOFO', type), false, String(type));
