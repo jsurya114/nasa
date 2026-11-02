@@ -42,7 +42,7 @@ const routeSlice = createSlice({
     page: 1,
     total: 0,
     totalPages: 0,
-    limit: 4,
+    limit: 10,
     cityFilter: "" // ✅ NEW: Track current city filter
   },
   reducers: {

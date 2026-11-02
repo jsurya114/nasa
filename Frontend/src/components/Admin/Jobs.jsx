@@ -15,7 +15,7 @@ import {
 } from "../../redux/slice/admin/jobSlice";
 
 const DEBOUNCE_MS = 400;
-const ITEMS_PER_PAGE = 3;
+const ITEMS_PER_PAGE = 10;
 const FILTER = {
   ALL: 'all',
   ENABLED: 'enabled',
