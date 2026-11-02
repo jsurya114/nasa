@@ -33,7 +33,9 @@ export const ExcelFileQueries = {
         return;
       }
 
-      const chunkSize = 100;
+      // 12 values per row, and PostgreSQL allows 65,535 values per statement. Fewer, larger statements
+      // mean fewer round trips to the database, which is what costs time on a remote database.
+      const chunkSize = 2000;
       for (let i = 0; i < data.length; i += chunkSize) {
         const chunk = data.slice(i, i + chunkSize);
         const values = [];
