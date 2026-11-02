@@ -3,6 +3,7 @@ const assert = require("node:assert/strict");
 const { createBridgeHost } = require("./host");
 
 const WEB = "https://app.example.com";
+const NONCE = "k".repeat(32);
 const setup = (over = {}) => {
   const calls = [];
   const session = {
@@ -13,9 +14,9 @@ const setup = (over = {}) => {
     ...over.session,
   };
   const opened = [];
-  const handle = createBridgeHost({ info: { shellVersion: "0.1.0", platform: "ios" }, session, openExternal: async (u) => { opened.push(u); }, webOrigin: WEB });
+  const handle = createBridgeHost({ info: { shellVersion: "0.1.0", platform: "ios" }, session, openExternal: async (u) => { opened.push(u); }, webOrigin: WEB, nonce: NONCE });
   let n = 0;
-  const send = (action, payload, page = `${WEB}/driver/login`) => handle(JSON.stringify({ v: 1, id: `id${++n}`, action, payload }), page);
+  const send = (action, payload, page = `${WEB}/driver/login`) => handle(JSON.stringify({ v: 1, id: `id${++n}`, nonce: NONCE, action, payload }), page);
   return { send, calls, opened, handle };
 };
 
@@ -55,7 +56,7 @@ test("unsupported actions and bad payloads are refused without running anything"
 
 test("the same request id cannot be used twice", async () => {
   const { handle, calls } = setup();
-  const raw = JSON.stringify({ v: 1, id: "same", action: "session.get", payload: { area: "driver" } });
+  const raw = JSON.stringify({ v: 1, id: "same", nonce: NONCE, action: "session.get", payload: { area: "driver" } });
   assert.equal((await handle(raw, `${WEB}/`)).ok, true);
   assert.equal((await handle(raw, `${WEB}/`)).error, "replayed_id");
   assert.equal(calls.length, 1);
@@ -81,5 +82,14 @@ test("external links go to the opener, https only", async () => {
 test("garbage with no usable id gets no reply", async () => {
   const { handle } = setup();
   assert.equal(await handle("not json", `${WEB}/`), null);
-  assert.equal(await handle(JSON.stringify({ v: 1, action: "session.get" }), `${WEB}/`), null);
+  assert.equal(await handle(JSON.stringify({ v: 1, nonce: NONCE, action: "session.get" }), `${WEB}/`), null);
+});
+
+test("a message from a frame that cannot read the nonce is ignored, even on the NASA origin", async () => {
+  const { handle, calls } = setup();
+  const noNonce = JSON.stringify({ v: 1, id: "f1", action: "session.clear", payload: { area: "driver" } });
+  const wrong = JSON.stringify({ v: 1, id: "f2", nonce: "z".repeat(32), action: "session.set", payload: { area: "driver", accessToken: "a", refreshToken: "attacker" } });
+  assert.equal(await handle(noNonce, `${WEB}/`), null);
+  assert.equal(await handle(wrong, `${WEB}/`), null);
+  assert.equal(calls.length, 0);
 });

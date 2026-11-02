@@ -3,6 +3,7 @@ import { ActivityIndicator, BackHandler, Linking, Platform, StyleSheet, View } f
 import { StatusBar } from "expo-status-bar";
 import { WebView } from "react-native-webview";
 import { SafeAreaProvider, useSafeAreaInsets } from "react-native-safe-area-context";
+import * as Crypto from "expo-crypto";
 
 import { createBridgeHost } from "./src/bridge/host";
 import { isHttpsUrl, isTrustedOrigin, replyScript } from "./src/bridge/protocol";
@@ -13,6 +14,11 @@ import ErrorScreen from "./src/screens/ErrorScreen";
 import { createSession } from "./src/session";
 
 const BRAND = "#4C2A85";
+const NONCE_BYTES = 16;
+
+// A new random secret for each page load. The shell injects it into the main frame only and refuses any bridge
+// message that does not carry it, so a frame from another site cannot use the bridge.
+const newNonce = () => Array.from(Crypto.getRandomBytes(NONCE_BYTES), (b) => b.toString(16).padStart(2, "0")).join("");
 const SERVER_ERROR_STATUS = 500;
 
 // Links the shell may hand to the phone: web pages, mail and phone numbers. Everything else is dropped.
@@ -27,15 +33,18 @@ function Shell() {
   const [failure, setFailure] = useState(null);
   const [attempt, setAttempt] = useState(0);
 
+  const session = useMemo(() => createSession({ storage: secureStorage, request }), []);
+  const nonce = useMemo(() => newNonce(), [attempt]);
   const host = useMemo(
     () =>
       createBridgeHost({
         info: { shellVersion: APP_VERSION, platform: Platform.OS },
-        session: createSession({ storage: secureStorage, request }),
+        session,
         openExternal: openOutside,
         webOrigin: WEB_ORIGIN,
+        nonce,
       }),
-    []
+    [session, nonce]
   );
 
   // Android Back goes back inside the web app first, and leaves the app only when there is nothing to go back to
@@ -98,6 +107,7 @@ function Shell() {
               <ActivityIndicator color="#ffffff" size="large" accessibilityLabel="Loading" />
             </View>
           )}
+          injectedJavaScriptBeforeContentLoaded={`window.__NASA_BRIDGE_NONCE__ = ${JSON.stringify(nonce)}; true;`}
           injectedJavaScriptBeforeContentLoadedForMainFrameOnly
           injectedJavaScriptForMainFrameOnly
           javaScriptCanOpenWindowsAutomatically={false}

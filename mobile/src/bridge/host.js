@@ -14,7 +14,8 @@ const CAPABILITIES = ["session", "openExternal"];
 
 // info: { shellVersion, platform }
 // session: from createSession. openExternal: async (https url) => void. webOrigin: the one page allowed to talk.
-const createBridgeHost = ({ info, session, openExternal, webOrigin }) => {
+// nonce: the secret injected into the main frame for this page load (see protocol.js).
+const createBridgeHost = ({ info, session, openExternal, webOrigin, nonce }) => {
   const tracker = new IdTracker();
 
   const run = async ({ action, payload }) => {
@@ -45,7 +46,7 @@ const createBridgeHost = ({ info, session, openExternal, webOrigin }) => {
     // A page that is not the NASA web app gets no answer at all, not even an error
     if (!isTrustedOrigin(pageUrl, webOrigin)) return null;
 
-    const parsed = parseMessage(raw, tracker);
+    const parsed = parseMessage(raw, tracker, nonce);
     if (!parsed.ok) return parsed.id ? errorReply(parsed.id, parsed.error) : null;
 
     try {
