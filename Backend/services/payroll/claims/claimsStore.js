@@ -22,6 +22,11 @@ export const withTransaction = async (pool, fn) => {
   }
 };
 
+// One lock per waybill and claim type, held until the transaction ends. The manual driver ledger (#142) takes the
+// same lock, so a carrier import and a hand-entered claim for the same waybill cannot both be recorded at once.
+export const lockClaimSubject = (db, waybill, typeKey) =>
+  db.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 138))', [`${waybill}|${typeKey}`]);
+
 const sameFacts = (row, claim) =>
   Number(row.original_charge).toFixed(2) === Number(claim.charge).toFixed(2) &&
   row.claim_at === claim.claimAt &&
@@ -62,6 +67,7 @@ export const importClaims = async (db, claims, source) => {
   for (const claim of claims) {
     // Two uploads of the same claim at the same moment wait for each other here.
     await db.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 141))', [claim.key]);
+    await lockClaimSubject(db, claim.waybill, claim.claimTypeKey);
     const { rows } = await db.query(
       `SELECT id, version, original_charge, claim_type,
               to_char(claim_at, 'YYYY-MM-DD HH24:MI:SS') AS claim_at,
