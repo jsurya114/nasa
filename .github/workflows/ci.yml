@@ -81,10 +81,54 @@ jobs:
           # Placeholder only. No production values in CI.
           VITE_BACKEND_LOCALHOST_ROUTE: http://localhost:5000
 
+      # Vitest with jsdom (added with the mobile session adapter, issue #22). No network, no secrets.
+      - name: Tests
+        run: npm test
+
       # Non-blocking for now. Reports known problems in dependencies.
       - name: Dependency audit (non-blocking)
         run: npm audit --audit-level=high
         continue-on-error: true
+
+  mobile:
+    name: Mobile
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: mobile
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: mobile/package-lock.json
+
+      - name: Install
+        run: npm ci
+
+      # Bridge protocol, session store and bridge host, with fakes. No phone, no network.
+      - name: Unit tests
+        run: npm test
+
+      # The build configuration must load, and must refuse non-https origins outside development.
+      # Placeholder origins only. No real values in CI.
+      - name: Check the build configuration
+        run: |
+          APP_ENV=development npx expo config --json > /dev/null
+          APP_ENV=production NASA_WEB_ORIGIN=https://app.example.com NASA_API_ORIGIN=https://api.example.com npx expo config --json > /dev/null
+          if APP_ENV=production NASA_WEB_ORIGIN=http://app.example.com NASA_API_ORIGIN=https://api.example.com npx expo config --json > /dev/null 2>&1; then
+            echo "::error::A production build accepted an http origin"
+            exit 1
+          fi
+          if APP_ENV=staging npx expo config --json > /dev/null 2>&1; then
+            echo "::error::An unknown APP_ENV was accepted"
+            exit 1
+          fi
 
   backend:
     name: Backend
