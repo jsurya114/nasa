@@ -55,7 +55,10 @@ function GlassTabBar({ items, primaryCount = 4, moreLabel = "More", navLabel = "
 
     document.addEventListener("keydown", onKeyDown);
     document.addEventListener("pointerdown", onPointerDown);
-    panelRef.current?.querySelector("a")?.focus();
+    // The first link is hidden from 380px up, so focus the first one that is actually shown.
+    Array.from(panelRef.current?.querySelectorAll("a") ?? [])
+      .find((link) => link.offsetParent !== null)
+      ?.focus();
 
     return () => {
       document.removeEventListener("keydown", onKeyDown);
