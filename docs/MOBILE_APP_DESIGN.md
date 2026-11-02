@@ -5,7 +5,7 @@
 | Status | **Draft for review.** No mobile code exists yet. Nothing here is agreed until Jasil and the owner approve this pull request. |
 | Owner | Jayasoorya (see [OWNERSHIP.md](OWNERSHIP.md)) |
 | Reviewer | Jasil |
-| Last updated | 2 November 2026 |
+| Last updated | 2 November 2026, revised after Jasil's clarification of 16:36 IST (connectivity, push, testing first) |
 | Brief | Jasil's Slack brief of 2 Nov 2026 (architecture, security, store acceptance) |
 
 One NASA app for iOS and Android. It is a thin native shell around the hosted NASA web app. The web app, the backend and every business rule stay where they are. NASA is online-only.
@@ -38,7 +38,7 @@ BUSBEE is only an architecture reference (a WebView inside a React Native shell)
 
 1. **The web app owns screens and navigation.** The shell adds no second navigation.
 2. **The server owns every rule**: pay, rates, insurance, paid history, Excel, roles, cities and record ownership. The shell has no copy of them.
-3. **Online-only.** No offline writes, no queue, no replay. (Issue #22's earlier wording about "queue actions" and a PWA is replaced by this design; see section 9.)
+3. **Reliable on weak connections, with no offline writes.** The app recovers from poor signal, keeps what the person has typed, and may show recently loaded data clearly marked as such (section 6). Offline writes and replay queues are **not** an agreed requirement; if wanted they are scoped separately. (Issue #22's earlier wording about "queue actions" and a PWA is replaced by this design; see section 9.)
 4. **Narrow, versioned bridge.** The shell exposes a short list of named actions, nothing generic.
 5. **A web release must never require a native feature an older installed shell lacks.**
 
@@ -120,13 +120,30 @@ Anything else gets `unsupported_action`. There is **no** action that runs native
 
 The shell shows no native tab bar, no native header and no native back button.
 
-## 6. Connection behaviour and uncertain writes
+## 6. Weak connections, caching and uncertain writes
 
-- Online-only: no cached operational data is shown as current and no write is stored for later.
-- **Offline or server down:** the shell shows a full-screen state with a Retry button. The web app's own error toasts still handle failed requests.
-- **Success is shown only after the server confirms it.**
-- **Uncertain write** (the connection drops after the request was sent): the web app shows "We could not confirm this was saved", disables the submit button, **re-reads the record** from the server, and only then lets the person submit again if it is not there.
-- Writes that can be repeated by mistake today are `POST /driver/journey`, `POST /driver/access-codes`, `POST /driver/agreement` and the two Excel uploads. A follow-up backend pull request should accept an `Idempotency-Key` header on these (stored for a short time, so a repeat returns the first result). Until then the re-read rule above applies. The Excel uploads already run one at a time.
+Goal: the app works reliably on weak or intermittent signal. It does **not** queue or replay writes.
+
+**Recovery (shell).**
+- The WebView stays mounted when the signal drops, so a half-filled form is never lost. A slim "No connection, retrying" banner appears, and the page's own requests retry when the connection returns.
+- The full-screen "No connection" screen is only for a first load that cannot complete (there is no page to keep). Its Try again button reloads.
+- The current build replaces the WebView on any load error, which would drop typed input. **Follow-up change:** keep the WebView mounted and show a banner for errors after the first load.
+
+**Keeping what was typed (web).** Forms with several fields (journey, access-code, agreement) keep a draft in memory for the session, keyed by the signed-in user and area, and restore it after a reconnect or a WebView reload. Drafts are removed on sign-out and when a different person signs in. They are never written to shared storage.
+
+**Caching (web), read-only data only.**
+| Data | Cache | Shown as |
+|---|---|---|
+| Driver deliveries list, weekly pay breakdown, availability, route list | Last good response, in memory | Normal, with "Updated 14:05" and a Refresh action when it is older than 2 minutes or the last refresh failed |
+| Admin lists (cities, routes, users) | Same | Same |
+| Admin dashboard and payment tables, anything that decides who is paid | **Not cached for display after a failed refresh**: an error is shown instead of old numbers | n/a |
+
+Rules: the cache key includes the user id and area; it is cleared at sign-out and on user change; the server remains the only authority and a stale screen never enables a write that a fresh one would not. Which screens may show stale data is a **decision for Jasil**; the table is the proposal.
+
+**Writes.**
+- Success is shown only after the server confirms it.
+- **Uncertain write** (the connection drops after the request was sent): the page shows "We could not confirm this was saved", disables the submit button, re-reads the record, and only lets the person submit again if it is not there.
+- Writes that can be repeated by mistake today are `POST /driver/journey`, `POST /driver/access-codes`, `POST /driver/agreement` and the two Excel uploads. A backend pull request should accept an `Idempotency-Key` header on these (kept for a short time, so a repeat returns the first result). The Excel uploads already run one at a time.
 
 ## 7. Environments and security
 
@@ -149,33 +166,97 @@ Apple's guideline 4.2 expects a real app, not a repackaged website. A WebView al
 | 2 | Camera or photo picker for the access-code images | Drivers photograph gate or mailbox access details | Low | **In MVP** |
 | 3 | Document picker for the admin Excel upload | Admins upload daily and weekly files from a phone | Low | **In MVP** |
 | 4 | Share sheet for downloaded files | Send a pay breakdown or export | Low | In MVP if an export exists; ask |
-| 5 | Biometric unlock of the stored session | Drivers reopen the app often | Low | Recommended |
-| 6 | Push notifications (for example availability reminders, new agreement) | Needs a new backend: device registry, sender, opt-out | High | **Decision needed**; separate design |
-| 7 | Deep links from notifications | Depends on 6 | Medium | After 6 |
+| 5 | Biometric unlock of the stored session | Drivers reopen the app often | Low | **Undecided.** See the explanation below. Not a blocker for testing |
+| 6 | Push notifications | Reminders and updates on existing NASA workflows | High | **Approved by Jasil.** Design in section 10 |
+| 7 | Deep links from notifications | Open the right screen from a tap | Medium | Part of 6 |
 
-Features 2 and 3 already work as plain `<input type="file">` in a WebView. The bridge versions give a better experience (camera choice, native picker) and are the fallback target for browsers. **Open question for Jasil and the client:** is push worth building before the first store submission? Items 5 and 6 are the strongest answer to guideline 4.2.
+Features 2 and 3 already work as plain `<input type="file">` in a WebView. The bridge versions give a better experience (camera choice, native picker) and are the fallback target for browsers. Push (item 6) is the strongest answer to Apple's guideline 4.2.
+
+**What biometric unlock means.** After a person has signed in, the app keeps the session in secure storage. Today the app opens straight into that session. With biometric unlock, the app would ask for Face ID, Touch ID or a fingerprint each time it is reopened after being in the background for a while, before showing any NASA data. The login password is not replaced, and the session is not stored any differently. It protects a lost or borrowed unlocked phone. It adds a step for drivers, needs a fallback to the phone passcode, and adds an iOS permission string. It is optional and off by default if we build it.
 
 ## 9. Store readiness (separate checklist, tracked on issue #22)
 
 - **Accounts.** Accounts are created by admins, not in the app. Apple's in-app account deletion rule applies when an app supports account creation; NASA does not, but the assessment goes in the review notes. Google Play asks for a deletion path where users sign in; plan an in-app "Request account deletion" screen plus a public web page. Business records (deliveries, payments, paid history) are **kept** for accounting; the request removes sign-in access and personal contact details, and an admin completes it.
-- **Ownership.** The developer accounts, bundle and package IDs, signing keys and store access must belong to the client, agreed before the first build. **Needs the owner.**
+- **Ownership.** Who owns the developer accounts, final bundle and package IDs, signing keys and store access is **to be discussed later**; this design does not choose it. Until then the IDs are placeholders and nothing is published. Dependencies that genuinely block a test are listed in section 10.4.
 - **Review material.** Reviewer accounts (one driver, one city admin, one super admin) with synthetic data, privacy policy URL, support URL, Data safety and privacy labels, content rating, screenshots from real devices. Credentials go in the store review fields only.
 - **Builds.** EAS profiles `development`, `preview`, `production`; TestFlight and Google Play internal testing before production. Use the Expo SDK, React Native and `react-native-webview` versions that are current and compatible at the time (checked then, not copied from BUSBEE). Confirm the current Apple SDK and Android target API requirements when the accounts are opened.
 
 **Issue #22 correction.** The issue still describes a PWA that queues actions on weak signal. That conflicts with this design (store app, online-only). On approval, update the issue text; the "done when" list (driver sign in, journey, availability, deliveries, weekly pay; admin screens) stays.
 
-## 10. Delivery plan (small pull requests into `develop`)
+## 10. Push notifications (design, approved to proceed)
 
-1. **This document.** Review and approve.
-2. **Web: bridge client and capability detection.** Detects the shell, otherwise does nothing. No behaviour change in a browser.
-3. **Web: session adapter.** The axios interceptor uses `session.refresh` in the shell; tokens stay in memory there. Tested in a browser with a fake bridge.
-4. **Backend (if approved): `Idempotency-Key`** on the repeatable writes.
-5. **Shell repo or folder (`mobile/`):** Expo app, WebView container, allowlist, bridge host, session storage, offline screen, Android Back. Reviewable builds on a real iPhone and Android phone.
-6. **Native features** chosen in section 8, one pull request each.
-7. **Store checklist and submission material.**
+**10.1 Rules.**
+- The server decides who gets what. Targeting comes from the database (role, city, the driver's own id), never from the client.
+- A device is registered only by a signed-in person, with identity from the token, and is removed at sign-out, on user change and when the push service reports it invalid.
+- Lock-screen text is generic: no names, amounts, route names or city names. Detail is shown inside the app after sign-in.
+- A tap opens a route from a fixed allowlist. The web app's own sign-in and role checks then decide what is shown, so a tap can never reach a screen the person may not see.
+- If permission is denied, nothing breaks. The app asks in context after the first sign-in (with a short reason), and offers a link to settings later.
+
+**10.2 Backend.**
+- Table `device_tokens` (user type, user id, push token, platform, app version, created, last seen, revoked). One token belongs to one user at a time. Registration endpoints for drivers and admins, and removal at logout.
+- A small sender service that batches messages to Expo's push API (at most 100 per request), has a timeout, reads receipts, and deletes tokens marked `DeviceNotRegistered`. It runs after the database commit and never delays or fails the request that triggered it.
+- Migration, rollback and indexes follow the database standard in `ENGINEERING_STANDARD.md`.
+
+**10.3 Initial events (proposal, from workflows that already exist).**
+| Event | Who | Lock-screen text | Taps to |
+|---|---|---|---|
+| Weekly availability reset (the existing Sunday noon job) | Each driver, in their own time zone | "Time to set your availability for next week." | Availability |
+| A driver is marked paid | That driver | "You have a pay update." | Deliveries |
+| An agreement needs signing or was updated | Affected drivers | "Please review your agreement." | Agreement |
+| A driver submits an access code | Admins assigned to that driver's city, and super admins | "A new access code was submitted." | Access codes |
+
+Each event can later get an on/off switch per person. Nothing is sent for the Excel upload or pay calculation.
+
+**10.4 Credentials boundary.**
+| Test | Needs | Account needed |
+|---|---|---|
+| Register a token, send, show on lock screen and tap routing on an **iOS simulator** | A test payload only, no Apple credentials | None |
+| Same on an **Android device** or emulator with Google Play services | An FCM v1 service account key uploaded to Expo | A Google (Firebase) project |
+| Same on a **real iPhone** | An APNs key and the device registered | A paid Apple Developer account |
+| App Store or Play publishing | Final identifiers and signing | Decided later |
+
+A full iOS push test on a real phone can wait until just before deployment. Remote push cannot be tested in Expo Go, so a development build (EAS) is needed.
+
+## 11. Testing before deployment
+
+Testing on simulators and real devices comes before any release. Unit tests and bundling are useful, but they do not replace it.
+
+| Area (from Jasil's list) | How it will be checked | Status |
+|---|---|---|
+| Bridge rules, session store, protocol | Unit tests with fakes (`mobile/`, 33) | **Done** |
+| Web session adapter against the real backend | Chrome, fake shell | **Done** (driver; admin shares the code) |
+| App starts, loads the web app in a real WebView | iOS simulator, Android emulator, a phone | **Not done** |
+| Sign-in, restore after restart, expiry, refresh, logout, user change | Same, with the three roles | **Not done** |
+| Role and city isolation | Server checks, tested from the app as each role | **Not done** |
+| Keyboard, small screens, safe areas, text scaling, Reduce Motion | Real devices | **Not done** |
+| Android Back, background and resume, WebView crash recovery | Android device | **Not done** |
+| Interrupted requests and weak signal, no duplicate submissions | Network throttling on device | **Not done** |
+| Cross-origin frame cannot use the bridge on Android | Android device with a test page | **Not done** |
+| Push: permission, registration, targeting, tap routing, logout cleanup | Dev build, section 10.4 | **Not started** |
+
+**Reproducible test builds** (once the shell is verified to start):
+1. `eas build --profile development --platform ios` with the simulator setting, and `--platform android` for an installable `.apk`. Both need only a free Expo account.
+2. A backend and website reachable from the phone (a deployed preview or the Mac's address on the same network, with `FRONTEND_URL` and the website's API address set to match).
+3. Synthetic accounts for a driver, a city admin and a super admin.
+
+Tools needed on the build Mac: **Xcode** for the iOS simulator and **Android Studio** (SDK and emulator) for Android. They are not installed on the current development Mac. A physical phone with a development build avoids that.
+
+## 12. Delivery plan (small pull requests into `develop`)
+
+Testing on real simulators and devices comes before deployment, so it leads the plan.
+
+1. **Done, in review:** this document (#123), web bridge client (#124), web session adapter (#125), Expo project and protocol (#126), WebView shell (#127).
+2. **First run on devices** (blocked until Xcode or Android Studio is on a Mac, or a phone is used): start the shell, fix what the real WebView shows, and record the results in the table in section 11.
+3. **`eas.json` build profiles** (development, preview, production) so test builds are reproducible.
+4. **Connection recovery:** keep the WebView mounted with an offline banner, draft restore, and cached read-only data with a freshness label (section 6).
+5. **Backend: `Idempotency-Key`** on the repeatable writes.
+6. **Push, backend:** `device_tokens` migration, registration and removal endpoints, the sender service, the four events in section 10.3.
+7. **Push, app and web:** permission prompt, registration, tap routing, logout cleanup. End-to-end tests per section 10.4.
+8. **Phone features** chosen in section 8, one pull request each.
+9. **Store checklist and submission material,** after ownership is decided.
 
 Acceptance checks follow Jasil's list: role and city isolation checked on the server, session expiry, refresh, logout, restart and user change, same totals before and after, real-device keyboard, safe areas, Back and text scaling, permission denial and cancelled pickers, no connection and interrupted writes without duplicates.
 
-## 11. Not tested
+## 13. Not tested, decisions
 
-This is a design. Nothing was run on a phone. Decisions that need an answer: the push question (section 8), who owns the developer accounts and bundle IDs, whether biometric unlock is wanted, and approval of the `Idempotency-Key` backend change.
+The shell has not run on a phone (section 11). Open decisions: biometric unlock (explained in section 8, undecided), which screens may show stale data (section 6), developer-account ownership (later), and approval of the `Idempotency-Key` backend change.

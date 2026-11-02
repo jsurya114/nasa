@@ -23,3 +23,13 @@ Main decisions proposed, all for review:
 **Tested.** Facts in section 1 were checked against the code (`axiosInstance.js`, `useInactivityLogout.js`, `jwtservice.js`, `driverRoutes.js`, `adminRoutes.js`, `redis-jwt-service.js`, `index.html`). Not tested: nothing was run on a phone; the design is untried.
 
 **Risks and follow-ups.** Open decisions: push notifications, who owns the developer accounts and bundle IDs, biometric unlock, the `Idempotency-Key` backend change. Next pull request after approval: the web bridge client with capability detection.
+
+## Revision after Jasil's clarification (2 Nov, 16:36 IST)
+
+- **Testing first.** New section 11 lists every check Jasil named with its real status. Only the unit tests and the web-side session checks are done; nothing has run in a real WebView, simulator or phone. The delivery plan now starts with first runs on devices.
+- **Connectivity.** "Strictly online-only" is replaced by "reliable on weak connections, no offline writes". Section 6 proposes recovery (keep the WebView mounted, offline banner), draft restore, and read-only caching with a freshness label, keyed by user and cleared at sign-out. Money screens do not show old numbers after a failed refresh. Which screens may be stale is left to Jasil. Offline writes and replay queues are out of scope until agreed.
+- **Push notifications** (approved to proceed). Section 10: server-side targeting, `device_tokens` table, registration and removal, generic lock-screen text, tap routing through an allowlist, four initial events taken from existing workflows (weekly availability reset, driver marked paid, agreement needs signing, access code submitted to the city's admins), and the credentials boundary (iOS simulator needs none; Android needs an FCM key; a real iPhone needs a paid Apple account; remote push needs a development build, not Expo Go).
+- **Ownership** of developer accounts and final IDs is left open on purpose.
+- **Biometric unlock** is explained in section 8 and stays undecided.
+
+Nothing in code changed in this revision. The current shell still replaces the WebView on a load error; the follow-up change is listed in section 6.
