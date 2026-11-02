@@ -23,7 +23,13 @@ export const cityKey = (name) => (typeof name === 'string' ? name.toLowerCase().
 export const claimTypeKey = (type) => (typeof type === 'string' ? type.trim().replace(/\s+/g, ' ').toLowerCase() : '');
 
 // Exempt city and claim type pairs. A city is matched by its stored name's key, never by a guessed alias.
-export const EXEMPTIONS = Object.freeze([Object.freeze({ city: 'dfwgofo', claimType: 'tracking interruption' })]);
+// The owner confirmed on 3 Nov 2026 that the stored city "Dallas GOFO" is the DFW GOFO city, so both names are listed.
+// Other Dallas cities (for example "Dallas SpeedX") are not exempt.
+const EXEMPT_TYPE = 'tracking interruption';
+export const EXEMPTIONS = Object.freeze([
+  Object.freeze({ city: 'dfwgofo', claimType: EXEMPT_TYPE }),
+  Object.freeze({ city: 'dallasgofo', claimType: EXEMPT_TYPE }),
+]);
 
 export const isExempt = (cityName, claimType) => {
   const city = cityKey(cityName);
