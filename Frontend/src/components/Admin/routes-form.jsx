@@ -310,7 +310,7 @@ export default function RoutesForm() {
         </section>
 
         {/* Table Section */}
-        <section className="card-surface overflow-x-auto">
+        <section className="card-surface">
           <h2 className="font-bold text-gray-900 bg-gray-50 border-b border-line px-4 py-3 rounded-t-xl">
             Route List
           </h2>
@@ -389,7 +389,7 @@ export default function RoutesForm() {
             )}
           </div>
           
-          <div className="px-4 sm:px-6 py-4">
+          <div className="overflow-x-auto px-4 sm:px-6 py-4">
             <table className="w-full border-collapse text-sm">
               <thead>
                 <tr className="bg-gray-50 text-left">

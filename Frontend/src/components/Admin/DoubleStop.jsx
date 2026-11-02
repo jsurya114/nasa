@@ -304,7 +304,7 @@ const DoubleStop = () => {
 
         {/* Uploaded Data - Only show for the current view */}
         {activeView === "weekly" && (
-          <section className="card-surface mb-3 overflow-x-auto">
+          <section className="card-surface mb-3">
             <h2 className="font-bold text-gray-900 bg-gray-50 border-b border-gray-200 px-4 py-3 rounded-t-xl">
               Weekly Data
             </h2>
@@ -315,7 +315,7 @@ const DoubleStop = () => {
         )}
 
         {activeView === "daily" && (
-          <section className="card-surface mb-3 overflow-x-auto">
+          <section className="card-surface mb-3">
             <h2 className="font-bold text-gray-900 bg-gray-50 border-b border-gray-200 px-4 py-3 rounded-t-xl">
               Daily Data
             </h2>

@@ -388,7 +388,7 @@ export default function Jobs() {
           </section>
         )}
 
-        <section className="card-surface overflow-x-auto">
+        <section className="card-surface">
           <div className="flex items-center justify-between bg-gray-50 border-b border-line px-4 py-3 rounded-t-xl">
             <h2 className="font-bold text-gray-900">
               {isSuperAdmin ? 'All Cities' : 'Assigned Cities'}
@@ -442,7 +442,7 @@ export default function Jobs() {
             )}
           </div>
 
-          <div className="relative min-h-[300px] px-4 sm:px-6 py-4">
+          <div className="relative min-h-[300px] overflow-x-auto px-4 sm:px-6 py-4">
             {loading && (
               <div className="absolute inset-0 bg-white bg-opacity-75 flex items-center justify-center z-10">
                 <Loading />
