@@ -77,7 +77,7 @@ test('assignment history keeps, resolves and looks up carrier evidence without g
       assert.equal(offsetOnly.carrierDeliveryId, '90000001');
       assert.equal(offsetOnly.routeId, routeA);
       assert.equal(offsetOnly.journeyDate, '2026-09-10');
-      assert.deepEqual(offsetOnly.evidence.map((e) => [e.sheet, e.row]), [['offset_details', 2]]);
+      assert.deepEqual(offsetOnly.facts[0].evidence.map((e) => [e.sheet, e.row]), [['offset_details', 2]]);
 
       const [fee] = await find('TW0002');
       assert.deepEqual([fee.driverId, fee.cityId, fee.routeId], [driverB, cityB, routeB]);
@@ -109,7 +109,7 @@ test('assignment history keeps, resolves and looks up carrier evidence without g
       assert.equal(await count('SELECT count(*) n FROM carrier_assignment_sightings'), 6);
       const [candidate] = await find('TW0001');
       assert.equal(candidate.assignmentIds.length, 1);
-      assert.equal(candidate.evidence.length, 2, 'both reports are kept as provenance');
+      assert.equal(candidate.facts[0].evidence.length, 2, 'both reports are kept as provenance');
     });
 
     await t.test('two Delivery IDs for one waybill are both kept and returned, never settled by taking the first', async () => {
@@ -175,9 +175,11 @@ test('assignment history keeps, resolves and looks up carrier evidence without g
       await recordReport(db, reportOf(row('fee_details', 2, 'TW0016', 90000003, 'TSTA 01-1')),
         { reportHash: hashOf('late-driver'), sourceLabel: 'late driver.xlsx', importedBy: null, allowedJobs: null });
       assert.equal((await find('TW0016'))[0].driverId, null);
+      assert.equal((await find('TW0016'))[0].driverLinkedAt, null, 'a route link is not a driver link');
       const driverC = await driver('Late Driver', 90000003, cityA);
       assert.deepEqual(await refreshOpenAssignments(db), { drivers: 1, routes: 0 });
       assert.equal((await find('TW0016'))[0].driverId, driverC);
+      assert.ok((await find('TW0016'))[0].driverLinkedAt instanceof Date, 'the time the driver was linked is returned');
 
       // The code is later given to someone else: the history keeps the person it named at the time.
       await db.query('UPDATE drivers SET driver_code = 90000099 WHERE id = $1', [driverC]);
@@ -229,10 +231,41 @@ test('assignment history keeps, resolves and looks up carrier evidence without g
       const wide = await recordReport(db, file, { ...narrow, importedBy: 1, allowedJobs: null });
       assert.deepEqual([wide.alreadyRecorded, wide.recorded, wide.known, wide.skipped], [false, 1, 1, 0]);
       assert.equal((await find('TW0051'))[0].driverId, driverB);
-      assert.equal((await find('TW0050'))[0].evidence.length, 2, 'the fact both copies hold has a sighting from each');
-      assert.deepEqual((await find('TW0050'))[0].evidence.map((e) => e.scoped), [true, false]);
-      assert.equal((await find('TW0051'))[0].evidence[0].scoped, false);
+      assert.equal((await find('TW0050'))[0].facts[0].evidence.length, 2, 'the fact both copies hold has a sighting from each');
+      assert.deepEqual((await find('TW0050'))[0].facts[0].evidence.map((e) => e.scoped), [true, false]);
+      assert.equal((await find('TW0051'))[0].facts[0].evidence[0].scoped, false);
       assert.equal((await recordReport(db, file, { ...narrow, allowedJobs: ['Test Beta GOFO'] })).alreadyRecorded, false, 'another city admin is another scope');
+    });
+
+    await t.test('provenance stays with its own fact: an unscoped sighting of a route-less fact does not vouch for a scoped city', async () => {
+      // A city admin's copy names the route; a full copy of a different file names the same Delivery ID without one.
+      await recordReport(db, reportOf(row('fee_details', 2, 'TW0060', 90000001, 'TSTA 01-1')),
+        { reportHash: hashOf('vouch-scoped'), sourceLabel: 'vouch scoped.xlsx', importedBy: 7, allowedJobs: ['Test Alpha GOFO'] });
+      await recordReport(db, reportOf(row('fee_details', 2, 'TW0060', 90000001, null)),
+        { reportHash: hashOf('vouch-full-no-route'), sourceLabel: 'vouch full.xlsx', importedBy: 1, allowedJobs: null });
+      const [candidate] = await find('TW0060');
+      assert.equal(candidate.cityId, cityA);
+      assert.deepEqual(candidate.vouched, { driver: true, city: false }, 'the full copy backs the driver link, not the city');
+      assert.equal(candidate.facts.length, 2);
+      assert.deepEqual(candidate.facts.map((f) => f.evidence.map((e) => e.scoped)), [[true], [false]], 'each fact keeps its own sightings');
+
+      await recordReport(db, reportOf(row('offset_details', 2, 'TW0060', 90000001, 'TSTA 01-1')),
+        { reportHash: hashOf('vouch-full-route'), sourceLabel: 'vouch full route.xlsx', importedBy: 1, allowedJobs: null });
+      assert.deepEqual((await find('TW0060'))[0].vouched, { driver: true, city: true });
+    });
+
+    await t.test('bytes that were voided stay voided under every scope, and voiding covers every copy', async () => {
+      const file = reportOf(row('fee_details', 2, 'TW0070', 90000001, 'TSTA 01-1'));
+      const wide = await recordReport(db, file, { reportHash: hashOf('void-all-scopes'), sourceLabel: 'wrong.xlsx', importedBy: 1, allowedJobs: null });
+      const narrow = await recordReport(db, file, { reportHash: hashOf('void-all-scopes'), sourceLabel: 'wrong.xlsx', importedBy: 7, allowedJobs: ['Test Alpha GOFO'] });
+      assert.notEqual(wide.importId, narrow.importId);
+      assert.equal(await voidImport(db, wide.importId, { reason: 'wrong file', adminId: 1 }), true);
+      assert.equal(await count('SELECT count(*) n FROM carrier_assignment_imports WHERE report_hash = $1 AND voided_at IS NOT NULL', [hashOf('void-all-scopes')]), 2, 'the narrow copy is voided with it');
+      assert.deepEqual(await find('TW0070'), []);
+
+      const other = await recordReport(db, file, { reportHash: hashOf('void-all-scopes'), sourceLabel: 'wrong.xlsx', importedBy: 8, allowedJobs: ['Test Alpha GOFO', 'Test Beta GOFO'] });
+      assert.deepEqual([other.alreadyRecorded, other.voided, other.recorded], [true, true, 0], 'a new scope does not bring a voided file back');
+      assert.deepEqual(await find('TW0070'), []);
     });
 
     await t.test('an unreadable signing time keeps the fact without a date', async () => {
@@ -253,7 +286,7 @@ test('assignment history keeps, resolves and looks up carrier evidence without g
       assert.deepEqual(await find('TW0040'), []);
       const [kept] = await find('TW0041');
       assert.equal(kept.driverId, driverA);
-      assert.equal(kept.evidence.length, 1, 'only the report that still stands is listed');
+      assert.equal(kept.facts[0].evidence.length, 1, 'only the report that still stands is listed');
       assert.equal(await count('SELECT count(*) n FROM carrier_package_assignments WHERE waybill_key = $1', ['TW0040']), 1, 'nothing is deleted');
 
       const again = await recordReport(db, reportOf(row('fee_details', 2, 'TW0040', 90000001, 'TSTA 01-1')),

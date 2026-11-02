@@ -31,13 +31,13 @@ const cleanLabel = (value) => {
 export const refreshOpenAssignments = async (db) => {
   const drivers = await db.query(
     `UPDATE carrier_package_assignments a
-        SET driver_id = d.id, driver_state = 'resolved', resolved_at = COALESCE(a.resolved_at, now())
+        SET driver_id = d.id, driver_state = 'resolved', driver_resolved_at = now()
        FROM drivers d
       WHERE a.driver_state = 'unknown_driver' AND d.driver_code::text = a.external_delivery_id`
   );
   const routes = await db.query(
     `UPDATE carrier_package_assignments a
-        SET route_id = r.id, city_id = c.id, route_state = 'resolved', resolved_at = COALESCE(a.resolved_at, now())
+        SET route_id = r.id, city_id = c.id, route_state = 'resolved', route_resolved_at = now()
        FROM routes r
        JOIN city c ON c.job = r.job
       WHERE a.route_state = 'unknown_route' AND r.route_code_in_string = a.route_code`
@@ -112,6 +112,14 @@ export const recordReport = async (db, report, source) => {
   // The same bytes recorded with the same scope are already here. The same bytes with a wider scope are not: a city
   // admin's copy left out other cities' rows, and someone who may use every city must still be able to add them.
   const scopeKey = Array.isArray(source.allowedJobs) ? `jobs:${[...source.allowedJobs].sort().join('|')}` : '';
+  // Bytes that were voided stay voided, whatever the scope they are uploaded with.
+  const voidedBefore = await db.query(
+    'SELECT id FROM carrier_assignment_imports WHERE carrier = $1 AND report_hash = $2 AND voided_at IS NOT NULL ORDER BY id LIMIT 1',
+    [CARRIER, source.reportHash]
+  );
+  if (voidedBefore.rows[0]) {
+    return { importId: voidedBefore.rows[0].id, alreadyRecorded: true, voided: true, recorded: 0, known: 0, skipped: 0, problems: report.problemCount, resolved: { drivers: 0, routes: 0 } };
+  }
   const earlier = await db.query(
     'SELECT id, voided_at FROM carrier_assignment_imports WHERE carrier = $1 AND report_hash = $2 AND scope_key = $3',
     [CARRIER, source.reportHash, scopeKey]
@@ -153,15 +161,19 @@ export const recordReport = async (db, report, source) => {
   return { importId, alreadyRecorded: false, voided: false, recorded, known, skipped, problems: report.problemCount, resolved };
 };
 
-// Marks a whole import as wrong. Its facts stop standing unless another import also holds them. Nothing is
-// deleted: the import, its facts and its sightings stay for the record.
+// Marks a report as wrong. Every copy of the same bytes (the same file recorded with another scope) is voided with
+// it, so a wrong file cannot stand through a sibling import. Its facts stop standing unless another, different
+// report also holds them. Nothing is deleted: the imports, facts and sightings stay for the record.
 export const voidImport = async (db, importId, { reason, adminId = null }) => {
   if (typeof reason !== 'string' || reason.trim() === '') throw new Error('a reason is required');
   const { rowCount } = await db.query(
-    'UPDATE carrier_assignment_imports SET voided_at = now(), voided_by = $2, void_reason = $3 WHERE id = $1 AND voided_at IS NULL',
+    `UPDATE carrier_assignment_imports i
+        SET voided_at = now(), voided_by = $2, void_reason = $3
+       FROM carrier_assignment_imports target
+      WHERE target.id = $1 AND i.carrier = target.carrier AND i.report_hash = target.report_hash AND i.voided_at IS NULL`,
     [importId, adminId, reason.trim().slice(0, 500)]
   );
-  return rowCount === 1;
+  return rowCount > 0;
 };
 
 // The history for one waybill, in the shape the claims rematch expects (issue #141, rematchOpenClaims):
@@ -173,9 +185,12 @@ export const voidImport = async (db, importId, { reason, adminId = null }) => {
 // - cityName is the city's code (city.city_code, for example "DFW GOFO"), the stored label the owner's
 //   exemption rule is written against. cityCode repeats it; cityJob is the city's display name.
 // - Only history is read. The driver's current city is never used.
-// - Each evidence entry says whether its import was scoped to a city admin's cities (scoped: true). resolvedAt is
-//   when NASA linked the Delivery ID to the driver: a link made long after journeyDate leans on the driver code
-//   still belonging to that person, which NASA does not record the history of (see the journal).
+// - facts: one entry per stored fact, each with its own sightings ({ importId, sheet, row, scoped }); scoped is true
+//   when that import only held a city admin's cities. vouched.driver / vouched.city say whether an import with no
+//   city restriction backs the driver link / the city (for the city, a fact that has its own route and city).
+// - driverLinkedAt is the latest time NASA linked this Delivery ID to the driver: a link made long after
+//   journeyDate leans on the driver code still belonging to that person, which NASA does not record the history
+//   of (see the journal).
 // - An empty list means no history. courier other than "gofo" has no history here yet.
 export const findAssignmentCandidates = async (db, { courier, waybill }) => {
   if (courier !== CARRIER) return [];
@@ -185,7 +200,7 @@ export const findAssignmentCandidates = async (db, { courier, waybill }) => {
   const { rows } = await db.query(
     `SELECT a.id, a.external_delivery_id, a.driver_id, a.route_id, a.route_code, a.city_id,
             c.city_code, c.job AS city_job, to_char(a.signed_on, 'YYYY-MM-DD') AS signed_on,
-            a.resolved_at,
+            a.driver_resolved_at,
             (SELECT json_agg(json_build_object('importId', s.import_id, 'sheet', s.source_sheet, 'row', s.source_row,
                                                'scoped', i.scope_key <> '')
                              ORDER BY s.import_id, s.source_sheet)
@@ -217,26 +232,39 @@ export const findAssignmentCandidates = async (db, { courier, waybill }) => {
     const cityId = row.city_id ?? (cities?.size === 1 ? [...cities.keys()][0] : null);
     const label = cityId === null ? null : cities.get(cityId);
     const id = keyOf(row, cityId);
-    const existing = groups.get(id);
-    if (existing) {
-      existing.assignmentIds.push(row.id);
-      existing.evidence.push(...(row.evidence ?? []));
-      continue;
+    const evidence = row.evidence ?? [];
+    const fact = { assignmentId: row.id, routeCode: row.route_code, journeyDate: row.signed_on, hasOwnCity: row.city_id !== null, evidence };
+    const unscoped = evidence.some((e) => !e.scoped);
+    let group = groups.get(id);
+    if (!group) {
+      group = {
+        driverId: row.driver_id,
+        cityId,
+        cityName: label?.code ?? null,
+        cityCode: label?.code ?? null,
+        cityJob: label?.job ?? null,
+        carrierDeliveryId: row.external_delivery_id,
+        routeId: row.route_id,
+        routeCode: row.route_code,
+        journeyDate: row.signed_on,
+        driverLinkedAt: null,
+        vouched: { driver: false, city: false },
+        assignmentIds: [],
+        facts: [],
+      };
+      groups.set(id, group);
     }
-    groups.set(id, {
-      driverId: row.driver_id,
-      cityId,
-      cityName: label?.code ?? null,
-      cityCode: label?.code ?? null,
-      cityJob: label?.job ?? null,
-      carrierDeliveryId: row.external_delivery_id,
-      routeId: row.route_id,
-      routeCode: row.route_code,
-      journeyDate: row.signed_on,
-      resolvedAt: row.resolved_at,
-      assignmentIds: [row.id],
-      evidence: [...(row.evidence ?? [])],
-    });
+    group.assignmentIds.push(row.id);
+    group.facts.push(fact);
+    // Provenance stays with the fact that carries it: an unscoped sighting of a fact without a route says nothing
+    // about the city of another fact.
+    if (unscoped) group.vouched.driver = true;
+    if (unscoped && row.city_id !== null) group.vouched.city = true;
+    if (row.driver_resolved_at && (!group.driverLinkedAt || row.driver_resolved_at > group.driverLinkedAt)) group.driverLinkedAt = row.driver_resolved_at;
+    if (group.routeId === null && row.route_id !== null) {
+      group.routeId = row.route_id;
+      group.routeCode = row.route_code;
+    }
   }
   return [...groups.values()];
 };
