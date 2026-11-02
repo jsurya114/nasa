@@ -4,6 +4,13 @@ const { createBridgeHost } = require("./host");
 
 const WEB = "https://app.example.com";
 const NONCE = "k".repeat(32);
+const fakePush = (calls) => ({
+  status: async () => { calls.push(["push.status"]); return { available: true, permission: "undetermined", canAskAgain: true }; },
+  requestPermission: async () => { calls.push(["push.requestPermission"]); return { available: true, permission: "granted", canAskAgain: true }; },
+  getToken: async () => { calls.push(["push.getToken"]); return { token: "ExponentPushToken[abc]", platform: "ios" }; },
+  openSettings: async () => { calls.push(["push.openSettings"]); },
+  takePendingTap: () => { calls.push(["push.takePendingTap"]); return { screen: "agreement" }; },
+});
 const setup = (over = {}) => {
   const calls = [];
   const session = {
@@ -14,7 +21,7 @@ const setup = (over = {}) => {
     ...over.session,
   };
   const opened = [];
-  const handle = createBridgeHost({ info: { shellVersion: "0.1.0", platform: "ios" }, session, openExternal: async (u) => { opened.push(u); }, webOrigin: WEB, nonce: NONCE });
+  const handle = createBridgeHost({ info: { shellVersion: "0.1.0", platform: "ios" }, session, openExternal: async (u) => { opened.push(u); }, webOrigin: WEB, nonce: NONCE, push: over.push === false ? undefined : over.push ?? undefined });
   let n = 0;
   const send = (action, payload, page = `${WEB}/driver/login`) => handle(JSON.stringify({ v: 1, id: `id${++n}`, nonce: NONCE, action, payload }), page);
   return { send, calls, opened, handle };
@@ -92,4 +99,44 @@ test("a message from a frame that cannot read the nonce is ignored, even on the 
   assert.equal(await handle(noNonce, `${WEB}/`), null);
   assert.equal(await handle(wrong, `${WEB}/`), null);
   assert.equal(calls.length, 0);
+});
+
+test("push is offered only when the build has it, and its actions are refused otherwise", async () => {
+  const without = setup();
+  assert.deepEqual((await without.send("app.hello", {})).data.capabilities, ["session", "openExternal"]);
+  for (const action of ["push.status", "push.requestPermission", "push.getToken", "push.openSettings", "push.takePendingTap"]) {
+    const r = await without.send(action, {});
+    assert.deepEqual([r.ok, r.error], [false, "unsupported_action"], action);
+  }
+  const calls = [];
+  const withPush = setup({ push: fakePush(calls) });
+  assert.deepEqual((await withPush.send("app.hello", {})).data.capabilities, ["session", "openExternal", "push"]);
+});
+
+test("push actions reach the push support and return only what the page needs", async () => {
+  const calls = [];
+  const { send } = setup({ push: fakePush(calls) });
+  assert.deepEqual((await send("push.status", {})).data, { available: true, permission: "undetermined", canAskAgain: true });
+  assert.deepEqual((await send("push.requestPermission", {})).data.permission, "granted");
+  assert.deepEqual((await send("push.getToken", {})).data, { token: "ExponentPushToken[abc]", platform: "ios" });
+  assert.deepEqual((await send("push.takePendingTap", {})).data, { screen: "agreement" });
+  assert.deepEqual((await send("push.openSettings", {})).data, {});
+  assert.deepEqual(calls.map((c) => c[0]), ["push.status", "push.requestPermission", "push.getToken", "push.takePendingTap", "push.openSettings"]);
+});
+
+test("push actions from another origin or without the nonce run nothing", async () => {
+  const calls = [];
+  const { send, handle } = setup({ push: fakePush(calls) });
+  assert.equal(await send("push.getToken", {}, "https://evil.example.com/page"), null);
+  assert.equal(await handle(JSON.stringify({ v: 1, id: "no-nonce", action: "push.getToken", payload: {} }), `${WEB}/driver/login`), null);
+  assert.deepEqual(calls, []);
+});
+
+test("a push failure sends back only a short code", async () => {
+  const push = { ...fakePush([]), getToken: async () => { throw Object.assign(new Error("ExponentPushToken[secret] failed at /secret/path"), { code: "permission_denied" }); } };
+  const { send } = setup({ push });
+  const r = await send("push.getToken", {});
+  assert.deepEqual([r.ok, r.error], [false, "permission_denied"]);
+  const broken = setup({ push: { ...fakePush([]), status: async () => { throw new Error("leaky message with a token"); } } });
+  assert.deepEqual([(await broken.send("push.status", {})).error], ["native_error"]);
 });

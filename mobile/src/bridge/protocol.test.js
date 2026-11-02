@@ -10,6 +10,7 @@ const {
   okReply,
   parseMessage,
   replyScript,
+  eventScript,
 } = require("./protocol");
 
 const NONCE = "n".repeat(32);
@@ -61,6 +62,9 @@ test("checks every payload", () => {
     ["link.openExternal", { url: "javascript:alert(1)" }],
     ["link.openExternal", { url: "https://user@evil.com" }],
     ["app.hello", { bridgeVersions: ["1"] }],
+    ["push.status", { area: "admin" }],
+    ["push.getToken", { token: "ExponentPushToken[x]" }],
+    ["push.takePendingTap", { screen: "agreement" }],
   ];
   cases.forEach(([action, payload], i) => {
     assert.equal(parse(message({ action, payload, id: `case${i}` }), t).error, "bad_request", `${action} ${JSON.stringify(payload)}`);
@@ -76,6 +80,11 @@ test("accepts good payloads for each implemented action", () => {
     "session.refresh": { area: "driver" },
     "session.clear": { area: "admin" },
     "link.openExternal": { url: "https://example.com/help" },
+    "push.status": {},
+    "push.requestPermission": {},
+    "push.getToken": {},
+    "push.openSettings": {},
+    "push.takePendingTap": {},
   };
   assert.deepEqual(Object.keys(good).sort(), [...SUPPORTED_ACTIONS].sort());
   Object.entries(good).forEach(([action, payload], i) => {
@@ -135,4 +144,16 @@ test("with no nonce configured every message is refused", () => {
   for (const expected of [undefined, "", "short"]) {
     assert.equal(parseMessage(message(), new IdTracker(), expected).error, "untrusted_frame");
   }
+});
+
+const detailOf = (script) => JSON.parse(JSON.parse(/detail: ("(?:[^"\\]|\\.)*")/.exec(script)[1]));
+
+test("the event script carries only a version and a type, encoded so nothing can end the string", () => {
+  const script = eventScript("notification.tap");
+  assert.ok(script.startsWith('window.dispatchEvent(new CustomEvent("nasa-native-event"'));
+  assert.deepEqual(detailOf(script), { v: 1, type: "notification.tap" });
+  assert.ok(script.endsWith("true;"));
+  const hostile = eventScript('"); alert(1); ("');
+  assert.equal(detailOf(hostile).type, '"); alert(1); ("');
+  assert.ok(hostile.endsWith("true;"));
 });
