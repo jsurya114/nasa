@@ -7,7 +7,7 @@
 import axios from "axios";
 import { API_BASE_URL } from "../config";
 import { callNative, getCapabilities, hasCapability } from "./bridge";
-import { getAccessToken } from "./sessionStore";
+import { getAccessToken, sessionGeneration } from "./sessionStore";
 
 // A tapped notification names a screen; each area maps the names it may open to its own routes. A name that is not
 // listed for the signed-in area is ignored, and the route guards still decide what is shown.
@@ -50,9 +50,25 @@ export const requestPushPermission = async () => {
 
 const lastToken = {};
 
+// Registering and removing a phone for one area are sent one at a time, in the order they were started. A removal
+// started by a sign-out therefore always lands after a registration that was already on its way, instead of passing
+// it and being undone when it arrives. Neither holds up the sign-out itself: the page is signed out at once and the
+// removal follows in the background.
+const sending = {};
+const inOrder = (area, task) => {
+  const run = (sending[area] ?? Promise.resolve()).then(task);
+  sending[area] = run.catch(() => {});
+  return run;
+};
+
 // Tells the server about this phone for the person signed in to `area`. Quiet on failure: a person without
 // notifications loses nothing, and the next start tries again.
+//
+// The sign-in it belongs to is noted when it starts. If that person signs out (or someone else signs in) while it is
+// still waiting on the phone or on earlier requests, it is dropped before it is sent, so it can neither put the phone
+// back on a signed-out account nor take it from the next person.
 export const registerThisPhone = async (area) => {
+  const signedInAs = sessionGeneration(area);
   try {
     const [{ token, platform }, info, accessToken] = await Promise.all([
       callNative("push.getToken"),
@@ -60,25 +76,30 @@ export const registerThisPhone = async (area) => {
       getAccessToken(area),
     ]);
     if (!accessToken) return false;
-    await client.post(`/${area}/push-token`, { token, platform, appVersion: info?.shellVersion }, authed(accessToken));
-    lastToken[area] = token;
-    return true;
+    return await inOrder(area, async () => {
+      if (sessionGeneration(area) !== signedInAs) return false;
+      await client.post(`/${area}/push-token`, { token, platform, appVersion: info?.shellVersion }, authed(accessToken));
+      lastToken[area] = token;
+      return true;
+    });
   } catch {
     return false;
   }
 };
 
 // Removes this phone from the person who is signing out. `accessToken` is the one the page held before it signed out.
-export const removeThisPhone = async ({ area, accessToken }) => {
-  if (!accessToken) return false;
-  try {
-    const token = lastToken[area] ?? (await callNative("push.getToken")).token;
-    await client.post(`/${area}/push-token/remove`, { token }, authed(accessToken));
-    delete lastToken[area];
-    return true;
-  } catch {
-    return false;
-  }
+export const removeThisPhone = ({ area, accessToken }) => {
+  if (!accessToken) return Promise.resolve(false);
+  return inOrder(area, async () => {
+    try {
+      const token = lastToken[area] ?? (await callNative("push.getToken")).token;
+      await client.post(`/${area}/push-token/remove`, { token }, authed(accessToken));
+      delete lastToken[area];
+      return true;
+    } catch {
+      return false;
+    }
+  });
 };
 
 const readAsked = (area) => {

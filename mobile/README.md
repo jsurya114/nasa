@@ -24,7 +24,7 @@ Build settings come from environment variables (see `.env.example`). `preview` a
 | `preview` | Testers (staging). Release build, https only | Android `.apk` (an iOS build needs an Apple account) |
 | `production` | Store submission. Release build, https only, build number raised automatically | Store binaries |
 
-Plain http is switched on only when `APP_ENV=development`: `usesCleartextTraffic` on Android and `NSAllowsLocalNetworking` on iOS. Preview and production keep both platforms' default of refusing it, and `app.config.test.js` checks that.
+Plain http is switched on only when `APP_ENV=development`: `usesCleartextTraffic` on Android and `NSAllowsLocalNetworking` on iOS. Preview and production keep both platforms' default of refusing it: a config plugin removes the local-network entries the iOS template and the development client add, and `app.config.test.js` generates the real iOS project for each environment and checks the resulting Info.plist.
 
 A local Android test file for a phone on the same Wi-Fi (needs the Android SDK, not an Expo account):
 
