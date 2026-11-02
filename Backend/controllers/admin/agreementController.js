@@ -2,6 +2,7 @@ import agreementQueries from "../../services/admin/agreementQueries.js";
 import HttpStatus from "../../utils/statusCodes.js";
 import { checkDriverAccess, isSuperAdmin } from "../../services/admin/agreementAccess.js";
 import logger from '../../utils/logger.js';
+import { notifyAgreementRequired } from '../../services/push/pushEvents.js';
 
 // The driver id from the URL: digits only. The same number is used for the city check and the change.
 const parseDriverId = (value) => (/^\d{1,9}$/.test(String(value)) && Number(value) > 0 ? Number(value) : null);
@@ -54,6 +55,8 @@ const agreementController = {
           message: "Driver not found"
         });
       }
+
+      if (status === false) notifyAgreementRequired(id);
 
       return res.status(HttpStatus.OK).json({
         success: true,

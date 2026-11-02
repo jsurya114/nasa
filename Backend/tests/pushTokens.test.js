@@ -5,6 +5,8 @@ import { fileURLToPath } from 'node:url';
 import { isExpoPushToken, parseRegistration, parseRemoval } from '../services/push/pushTokenRules.js';
 
 const TOKEN = (n) => `ExponentPushToken[token-number-${String(n).padStart(3, '0')}-abcdef]`;
+// The database tests touch only tokens made by TOKEN(), so they can share a database with other tests.
+const OWN_TOKENS = "'ExponentPushToken[token-number-%'";
 
 test('only Expo push tokens are accepted', () => {
   assert.equal(isExpoPushToken(TOKEN(1)), true);
@@ -51,7 +53,7 @@ const run = async (controller, handler, userId, body) => {
 };
 const active = async (userType, userId) =>
   (await pool.query(
-    'SELECT push_token FROM device_tokens WHERE user_type = $1 AND user_id = $2 AND revoked_at IS NULL ORDER BY push_token',
+    `SELECT push_token FROM device_tokens WHERE user_type = $1 AND user_id = $2 AND revoked_at IS NULL AND push_token LIKE ${OWN_TOKENS} ORDER BY push_token`,
     [userType, userId]
   )).rows.map((r) => r.push_token);
 
@@ -64,12 +66,12 @@ before(async () => {
   const migration = readFileSync(fileURLToPath(new URL('../migrations/2026-11-02-issue-022-device-tokens.sql', import.meta.url)), 'utf8');
   await pool.query(migration);
   await pool.query(migration); // safe to run twice
-  await pool.query('DELETE FROM device_tokens');
+  await pool.query(`DELETE FROM device_tokens WHERE push_token LIKE ${OWN_TOKENS}`);
 });
 
 after(async () => {
   if (!hasDb) return;
-  await pool.query('DELETE FROM device_tokens');
+  await pool.query(`DELETE FROM device_tokens WHERE push_token LIKE ${OWN_TOKENS}`);
   await pool.end();
 });
 
