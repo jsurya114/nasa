@@ -62,8 +62,11 @@ class IdTracker {
 }
 
 // Turns the raw string from the WebView into a checked message, or says why it was refused.
+// `nonce` is the secret the shell put into the main frame for this page load. A message without it comes from
+// somewhere else (for example a frame from another site on Android) and gets no answer at all. With no nonce
+// to check against, every message is refused.
 // Returns { ok: true, message } or { ok: false, error, id? }.
-const parseMessage = (raw, tracker) => {
+const parseMessage = (raw, tracker, nonce) => {
   if (typeof raw !== "string" || raw.length === 0 || raw.length > MAX_MESSAGE_LENGTH) return { ok: false, error: "bad_request" };
 
   let message;
@@ -75,6 +78,7 @@ const parseMessage = (raw, tracker) => {
   if (!isPlainObject(message)) return { ok: false, error: "bad_request" };
 
   const { v, id, action, payload } = message;
+  if (typeof nonce !== "string" || nonce.length < 16 || message.nonce !== nonce) return { ok: false, error: "untrusted_frame" };
   if (typeof id !== "string" || !ID_PATTERN.test(id)) return { ok: false, error: "bad_request" };
   if (v !== BRIDGE_VERSION) return { ok: false, error: "unsupported_version", id };
   if (typeof action !== "string" || !SUPPORTED_ACTIONS.includes(action)) return { ok: false, error: "unsupported_action", id };
