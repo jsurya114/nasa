@@ -111,15 +111,33 @@ axios.interceptors.response.use(
             return axios(originalRequest);
           }
         }
-      } catch {
+      } catch (refreshError) {
+        const code = refreshError?.code || refreshError?.message;
+
+        if (isNativeShell()) {
+          // Nobody is signed in here (a fresh app start), or someone just signed out: there is nothing to clear
+          // and nothing to redirect to. Let the route guard show the sign-in form.
+          if (code === 'no_session' || code === 'signed_out') {
+            error.noSession = true;
+            return Promise.reject(error);
+          }
+          // A lost connection, a server error or a bridge timeout is not a reason to end the session. Keep it,
+          // mark the failure so the screen can offer "Try again", and only sign out when the server refused it.
+          if (code !== 'refresh_failed') {
+            error.transient = true;
+            return Promise.reject(error);
+          }
+        }
+
         // If refresh fails, sign out of this area only. The other area keeps its session.
         await clearSession(area).catch(() => {});
         if (area === 'driver') {
           localStorage.removeItem('driverTimezone');
         }
 
-        if (window.location.pathname.startsWith(`/${area}`)) {
-          window.location.href = `/${area}/login`;
+        const loginPath = `/${area}/login`;
+        if (window.location.pathname.startsWith(`/${area}`) && window.location.pathname !== loginPath) {
+          window.location.href = loginPath;
         }
       }
     }
