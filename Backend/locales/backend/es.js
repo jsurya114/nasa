@@ -95,6 +95,15 @@ export const backendEs = {
     failedToUpdate: "Error al actualizar contraseña. Por favor intente nuevamente.",
   },
 
+  // Notificaciones push: texto de la pantalla de bloqueo. Sin nombres, montos, rutas ni ciudades, a propósito.
+  push: {
+    title: "NASA Logistics",
+    availabilityReset: "Es hora de indicar tu disponibilidad para la próxima semana.",
+    paid: "Tienes una novedad de pago.",
+    agreement: "Por favor revisa tu acuerdo.",
+    accessCode: "Se envió un nuevo código de acceso.",
+  },
+
   // Common errors
   common: {
     serverError: "Error del servidor",

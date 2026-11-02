@@ -95,6 +95,15 @@ export const backendEn = {
     failedToUpdate: "Failed to update password. Please try again.",
   },
 
+  // Push notifications: text shown on the lock screen. No names, amounts, routes or cities, on purpose.
+  push: {
+    title: "NASA Logistics",
+    availabilityReset: "Time to set your availability for next week.",
+    paid: "You have a pay update.",
+    agreement: "Please review your agreement.",
+    accessCode: "A new access code was submitted.",
+  },
+
   // Common errors
   common: {
     serverError: "Server error",
