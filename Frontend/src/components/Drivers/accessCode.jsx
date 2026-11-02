@@ -15,7 +15,7 @@ import {
 } from "../../redux/slice/driver/driverAccessCodeSlice";
 import Header from "../../reuse/driver/Header";
 import Nav from "../../reuse/driver/Nav";
-import { toast } from "react-toastify";
+import { toast } from "../../utils/toast";
 import useTranslation from "../../hooks/useTranslation.js";
 import { translateAccessCode } from "../../hooks/accessCodeTranslations.js";
 import AccessCodeDetailsDialog from "../AccessCodeDetailsDialog.jsx";
@@ -133,11 +133,13 @@ export default function DriverAccessCodePage() {
     }
 
     try {
-      await dispatch(
-        createAccessCode({ zip_code: zipCode.trim(), address: address.trim(), access_code: accessCode.trim(), images: newImages }),
-      ).unwrap();
-
-      toast.success(t('accessCodeCreated'), { position: "top-right", autoClose: 3000 });
+      // Shows "saving" while the code and photos upload, then the real result.
+      await toast.track(
+        dispatch(
+          createAccessCode({ zip_code: zipCode.trim(), address: address.trim(), access_code: accessCode.trim(), images: newImages }),
+        ).unwrap(),
+        { pending: t('savingAccessCode'), success: t('accessCodeCreated'), error: (err) => err || t('createFailed') },
+      );
 
       setAddress("");
       setAccessCode("");
@@ -147,8 +149,8 @@ export default function DriverAccessCodePage() {
       setNewImages([]);
       setFileError("");
       setFileInfo("");
-    } catch (err) {
-      toast.error(err || t('createFailed'), { position: "top-right", autoClose: 4000 });
+    } catch {
+      // The failure is already shown by toast.track above; the form keeps what was typed.
     }
   };
 

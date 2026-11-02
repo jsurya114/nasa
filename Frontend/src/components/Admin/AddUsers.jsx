@@ -6,7 +6,7 @@ import AddDriverForm from '../../reuse/AddDriverForm';
 import AdminsList from '../../reuse/AdminsList';
 import DriversList from '../../reuse/DriversList';
 import { useDispatch, useSelector } from 'react-redux';
-import { toast } from "react-toastify";
+import { toast } from "../../utils/toast";
 import {
   addDriver,
   addAdmin,

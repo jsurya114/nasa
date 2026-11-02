@@ -29,7 +29,7 @@ const DriverViewAgreement = lazy(() => import("./components/Drivers/DriverViewAg
 
 import DPublicRoutes from "./routes/driver/DPublicRoutes.jsx";
 import DProtectRoutes from "./routes/driver/DProtectedRoutes.jsx";
-import { ToastContainer } from "react-toastify";
+import AppToaster from "./reuse/AppToaster.jsx";
 import "react-toastify/dist/ReactToastify.css";
 import UpdatePassword from "./components/Drivers/UpdatePassword.jsx";
 import useInactivityLogout from "./hooks/useInactivityLogout";
@@ -79,7 +79,7 @@ function App() {
             <Route path="*" element={<NotFound />} />
           </Routes>
         </Suspense>
-        <ToastContainer />
+        <AppToaster />
       </Router>
     </>
   );

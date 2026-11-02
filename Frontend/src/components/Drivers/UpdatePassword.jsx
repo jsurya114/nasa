@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import { useNavigate } from "react-router-dom";
-import { toast } from "react-toastify";
+import { toast } from "../../utils/toast";
 import Header from "../../reuse/driver/Header";
 import Nav from "../../reuse/driver/Nav";
 import useTranslation from "../../hooks/useTranslation.js";

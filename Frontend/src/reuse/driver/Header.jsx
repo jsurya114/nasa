@@ -6,7 +6,7 @@ import { useDispatch, useSelector } from "react-redux";
 import { useNavigate } from "react-router-dom";
 import { Menu, X, Globe, User } from "lucide-react";
 import useTranslation from "../../hooks/useTranslation.js";
-import { toast } from "react-toastify";
+import { toast } from "../../utils/toast";
 import { getTranslation } from "../../hooks/translation.js";
 
 function Header() {
@@ -39,19 +39,21 @@ function Header() {
     }
 
     try {
-      await dispatch(saveDriverLanguage({ 
-        driverId: driver.id, 
-        language: newLang 
-      })).unwrap();
-      
-      // IMPORTANT: Show success message in the NEW language (the one user just switched to)
-      // NOT the old language
-      const successMessage = getTranslation('updateSuccess', newLang);
-      toast.success(successMessage);
+      // Messages are shown in the NEW language (the one the driver just picked):
+      // "saving" while the change is stored, then the real success or failure.
+      await toast.track(
+        dispatch(saveDriverLanguage({
+          driverId: driver.id,
+          language: newLang
+        })).unwrap(),
+        {
+          pending: getTranslation('saving', newLang),
+          success: getTranslation('updateSuccess', newLang),
+          error: getTranslation('actionFailed', newLang),
+        }
+      );
     } catch {
-      // Show error in the NEW language as well, since that's what user wanted
-      const errorMessage = getTranslation('actionFailed', newLang);
-      toast.error(errorMessage);
+      // The failure is already shown by toast.track above.
     }
     
     setLangMenuOpen(false);

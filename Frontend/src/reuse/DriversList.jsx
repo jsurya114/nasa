@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { getUsers, toggleAvailUser, setSearchTerm, setSelectedCity } from '../redux/slice/admin/userLoadSlice';
 import Pagination from './Pagination';
-import { toast } from 'react-toastify';
+import { toast } from "../utils/toast";
 
 function DriversList({ onEdit }) {
   const dispatch = useDispatch();  

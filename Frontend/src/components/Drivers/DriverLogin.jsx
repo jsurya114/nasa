@@ -4,10 +4,12 @@ import logo from "../../assets/logo.png";
 import { useDispatch, useSelector } from "react-redux";
 import { driverLogin } from "../../redux/slice/driver/driverSlice.js";
 import { useNavigate } from "react-router-dom";
-import { toast } from "react-toastify";
+import { toast } from "../../utils/toast";
+import useTranslation from "../../hooks/useTranslation.js";
 import { AiOutlineEye, AiOutlineEyeInvisible } from "react-icons/ai";
 
 const DriverLogin = () => {
+  const { t } = useTranslation();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [fieldErrors, setFieldErrors] = useState({ email: "", password: "" });
@@ -56,7 +58,7 @@ const DriverLogin = () => {
     try {
       await dispatch(driverLogin({ email, password })).unwrap();
 
-      toast.success(`Login successful! Timezone: ${detectedTimezone}`, {
+      toast.success(`${t('loginSuccessful')} ${t('timezone')}: ${detectedTimezone}`, {
         position: "top-right",
         autoClose: 3000,
         pauseOnHover: true,

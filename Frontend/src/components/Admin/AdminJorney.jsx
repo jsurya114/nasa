@@ -10,7 +10,7 @@ import {
   deleteJourney,
   fetchRoutesByDriver
 } from "../../redux/slice/driver/journeySlice.js";
-import { toast } from "react-toastify";
+import { toast } from "../../utils/toast";
 import Header from "../../reuse/Header.jsx";
 import Nav from "../../reuse/Nav.jsx";
 import Select from "react-select";

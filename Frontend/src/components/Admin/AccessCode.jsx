@@ -16,8 +16,8 @@ import {
 import { getAdminCities } from "../../redux/slice/admin/userLoadSlice";
 import Header from "../../reuse/Header";
 import Nav from "../../reuse/Nav";
-import Swal from "sweetalert2";
-import { toast } from "react-toastify";
+import { toast } from "../../utils/toast";
+import { confirmDialog } from "../../utils/confirmDialog";
 import AccessCodeDetailsDialog from "../AccessCodeDetailsDialog";
 import AccessCodeEditDialog from "./AccessCodeEditDialog";
 
@@ -234,7 +234,7 @@ export default function AddAccessCodePage() {
   };
 
   const handleDelete = async (ac) => {
-    const result = await Swal.fire({
+    const confirmed = await confirmDialog({
       title: 'Delete Access Code?',
       html: `
         <div class="text-left">
@@ -243,15 +243,11 @@ export default function AddAccessCodePage() {
           <p class="mb-2"><strong>Access Code:</strong> ${escapeHtml(ac.access_code)}</p>
         </div>
       `,
-      icon: 'warning',
-      showCancelButton: true,
-      confirmButtonColor: '#dc2626',
-      cancelButtonColor: '#6b7280',
-      confirmButtonText: 'Yes, delete it!',
-      cancelButtonText: 'Cancel'
+      confirmText: 'Yes, delete it!',
+      cancelText: 'Cancel',
     });
 
-    if (result.isConfirmed) {
+    if (confirmed) {
       try {
         await dispatch(deleteAccessCode(ac.id)).unwrap();
         toast.success("Access code deleted successfully!", { position: "top-right", autoClose: 2000 });
