@@ -22,6 +22,10 @@ if (appEnv !== "development") {
 
 const appId = process.env.NASA_APP_ID || "com.example.nasalogistics";
 
+// Plain http to a computer on the local network is allowed in development builds only. Preview and production
+// builds keep both platforms' default of refusing it.
+const isDevelopment = appEnv === "development";
+
 // Push notifications need the Expo project that owns the push credentials. It is created by the owner's Expo account
 // (`eas init`); until then push reports itself unavailable and everything else works. The Firebase file for Android
 // push is passed as a path (an EAS secret file) and is never committed.
@@ -36,7 +40,11 @@ module.exports = {
     orientation: "portrait",
     icon: "./assets/icon.png",
     userInterfaceStyle: "light",
-    ios: { supportsTablet: false, bundleIdentifier: appId },
+    ios: {
+      supportsTablet: false,
+      bundleIdentifier: appId,
+      infoPlist: isDevelopment ? { NSAppTransportSecurity: { NSAllowsLocalNetworking: true } } : {},
+    },
     android: {
       package: appId,
       ...(googleServicesFile ? { googleServicesFile } : {}),
@@ -47,7 +55,11 @@ module.exports = {
         monochromeImage: "./assets/android-icon-monochrome.png",
       },
     },
-    plugins: ["expo-secure-store", ["expo-notifications", { color: "#4C2A85" }]],
+    plugins: [
+      "expo-secure-store",
+      ["expo-notifications", { color: "#4C2A85" }],
+      ["expo-build-properties", { android: { usesCleartextTraffic: isDevelopment } }],
+    ],
     extra: { appEnv, webOrigin, apiOrigin, ...(easProjectId ? { eas: { projectId: easProjectId } } : {}) },
   },
 };
