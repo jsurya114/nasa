@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { clearDraft, clearDrafts, readDraft, writeDraft } from "./formDrafts";
+import { clearDraft, clearDrafts, clearPending, markPending, readDraft, readPending, writeDraft } from "./formDrafts";
 
 beforeEach(() => sessionStorage.clear());
 
@@ -44,6 +44,34 @@ describe("form drafts", () => {
     expect(sessionStorage.getItem("unrelated")).toBe("keep");
   });
 
+  it("an unconfirmed save is remembered per area, person and form, with the submission it belongs to", () => {
+    markPending("driver", 7, "journey", "2026-11-02");
+    expect(readPending("driver", 7, "journey")).toBe("2026-11-02");
+    expect(readPending("driver", 8, "journey")).toBeNull();
+    expect(readPending("admin", 7, "journey")).toBeNull();
+    expect(readPending("driver", 7, "agreement")).toBeNull();
+    clearPending("driver", 7, "journey");
+    expect(readPending("driver", 7, "journey")).toBeNull();
+  });
+
+  it("an unconfirmed save is not a draft, and clearing a draft does not forget it", () => {
+    markPending("driver", 7, "journey", "2026-11-02");
+    expect(readDraft("driver", 7, "journey")).toBeNull();
+    writeDraft("driver", 7, "journey", { route: "3" });
+    clearDraft("driver", 7, "journey");
+    expect(readPending("driver", 7, "journey")).toBe("2026-11-02");
+  });
+
+  it("signing out removes the area's unconfirmed saves too, and only that area's", () => {
+    markPending("driver", 7, "journey", "2026-11-02");
+    markPending("driver", 8, "journey", "2026-11-02");
+    markPending("admin", 1, "journey", "2026-11-02");
+    clearDrafts("driver");
+    expect(readPending("driver", 7, "journey")).toBeNull();
+    expect(readPending("driver", 8, "journey")).toBeNull();
+    expect(readPending("admin", 1, "journey")).toBe("2026-11-02");
+  });
+
   it("never throws when storage is unavailable", () => {
     const original = Object.getOwnPropertyDescriptor(window, "sessionStorage");
     Object.defineProperty(window, "sessionStorage", { configurable: true, get: () => { throw new Error("blocked"); } });
@@ -52,6 +80,9 @@ describe("form drafts", () => {
       expect(readDraft("driver", 7, "journey")).toBeNull();
       expect(() => clearDraft("driver", 7, "journey")).not.toThrow();
       expect(() => clearDrafts("driver")).not.toThrow();
+      expect(() => markPending("driver", 7, "journey", "2026-11-02")).not.toThrow();
+      expect(readPending("driver", 7, "journey")).toBeNull();
+      expect(() => clearPending("driver", 7, "journey")).not.toThrow();
     } finally {
       Object.defineProperty(window, "sessionStorage", original);
     }

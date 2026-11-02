@@ -216,3 +216,136 @@ describe("keeping what was typed", () => {
     expect(Object.keys(sessionStorage).filter((k) => k.startsWith("nasa.draft."))).toEqual([]);
   });
 });
+
+// A save that could not be confirmed is remembered for this tab, so reloading the page (which keeps the typed entries)
+// cannot quietly enable Save again before the server has been asked.
+const pendingKeys = () => Object.keys(sessionStorage).filter((k) => k.startsWith("nasa.pending."));
+const dropAndLeaveUnconfirmed = async (s, driverId = 7) => {
+  s.postMode = "dropAfterSaving";
+  s.getMode = "drop";
+  const view = await mount(driverId);
+  await fill(view.container);
+  submit();
+  await screen.findByRole("button", { name: "Check again" });
+  return view;
+};
+
+describe("an unconfirmed save survives a reload", () => {
+  it("after a reload with the server still out of reach, Save stays off and the notice is still there", async () => {
+    const s = await startServer();
+    const first = await dropAndLeaveUnconfirmed(s);
+    first.unmount();
+
+    const second = await mount();
+    expect(await screen.findByText("We could not confirm this was saved")).toBeTruthy();
+    await waitFor(() => expect(typed(second.container)).toEqual({ start: "10", end: "20", route: "3" }));
+    await screen.findByRole("button", { name: "Check again" });
+    const button = screen.getByRole("button", { name: "Save Route" });
+    expect(button.disabled).toBe(true);
+    fireEvent.click(button);
+    expect(s.posts).toBe(1);
+  });
+
+  it("Save is already off on the first render after the reload, before anything has been checked", async () => {
+    const s = await startServer();
+    const first = await dropAndLeaveUnconfirmed(s);
+    first.unmount();
+    s.getMode = "drop";
+    await mount();
+    const button = await screen.findByRole("button", { name: /Save Route|Route Already Saved/ });
+    expect(button.disabled).toBe(true);
+    expect(s.posts).toBe(1);
+  });
+
+  it("when the server can be reached after the reload and has the journey, it shows saved and sends nothing again", async () => {
+    const s = await startServer();
+    const first = await dropAndLeaveUnconfirmed(s);
+    first.unmount();
+    s.getMode = "ok";
+
+    await mount();
+    expect(await screen.findByRole("button", { name: "Route Already Saved" })).toBeTruthy();
+    expect(s.posts).toBe(1);
+    expect(pendingKeys()).toEqual([]);
+  });
+
+  it("when the server can be reached after the reload and has nothing, it says so and a second submit works", async () => {
+    const s = await startServer();
+    s.postMode = "dropBeforeSaving";
+    s.getMode = "drop";
+    const first = await mount();
+    await fill(first.container);
+    submit();
+    await screen.findByRole("button", { name: "Check again" });
+    first.unmount();
+
+    s.getMode = "ok";
+    s.postMode = "ok";
+    const second = await mount();
+    expect(await screen.findByText(/It was not saved/)).toBeTruthy();
+    await waitFor(() => expect(screen.getByRole("button", { name: "Save Route" }).disabled).toBe(false));
+    expect(typed(second.container)).toEqual({ start: "10", end: "20", route: "3" });
+    expect(pendingKeys()).toEqual([]);
+    submit();
+    expect(await screen.findByRole("button", { name: "Route Already Saved" })).toBeTruthy();
+    expect(s.posts).toBe(2);
+  });
+
+  it("a reload with the connection back later settles by itself when it returns", async () => {
+    const s = await startServer();
+    const first = await dropAndLeaveUnconfirmed(s);
+    first.unmount();
+    await mount();
+    await screen.findByRole("button", { name: "Check again" });
+    s.getMode = "ok";
+    await act(async () => { window.dispatchEvent(new Event("online")); });
+    expect(await screen.findByRole("button", { name: "Route Already Saved" })).toBeTruthy();
+    expect(s.posts).toBe(1);
+  });
+
+  it("another driver on the same phone is not held up by someone else's unconfirmed save", async () => {
+    const s = await startServer();
+    const first = await dropAndLeaveUnconfirmed(s, 7);
+    first.unmount();
+
+    s.driverId = 8;
+    s.postMode = "ok";
+    s.getMode = "ok";
+    s.saved = false;
+    await mount(8);
+    await screen.findByRole("option", { name: "Route Three" });
+    expect(screen.queryByText("We could not confirm this was saved")).toBeNull();
+    expect(screen.getByRole("button", { name: "Save Route" }).disabled).toBe(false);
+  });
+
+  it("signing out forgets it, so the next sign-in starts clean", async () => {
+    const s = await startServer();
+    const first = await dropAndLeaveUnconfirmed(s);
+    expect(pendingKeys().length).toBe(1);
+    first.unmount();
+    const { clearSession } = await import("../../native/sessionStore.js");
+    await clearSession("driver");
+    expect(pendingKeys()).toEqual([]);
+
+    s.getMode = "drop";
+    s.saved = false;
+    await mount();
+    await screen.findByRole("option", { name: "Route Three" });
+    expect(screen.queryByText("We could not confirm this was saved")).toBeNull();
+    expect(screen.getByRole("button", { name: "Save Route" }).disabled).toBe(false);
+  });
+
+  it("one left over from an earlier day does not block today, and is not checked as if it were today's", async () => {
+    await startServer();
+    const { markPending } = await import("../../utils/formDrafts.js");
+    markPending("driver", 7, "journey", "2020-01-01");
+    await mount();
+    await screen.findByRole("option", { name: "Route Three" });
+    await waitFor(() => expect(pendingKeys()).toEqual([]));
+    await new Promise((r) => setTimeout(r, 50));
+    expect(screen.queryByText(/It was not saved/)).toBeNull();
+    expect(screen.queryByText("We could not confirm this was saved")).toBeNull();
+    expect(screen.getByRole("button", { name: "Save Route" }).disabled).toBe(false);
+    expect(pendingKeys()).toEqual([]);
+  });
+});
