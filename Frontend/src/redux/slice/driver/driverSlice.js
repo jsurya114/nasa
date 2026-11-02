@@ -1,7 +1,7 @@
 import { createSlice, createAsyncThunk } from "@reduxjs/toolkit";
 import axios from "../axiosInstance";
 import { isNativeShell } from "../../../native/bridge";
-import { clearBrowserTokens, clearSession, getRefreshToken, saveSession } from "../../../native/sessionStore";
+import { clearBrowserTokens, clearSession, getRefreshToken, isSignOutPending, saveSession } from "../../../native/sessionStore";
 
 const DEVICE_SIGN_IN_ERROR = "Could not sign in on this device. Please try again.";
 const DEVICE_SIGN_OUT_ERROR = "Signed out here, but the app could not confirm it on this phone. Please restart the app and sign out again.";
@@ -11,6 +11,8 @@ const initialState = {
   loading: false,
   error: null,
   isAuthenticated: null,
+  // True when the sign-in could not be checked because of the connection (mobile app only)
+  authCheckFailed: false,
 };
 
 export const driverLogin = createAsyncThunk(
@@ -49,6 +51,8 @@ export const driverLogin = createAsyncThunk(
 export const accessDriver = createAsyncThunk(
   "driver/access-driver",
   async (_, { rejectWithValue }) => {
+    // While the phone has not confirmed a sign-out, the old session is never used again
+    if (isSignOutPending('driver')) return rejectWithValue({ message: "Signed out", status: 401 });
     try {
       const res = await axios.get(`/driver/access-driver`);
       const data = res.data;
@@ -59,8 +63,12 @@ export const accessDriver = createAsyncThunk(
 
       return data;
     } catch (error) {
+      // In the app, a lost connection or a failed refresh check keeps the session and offers a retry
+      if (error.transient || (isNativeShell() && !error.response)) {
+        return rejectWithValue({ transient: true, message: "Connection problem" });
+      }
       // If blocked or unauthorized, remove token
-      if (error.response?.status === 401 || error.response?.status === 403) {
+      if ((error.response?.status === 401 || error.response?.status === 403) && !error.noSession) {
         await clearSession('driver').catch(() => {});
         localStorage.removeItem('driverTimezone');
       }
@@ -185,15 +193,22 @@ const driverSlice = createSlice({
       .addCase(accessDriver.pending, (state) => {
         state.loading = true;
         state.error = null;
+        state.authCheckFailed = false;
       })
       .addCase(accessDriver.fulfilled, (state, action) => {
         state.loading = false;
+        state.authCheckFailed = false;
         state.isAuthenticated = true;
         state.driver = action.payload.driver;
         state.error = null;
       })
       .addCase(accessDriver.rejected, (state, action) => {
         state.loading = false;
+        if (action.payload?.transient) {
+          // Keep whatever was known about the person; the screen offers "Try again"
+          state.authCheckFailed = true;
+          return;
+        }
         state.isAuthenticated = false;
         state.driver = null;
         // Clear token and timezone on rejection (in the mobile app only a 401 or 403 signs out, above)

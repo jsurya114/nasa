@@ -17,3 +17,8 @@
 **Tested.** `npm test` in `mobile/`: 14 of 14 pass. `npx expo config` loads in development; production with an `http` origin and `APP_ENV=staging` are both refused with a clear message; production with `https` origins works. Not tested: the app has not been started on a simulator or phone; the placeholder screen is the only UI. App icons are still Expo's defaults and need real artwork.
 
 **Risks and follow-ups.** Low. Next: the WebView container, origin allowlist, session storage in the phone's secure storage and the offline screen.
+
+## Review follow-up (Jasil's review of this pull request)
+
+- **Inherited blocker.** The three session-adapter findings from #125 are fixed there and merged into this branch (see the #125 journal entry); the 14 protocol tests here are unchanged.
+- **Mobile checks in CI (P2).** `.github/workflows/ci.yml` has a new `Mobile` job that runs on every pull request into `develop`: `npm ci`, `npm test` (the unit tests), and a build-configuration check that loads `npx expo config` for development and for production with placeholder `https` origins, and fails if a production build accepts an `http` origin or an unknown `APP_ENV`. It follows the existing rules (read-only token, no secrets, placeholder values, npm cache from `mobile/package-lock.json`). Run locally, all four configuration checks behave as expected. Not covered: the `Mobile` job on GitHub itself until this pull request runs it.
