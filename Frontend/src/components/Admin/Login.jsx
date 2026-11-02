@@ -6,6 +6,7 @@ import { adminLogin } from "../../redux/slice/admin/adminSlice.js";
 import { useNavigate } from "react-router-dom";
 import { toast } from "../../utils/toast";
 import { AiOutlineEye, AiOutlineEyeInvisible } from "react-icons/ai";
+import SignOutNotice from "../../native/SignOutNotice.jsx";
 
 
 const Login = () => {
@@ -128,6 +129,7 @@ navigate("/admin/dashboard");
         </div>
 
         <div className="px-6 sm:px-10 pt-7 pb-8 text-center">
+          <SignOutNotice area="admin" />
           <h2 className="text-2xl font-semibold tracking-tight text-ink mb-6">Login</h2>
           <form onSubmit={handleSubmit}>
             <div className="text-left mb-4">

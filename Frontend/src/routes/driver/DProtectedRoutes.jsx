@@ -2,18 +2,19 @@ import { Navigate, Outlet, useLocation } from "react-router-dom";
 import { useEffect } from "react";
 import { useSelector, useDispatch } from "react-redux";
 import { accessDriver } from "../../redux/slice/driver/driverSlice.js";
+import AuthCheckRetry from "../../native/AuthCheckRetry.jsx";
 
 function DProtectRoutes() {
     const dispatch = useDispatch()
     const location = useLocation()
-    const { isAuthenticated, driver } = useSelector((state) => state.driver)
+    const { isAuthenticated, driver, authCheckFailed } = useSelector((state) => state.driver)
     
     useEffect(() => {
         dispatch(accessDriver())
     }, [dispatch])
 
     if (isAuthenticated === null) {
-        return null;
+        return authCheckFailed ? <AuthCheckRetry onRetry={() => dispatch(accessDriver())} /> : null;
     }
 
     if (!isAuthenticated) {

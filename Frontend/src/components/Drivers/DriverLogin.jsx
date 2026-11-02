@@ -7,6 +7,7 @@ import { useNavigate } from "react-router-dom";
 import { toast } from "../../utils/toast";
 import useTranslation from "../../hooks/useTranslation.js";
 import { AiOutlineEye, AiOutlineEyeInvisible } from "react-icons/ai";
+import SignOutNotice from "../../native/SignOutNotice.jsx";
 
 const DriverLogin = () => {
   const { t } = useTranslation();
@@ -92,6 +93,7 @@ const DriverLogin = () => {
         </div>
 
         <div className="px-6 sm:px-10 pt-7 pb-8 text-center">
+          <SignOutNotice area="driver" />
           <h2 className="text-2xl font-semibold tracking-tight text-ink mb-6">Driver Login</h2>
 
           <form onSubmit={handleSubmit}>
