@@ -1,0 +1,32 @@
+# Mobile app: file pickers through the WebView, and the permissions the build ships
+
+| Field | Value |
+|---|---|
+| Date | 2026-11-02 |
+| Author | Jasil (with Claude Code) |
+| Issue / PR | `#22` / see the pull request for this branch |
+| Branch | `feat/mobile-file-pickers` (built on `feat/push-web-registration` and `chore/mobile-eas-profiles`; merge those first) |
+| Type / scope | `feat(mobile)` |
+| Files touched | `mobile/app.config.js`, `mobile/app.config.test.js`, `docs/MOBILE_APP_DESIGN.md` |
+| Reserved files touched | None |
+
+**What and why.** Items 2, 3 and 4 of the native MVP table (camera or photo picker, document picker, share sheet), and the permission rules of section 7.
+- **Decision: the file pickers use the WebView's own picker; no bridge action is built.** The web app already has `<input type="file">` for the access-code photos (`accept` images) and for the Excel uploads (`.xls`, `.xlsx`, `.csv`). Inside the app the system picker opens for them (iOS: photo library, Take Photo, Files; Android: the system chooser with the camera as one choice). Doing it through the bridge would mean sending file bytes through the page's message channel, a second upload path next to the existing authenticated one, and a copy of the upload rules in the shell. `media.pickImages`, `file.pickDocument` and `file.share` stay reserved names (the shell answers `unsupported_action`; they are not in the capability list). **No share sheet: the web app has no download or export today** (searched the frontend for downloads, blobs and response types). The design document now says this, and lists the five push actions that were missing from its action table.
+- **Camera permission.** Taking a photo from the picker needs the iOS reason text and the Android `CAMERA` permission. Both are set, with a plain reason. The photo library needs no permission.
+- **Found while checking the generated native projects (`expo prebuild`).** The build was shipping things the design says it must not:
+  - `NSFaceIDUsageDescription` (added by the secure-store plugin by default). The decision of 2 Nov was no biometric text. It is now off.
+  - `NSLocalNetworkUsageDescription` and `NSBonjourServices` (added by the development client). Kept in development builds, removed from preview and production.
+  - Android `READ_EXTERNAL_STORAGE`, `WRITE_EXTERNAL_STORAGE` and `SYSTEM_ALERT_WINDOW`, added by default and used by nothing. They are now blocked (`tools:node="remove"`). `VIBRATE` stays because notifications use it.
+
+**Database.** None.
+
+**Config and dependencies.** `mobile/app.config.js` only. No new packages.
+
+**Money impact.** None.
+
+**Tested.**
+- `npm test` in `mobile/`: 62 of 62 pass (the earlier tests, plus 3 new: only the camera is requested and the unused Android permissions are blocked in every environment; Face ID text is off; the development-only entries plugin is present in preview and production and absent in development).
+- `expo prebuild` on both platforms, for development and production (generated, then deleted): iOS has `NSCameraUsageDescription` only (plus the local-network and Bonjour entries in development); Android has `CAMERA`, `INTERNET`, `VIBRATE`, with the three unused permissions marked for removal.
+- **Not tested:** the pickers on a phone. That the iOS and Android pickers offer the camera, that a photo or an Excel file reaches the existing upload, and that blocking the Android storage permissions does not break the chooser on older Android versions (the library should use app-private storage and the system's access grants, but this was not run). If the Android chooser misbehaves on Android 12 or older, remove `READ_EXTERNAL_STORAGE` from the blocked list first. The Gradle manifest merge was not run, so the final merged manifest is unconfirmed.
+
+**Risks and follow-ups.** Apple and Google ask for the reason behind every permission: the camera reason is the text above; Data safety and privacy answers belong to the store checklist (a later pull request). A share sheet, a bridge-based picker, or both, are reasonable later only if a real need appears (an export, or the pickers failing on a device).
