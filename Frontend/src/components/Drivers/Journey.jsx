@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import { SkeletonPage, Skeleton } from "../../reuse/Skeleton.jsx";
 import { TriangleAlert } from "lucide-react";
 import Header from "../../reuse/driver/Header";
 import Nav from "../../reuse/driver/Nav";
@@ -230,12 +231,7 @@ const Journey = () => {
   // Loading state
   if (cityTypeStatus === 'loading') {
     return (
-      <div className="min-h-dvh bg-canvas text-ink flex items-center justify-center">
-        <div className="text-center">
-          <div className="w-16 h-16 border-4 border-purple-200 border-t-brand rounded-full animate-spin mx-auto mb-4" />
-          <p className="text-gray-600">{t('loading')}</p>
-        </div>
-      </div>
+      <SkeletonPage label={t('loading')} />
     );
   }
 
@@ -447,8 +443,17 @@ const Journey = () => {
           </div>
           <div>
             {journeyStatus === 'loading' && (
-              <div className="text-center py-8 text-gray-500">
-                {t('loadingJourneys')}
+              <div role="status" className="space-y-3 px-4 py-4 sm:px-6">
+                <span className="sr-only">{t('loadingJourneys')}</span>
+                {[0, 1, 2].map((i) => (
+                  <div key={i} aria-hidden="true" className="flex items-center justify-between gap-3">
+                    <div className="flex-1 space-y-2">
+                      <Skeleton className="h-4 w-1/3" />
+                      <Skeleton className="h-3 w-1/4" />
+                    </div>
+                    <Skeleton className="h-6 w-12" />
+                  </div>
+                ))}
               </div>
             )}
             {journeyStatus === 'succeeded' && journeys.length === 0 && (

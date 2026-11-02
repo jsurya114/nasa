@@ -1,4 +1,5 @@
 import React, { useEffect } from 'react';
+import { SkeletonList } from "../../reuse/Skeleton.jsx";
 import { useSelector, useDispatch } from 'react-redux';
 import { fetchAnalyticsData } from '../../redux/slice/admin/analyticsSlice';
 
@@ -87,9 +88,7 @@ const Analystic = ({ viewType, selectedDate }) => {
       </div>
 
       {loading ? (
-        <div className="flex justify-center items-center py-8">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-purple-600"></div>
-        </div>
+        <SkeletonList rows={4} label="Loading..." className="py-4" />
       ) : error ? (
         <div className="bg-red-50 border border-red-200 rounded-lg p-4 text-red-700">
           {error}
