@@ -81,6 +81,10 @@ jobs:
           # Placeholder only. No production values in CI.
           VITE_BACKEND_LOCALHOST_ROUTE: http://localhost:5000
 
+      # Vitest with jsdom (added with the mobile session adapter, issue #22). No network, no secrets.
+      - name: Tests
+        run: npm test
+
       # Non-blocking for now. Reports known problems in dependencies.
       - name: Dependency audit (non-blocking)
         run: npm audit --audit-level=high

@@ -1,7 +1,7 @@
 import { createSlice, createAsyncThunk } from "@reduxjs/toolkit"
 import axios from "../axiosInstance";
 import { isNativeShell } from "../../../native/bridge";
-import { clearBrowserTokens, clearSession, getRefreshToken, saveSession } from "../../../native/sessionStore";
+import { clearBrowserTokens, clearSession, getRefreshToken, isSignOutPending, saveSession } from "../../../native/sessionStore";
 
 const DEVICE_SIGN_IN_ERROR = "Could not sign in on this device. Please try again.";
 const DEVICE_SIGN_OUT_ERROR = "Signed out here, but the app could not confirm it on this phone. Please restart the app and sign out again.";
@@ -12,6 +12,8 @@ const initialState = {
     loading: false,
     error: null,
     isSuperAdmin: false,
+    // True when the sign-in could not be checked because of the connection (mobile app only)
+    authCheckFailed: false,
 }
 
 export const adminLogin = createAsyncThunk(
@@ -38,12 +40,18 @@ export const adminLogin = createAsyncThunk(
 export const accessAdminUser = createAsyncThunk(
     "admin/access-admin",
     async (_, { rejectWithValue }) => {
+        // While the phone has not confirmed a sign-out, the old session is never used again
+        if (isSignOutPending('admin')) return rejectWithValue("UNAUTHORIZED");
         try {
             const res = await axios.get(`/admin/access-admin`);
             return res.data;
         } catch (error) {
+            // In the app, a lost connection or a failed refresh check keeps the session and offers a retry
+            if (error.transient || (isNativeShell() && !error.response)) {
+                return rejectWithValue({ transient: true });
+            }
             // If blocked or unauthorized, clear token
-            if (error.response?.status === 401 || error.response?.status === 403) {
+            if ((error.response?.status === 401 || error.response?.status === 403) && !error.noSession) {
                 await clearSession('admin').catch(() => {});
             }
             return rejectWithValue(error.response?.data?.message || "Unable to get Users")
@@ -139,15 +147,22 @@ const adminSlice = createSlice({
             .addCase(accessAdminUser.pending, (state) => {
                 state.loading = true
                 state.error = null
+                state.authCheckFailed = false
             })
             .addCase(accessAdminUser.fulfilled, (state, action) => {
                 state.loading = false;
+                state.authCheckFailed = false;
                 state.isAuthenticated = true;
                 state.admin = action.payload.admin;
                 state.isSuperAdmin = action.payload.admin.role === 'superadmin';
             })
             .addCase(accessAdminUser.rejected, (state, action) => {
                 state.loading = false;
+                if (action.payload?.transient) {
+                    // Keep whatever was known about the person; the screen offers "Try again"
+                    state.authCheckFailed = true;
+                    return;
+                }
                 state.isAuthenticated = false;
                 // Clear token on rejection (in the mobile app only a 401 or 403 signs out, above)
                 clearBrowserTokens('admin');
