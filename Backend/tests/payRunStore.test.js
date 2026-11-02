@@ -4,6 +4,7 @@ import { randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { createEntry, voidEntry } from '../services/payroll/ledger/ledgerStore.js';
+import { lockCityPayroll } from '../services/payroll/claims/claimsStore.js';
 import { parseNewEntry } from '../services/payroll/ledger/ledgerRules.js';
 import { discardRun, finalizeRun, generateRun, getRun, setRecoveryLimit, voidRun } from '../services/payroll/payRuns/payRunStore.js';
 
@@ -118,11 +119,37 @@ test('pay runs: today\'s totals, exactly-once rows and deductions, frozen histor
 
     await t.test('the next run takes the next instalment and never the same claim, row or reimbursement again', async () => {
       await payRow(d1, '2026-11-10', '100.00', '1.92');
+      // The carrier amends the claim from 40 to 45 after 40 was already deducted: only the 5 difference is owed.
+      await db.query('UPDATE courier_claims SET superseded_at = now() WHERE id = $1', [claimId]);
+      const v2 = (await one(`INSERT INTO courier_claims (courier, claim_key, version, waybill, claim_type, claim_type_key, claim_at, original_charge, deduction_amount, import_city_id, source_file, source_sheet, source_row)
+        VALUES ('gofo', repeat('c', 64), 2, 'TESTP001', 'Damaged Item', 'damaged item', '2026-10-30 10:00', -45, 45, $1, 'synthetic-2.xlsx', 'Claims Detail', 2) RETURNING id`, [city])).id;
+      await db.query(`INSERT INTO courier_claim_matches (claim_id, status, driver_id, city_id, eligible_deduction, reason, rule_version) VALUES ($1, 'chargeable', $2, $3, 45, 'test', 'test')`, [v2, d1, city]);
       const next = (await generateRun(db, cityAdmin, { requestId: randomUUID(), cityId: city, periodStart: '2026-11-08', periodEnd: '2026-11-14', dataType: 'daily' })).run;
       const s1 = statementOf(await getRun(db, cityAdmin, next.id), d1);
-      // rows 9 Nov (999.00) and 10 Nov (98.08 net): claim already taken, reimbursement already paid, instalment 2 of 4
-      assert.deepEqual([s1.gross, s1.claim_deductions, s1.recoveries, s1.reimbursements, s1.carried_forward], ['1099.00', '0.00', '50.00', '0.00', '130.00']);
+      // rows 9 Nov (999.00) and 10 Nov: 5 more for the amended claim, reimbursement already paid, instalment 2 of 4
+      assert.deepEqual([s1.gross, s1.claim_deductions, s1.recoveries, s1.reimbursements, s1.carried_forward], ['1099.00', '5.00', '50.00', '0.00', '130.00']);
       await discardRun(db, cityAdmin, next.id, 'Test');
+    });
+
+    await t.test('a ledger void waits while a pay run for the same city is being built', async () => {
+      // A fresh city: this test's own transaction already holds the lock of `city` from the runs above.
+      const lockCity = (await one("INSERT INTO city (job, city_code, city_type) VALUES ('Test Pay Lock', 'TSTLCK', 'DAILY') RETURNING id")).id;
+      await db.query('UPDATE drivers SET city_id = $1 WHERE id = $2', [lockCity, d2]);
+      const entry = (await createEntry(db, superAdmin, parseNewEntry({ requestId: randomUUID(), driverId: d2, cityId: lockCity, type: 'expense', amount: '5', reason: 'Test entry', effectiveDate: '2026-11-01' }).entry)).entry;
+      const other = await pool.connect();
+      try {
+        await other.query('BEGIN');
+        await lockCityPayroll(other, lockCity); // as if another admin were building a run there right now
+        await savepoint(async () => {
+          await db.query("SET LOCAL statement_timeout = '400ms'");
+          await assert.rejects(voidEntry(db, superAdmin, { entryId: entry.id, requestId: randomUUID(), reason: 'Undo' }), /statement timeout/);
+        });
+      } finally {
+        await other.query('ROLLBACK');
+        other.release();
+      }
+      const voided = await voidEntry(db, superAdmin, { entryId: entry.id, requestId: randomUUID(), reason: 'Undo' });
+      assert.equal(voided.entry.entry_type, 'void');
     });
 
     await t.test('statements and lines cannot be edited or deleted; payout fields can be set', async () => {
@@ -145,10 +172,10 @@ test('pay runs: today\'s totals, exactly-once rows and deductions, frozen histor
       assert.equal(voided.run.status, 'voided');
       const live = await one('SELECT count(*)::int AS n FROM pay_statement_lines l JOIN pay_statements s ON s.id = l.statement_id WHERE s.pay_run_id = $1 AND l.active', [run.id]);
       assert.equal(live.n, 0);
-      // released: a new run can take the claim and the first instalment again
+      // released: a new run can take the claim (now its amended 45) and the first instalment again
       const redo = (await generateRun(db, cityAdmin, { requestId: randomUUID(), ...period })).run;
       const s1 = statementOf(await getRun(db, cityAdmin, redo.id), d1);
-      assert.deepEqual([s1.claim_deductions, s1.recoveries], ['40.00', '50.00']);
+      assert.deepEqual([s1.claim_deductions, s1.recoveries], ['45.00', '50.00']);
     });
 
     await t.test('a statement below zero blocks finalizing', async () => {

@@ -24,6 +24,8 @@ Exactly once:
 - **Pay rows and reimbursements:** a partial unique index lets a pay row be earned on only one live statement, and a reimbursement be paid once. A draft holds its rows, so a second run of the same period gets none.
 - **Claims and debits:** they can be recovered over several runs. Each run reads what is still owed under a row lock, and one run is built at a time per city (advisory lock), so two admins cannot take the same amount.
 - **Retries:** the same request ID returns the first run.
+- **Amended claims:** what is still owed counts deductions taken for *every* version of the claim, so a claim amended from 40 to 45 after 40 was deducted costs only 5 more (found by an automated security review).
+- **Voids versus runs:** a ledger void takes the city's payroll lock before anything else, the same lock a run is built under, so a run cannot pick up an entry that is being voided at that moment (found by an automated security review).
 
 Frozen history:
 - Statement amounts cannot change (trigger), and a check makes net = gross − insurance + reimbursements − claims − recoveries.

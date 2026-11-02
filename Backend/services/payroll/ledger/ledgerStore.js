@@ -3,7 +3,7 @@
 // that filters by city cannot be bypassed. Call createEntry and voidEntry inside a transaction.
 
 import { claimTypeKey, isExempt } from '../claims/claimRules.js';
-import { lockClaimSubject } from '../claims/claimsStore.js';
+import { lockCityPayroll, lockClaimSubject } from '../claims/claimsStore.js';
 
 export class LedgerError extends Error {
   constructor(status, message) {
@@ -95,10 +95,14 @@ export const voidEntry = async (db, admin, request) => {
   const replay = await replayOrConflict(db, admin, request.requestId, (row) => String(row.voids_entry_id) === String(request.entryId));
   if (replay) return replay;
 
+  // Take the city's payroll lock before anything else, the same one a pay run is built under, so a void and a run
+  // being built cannot pass each other: the run either sees the void, or the void sees the run's lines.
+  const { rows: where } = await db.query('SELECT city_id FROM driver_ledger_entries WHERE id = $1', [request.entryId]);
+  if (!where[0]) throw new LedgerError(404, 'entry not found');
+  await assertCityAllowed(db, admin, where[0].city_id);
+  await lockCityPayroll(db, where[0].city_id);
   const { rows } = await db.query(`SELECT ${ENTRY_COLUMNS} FROM driver_ledger_entries WHERE id = $1 FOR UPDATE`, [request.entryId]);
   const original = rows[0];
-  if (!original) throw new LedgerError(404, 'entry not found');
-  await assertCityAllowed(db, admin, original.city_id);
   if (original.entry_type === 'void') throw new LedgerError(400, 'a void cannot be voided; record a correction instead');
   const { rows: already } = await db.query('SELECT id FROM driver_ledger_entries WHERE voids_entry_id = $1', [original.id]);
   if (already.length) throw new LedgerError(409, 'this entry is already voided');

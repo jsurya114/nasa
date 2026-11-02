@@ -5,6 +5,7 @@
 
 import { calculateStatement, fromCents, RECOVERY_LIMIT_TYPES, toCents } from './payCalculator.js';
 import { LedgerError as PayrollError } from '../ledger/ledgerStore.js';
+import { lockCityPayroll } from '../claims/claimsStore.js';
 
 export { PayrollError };
 
@@ -69,7 +70,9 @@ const loadEarnings = async (db, run) => {
 const loadClaims = async (db, cityId, driverIds) => {
   const { rows } = await db.query(
     `SELECT m.claim_id, m.driver_id, to_char(c.claim_at, 'YYYY-MM-DD HH24:MI:SS') AS claim_at,
-            (m.eligible_deduction + COALESCE((SELECT SUM(l.amount) FROM pay_statement_lines l WHERE l.claim_id = m.claim_id AND l.active), 0))::text AS outstanding
+            -- Deductions already taken for ANY version of this claim count, so an amended claim is never charged twice.
+            (m.eligible_deduction + COALESCE((SELECT SUM(l.amount) FROM pay_statement_lines l JOIN courier_claims cv ON cv.id = l.claim_id
+                                               WHERE cv.claim_key = c.claim_key AND l.active), 0))::text AS outstanding
        FROM courier_claim_matches m
        JOIN courier_claims c ON c.id = m.claim_id
       WHERE m.status = 'chargeable' AND m.city_id = $1 AND m.driver_id = ANY($2::int[]) AND c.superseded_at IS NULL
@@ -139,7 +142,7 @@ export const generateRun = async (db, admin, request) => {
   }
 
   // One run is built at a time per city, so two admins cannot take the same rows or deductions.
-  await db.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 143))', [`city:${request.cityId}`]);
+  await lockCityPayroll(db, request.cityId);
   const recoveryLimit = await getRecoveryLimit(db);
   const { rows } = await db.query(
     `INSERT INTO pay_runs (request_id, city_id, period_start, period_end, data_type, recovery_limit, created_by)

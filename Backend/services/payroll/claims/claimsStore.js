@@ -27,6 +27,11 @@ export const withTransaction = async (pool, fn) => {
 export const lockClaimSubject = (db, waybill, typeKey) =>
   db.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 138))', [`${waybill}|${typeKey}`]);
 
+// One lock per city for payroll, held until the transaction ends. A pay run is built under it (#143) and a ledger void
+// takes it first (#142), so the two cannot interleave.
+export const lockCityPayroll = (db, cityId) =>
+  db.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 143))', [`city:${cityId}`]);
+
 const sameFacts = (row, claim) =>
   Number(row.original_charge).toFixed(2) === Number(claim.charge).toFixed(2) &&
   row.claim_at === claim.claimAt &&
