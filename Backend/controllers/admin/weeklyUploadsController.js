@@ -302,6 +302,13 @@ import ExcelJS from 'exceljs';
 import moment from 'moment';
 
 import { WeeklyExcelQueries } from "../../services/admin/weeklyExcelQueries.js";
+import {
+  CityAccessError,
+  assertJobsAllowed,
+  getAllowedJobs,
+  getJobsForRouteCodes,
+  isCityLimited
+} from "../../services/admin/adminCityAccess.js";
 
 import { unlink } from "fs";
 
@@ -359,7 +366,7 @@ export const weeklyExcelUpload = async (req, res) => {
 
     // console.log(`[${Date.now() - startTime}ms] File received, size: ${file.buffer.length} bytes`);
 
-    const result = await processExcelFromBuffer(file.buffer, client, startTime);
+    const result = await processExcelFromBuffer(file.buffer, client, startTime, req.user);
 
     const totalTime = Date.now() - startTime;
     // console.log(`[${totalTime}ms] ✅ Total processing completed`);
@@ -372,6 +379,9 @@ export const weeklyExcelUpload = async (req, res) => {
     });
 
   } catch (err) {
+    if (err instanceof CityAccessError) {
+      return res.status(HttpStatus.FORBIDDEN).json({ success: false, message: err.message });
+    }
     const totalTime = Date.now() - startTime;
     console.error(`[${totalTime}ms] ❌ Error:`, err.message);
     res.status(500).json({
@@ -559,7 +569,7 @@ export const weeklyExcelUpload = async (req, res) => {
 // }
 
 
-async function processExcelFromBuffer(buffer, client, startTime) {
+async function processExcelFromBuffer(buffer, client, startTime, user) {
 
   const workbook = new ExcelJS.Workbook();
   await workbook.xlsx.load(buffer);
@@ -693,6 +703,17 @@ async function processExcelFromBuffer(buffer, client, startTime) {
       totalSkipped++;
     }
   });
+
+  // A city admin may upload only a file whose routes all belong to their cities.
+  // This runs before the staging table is touched, so a refused file changes nothing.
+  if (isCityLimited(user.role)) {
+    const routeCodes = [...new Set(Array.from(aggregatedData.values(), (entry) => entry.del_route))].filter(Boolean);
+    assertJobsAllowed(
+      await getJobsForRouteCodes(routeCodes, client),
+      await getAllowedJobs(user.id, client),
+      "This file includes routes for cities outside your assigned cities. Nothing was changed."
+    );
+  }
 
   const tableName = "weeklycount";
 

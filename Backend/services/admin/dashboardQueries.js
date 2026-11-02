@@ -2,7 +2,7 @@ import pool from "../../config/db.js";
 
 export const AdminDashboardQueries = {
   // Update payment table for a specific date only
-  updatePaymentTableForDate: async (selectedDate) => {
+  updatePaymentTableForDate: async (selectedDate, allowedJobs = null) => {
     try {
       const queryStr = `
         UPDATE payment_dashboard pd
@@ -19,9 +19,10 @@ export const AdminDashboardQueries = {
         JOIN routes r ON dd.route_id = r.id
         WHERE pd.dashboard_data_id = dd.id
           AND pd.journey_date = $1::date
-          AND pd.paid = false;
+          AND pd.paid = false
+          AND ($2::text[] IS NULL OR r.job = ANY($2::text[]));
       `;
-      const result = await pool.query(queryStr, [selectedDate]);
+      const result = await pool.query(queryStr, [selectedDate, allowedJobs]);
 
       return result;
     } catch (error) {
@@ -30,7 +31,7 @@ export const AdminDashboardQueries = {
     }
   },
 
-  updatePaymentTable: async () => {
+  updatePaymentTable: async (allowedJobs = null) => {
     try {
       const queryStr = `
         UPDATE payment_dashboard pd
@@ -46,9 +47,10 @@ export const AdminDashboardQueries = {
         FROM dashboard_data dd
         JOIN routes r ON dd.route_id = r.id
         WHERE pd.dashboard_data_id = dd.id
-          AND pd.paid = false;
+          AND pd.paid = false
+          AND ($1::text[] IS NULL OR r.job = ANY($1::text[]));
       `;
-      await pool.query(queryStr);
+      await pool.query(queryStr, [allowedJobs]);
     } catch (error) {
       console.error("Error in updatePaymentTable:", error);
       throw error;
@@ -508,7 +510,7 @@ export const AdminDashboardQueries = {
   },
 
   //  UPDATED: Only pay journeys with closed = true, with optional dataType and job (city) filter
-  updateDriverPaymentStatus: async (driverName, startDate, endDate, dataType = null, job = null, paymentDate = null) => {
+  updateDriverPaymentStatus: async (driverName, startDate, endDate, dataType = null, job = null, paymentDate = null, allowedJobs = null) => {
     try {
       const whereClauses = [];
       const queryParams = [driverName];
@@ -550,6 +552,12 @@ export const AdminDashboardQueries = {
       if (job) {
         fromTables.push('routes r', 'city c');
         joinConditions.push('pd.route_id = r.id', 'r.job = c.job');
+      }
+
+      // An admin limited to some cities can only pay journeys on routes of those cities
+      if (allowedJobs) {
+        whereClauses.push(`pd.route_id IN (SELECT id FROM routes WHERE job = ANY($${queryParams.length + 1}::text[]))`);
+        queryParams.push(allowedJobs);
       }
 
       // The admin's own date when the screen sent one, otherwise the database date as before

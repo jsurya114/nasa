@@ -4,6 +4,13 @@ import HttpStatus from "../../utils/statusCodes.js";
 import XLSX from "xlsx";
 // import XlsxPopulate from 'xlsx-populate';
 import { ExcelFileQueries } from "../../services/admin/excelFileQueries.js";
+import {
+  CityAccessError,
+  assertJobsAllowed,
+  getAllowedJobs,
+  getDailyStagingJobs,
+  isCityLimited
+} from "../../services/admin/adminCityAccess.js";
 
 
 import { unlink } from "fs";
@@ -130,6 +137,16 @@ export const DailyExcelUpload = async (req, res) => {
     );
 
 
+    // A city admin may upload only a file whose deliveries all belong to their cities.
+    // Nothing is written to the deliveries yet, so refusing here rolls everything back.
+    if (isCityLimited(req.user.role)) {
+      assertJobsAllowed(
+        await getDailyStagingJobs(client),
+        await getAllowedJobs(req.user.id, client),
+        "This file includes deliveries for cities outside your assigned cities. Nothing was changed."
+      );
+    }
+
     await ExcelFileQueries.mergeDeliveriesAndExcelData(client);
 
     // 🔥 RESET old delivery results so recalculation works
@@ -169,6 +186,10 @@ export const DailyExcelUpload = async (req, res) => {
       .status(statusCode.OK)
       .json({ success: true, message: "Excel processed successfully" });
   } catch (error) {
+    if (error instanceof CityAccessError) {
+      await client.query("ROLLBACK");
+      return res.status(HttpStatus.FORBIDDEN).json({ success: false, message: error.message });
+    }
     console.error(error);
     await client.query("ROLLBACK");
     return res.status(HttpStatus.INTERNAL_SERVER_ERROR).json({
