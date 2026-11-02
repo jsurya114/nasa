@@ -3,6 +3,7 @@
 // that filters by city cannot be bypassed. Call createEntry and voidEntry inside a transaction.
 
 import { claimTypeKey, isExempt } from '../claims/claimRules.js';
+import { lockClaimSubject } from '../claims/claimsStore.js';
 
 export class LedgerError extends Error {
   constructor(status, message) {
@@ -52,6 +53,9 @@ export const createEntry = async (db, admin, entry) => {
     exempt = isExempt(found[0].city_name, entry.claimType);
     if (entry.waybill) {
       // A claim the carrier already sent is applied from the import (#141). Recording it again would charge twice.
+      // The lock (shared with the import) stops two submissions, or a submission and an import, from both passing
+      // this check at the same moment. It is released when the transaction ends.
+      await lockClaimSubject(db, entry.waybill, claimTypeKey(entry.claimType));
       const { rows: dup } = await db.query(
         `SELECT 'carrier' AS source FROM courier_claims WHERE waybill = $1 AND claim_type_key = $2 AND superseded_at IS NULL
          UNION ALL

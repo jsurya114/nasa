@@ -5,6 +5,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { createEntry, listEntries, voidEntry } from '../services/payroll/ledger/ledgerStore.js';
 import { parseNewEntry } from '../services/payroll/ledger/ledgerRules.js';
+import { lockClaimSubject } from '../services/payroll/claims/claimsStore.js';
 
 // Needs a PostgreSQL copy with the app's tables (never production). Run with PAYROLL_TEST_DB=1 and the DB_*
 // variables. Everything, the migrations included, runs in one transaction that is always rolled back.
@@ -101,6 +102,21 @@ test('the driver ledger: city access, exemption, no double entries, immutable hi
       const { balances, entries } = await listEntries(db, superAdmin, { cityId: dfw, driverId: d1 });
       assert.equal(balances[d1], '157.75', 'the voided entry no longer counts');
       assert.equal(entries.find((e) => e.id === target.entry.id).voided_by, voided.entry.id);
+    });
+
+    await t.test('while one transaction checks a waybill and claim type, no other connection can check the same one', async () => {
+      // The manual ledger and the carrier import share this lock, so their duplicate checks cannot run side by side.
+      await lockClaimSubject(db, 'TESTL009', 'damaged item');
+      const other = await pool.connect();
+      try {
+        await other.query('BEGIN');
+        const tryLock = async (subject) => (await other.query('SELECT pg_try_advisory_xact_lock(hashtextextended($1, 138)) AS got', [subject])).rows[0].got;
+        assert.equal(await tryLock('TESTL009|damaged item'), false, 'held by the first transaction');
+        assert.equal(await tryLock('TESTL009|fake pod'), true, 'another claim type is not blocked');
+      } finally {
+        await other.query('ROLLBACK');
+        other.release();
+      }
     });
 
     await t.test('history cannot be edited or deleted, even directly in the database', async () => {
