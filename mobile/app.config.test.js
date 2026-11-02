@@ -74,3 +74,53 @@ test("the development client's local-network entries are removed from preview an
   assert.equal(inline({ APP_ENV: "preview", ...HTTPS_ORIGINS }), "1");
   assert.equal(inline({ APP_ENV: "production", ...HTTPS_ORIGINS }), "1");
 });
+
+// The config object only says what is passed in; the native template and the development client add entries of their
+// own. These tests generate the real iOS project (no install, no build) and read the Info.plist that comes out.
+const fs = require("node:fs");
+const os = require("node:os");
+const path = require("node:path");
+
+const generatedInfoPlist = (env) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "nasa-prebuild-"));
+  try {
+    for (const entry of fs.readdirSync(__dirname)) {
+      if (["node_modules", "ios", "android"].includes(entry)) continue;
+      fs.cpSync(path.join(__dirname, entry), path.join(dir, entry), { recursive: true });
+    }
+    fs.symlinkSync(path.join(__dirname, "node_modules"), path.join(dir, "node_modules"));
+    execFileSync("npx", ["expo", "prebuild", "--platform", "ios", "--no-install"], {
+      cwd: dir,
+      env: { PATH: process.env.PATH, HOME: process.env.HOME, CI: "1", ...env },
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    const iosDir = path.join(dir, "ios");
+    const project = fs.readdirSync(iosDir).find((name) => fs.existsSync(path.join(iosDir, name, "Info.plist")));
+    return fs.readFileSync(path.join(iosDir, project, "Info.plist"), "utf8");
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+};
+
+const LOCAL_NETWORK_KEYS = ["NSAllowsLocalNetworking", "NSLocalNetworkUsageDescription", "NSBonjourServices"];
+
+test("the generated development Info.plist allows local networking", { timeout: 180000 }, () => {
+  const plist = generatedInfoPlist({ APP_ENV: "development" });
+  assert.match(plist, /NSAllowsLocalNetworking/);
+});
+
+for (const appEnv of ["preview", "production"]) {
+  test(`the generated ${appEnv} Info.plist carries no local-network exception`, { timeout: 180000 }, () => {
+    const plist = generatedInfoPlist({ APP_ENV: appEnv, ...HTTPS_ORIGINS });
+    for (const key of LOCAL_NETWORK_KEYS) assert.doesNotMatch(plist, new RegExp(key), `${key} is in the ${appEnv} plist`);
+    assert.match(plist, /NSAllowsArbitraryLoads<\/key>\s*<false\/>/);
+  });
+}
+
+test("every generated Info.plist has only the camera reason, and no Face ID text", { timeout: 180000 }, () => {
+  for (const env of [{ APP_ENV: "development" }, { APP_ENV: "preview", ...HTTPS_ORIGINS }, { APP_ENV: "production", ...HTTPS_ORIGINS }]) {
+    const plist = generatedInfoPlist(env);
+    const reasons = [...plist.matchAll(/<key>(NS\w+UsageDescription)<\/key>/g)].map((m) => m[1]).filter((k) => k !== "NSLocalNetworkUsageDescription");
+    assert.deepEqual(reasons, ["NSCameraUsageDescription"], `${env.APP_ENV}: ${reasons.join(", ")}`);
+  }
+});
