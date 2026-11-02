@@ -1,5 +1,6 @@
 import express from 'express'
 import cors from 'cors'
+import compression from 'compression'
 import dotenv from 'dotenv'
 import pool from './config/db.js';
 import adminRoutes from './routes/adminRoutes.js'
@@ -31,6 +32,9 @@ app.use(cors({
   origin: process.env.FRONTEND_URL,
   credentials: false
 }))
+
+// Gzip JSON responses over 1 KB. Excel downloads and other already-compressed types are skipped by default.
+app.use(compression({ threshold: 1024 }));
 
 app.use(express.json({ limit: "50mb" }));
 app.use(express.urlencoded({ limit: "50mb", extended: true }));
