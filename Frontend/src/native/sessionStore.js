@@ -58,6 +58,7 @@ export const subscribeSignOut = (listener) => {
 export const signOutSnapshot = () => AREAS.map((area) => (isSignOutFailed(area) ? area : "")).join("|");
 const refreshing = new Map();
 const clearing = new Map();
+const signOutHooks = new Set();
 const retriedPending = new Set();
 let hydration = null;
 
@@ -144,6 +145,22 @@ export const refreshInApp = (area) => {
   return refreshing.get(area);
 };
 
+// App only. `hook({ area, accessToken })` runs at the start of an in-app sign-out with the access token this page still
+// holds, so one last authenticated request can be sent (for example removing this phone's push registration). It is
+// not waited for and its failure is ignored: signing out is never delayed or blocked by it.
+export const onSignOut = (hook) => {
+  signOutHooks.add(hook);
+  return () => signOutHooks.delete(hook);
+};
+
+const runSignOutHooks = (area, accessToken) => {
+  signOutHooks.forEach((hook) => {
+    Promise.resolve()
+      .then(() => hook({ area, accessToken }))
+      .catch(() => {});
+  });
+};
+
 // Sign out of one area. In the app the shell also wipes its copy and revokes the refresh token on the server.
 // This page is signed out immediately. If the shell cannot be reached (after one retry) this rejects, so the
 // caller can tell the person that the phone may still hold a session.
@@ -157,6 +174,7 @@ export const clearSession = (area) => {
   // sign-out) waits for the one already running instead of sending another.
   if (clearing.has(area)) return clearing.get(area);
 
+  runSignOutHooks(area, memory[area]);
   generation[area] += 1;
   memory[area] = null;
   refreshing.delete(area);
