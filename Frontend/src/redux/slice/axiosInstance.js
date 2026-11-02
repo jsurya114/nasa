@@ -113,7 +113,7 @@ axios.interceptors.response.use(
         }
       } catch {
         // If refresh fails, sign out of this area only. The other area keeps its session.
-        await clearSession(area);
+        await clearSession(area).catch(() => {});
         if (area === 'driver') {
           localStorage.removeItem('driverTimezone');
         }

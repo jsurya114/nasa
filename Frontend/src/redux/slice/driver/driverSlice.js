@@ -4,6 +4,7 @@ import { isNativeShell } from "../../../native/bridge";
 import { clearBrowserTokens, clearSession, getRefreshToken, saveSession } from "../../../native/sessionStore";
 
 const DEVICE_SIGN_IN_ERROR = "Could not sign in on this device. Please try again.";
+const DEVICE_SIGN_OUT_ERROR = "Signed out here, but the app could not confirm it on this phone. Please restart the app and sign out again.";
 
 const initialState = {
   driver: null,
@@ -60,7 +61,7 @@ export const accessDriver = createAsyncThunk(
     } catch (error) {
       // If blocked or unauthorized, remove token
       if (error.response?.status === 401 || error.response?.status === 403) {
-        await clearSession('driver');
+        await clearSession('driver').catch(() => {});
         localStorage.removeItem('driverTimezone');
       }
       return rejectWithValue({
@@ -77,9 +78,13 @@ export const driverLogout = createAsyncThunk(
     try {
       // In the mobile app the shell revokes the refresh token on the server and clears its copy.
       if (isNativeShell()) {
-        await clearSession('driver');
         localStorage.removeItem('driverTimezone');
         localStorage.removeItem('lastActivity');
+        try {
+          await clearSession('driver');
+        } catch {
+          return rejectWithValue({ message: DEVICE_SIGN_OUT_ERROR });
+        }
         return {};
       }
       // Send the refresh token too, so the server can revoke it.
@@ -92,7 +97,7 @@ export const driverLogout = createAsyncThunk(
       return res.data;
     } catch (error) {
       // Ensure tokens are removed even on error
-      await clearSession('driver');
+      await clearSession('driver').catch(() => {});
       localStorage.removeItem('driverTimezone');
       localStorage.removeItem('lastActivity');
       return rejectWithValue({ message: error.response?.data?.message || error.message || "Network error" });
@@ -123,7 +128,7 @@ const driverSlice = createSlice({
       state.driver = null;
       state.isAuthenticated = false;
       state.error = null;
-      clearSession('driver');
+      clearSession('driver').catch(() => {});
       localStorage.removeItem('driverTimezone');
     },
     setDriver: (state, action) => {

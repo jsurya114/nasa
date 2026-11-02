@@ -4,6 +4,7 @@ import { isNativeShell } from "../../../native/bridge";
 import { clearBrowserTokens, clearSession, getRefreshToken, saveSession } from "../../../native/sessionStore";
 
 const DEVICE_SIGN_IN_ERROR = "Could not sign in on this device. Please try again.";
+const DEVICE_SIGN_OUT_ERROR = "Signed out here, but the app could not confirm it on this phone. Please restart the app and sign out again.";
 
 const initialState = {
     admin: null,
@@ -43,7 +44,7 @@ export const accessAdminUser = createAsyncThunk(
         } catch (error) {
             // If blocked or unauthorized, clear token
             if (error.response?.status === 401 || error.response?.status === 403) {
-                await clearSession('admin');
+                await clearSession('admin').catch(() => {});
             }
             return rejectWithValue(error.response?.data?.message || "Unable to get Users")
         }
@@ -56,8 +57,12 @@ export const adminLogout = createAsyncThunk(
         try {
             // In the mobile app the shell revokes the refresh token on the server and clears its copy.
             if (isNativeShell()) {
-                await clearSession('admin');
                 localStorage.removeItem('lastActivity');
+                try {
+                    await clearSession('admin');
+                } catch {
+                    return rejectWithValue(DEVICE_SIGN_OUT_ERROR);
+                }
                 return {};
             }
             // Send the refresh token too, so the server can revoke it.
@@ -69,7 +74,7 @@ export const adminLogout = createAsyncThunk(
             return res.data;
         } catch (error) {
             // Ensure tokens are removed even on error
-            await clearSession('admin');
+            await clearSession('admin').catch(() => {});
             localStorage.removeItem('lastActivity');
             return rejectWithValue(error.response?.data?.message || error.message)
         }
@@ -88,7 +93,7 @@ const adminSlice = createSlice({
             state.isAuthenticated = false;
             state.admin = null;
             state.isSuperAdmin = false;
-            clearSession('admin');
+            clearSession('admin').catch(() => {});
         }
     },
     extraReducers: (builder) => {

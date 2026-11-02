@@ -15,17 +15,24 @@ const memory = { admin: null, driver: null };
 const refreshing = new Map();
 let hydration = null;
 
+// Goes up every time an area signs in or out. A slow reply that started before that is ignored, so a refresh
+// that was still running when someone signed out can never put a token back.
+const generation = { admin: 0, driver: 0 };
+
 // Asks the shell once for the access tokens it already holds (after an app restart).
 const hydrate = () => {
   if (!hydration) {
     hydration = Promise.all(
       AREAS.map(async (area) => {
+        const started = generation[area];
+        let token = null;
         try {
           const data = await callNative("session.get", { area }, { timeoutMs: SESSION_GET_TIMEOUT_MS });
-          memory[area] = typeof data?.accessToken === "string" ? data.accessToken : null;
+          token = typeof data?.accessToken === "string" ? data.accessToken : null;
         } catch {
-          memory[area] = null;
+          token = null;
         }
+        if (generation[area] === started) memory[area] = token;
       })
     );
   }
@@ -49,6 +56,8 @@ export const saveSession = async (area, { accessToken, refreshToken }) => {
     return;
   }
   await hydrate();
+  generation[area] += 1;
+  refreshing.delete(area);
   await callNative("session.set", { area, accessToken, refreshToken });
   memory[area] = accessToken;
 };
@@ -63,30 +72,38 @@ export const saveRotatedTokens = (area, { accessToken, refreshToken }) => {
 // Several requests failing at once share one refresh.
 export const refreshInApp = (area) => {
   if (!refreshing.has(area)) {
+    const started = generation[area];
     const attempt = callNative("session.refresh", { area })
       .then((data) => {
         if (typeof data?.accessToken !== "string") throw new Error("refresh_failed");
+        if (generation[area] !== started) throw new Error("signed_out");
         memory[area] = data.accessToken;
         return data.accessToken;
       })
-      .finally(() => refreshing.delete(area));
+      .finally(() => {
+        if (refreshing.get(area) === attempt) refreshing.delete(area);
+      });
     refreshing.set(area, attempt);
   }
   return refreshing.get(area);
 };
 
-// Sign out of one area. In the app the shell also revokes the refresh token on the server and wipes its copy.
+// Sign out of one area. In the app the shell also wipes its copy and revokes the refresh token on the server.
+// This page is signed out immediately. If the shell cannot be reached (after one retry) this rejects, so the
+// caller can tell the person that the phone may still hold a session.
 export const clearSession = async (area) => {
   if (!isNativeShell()) {
     localStorage.removeItem(`${area}Token`);
     localStorage.removeItem(`${area}RefreshToken`);
     return;
   }
+  generation[area] += 1;
   memory[area] = null;
+  refreshing.delete(area);
   try {
     await callNative("session.clear", { area });
   } catch {
-    // The page is signed out either way; the shell removes its copy on its next start if it was unreachable.
+    await callNative("session.clear", { area });
   }
 };
 
