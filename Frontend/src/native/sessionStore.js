@@ -43,12 +43,21 @@ const writePending = (area, state) => {
 export const isSignOutPending = (area) => isNativeShell() && readPending(area);
 // True only once the phone failed to confirm it. This is what the sign-in screen tells the person about.
 export const isSignOutFailed = (area) => isNativeShell() && readState(area) === "2";
+// Finishes a sign-out that was interrupted (the page was closed or reloaded while it ran) or that failed earlier.
+// At most once per page load and area, and never restores the old session. If the shell still cannot confirm,
+// the state becomes "failed" and the sign-in screen shows the notice with Try again.
+export const recoverPendingSignOut = (area) => {
+  if (!isSignOutPending(area) || retriedPending.has(area)) return;
+  retriedPending.add(area);
+  clearSession(area).catch(() => {});
+};
 export const subscribeSignOut = (listener) => {
   signOutListeners.add(listener);
   return () => signOutListeners.delete(listener);
 };
 export const signOutSnapshot = () => AREAS.map((area) => (isSignOutFailed(area) ? area : "")).join("|");
 const refreshing = new Map();
+const clearing = new Map();
 const retriedPending = new Set();
 let hydration = null;
 
@@ -82,10 +91,7 @@ export const getAccessToken = async (area) => {
   if (!isNativeShell()) return localStorage.getItem(`${area}Token`);
   if (readPending(area)) {
     // Never restore it. Try to finish the sign-out, once per page load.
-    if (!retriedPending.has(area)) {
-      retriedPending.add(area);
-      clearSession(area).catch(() => {});
-    }
+    recoverPendingSignOut(area);
     return null;
   }
   await hydrate();
@@ -141,28 +147,38 @@ export const refreshInApp = (area) => {
 // Sign out of one area. In the app the shell also wipes its copy and revokes the refresh token on the server.
 // This page is signed out immediately. If the shell cannot be reached (after one retry) this rejects, so the
 // caller can tell the person that the phone may still hold a session.
-export const clearSession = async (area) => {
+export const clearSession = (area) => {
   if (!isNativeShell()) {
     localStorage.removeItem(`${area}Token`);
     localStorage.removeItem(`${area}RefreshToken`);
-    return;
+    return Promise.resolve();
   }
+  // One sign-out at a time per area: a second caller (for example the route check right after the header's
+  // sign-out) waits for the one already running instead of sending another.
+  if (clearing.has(area)) return clearing.get(area);
+
   generation[area] += 1;
   memory[area] = null;
   refreshing.delete(area);
   // Pending until the shell confirms. If it never does, the flag stays and blocks any restore.
   writePending(area, "1");
-  try {
+  const run = (async () => {
     try {
-      await callNative("session.clear", { area });
-    } catch {
-      await callNative("session.clear", { area });
+      try {
+        await callNative("session.clear", { area });
+      } catch {
+        await callNative("session.clear", { area });
+      }
+    } catch (error) {
+      writePending(area, "2");
+      throw error;
     }
-  } catch (error) {
-    writePending(area, "2");
-    throw error;
-  }
-  writePending(area, null);
+    writePending(area, null);
+  })().finally(() => {
+    if (clearing.get(area) === run) clearing.delete(area);
+  });
+  clearing.set(area, run);
+  return run;
 };
 
 // Browser only, for places that used to remove the tokens after any failed check. In the app a failed check

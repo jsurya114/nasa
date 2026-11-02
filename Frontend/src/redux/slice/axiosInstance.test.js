@@ -81,6 +81,7 @@ describe("mobile app: temporary refresh problems keep the session", () => {
     const error = await result;
     expect(error.transient).toBe(true);
     expect(shell.count("session.clear")).toBe(0);
+    expect(redirects).toEqual([]);
   });
 });
 
@@ -93,6 +94,7 @@ describe("mobile app: refresh outcomes", () => {
     const response = await axios.get("/driver/access-driver");
     expect(response.status).toBe(200);
     expect(net.calls.map((c) => c.authorization)).toEqual(["Bearer stale", "Bearer good"]);
+    expect(redirects).toEqual([]);
   });
 
   it("signs out of that area only when the server refused the session", async () => {
@@ -127,6 +129,7 @@ describe("normal browser: unchanged", () => {
     expect(localStorage.getItem("driverToken")).toBe("good");
     expect(localStorage.getItem("driverRefreshToken")).toBe("r2");
     expect(net.calls.some((c) => c.url.includes("/refresh-token"))).toBe(true);
+    expect(redirects).toEqual([]);
   });
 
   it("signs out and goes to the login page when the refresh token is refused", async () => {

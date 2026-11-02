@@ -23,6 +23,7 @@ const mount = async (initialPath) => {
   const { default: DProtectRoutes } = await import("./driver/DProtectedRoutes.jsx");
   const { default: DPublicRoutes } = await import("./driver/DPublicRoutes.jsx");
   const { default: ProtectedRoutes } = await import("./admin/ProtectedRoute.jsx");
+  const { default: AdminPublicOnlyRoute } = await import("./admin/PublicOnlyRoute.jsx");
   const { default: SignOutNotice } = await import("../native/SignOutNotice.jsx");
   const { default: DriverHeader } = await import("../reuse/driver/Header.jsx");
 
@@ -59,7 +60,17 @@ const mount = async (initialPath) => {
           <Route element={<ProtectedRoutes />}>
             <Route path="/admin/dashboard" element={<div>Admin dashboard</div>} />
           </Route>
-          <Route path="/admin/login" element={<div>Admin login form</div>} />
+          <Route element={<AdminPublicOnlyRoute />}>
+            <Route
+              path="/admin/login"
+              element={
+                <div>
+                  <SignOutNotice area="admin" />
+                  Admin login form
+                </div>
+              }
+            />
+          </Route>
         </Routes>
       </MemoryRouter>
     </Provider>
@@ -193,4 +204,60 @@ describe("signing out through the real driver header", () => {
     await new Promise((r) => setTimeout(r, 100));
     expect(screen.queryByText("Sign-out not confirmed")).toBeNull();
   });
+});
+
+// A sign-out that was interrupted (the page closed while it ran, state "1") or that failed earlier (state "2"),
+// then the app is opened again. Through the real public route of each area, never by calling the store directly.
+describe("restarting the app with an unfinished sign-out", () => {
+  const areas = [
+    { area: "driver", path: "/driver/login", form: "Driver login form", dashboard: "Driver dashboard", accessUrl: "access-driver" },
+    { area: "admin", path: "/admin/login", form: "Admin login form", dashboard: "Admin dashboard", accessUrl: "access-admin" },
+  ];
+
+  for (const { area, path, form, dashboard, accessUrl } of areas) {
+    for (const state of ["1", "2"]) {
+      const key = `nasa.signOutPending.${area}`;
+      const seed = (shell) => {
+        localStorage.setItem(key, state);
+        // the shell would still hand back a session: it must not be used
+        shell.set("session.get", { accessToken: GOOD });
+        shell.set("session.refresh", { accessToken: GOOD });
+      };
+
+      it(`${area}, saved state ${state}: finishes the sign-out by itself and shows the sign-in form`, async () => {
+        const shell = installShell({ "session.clear": {} });
+        const net = await installServer(accessServer());
+        seed(shell);
+        await mount(path);
+
+        expect(await screen.findByText(form)).toBeTruthy();
+        await waitFor(() => expect(shell.count("session.clear")).toBe(1));
+        await waitFor(() => expect(localStorage.getItem(key)).toBeNull());
+        expect(screen.queryByText("Sign-out not confirmed")).toBeNull();
+        expect(screen.queryByText(dashboard)).toBeNull();
+        expect(net.calls.filter((c) => c.url.includes(accessUrl))).toHaveLength(0);
+        expect(shell.count("session.refresh")).toBe(0);
+      });
+
+      it(`${area}, saved state ${state}: when the phone still cannot confirm, shows the notice and can retry`, async () => {
+        const shell = installShell({ "session.clear": { error: "native_error" } });
+        const net = await installServer(accessServer());
+        seed(shell);
+        await mount(path);
+
+        expect(await screen.findByText(form)).toBeTruthy();
+        expect(await screen.findByText("Sign-out not confirmed")).toBeTruthy();
+        expect(localStorage.getItem(key)).toBe("2");
+        expect(shell.count("session.clear")).toBe(2); // one recovery: one try and its retry
+        expect(screen.queryByText(dashboard)).toBeNull();
+        expect(net.calls.filter((c) => c.url.includes(accessUrl))).toHaveLength(0);
+
+        shell.set("session.clear", {});
+        fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+        await waitFor(() => expect(screen.queryByText("Sign-out not confirmed")).toBeNull());
+        expect(localStorage.getItem(key)).toBeNull();
+        expect(screen.getByText(form)).toBeTruthy();
+      });
+    }
+  }
 });
