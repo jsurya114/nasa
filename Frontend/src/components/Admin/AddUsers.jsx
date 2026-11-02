@@ -92,12 +92,12 @@ const AddUsers = () => {
   };
 
   return (
-    <div className="min-h-screen bg-gray-100 text-gray-900 font-poppins">
+    <div className="min-h-dvh bg-canvas text-ink">
       <Header />
 
       {/* Toggle Switch */}
       <div className="flex items-center justify-center pt-6 pb-4">
-        <div className="relative bg-white rounded-full p-1 shadow-md border border-gray-200">
+        <div className="relative bg-white rounded-full p-1 shadow-md border border-line">
           <div
             className={`absolute top-1 bottom-1 bg-purple-600 rounded-full transition-all duration-300 ${
               activeTab === "drivers"
@@ -154,7 +154,7 @@ const AddUsers = () => {
         {activeTab === "drivers" ? (
           <div className="space-y-6">
             {/* Add / Edit Driver */}
-            <div className="bg-white border border-gray-200 rounded-xl shadow-sm p-4 sm:p-6">
+            <div className="card-surface p-4 sm:p-6">
               <div className="flex items-center justify-between mb-4">
                 <h2 className="text-xl font-bold text-gray-800">
                   {editDriver ? "Edit Driver" : "Add New Driver"}
@@ -178,8 +178,8 @@ const AddUsers = () => {
             </div>
 
             {/* Drivers List */}
-            <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
-              <div className="bg-gray-50 border-b border-gray-200 px-4 sm:px-6 py-4">
+            <div className="card-surface overflow-hidden">
+              <div className="bg-gray-50 border-b border-line px-4 sm:px-6 py-4">
                 <h3 className="text-lg font-semibold text-gray-800">
                   All Drivers
                 </h3>
@@ -195,7 +195,7 @@ const AddUsers = () => {
             {isSuperAdmin ? (
               <div className="space-y-6">
                 {/* Add / Edit Admin */}
-                <div className="bg-white border border-gray-200 rounded-xl shadow-sm p-4 sm:p-6">
+                <div className="card-surface p-4 sm:p-6">
                   <div className="flex items-center justify-between mb-4">
                     <h2 className="text-xl font-bold text-gray-800">
                       {editAdmin ? "Edit Admin" : "Add New Admin"}
@@ -219,8 +219,8 @@ const AddUsers = () => {
                 </div>
 
                 {/* Admins List */}
-                <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
-                  <div className="bg-gray-50 border-b border-gray-200 px-4 sm:px-6 py-4">
+                <div className="card-surface overflow-hidden">
+                  <div className="bg-gray-50 border-b border-line px-4 sm:px-6 py-4">
                     <h3 className="text-lg font-semibold text-gray-800">
                       All Administrators
                     </h3>

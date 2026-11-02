@@ -28,7 +28,7 @@ function AdminsList({ onEdit }) {
   }
 
   return (
-    <section className="bg-white rounded-xl shadow p-4">
+    <section className="card-surface p-4">
       <h2 className="font-bold text-lg mb-4">Administrators</h2>
 
       {!isSuperAdmin && (
@@ -45,7 +45,7 @@ function AdminsList({ onEdit }) {
             <thead>
               <tr className="bg-gray-50 text-left">
                 {["Sl No", "Name", "Email", "Role", "Cities", "Status", "Actions"].map((head, i) => (
-                  <th key={i} className="px-3 py-2 border-b border-gray-200">
+                  <th key={i} className="px-3 py-2 border-b border-line">
                     {head}
                   </th>
                 ))}

@@ -68,7 +68,7 @@ function DriversList({ onEdit }) {
   const hasActiveFilters = localSearchTerm || (localSelectedCity && localSelectedCity !== "All");
 
   return (
-    <section className="bg-white rounded-xl shadow p-4">
+    <section className="card-surface p-4">
       {/* Search and Filter Section */}
       <div className="mb-4 space-y-3">
         <div className="flex flex-col sm:flex-row gap-3">
@@ -172,7 +172,7 @@ function DriversList({ onEdit }) {
             <tr className="bg-gray-50 text-left">
               {["Sl No", "Driver Code", "Name", "Email", "Phone", "City", "Status", "Actions"].map(
                 (head, i) => (
-                  <th key={i} className="px-3 py-2 border-b border-gray-200">
+                  <th key={i} className="px-3 py-2 border-b border-line">
                     {head}
                   </th>
                 )

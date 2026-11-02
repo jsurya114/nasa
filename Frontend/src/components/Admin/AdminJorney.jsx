@@ -659,14 +659,14 @@ useEffect(() => {
     });
   }, [paginatedJourneys, editableJourneyId, formData, handleEdit, handleCancel, handleSave, handleChange, handleDelete, editValidationErrors]);
   return (
-    <div className="min-h-screen bg-gradient-to-br from-purple-50 via-white to-purple-50">
+    <div className="min-h-dvh bg-canvas">
       <Header />
 
       <main className="max-w-[1450px] mx-auto p-4 pt-16 pb-40">
-        <div className="flex justify-between items-center mb-4">
-          <h1 className="text-2xl font-semibold">All Driver Journeys</h1>
+        <div className="flex flex-wrap justify-between items-center gap-3 mb-4">
+          <h1 className="text-2xl font-semibold tracking-tight text-ink">All Driver Journeys</h1>
 
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-3">
             <button
               onClick={() => navigate("/admin/dashboard")}
               className="bg-gray-600 text-white px-4 py-2 rounded-lg hover:bg-gray-700 flex items-center gap-2 transition-colors"
@@ -1022,7 +1022,7 @@ useEffect(() => {
         <div className="bg-white rounded-xl shadow-sm overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full table-auto border-collapse text-sm">
-              <thead className="bg-gradient-to-r from-gray-50 to-gray-100 border-b-2 border-gray-200">
+              <thead className="bg-gradient-to-r from-gray-50 to-gray-100 border-b-2 border-line">
                 <tr>
                   <th className="px-4 py-3 text-left font-semibold text-gray-700">Driver</th>
                   <th className="px-4 py-3 text-left font-semibold text-gray-700">Date</th>
@@ -1065,7 +1065,7 @@ useEffect(() => {
             </table>
           </div>
           {paginatedStatus === "succeeded" && paginatedJourneys.length > 0 && (
-            <div className="bg-gradient-to-r from-gray-50 to-gray-100 border-t-2 border-gray-200">
+            <div className="bg-gradient-to-r from-gray-50 to-gray-100 border-t-2 border-line">
               <div className="px-4 sm:px-6 py-4">
                 <div className="flex flex-col sm:flex-row justify-between items-center gap-4 mb-4">
                   <div className="flex items-center gap-3">
@@ -1173,7 +1173,7 @@ useEffect(() => {
           ></div>
           
           <div className="flex min-h-full items-center justify-center p-4">
-            <div className="relative bg-white rounded-lg shadow-xl max-w-md w-full p-6 transform transition-all">
+            <div className="relative bg-white rounded-3xl shadow-[var(--shadow-float)] max-w-md w-full p-6 transform transition-all">
               <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-red-100 mb-4">
                 <svg
                   className="h-6 w-6 text-red-600"
