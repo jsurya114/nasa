@@ -4,6 +4,7 @@ import HttpStatus from "../../utils/statusCodes.js";
 import { parseClientDate, resolveToday } from "../../utils/businessDate.js";
 import logger from "../../utils/logger.js";
 import { UploadBusyError } from "../../services/admin/uploadSafety.js";
+import { notifyDriverPaid } from "../../services/push/pushEvents.js";
 import {
   CityAccessError,
   assertJobsAllowed,
@@ -265,6 +266,8 @@ export const payDriver = async (req, res) => {
         warning: "Only journeys with closed status 'Yes' can be marked as paid"
       });
     }
+
+    notifyDriverPaid(driverName);
 
     return res.status(HttpStatus.OK).json({
       success: true,

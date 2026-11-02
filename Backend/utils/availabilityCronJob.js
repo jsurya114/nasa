@@ -1,6 +1,7 @@
 import cron from 'node-cron';
 import pool from '../config/db.js';
 import logger from './logger.js';
+import { notifyAvailabilityReset } from '../services/push/pushEvents.js';
 
 /**
  * Check if it's currently Sunday 12:00 PM (noon) in a given timezone
@@ -45,7 +46,7 @@ const isSundayNoonInTimezone = (timezone) => {
 /**
  * Reset availability for all enabled drivers in a specific timezone
  */
-const resetDriversInTimezone = async (timezone) => {
+export const resetDriversInTimezone = async (timezone) => {
   try {
     const result = await pool.query(
       `UPDATE drivers
@@ -66,6 +67,7 @@ const resetDriversInTimezone = async (timezone) => {
     if (result.rowCount > 0) {
       logger.info('Reset enabled drivers', { timezone, count: result.rowCount });
       logger.debug('Reset driver ids', { timezone, ids: result.rows.map(driver => driver.id) });
+      notifyAvailabilityReset(result.rows.map(driver => driver.id));
     }
     
     return result.rowCount;

@@ -2,6 +2,7 @@
 import accessCodeQueries from "../../services/driver/accessCodeQueries.js";
 import { translateError } from "../../utils/backendI18n.js";
 import logger from '../../utils/logger.js';
+import { notifyAccessCodeSubmitted } from '../../services/push/pushEvents.js';
 
 // Helper to get language from request
 const getLang = (req) => {
@@ -74,6 +75,8 @@ export const createAccessCode = async (req, res) => {
       access_code, 
       imageUrls
     );
+
+    notifyAccessCodeSubmitted(req.driver.id);
 
     // ✅ Return Cloudinary URLs for client-side verification
     const imageFiles = files.map((f) => ({
