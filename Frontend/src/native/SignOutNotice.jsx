@@ -1,6 +1,6 @@
 import { useState, useSyncExternalStore } from "react";
 import useTranslation from "../hooks/useTranslation.js";
-import { clearSession, isSignOutPending, signOutSnapshot, subscribeSignOut } from "./sessionStore";
+import { clearSession, isSignOutFailed, signOutSnapshot, subscribeSignOut } from "./sessionStore";
 
 // Stays on the sign-in screen while the phone has not confirmed that a sign-out removed the session.
 // Until it does, the old session is never restored, and "Try again" repeats the sign-out.
@@ -9,7 +9,7 @@ export default function SignOutNotice({ area }) {
   const [busy, setBusy] = useState(false);
   useSyncExternalStore(subscribeSignOut, signOutSnapshot, signOutSnapshot);
 
-  if (!isSignOutPending(area)) return null;
+  if (!isSignOutFailed(area)) return null;
 
   const retry = async () => {
     setBusy(true);

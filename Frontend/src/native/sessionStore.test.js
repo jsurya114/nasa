@@ -77,7 +77,8 @@ describe("inside the mobile app", () => {
     expect(shell.count("session.clear")).toBe(2);
     expect(store.isSignOutPending("driver")).toBe(true);
     // the flag survives a page reload (it is not a credential)
-    expect(localStorage.getItem("nasa.signOutPending.driver")).toBe("1");
+    expect(store.isSignOutFailed("driver")).toBe(true);
+    expect(localStorage.getItem("nasa.signOutPending.driver")).toBe("2");
     // the old session is never restored while it is pending, even though the shell still offers one
     expect(await store.getAccessToken("driver")).toBeNull();
     await expect(store.refreshInApp("driver")).rejects.toMatchObject({ code: "signed_out" });
@@ -103,11 +104,27 @@ describe("inside the mobile app", () => {
     shell.set("session.clear", {});
     await store.clearSession("driver");
     expect(store.isSignOutPending("driver")).toBe(false);
+    expect(store.isSignOutFailed("driver")).toBe(false);
 
     shell.set("session.clear", { error: "native_error" });
     await store.clearSession("admin").catch(() => {});
     expect(store.isSignOutPending("admin")).toBe(true);
     await store.saveSession("admin", { accessToken: "new", refreshToken: "newr" });
     expect(store.isSignOutPending("admin")).toBe(false);
+  });
+
+  it("does not tell the person about a sign-out that is still in progress, only about one that failed", async () => {
+    const shell = installShell({ "session.clear": "silent" });
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    const store = await load();
+    const clearing = store.clearSession("driver").catch((e) => e);
+    await vi.advanceTimersByTimeAsync(1000);
+    // the shell has not answered yet: restore is blocked, but nothing is shown
+    expect(store.isSignOutPending("driver")).toBe(true);
+    expect(store.isSignOutFailed("driver")).toBe(false);
+    await vi.advanceTimersByTimeAsync(25000);
+    expect((await clearing).code).toBe("timeout");
+    expect(shell.count("session.clear")).toBe(2);
+    expect(store.isSignOutFailed("driver")).toBe(true);
   });
 });
