@@ -1,3 +1,5 @@
+const { withInfoPlist } = require("expo/config-plugins");
+
 // Build configuration. Everything that differs between development, preview (staging) and production
 // comes from environment variables set by the EAS build profile. No secrets live here.
 
@@ -26,6 +28,17 @@ const appId = process.env.NASA_APP_ID || "com.example.nasalogistics";
 // builds keep both platforms' default of refusing it.
 const isDevelopment = appEnv === "development";
 
+// The native iOS template itself ships NSAllowsLocalNetworking, and the development client adds its local-network
+// and Bonjour entries, so leaving the setting out of `infoPlist` is not enough: the generated Info.plist keeps them.
+// Outside development they are removed from the generated file, leaving iOS's default of refusing plain http.
+const withoutLocalNetworkExceptions = (config) =>
+  withInfoPlist(config, (c) => {
+    if (c.modResults.NSAppTransportSecurity) delete c.modResults.NSAppTransportSecurity.NSAllowsLocalNetworking;
+    delete c.modResults.NSLocalNetworkUsageDescription;
+    delete c.modResults.NSBonjourServices;
+    return c;
+  });
+
 module.exports = {
   expo: {
     name: appEnv === "production" ? "NASA Logistics" : `NASA Logistics (${appEnv})`,
@@ -48,7 +61,11 @@ module.exports = {
         monochromeImage: "./assets/android-icon-monochrome.png",
       },
     },
-    plugins: ["expo-secure-store", ["expo-build-properties", { android: { usesCleartextTraffic: isDevelopment } }]],
+    plugins: [
+      "expo-secure-store",
+      ["expo-build-properties", { android: { usesCleartextTraffic: isDevelopment } }],
+      ...(isDevelopment ? [] : [withoutLocalNetworkExceptions]),
+    ],
     extra: { appEnv, webOrigin, apiOrigin },
   },
 };
