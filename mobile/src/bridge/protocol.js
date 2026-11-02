@@ -3,6 +3,7 @@
 
 const BRIDGE_VERSION = 1;
 const REPLY_EVENT = "nasa-native-reply";
+const EVENT_EVENT = "nasa-native-event";
 const AREAS = ["admin", "driver"];
 
 const MAX_MESSAGE_LENGTH = 20000;
@@ -41,6 +42,11 @@ const PAYLOAD_RULES = {
   "session.refresh": (p) => hasOnly(p, ["area"]) && AREAS.includes(p.area),
   "session.clear": (p) => hasOnly(p, ["area"]) && AREAS.includes(p.area),
   "link.openExternal": (p) => hasOnly(p, ["url"]) && isHttpsUrl(p.url),
+  "push.status": (p) => hasOnly(p, []),
+  "push.requestPermission": (p) => hasOnly(p, []),
+  "push.getToken": (p) => hasOnly(p, []),
+  "push.openSettings": (p) => hasOnly(p, []),
+  "push.takePendingTap": (p) => hasOnly(p, []),
 };
 
 const SUPPORTED_ACTIONS = Object.keys(PAYLOAD_RULES);
@@ -95,12 +101,18 @@ const errorReply = (id, error) => ({ v: BRIDGE_VERSION, id, ok: false, error });
 const replyScript = (reply) =>
   `window.dispatchEvent(new CustomEvent(${JSON.stringify(REPLY_EVENT)}, { detail: ${JSON.stringify(JSON.stringify(reply))} })); true;`;
 
+// A nudge from the shell to the page that something happened in the app, for example a tapped notification. It carries
+// no data: the page asks for details with a normal bridge action, which the nonce and origin checks protect.
+const eventScript = (type) =>
+  `window.dispatchEvent(new CustomEvent(${JSON.stringify(EVENT_EVENT)}, { detail: ${JSON.stringify(JSON.stringify({ v: BRIDGE_VERSION, type }))} })); true;`;
+
 module.exports = {
   AREAS,
   BRIDGE_VERSION,
   IdTracker,
   SUPPORTED_ACTIONS,
   errorReply,
+  eventScript,
   isHttpsUrl,
   isTrustedOrigin,
   okReply,

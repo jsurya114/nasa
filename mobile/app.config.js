@@ -39,6 +39,12 @@ const withoutLocalNetworkExceptions = (config) =>
     return c;
   });
 
+// Push notifications need the Expo project that owns the push credentials. It is created by the owner's Expo account
+// (`eas init`); until then push reports itself unavailable and everything else works. The Firebase file for Android
+// push is passed as a path (an EAS secret file) and is never committed.
+const easProjectId = process.env.EAS_PROJECT_ID;
+const googleServicesFile = process.env.GOOGLE_SERVICES_FILE;
+
 module.exports = {
   expo: {
     name: appEnv === "production" ? "NASA Logistics" : `NASA Logistics (${appEnv})`,
@@ -54,6 +60,7 @@ module.exports = {
     },
     android: {
       package: appId,
+      ...(googleServicesFile ? { googleServicesFile } : {}),
       adaptiveIcon: {
         backgroundColor: "#4C2A85",
         foregroundImage: "./assets/android-icon-foreground.png",
@@ -63,9 +70,10 @@ module.exports = {
     },
     plugins: [
       "expo-secure-store",
+      ["expo-notifications", { color: "#4C2A85" }],
       ["expo-build-properties", { android: { usesCleartextTraffic: isDevelopment } }],
       ...(isDevelopment ? [] : [withoutLocalNetworkExceptions]),
     ],
-    extra: { appEnv, webOrigin, apiOrigin },
+    extra: { appEnv, webOrigin, apiOrigin, ...(easProjectId ? { eas: { projectId: easProjectId } } : {}) },
   },
 };

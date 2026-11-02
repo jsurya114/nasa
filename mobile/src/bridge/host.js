@@ -10,18 +10,24 @@ const {
   parseMessage,
 } = require("./protocol");
 
-const CAPABILITIES = ["session", "openExternal"];
+const BASE_CAPABILITIES = ["session", "openExternal"];
 
 // info: { shellVersion, platform }
 // session: from createSession. openExternal: async (https url) => void. webOrigin: the one page allowed to talk.
 // nonce: the secret injected into the main frame for this page load (see protocol.js).
-const createBridgeHost = ({ info, session, openExternal, webOrigin, nonce }) => {
+// push: from createPush, or left out when this build has no push support (the "push" capability is then not offered).
+const createBridgeHost = ({ info, session, openExternal, webOrigin, nonce, push }) => {
   const tracker = new IdTracker();
+  const capabilities = push ? [...BASE_CAPABILITIES, "push"] : BASE_CAPABILITIES;
+  const requirePush = () => {
+    if (!push) throw Object.assign(new Error("unsupported_action"), { code: "unsupported_action" });
+    return push;
+  };
 
   const run = async ({ action, payload }) => {
     switch (action) {
       case "app.hello":
-        return { shellVersion: info.shellVersion, platform: info.platform, bridgeVersions: [BRIDGE_VERSION], capabilities: CAPABILITIES };
+        return { shellVersion: info.shellVersion, platform: info.platform, bridgeVersions: [BRIDGE_VERSION], capabilities };
       case "session.get":
         return { accessToken: await session.get(payload.area) };
       case "session.set":
@@ -35,6 +41,17 @@ const createBridgeHost = ({ info, session, openExternal, webOrigin, nonce }) => 
       case "link.openExternal":
         await openExternal(payload.url);
         return {};
+      case "push.status":
+        return await requirePush().status();
+      case "push.requestPermission":
+        return await requirePush().requestPermission();
+      case "push.getToken":
+        return await requirePush().getToken();
+      case "push.openSettings":
+        await requirePush().openSettings();
+        return {};
+      case "push.takePendingTap":
+        return requirePush().takePendingTap();
       default:
         throw Object.assign(new Error("unsupported_action"), { code: "unsupported_action" });
     }
@@ -59,4 +76,4 @@ const createBridgeHost = ({ info, session, openExternal, webOrigin, nonce }) => 
   };
 };
 
-module.exports = { CAPABILITIES, createBridgeHost };
+module.exports = { BASE_CAPABILITIES, createBridgeHost };

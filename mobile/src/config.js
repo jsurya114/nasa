@@ -6,4 +6,5 @@ const extra = Constants.expoConfig?.extra ?? {};
 export const APP_ENV = extra.appEnv ?? "development";
 export const WEB_ORIGIN = extra.webOrigin;
 export const API_ORIGIN = extra.apiOrigin;
+export const PUSH_PROJECT_ID = extra.eas?.projectId;
 export const APP_VERSION = Constants.expoConfig?.version ?? "0.0.0";

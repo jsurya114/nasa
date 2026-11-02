@@ -2,16 +2,19 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, BackHandler, Linking, Platform, StyleSheet, View } from "react-native";
 import { StatusBar } from "expo-status-bar";
 import { WebView } from "react-native-webview";
+import * as Device from "expo-device";
+import * as Notifications from "expo-notifications";
 import { SafeAreaProvider, useSafeAreaInsets } from "react-native-safe-area-context";
 import * as Crypto from "expo-crypto";
 
 import { createBridgeHost } from "./src/bridge/host";
-import { isHttpsUrl, isTrustedOrigin, replyScript } from "./src/bridge/protocol";
-import { API_ORIGIN, APP_ENV, APP_VERSION, WEB_ORIGIN } from "./src/config";
+import { eventScript, isHttpsUrl, isTrustedOrigin, replyScript } from "./src/bridge/protocol";
+import { API_ORIGIN, APP_ENV, APP_VERSION, PUSH_PROJECT_ID, WEB_ORIGIN } from "./src/config";
 import { request } from "./src/native/api";
 import { secureStorage } from "./src/native/secureStorage";
 import ConnectionBanner from "./src/screens/ConnectionBanner";
 import ErrorScreen from "./src/screens/ErrorScreen";
+import { createPush } from "./src/push";
 import { createSession } from "./src/session";
 
 const BRAND = "#4C2A85";
@@ -21,6 +24,11 @@ const NONCE_BYTES = 16;
 // message that does not carry it, so a frame from another site cannot use the bridge.
 const newNonce = () => Array.from(Crypto.getRandomBytes(NONCE_BYTES), (b) => b.toString(16).padStart(2, "0")).join("");
 const SERVER_ERROR_STATUS = 500;
+
+// A notification that arrives while the app is open still shows as a banner, without sound or badge
+Notifications.setNotificationHandler({
+  handleNotification: async () => ({ shouldShowBanner: true, shouldShowList: true, shouldPlaySound: false, shouldSetBadge: false }),
+});
 
 // Links the shell may hand to the phone: web pages, mail and phone numbers. Everything else is dropped.
 const openOutside = async (url) => {
@@ -38,6 +46,17 @@ function Shell() {
   const [hasLoaded, setHasLoaded] = useState(false);
 
   const session = useMemo(() => createSession({ storage: secureStorage, request }), []);
+  const push = useMemo(
+    () =>
+      createPush({
+        notifications: Notifications,
+        isDevice: Device.isDevice,
+        projectId: PUSH_PROJECT_ID,
+        platform: Platform.OS,
+        openSettings: () => Linking.openSettings(),
+      }),
+    []
+  );
   const nonce = useMemo(() => newNonce(), [attempt]);
   const host = useMemo(
     () =>
@@ -47,8 +66,9 @@ function Shell() {
         openExternal: openOutside,
         webOrigin: WEB_ORIGIN,
         nonce,
+        push,
       }),
-    [session, nonce]
+    [session, nonce, push]
   );
 
   // Android Back goes back inside the web app first, and leaves the app only when there is nothing to go back to
@@ -60,6 +80,24 @@ function Shell() {
     });
     return () => subscription.remove();
   }, []);
+
+  // A tapped notification names a screen from a fixed list. The shell keeps it and nudges the page, which collects it
+  // through the checked bridge. A tap that opened the app from closed is collected by the page when it starts.
+  useEffect(() => {
+    const handleTap = (response) => {
+      if (push.recordTap(response)) webViewRef.current?.injectJavaScript(eventScript("notification.tap"));
+    };
+    Notifications.getLastNotificationResponseAsync()
+      .then((response) => {
+        if (response) {
+          push.recordTap(response);
+          Notifications.clearLastNotificationResponse();
+        }
+      })
+      .catch(() => {});
+    const subscription = Notifications.addNotificationResponseReceivedListener(handleTap);
+    return () => subscription.remove();
+  }, [push]);
 
   const onMessage = useCallback(
     async (event) => {
