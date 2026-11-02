@@ -28,6 +28,19 @@ const appId = process.env.NASA_APP_ID || "com.example.nasalogistics";
 // builds keep both platforms' default of refusing it.
 const isDevelopment = appEnv === "development";
 
+// Only what a shipped feature needs (docs/MOBILE_APP_DESIGN.md section 7). iOS needs the camera reason text for the
+// "Take Photo" choice in the web form's file picker. Android is deliberately given NO camera permission: the picker
+// hands the photo to the system camera app, which needs none, and an app that holds CAMERA would let a page in the
+// WebView start the camera by itself (react-native-webview grants a page's request when the app has the permission).
+// The storage and overlay permissions below are added by default but nothing here uses them; the vibration permission
+// stays because notifications use it.
+const CAMERA_REASON = "NASA Logistics uses the camera only when you choose to take a photo of an access code or gate for a delivery.";
+const UNUSED_ANDROID_PERMISSIONS = [
+  "android.permission.READ_EXTERNAL_STORAGE",
+  "android.permission.WRITE_EXTERNAL_STORAGE",
+  "android.permission.SYSTEM_ALERT_WINDOW",
+];
+
 // The native iOS template itself ships NSAllowsLocalNetworking, and the development client adds its local-network
 // and Bonjour entries, so leaving the setting out of `infoPlist` is not enough: the generated Info.plist keeps them.
 // Outside development they are removed from the generated file, leaving iOS's default of refusing plain http.
@@ -56,10 +69,14 @@ module.exports = {
     ios: {
       supportsTablet: false,
       bundleIdentifier: appId,
-      infoPlist: isDevelopment ? { NSAppTransportSecurity: { NSAllowsLocalNetworking: true } } : {},
+      infoPlist: {
+        NSCameraUsageDescription: CAMERA_REASON,
+        ...(isDevelopment ? { NSAppTransportSecurity: { NSAllowsLocalNetworking: true } } : {}),
+      },
     },
     android: {
       package: appId,
+      blockedPermissions: UNUSED_ANDROID_PERMISSIONS,
       ...(googleServicesFile ? { googleServicesFile } : {}),
       adaptiveIcon: {
         backgroundColor: "#4C2A85",
@@ -69,7 +86,8 @@ module.exports = {
       },
     },
     plugins: [
-      "expo-secure-store",
+      // No biometric unlock in the first release (decision of 2 Nov 2026), so no Face ID permission text either
+      ["expo-secure-store", { faceIDPermission: false }],
       ["expo-notifications", { color: "#4C2A85" }],
       ["expo-build-properties", { android: { usesCleartextTraffic: isDevelopment } }],
       ...(isDevelopment ? [] : [withoutLocalNetworkExceptions]),

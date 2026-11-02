@@ -164,6 +164,7 @@ function Shell() {
           allowFileAccessFromFileURLs={false}
           allowUniversalAccessFromFileURLs={false}
           mixedContentMode="never"
+          mediaCapturePermissionGrantType="deny"
           thirdPartyCookiesEnabled={false}
           sharedCookiesEnabled={false}
           contentInsetAdjustmentBehavior="never"

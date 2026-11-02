@@ -22,14 +22,14 @@ const cleartextSetting = (config) => {
 test("development builds allow plain http to the local network on both platforms", () => {
   const config = loadConfig({ APP_ENV: "development" });
   assert.equal(cleartextSetting(config), true);
-  assert.deepEqual(config.ios.infoPlist, { NSAppTransportSecurity: { NSAllowsLocalNetworking: true } });
+  assert.deepEqual(config.ios.infoPlist.NSAppTransportSecurity, { NSAllowsLocalNetworking: true });
 });
 
 for (const appEnv of ["preview", "production"]) {
   test(`${appEnv} builds refuse cleartext traffic on both platforms`, () => {
     const config = loadConfig({ APP_ENV: appEnv, ...HTTPS_ORIGINS });
     assert.equal(cleartextSetting(config), false);
-    assert.deepEqual(config.ios.infoPlist, {});
+    assert.equal(config.ios.infoPlist.NSAppTransportSecurity, undefined);
   });
 
   test(`${appEnv} builds stop on an http origin`, () => {
@@ -44,6 +44,35 @@ test("an unknown APP_ENV stops the build", () => {
 test("only production is named without its environment", () => {
   assert.equal(loadConfig({ APP_ENV: "production", ...HTTPS_ORIGINS }).name, "NASA Logistics");
   assert.equal(loadConfig({ APP_ENV: "preview", ...HTTPS_ORIGINS }).name, "NASA Logistics (preview)");
+});
+
+const pluginOptions = (config, name) => config.plugins.find((p) => Array.isArray(p) && p[0] === name)?.[1];
+
+test("iOS gets a plain camera reason, Android gets no camera permission, and unused Android permissions are blocked", () => {
+  for (const env of [{ APP_ENV: "development" }, { APP_ENV: "production", ...HTTPS_ORIGINS }]) {
+    const config = loadConfig(env);
+    assert.equal(config.android.permissions, undefined, "no Android permission is requested by the app itself");
+    assert.deepEqual(
+      [...config.android.blockedPermissions].sort(),
+      ["android.permission.READ_EXTERNAL_STORAGE", "android.permission.SYSTEM_ALERT_WINDOW", "android.permission.WRITE_EXTERNAL_STORAGE"]
+    );
+    assert.match(config.ios.infoPlist.NSCameraUsageDescription, /camera/i);
+    assert.deepEqual(Object.keys(config.ios.infoPlist).filter((k) => k.endsWith("UsageDescription")), ["NSCameraUsageDescription"]);
+  }
+});
+
+test("there is no Face ID text, because biometric unlock is out of the first release", () => {
+  for (const env of [{ APP_ENV: "development" }, { APP_ENV: "production", ...HTTPS_ORIGINS }]) {
+    assert.equal(pluginOptions(loadConfig(env), "expo-secure-store").faceIDPermission, false);
+  }
+});
+
+test("the development client's local-network entries are removed from preview and production builds only", () => {
+  // Functions do not survive JSON, so the plugin list is read as the number of entries that were not arrays or strings
+  const inline = (env) => execFileSync(process.execPath, ["-e", "const p=require('./app.config.js').expo.plugins;process.stdout.write(String(p.filter((x)=>typeof x==='function').length))"], { cwd: __dirname, env: { PATH: process.env.PATH, ...env } }).toString();
+  assert.equal(inline({ APP_ENV: "development" }), "0");
+  assert.equal(inline({ APP_ENV: "preview", ...HTTPS_ORIGINS }), "1");
+  assert.equal(inline({ APP_ENV: "production", ...HTTPS_ORIGINS }), "1");
 });
 
 // The config object only says what is passed in; the native template and the development client add entries of their
@@ -87,3 +116,11 @@ for (const appEnv of ["preview", "production"]) {
     assert.match(plist, /NSAllowsArbitraryLoads<\/key>\s*<false\/>/);
   });
 }
+
+test("every generated Info.plist has only the camera reason, and no Face ID text", { timeout: 180000 }, () => {
+  for (const env of [{ APP_ENV: "development" }, { APP_ENV: "preview", ...HTTPS_ORIGINS }, { APP_ENV: "production", ...HTTPS_ORIGINS }]) {
+    const plist = generatedInfoPlist(env);
+    const reasons = [...plist.matchAll(/<key>(NS\w+UsageDescription)<\/key>/g)].map((m) => m[1]).filter((k) => k !== "NSLocalNetworkUsageDescription");
+    assert.deepEqual(reasons, ["NSCameraUsageDescription"], `${env.APP_ENV}: ${reasons.join(", ")}`);
+  }
+});

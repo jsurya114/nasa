@@ -92,15 +92,20 @@ The bridge is `window.ReactNativeWebView.postMessage` from web to shell, and `in
 
 | Action | Direction | Purpose |
 |---|---|---|
-| `app.hello` | web to shell | Capability handshake. Reply: `{ shellVersion, bridgeVersions: [1], capabilities: ["session", "pickImages", "pickDocument", "share", "openExternal"], platform }`. The web app only uses a native feature the reply lists. |
+| `app.hello` | web to shell | Capability handshake. Reply: `{ shellVersion, bridgeVersions: [1], capabilities: ["session", "openExternal", "push"], platform }` (`push` only in a build that has push support). The web app only uses a native feature the reply lists. |
 | `session.get` | web to shell | Get a fresh access token for an area at startup. |
 | `session.set` | web to shell | Hand over tokens after sign-in. |
 | `session.refresh` | web to shell | Replace an expired access token. |
 | `session.clear` | web to shell | Sign out and wipe local state. |
-| `media.pickImages` | web to shell | Camera or photo library, up to N images (N from the form, maximum 3 today). Returns file handles the web app uploads with its existing request. |
-| `file.pickDocument` | web to shell | Pick an `.xlsx` for the admin upload. |
-| `file.share` | web to shell | Open the share sheet for a file the web app downloaded. |
+| `media.pickImages` | web to shell | **Reserved, not built** (section 8: the WebView's own file picker is used). The shell answers `unsupported_action`. |
+| `file.pickDocument` | web to shell | **Reserved, not built**, same reason. |
+| `file.share` | web to shell | **Reserved, not built**: the web app has no download or export today. |
 | `link.openExternal` | web to shell | Open an `https` URL in the system browser. |
+| `push.status` | web to shell | Is push available on this phone, and the permission state (`granted`, `denied`, `undetermined`, and whether the system will ask again). |
+| `push.requestPermission` | web to shell | Shows the system prompt only if the answer is still open. Otherwise reports the state. |
+| `push.getToken` | web to shell | The Expo push token of this phone. Needs a real device, an Expo project and permission. |
+| `push.openSettings` | web to shell | Opens the phone's settings for this app. |
+| `push.takePendingTap` | web to shell | The screen name from the last tapped notification (one of a fixed list), once. The shell nudges the page with a data-free `nasa-native-event` when a tap arrives. |
 
 Anything else gets `unsupported_action`. There is **no** action that runs native commands, evaluates JavaScript or reads arbitrary files.
 
@@ -153,7 +158,7 @@ Rules: the cache key includes the user id and area; it is cleared at sign-out an
 | Allowlist | The WebView loads only the configured web origin. Navigation to any other origin is cancelled and, for `https`, opened in the system browser. Redirects are checked the same way. |
 | Secrets | None in the app. Signing keys and store credentials stay outside the repository (EAS secrets, owner-controlled). |
 | Logging | No tokens, request bodies or personal data in logs, in debug or in release builds. |
-| Permissions | Only what a shipped feature needs: camera and photo library for `media.pickImages`; notifications only if push ships. **No location, no background modes.** |
+| Permissions | Only what a shipped feature needs. The iOS camera reason text, for the file picker's "take a photo" choice (Android declares no camera permission); notifications for push. The photo library needs no permission (the system picker hands over only what the person chooses). **No location, no microphone, no Android camera permission, no page access to the camera or microphone (a page's own request is denied on iOS and cannot be granted on Android), no Face ID or biometric text, no background modes, no storage or overlay permissions** (the build blocks the storage and overlay permissions Expo adds by default; release builds also drop the development client's local-network entries). Checked in the generated native projects with `expo prebuild`, 2 Nov. |
 | Role access | Unchanged: the backend checks role, city and record ownership on every request (`requireRole`, `requireSelf`, city limits). Hiding a button is never the control. |
 
 ## 8. Native MVP (proposal, for decision)
@@ -163,14 +168,14 @@ Apple's guideline 4.2 expects a real app, not a repackaged website. A WebView al
 | # | Feature | Real NASA need | Cost | Recommendation |
 |---|---|---|---|---|
 | 1 | Shell, session handoff, error and offline screens, Android Back, external links | Required for everything | Medium | **In MVP** |
-| 2 | Camera or photo picker for the access-code images | Drivers photograph gate or mailbox access details | Low | **In MVP** |
-| 3 | Document picker for the admin Excel upload | Admins upload daily and weekly files from a phone | Low | **In MVP** |
-| 4 | Share sheet for downloaded files | Send a pay breakdown or export | Low | In MVP if an export exists; ask |
+| 2 | Camera or photo picker for the access-code images | Drivers photograph gate or mailbox access details | Low | **In MVP, through the WebView's own file picker** (no bridge action; see below) |
+| 3 | Document picker for the admin Excel upload | Admins upload daily and weekly files from a phone | Low | **In MVP, through the WebView's own file picker** (no bridge action; see below) |
+| 4 | Share sheet for downloaded files | Send a pay breakdown or export | Low | **Not built: the web app has no download or export today** (checked in the code, 2 Nov). Revisit when one exists |
 | 5 | Biometric unlock of the stored session | Optional for NASA's workflows | Low, but adds device testing and upkeep | **Out of the initial release** (Jasil, 2 Nov). Not built; no biometric prompts or permissions |
 | 6 | Push notifications | Reminders and updates on existing NASA workflows | High | **Approved by Jasil.** Design in section 10 |
 | 7 | Deep links from notifications | Open the right screen from a tap | Medium | Part of 6 |
 
-Features 2 and 3 already work as plain `<input type="file">` in a WebView. The bridge versions give a better experience (camera choice, native picker) and are the fallback target for browsers. Push (item 6) is the strongest answer to Apple's guideline 4.2.
+Features 2 and 3 are plain `<input type="file">` elements in the web app (`accept` is images for the access-code forms and `.xls`, `.xlsx`, `.csv` for the Excel uploads). Inside the app the system's own picker opens for them: on iOS the photo library, "Take Photo" and Files; on Android the system chooser with the camera as one choice. That is the native experience we want, so **the shell does not build `media.pickImages` or `file.pickDocument`**: moving file bytes through the bridge would need large messages, a second upload path next to the existing authenticated one, and a copy of the upload rules. The two names stay reserved in the contract (the shell answers `unsupported_action`) and are not in the capability list. What the picker needs from the build is the iOS camera reason text, set in `mobile/app.config.js`. **Android is given no camera permission on purpose**: the picker passes the photo to the system camera app, which needs none, whereas an app that holds `CAMERA` lets a page in the WebView start the camera by itself (react-native-webview grants a page's camera request when the app has the permission), and the library also leaves the camera choice out of the picker when `CAMERA` is declared but not yet granted. iOS denies every camera and microphone request from a page (`mediaCapturePermissionGrantType="deny"`). None of this is verified on a device yet. Push (item 6) is the strongest answer to Apple's guideline 4.2.
 
 **Biometric unlock is not part of the initial release.** Jasil decided that Face ID or fingerprint unlock of the stored session is optional for NASA's workflows and not worth the implementation, device-testing and upkeep cost. The session requirements are unchanged: normal NASA sign-in, the refresh token in the phone's secure storage, correct refresh, expiry and logout, and backend role and city checks. The app adds no biometric prompt and no biometric permission string (for example no Face ID usage description).
 
