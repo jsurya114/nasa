@@ -22,6 +22,10 @@ if (appEnv !== "development") {
 
 const appId = process.env.NASA_APP_ID || "com.example.nasalogistics";
 
+// Plain http to a computer on the local network is allowed in development builds only. Preview and production
+// builds keep both platforms' default of refusing it.
+const isDevelopment = appEnv === "development";
+
 module.exports = {
   expo: {
     name: appEnv === "production" ? "NASA Logistics" : `NASA Logistics (${appEnv})`,
@@ -30,7 +34,11 @@ module.exports = {
     orientation: "portrait",
     icon: "./assets/icon.png",
     userInterfaceStyle: "light",
-    ios: { supportsTablet: false, bundleIdentifier: appId },
+    ios: {
+      supportsTablet: false,
+      bundleIdentifier: appId,
+      infoPlist: isDevelopment ? { NSAppTransportSecurity: { NSAllowsLocalNetworking: true } } : {},
+    },
     android: {
       package: appId,
       adaptiveIcon: {
@@ -40,7 +48,7 @@ module.exports = {
         monochromeImage: "./assets/android-icon-monochrome.png",
       },
     },
-    plugins: ["expo-secure-store"],
+    plugins: ["expo-secure-store", ["expo-build-properties", { android: { usesCleartextTraffic: isDevelopment } }]],
     extra: { appEnv, webOrigin, apiOrigin },
   },
 };
