@@ -18,7 +18,8 @@ export const AdminDashboardQueries = {
         FROM dashboard_data dd
         JOIN routes r ON dd.route_id = r.id
         WHERE pd.dashboard_data_id = dd.id
-          AND pd.journey_date = $1::date;
+          AND pd.journey_date = $1::date
+          AND pd.paid = false;
       `;
       const result = await pool.query(queryStr, [selectedDate]);
 
@@ -44,7 +45,8 @@ export const AdminDashboardQueries = {
             company_earnings = (dd.ds * (r.company_doublestop_price - r.driver_doublestop_price))+ (dd.first_stop * (r.company_route_price - r.driver_route_price))
         FROM dashboard_data dd
         JOIN routes r ON dd.route_id = r.id
-        WHERE pd.dashboard_data_id = dd.id;
+        WHERE pd.dashboard_data_id = dd.id
+          AND pd.paid = false;
       `;
       await pool.query(queryStr);
     } catch (error) {
