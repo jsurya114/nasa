@@ -55,7 +55,7 @@ How it works, for each of the four moments:
 | **Sign in** | The person signs in on the existing web login screen. On success the web app sends `session.set` (area, access token, refresh token) over the bridge. The shell stores the refresh token in secure storage. The web app keeps the access token in memory and **does not write either token to `localStorage`**. |
 | **Access token expires** | The axios interceptor sees `401` and calls `session.refresh` over the bridge instead of calling the refresh endpoint itself. The shell calls `POST /<area>/refresh-token`, stores the rotated refresh token, and returns only the new access token. Concurrent refreshes share one call. |
 | **App restart** | The shell reads the refresh token, refreshes, and answers the web app's `session.get` with the new access token before the first screen loads. If refresh fails, the web app shows the normal login screen. |
-| **Sign out, expiry or user change** | The web app calls `session.clear`. The shell calls `POST /<area>/logout` with the refresh token, deletes secure storage, clears WebView cookies, cache and `localStorage`, and (when push exists) unregisters this device. A different person signing in on the same phone starts from empty state. |
+| **Sign out, expiry or user change** | The web app calls `session.clear`. The shell **deletes the refresh token from secure storage first**, so the session cannot come back at the next start even if the network is down, then (best effort, in the background) refreshes once and calls `POST /<area>/logout` to revoke it on the server. It also clears WebView cookies, cache and `localStorage`, and (when push exists) unregisters this device. A different person signing in on the same phone starts from empty state. If the shell cannot be reached, the web app shows that sign-out could not be confirmed on the phone. |
 
 Rules:
 - Tokens never appear in URLs, logs, crash reports or the bridge's error messages.
@@ -114,7 +114,7 @@ Anything else gets `unsupported_action`. There is **no** action that runs native
 | Splash and first load, no-connection and server-unavailable screens, retry, WebView crash recovery | **Shell** |
 | Android hardware Back | Shell asks the WebView to go back; if the WebView cannot, the shell exits to the launcher |
 | External links, `mailto:`, `tel:` | Shell opens them outside the WebView |
-| Safe areas | **Web app** through `env(safe-area-inset-*)`. The shell uses edge-to-edge content and adds **no** padding of its own, so insets are not applied twice |
+| Safe areas | **Top: shell.** It pads the WebView below the status bar on a NASA purple background, so the web header needs no change and `env(safe-area-inset-top)` is 0 inside the WebView. **Bottom: web app**, through `env(safe-area-inset-bottom)` (the glass tab bar already uses it); the WebView runs to the bottom edge and the shell adds no bottom padding. Each inset is applied once. To be confirmed on real iPhones and Android phones |
 | Keyboard | Web app scrolls the focused field into view; the shell resizes the WebView, never pans it |
 | Status bar | Shell sets light content over the NASA purple header |
 
