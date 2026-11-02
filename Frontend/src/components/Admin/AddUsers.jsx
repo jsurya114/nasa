@@ -185,7 +185,7 @@ const AddUsers = () => {
                 </h3>
               </div>
 
-              <div className="overflow-x-auto">
+              <div>
                 <DriversList onEdit={(driver) => {setEditDriver(driver); window.scrollTo({ top: 0, behavior: 'smooth' });}} />
               </div>
             </div>
@@ -226,7 +226,7 @@ const AddUsers = () => {
                     </h3>
                   </div>
 
-                  <div className="overflow-x-auto">
+                  <div>
                     <AdminsList onEdit={(admin) => setEditAdmin(admin)} />
                   </div>
                 </div>

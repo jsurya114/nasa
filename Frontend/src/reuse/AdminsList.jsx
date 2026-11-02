@@ -42,6 +42,7 @@ function AdminsList({ onEdit }) {
 
       {isSuperAdmin && (
         <>
+          <div className="overflow-x-auto">
           <table className="w-full border-collapse text-sm">
             <thead>
               <tr className="bg-gray-50 text-left">
@@ -167,6 +168,7 @@ function AdminsList({ onEdit }) {
               )}
             </tbody>
           </table>
+          </div>
 
           {/* Pagination */}
           {totalPages > 1 && (

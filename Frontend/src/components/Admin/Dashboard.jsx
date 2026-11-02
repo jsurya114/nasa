@@ -647,7 +647,7 @@ export default function Dashboard() {
           )}
 
           {isFiltered && (
-            <section className="card-surface overflow-x-auto">
+            <section className="card-surface">
               <div className="font-bold text-ink bg-brand-50/60 border-b border-line px-4 py-3">
                 Driver Jobs
               </div>
