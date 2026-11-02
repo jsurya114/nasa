@@ -82,7 +82,8 @@ export const saveJourney = createAsyncThunk(
       const res = await axios.post(`/driver/journey`, journeyData);
       return res.data.data;
     } catch (error) {
-      return rejectWithValue(error.response?.data || { message: error.message });
+      // No HTTP answer at all (the connection dropped): the server may still have saved it, so the page checks
+      return rejectWithValue(error.response?.data || { message: error.message, uncertain: !axios.isCancel(error) });
     }
   }
 );

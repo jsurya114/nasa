@@ -6,6 +6,9 @@ import Nav from "../../reuse/driver/Nav";
 import { useSelector, useDispatch } from "react-redux";
 import { toast } from "../../utils/toast";
 import useTranslation from "../../hooks/useTranslation.js";
+import useFormDraft from "../../hooks/useFormDraft.js";
+import useUncertainSave from "../../hooks/useUncertainSave.js";
+import UncertainSaveNotice from "./UncertainSaveNotice.jsx";
 import {
   fetchRoutes,
   clearRoutesError,
@@ -51,6 +54,22 @@ const Journey = () => {
     start_sequence: "",
     end_sequence: "",
     route: "",
+  });
+
+  // What the driver typed survives a dropped connection or a reloaded page, until it is saved or they sign out
+  useFormDraft({
+    area: "driver",
+    userId: driver?.id,
+    form: "journey",
+    values: { route: formData.route, start_sequence: formData.start_sequence, end_sequence: formData.end_sequence },
+    onRestore: (draft) =>
+      setFormData((prev) => ({
+        ...prev,
+        route: prev.route || draft.route || "",
+        start_sequence: prev.start_sequence || draft.start_sequence || "",
+        end_sequence: prev.end_sequence || draft.end_sequence || "",
+      })),
+    saved: isJourneySaved,
   });
 
   // Fetch city type on mount
@@ -133,11 +152,35 @@ const Journey = () => {
     return journey.packages || 0;
   }, []);
 
+  const finishSaved = useCallback(() => {
+    setIsJourneySaved(true);
+
+    toast.success(t('journeySaved'), {
+      position: "bottom-center",
+      autoClose: 3000,
+    });
+
+    setFormData((prev) => ({
+      ...prev,
+      start_sequence: "",
+      end_sequence: "",
+      route: "",
+    }));
+  }, [t]);
+
+  // The connection dropped after the request was sent: ask the server whether today's journey is there
+  const uncertain = useUncertainSave({
+    check: async () => (await dispatch(fetchTodayJourney(driver.id)).unwrap()).length > 0,
+    onSaved: finishSaved,
+    persist: { area: "driver", userId: driver?.id, form: "journey", scope: formData.journey_date },
+  });
+
   const handleSubmit = useCallback(async (e) => {
     e.preventDefault();
 
-    if (isJourneySaved) return;
+    if (isJourneySaved || uncertain.blocked) return;
     
+    uncertain.dismiss();
     setErrors({});
     setShowWeeklyRestriction(false);
 
@@ -152,24 +195,13 @@ const Journey = () => {
 
     try {
       await dispatch(saveJourney(journeyData)).unwrap();
-      
-      await dispatch(fetchTodayJourney(driver.id)).unwrap();
-      
-      setIsJourneySaved(true);
-      
-      toast.success(t('journeySaved'), {
-        position: "bottom-center",
-        autoClose: 3000,
-      });
-
-      setFormData((prev) => ({
-        ...prev,
-        start_sequence: "",
-        end_sequence: "",
-        route: "",
-      }));
     } catch (err) {
       setIsJourneySaved(false);
+
+      if (err?.uncertain) {
+        uncertain.begin();
+        return;
+      }
       
       if (err.error === 'WEEKLY_CITY_RESTRICTION') {
         setShowWeeklyRestriction(true);
@@ -188,8 +220,13 @@ const Journey = () => {
       } else {
         toast.error(err.message || t('failedSaveJourney'));
       }
+      return;
     }
-  }, [formData, driver, dispatch, isJourneySaved, t]);
+
+    // The server confirmed the save. Refreshing the list afterwards cannot turn that into a failure.
+    finishSaved();
+    dispatch(fetchTodayJourney(driver.id));
+  }, [formData, driver, dispatch, isJourneySaved, uncertain, finishSaved, t]);
 
   const enabledRoutes = useMemo(
     () => routes.filter((route) => route.enabled),
@@ -359,11 +396,13 @@ const Journey = () => {
               )}
             </div>
 
+            <UncertainSaveNotice state={uncertain.state} onCheckAgain={uncertain.checkAgain} />
+
             <button
               onClick={handleSubmit}
-              disabled={isJourneySaved || isLoadingJourney}
+              disabled={isJourneySaved || isLoadingJourney || uncertain.blocked}
               className={`w-full py-3 px-4 rounded-md font-medium focus:outline-none focus:ring-2 focus:ring-purple-600 focus:ring-offset-2 transition-colors ${
-                isJourneySaved || isLoadingJourney
+                isJourneySaved || isLoadingJourney || uncertain.blocked
                   ? "bg-gray-400 text-gray-700 cursor-not-allowed"
                   : "bg-brand text-white hover:bg-brand-dark"
               }`}
