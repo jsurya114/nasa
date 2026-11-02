@@ -2,6 +2,13 @@ import { AdminDashboardQueries } from "../../services/admin/dashboardQueries.js"
 import { WeeklyExcelQueries } from "../../services/admin/weeklyExcelQueries.js";
 import HttpStatus from "../../utils/statusCodes.js";
 import { parseClientDate, resolveToday } from "../../utils/businessDate.js";
+import {
+  CityAccessError,
+  assertJobsAllowed,
+  getAllowedJobs,
+  getWeeklyStagingJobs,
+  isCityLimited
+} from "../../services/admin/adminCityAccess.js";
 
 // ✅ Get summary data for all records matching the filter
 export const getSummaryData = async (req, res) => {
@@ -178,23 +185,30 @@ export const getAllPaymentDashboardData = async (req, res) => {
 export const updatePaymentData = async (req, res) => {
   try {
     const { date } = req.query;
+    const { id, role } = req.user;
+
+    // A city admin recalculates only the cities assigned to them
+    const allowedJobs = isCityLimited(role) ? await getAllowedJobs(id) : null;
 
     if (date) {
       // Calculate payment for specific date
-      await AdminDashboardQueries.updatePaymentTableForDate(date);
+      await AdminDashboardQueries.updatePaymentTableForDate(date, allowedJobs);
       res.status(HttpStatus.OK).json({
         success: true,
         message: `Payment calculated for ${date}`
       });
     } else {
       // Calculate payment for all dates
-      await AdminDashboardQueries.updatePaymentTable();
+      await AdminDashboardQueries.updatePaymentTable(allowedJobs);
       res.status(HttpStatus.OK).json({
         success: true,
         message: "Payment calculated for all dates"
       });
     }
   } catch (error) {
+    if (error instanceof CityAccessError) {
+      return res.status(HttpStatus.FORBIDDEN).json({ success: false, message: error.message });
+    }
     console.error("Error in updatePaymentData:", error);
     return res.status(HttpStatus.INTERNAL_SERVER_ERROR).json({
       success: false,
@@ -207,12 +221,22 @@ export const updatePaymentData = async (req, res) => {
 export const payDriver = async (req, res) => {
   try {
     const { driverName, startDate, endDate, dataType, job, today } = req.body;
+    const { id, role } = req.user;
 
     if (!driverName) {
       return res.status(HttpStatus.BAD_REQUEST).json({
         success: false,
         message: "Driver name is required"
       });
+    }
+
+    // A city admin may pay only journeys in their assigned cities
+    let allowedJobs = null;
+    if (isCityLimited(role)) {
+      allowedJobs = await getAllowedJobs(id);
+      if (job && job !== "All") {
+        assertJobsAllowed([job], allowedJobs, "You can only mark payments as paid for your assigned cities");
+      }
     }
 
     //  Update only journeys where closed = true, optionally filtered by dataType and city (job)
@@ -222,7 +246,8 @@ export const payDriver = async (req, res) => {
       endDate,
       dataType || null,
       job || null,
-      parseClientDate(today)
+      parseClientDate(today),
+      allowedJobs
     );
 
     // Generate appropriate message based on dataType
@@ -245,6 +270,9 @@ export const payDriver = async (req, res) => {
       rowsUpdated: result.rowCount
     });
   } catch (error) {
+    if (error instanceof CityAccessError) {
+      return res.status(HttpStatus.FORBIDDEN).json({ success: false, message: error.message });
+    }
     console.error("Error in payDriver:", error);
     return res.status(HttpStatus.INTERNAL_SERVER_ERROR).json({
       success: false,
@@ -265,6 +293,16 @@ export const updateWeeklyTempDataToDashboard = async (req, res) => {
       });
     }
 
+    // A city admin may add the staged weekly data only when it holds nothing but their cities
+    const { id, role } = req.user;
+    if (isCityLimited(role)) {
+      assertJobsAllowed(
+        await getWeeklyStagingJobs(),
+        await getAllowedJobs(id),
+        "The uploaded weekly data includes cities outside your assigned cities. Nothing was changed."
+      );
+    }
+
     const rowsInserted = await WeeklyExcelQueries.createEntriesFromWeeklyCount();
     await WeeklyExcelQueries.deleteWeeklyTableIfExists('weeklycount');
 
@@ -274,6 +312,9 @@ export const updateWeeklyTempDataToDashboard = async (req, res) => {
       message: "Data inserted successfully!!"
     });
   } catch (err) {
+    if (err instanceof CityAccessError) {
+      return res.status(HttpStatus.FORBIDDEN).json({ success: false, message: err.message });
+    }
     console.error('Route handler error:', err);
     return res.status(500).json({ success: false, error: err.message });
   }
