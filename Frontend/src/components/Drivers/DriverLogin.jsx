@@ -107,7 +107,7 @@ const DriverLogin = () => {
                 placeholder="Enter your driver email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                className={`w-full h-12 px-4 text-base border rounded-xl focus:outline-none focus:ring-4 transition-shadow 
+                className={`bg-white text-ink placeholder:text-ink-muted/70 min-h-11 w-full h-12 px-4 text-base border rounded-xl focus:outline-none focus:ring-4 transition-shadow 
                   ${
                     fieldErrors.email
                       ? "border-red-500 focus:ring-red-500/20"
@@ -134,7 +134,7 @@ const DriverLogin = () => {
                   setFieldErrors((prev) => ({ ...prev, password: "" }));
                 }}
                 placeholder="Enter your password"
-                className={`w-full h-12 px-4 pr-12 text-base border rounded-xl focus:outline-none focus:ring-4 transition-shadow
+                className={`bg-white text-ink placeholder:text-ink-muted/70 min-h-11 w-full h-12 px-4 pr-12 text-base border rounded-xl focus:outline-none focus:ring-4 transition-shadow
                   ${
                     fieldErrors.password
                       ? "border-red-500 focus:ring-red-500/20"

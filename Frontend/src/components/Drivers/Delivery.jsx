@@ -282,7 +282,7 @@ const Deliveries = () => {
                 value={filters.from_date}
                 onChange={handleChange}
                 max={filters.to_date || undefined}
-                className="w-full px-3 py-3 text-base border border-line rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-600 focus:border-purple-600"
+                className="bg-white text-ink placeholder:text-ink-muted/70 transition-shadow min-h-11 w-full px-3 py-3 text-base border border-line rounded-xl focus:outline-none focus:ring-4 focus:ring-brand-500/20 focus:border-brand-500"
               />
             </div>
 
@@ -294,7 +294,7 @@ const Deliveries = () => {
                 value={filters.to_date}
                 onChange={handleChange}
                 min={filters.from_date || undefined}
-                className="w-full px-3 py-3 text-base border border-line rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-600 focus:border-purple-600"
+                className="bg-white text-ink placeholder:text-ink-muted/70 transition-shadow min-h-11 w-full px-3 py-3 text-base border border-line rounded-xl focus:outline-none focus:ring-4 focus:ring-brand-500/20 focus:border-brand-500"
               />
             </div>
 

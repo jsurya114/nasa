@@ -297,7 +297,7 @@ const Journey = () => {
                 name="journey_date"
                 value={formData.journey_date}
                 readOnly
-                className="w-full px-3 py-3 text-base border border-line rounded-xl bg-gray-100 text-gray-500 cursor-not-allowed focus:outline-none"
+                className="placeholder:text-ink-muted/70 transition-shadow focus:ring-4 focus:ring-brand-500/20 focus:border-brand-500 min-h-11 w-full px-3 py-3 text-base border border-line rounded-xl bg-gray-100 text-gray-500 cursor-not-allowed focus:outline-none"
               />
             </div>
 
@@ -312,7 +312,7 @@ const Journey = () => {
                 value={formData.start_sequence}
                 onChange={handleChange}
                 disabled={isJourneySaved}
-                className="w-full px-3 py-3 text-base border border-line rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-600 focus:border-purple-600 disabled:bg-gray-100 disabled:cursor-not-allowed"
+                className="bg-white text-ink placeholder:text-ink-muted/70 transition-shadow min-h-11 w-full px-3 py-3 text-base border border-line rounded-xl focus:outline-none focus:ring-4 focus:ring-brand-500/20 focus:border-brand-500 disabled:bg-gray-100 disabled:cursor-not-allowed"
               />
               {errors.start_seq && (
                 <p className="text-red-500 text-sm mt-1">{errors.start_seq}</p>
@@ -330,7 +330,7 @@ const Journey = () => {
                 value={formData.end_sequence}
                 onChange={handleChange}
                 disabled={isJourneySaved}
-                className="w-full px-3 py-3 text-base border border-line rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-600 focus:border-purple-600 disabled:bg-gray-100 disabled:cursor-not-allowed"
+                className="bg-white text-ink placeholder:text-ink-muted/70 transition-shadow min-h-11 w-full px-3 py-3 text-base border border-line rounded-xl focus:outline-none focus:ring-4 focus:ring-brand-500/20 focus:border-brand-500 disabled:bg-gray-100 disabled:cursor-not-allowed"
               />
               {errors.end_seq && (
                 <p className="text-red-500 text-sm mt-1">{errors.end_seq}</p>
@@ -347,7 +347,7 @@ const Journey = () => {
                 value={formData.route}
                 onChange={handleChange}
                 disabled={isJourneySaved || isLoadingRoutes}
-                className="w-full px-3 py-3 text-base border border-line rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-600 focus:border-purple-600 disabled:bg-gray-100 disabled:cursor-not-allowed"
+                className="bg-white text-ink placeholder:text-ink-muted/70 transition-shadow min-h-11 w-full px-3 py-3 text-base border border-line rounded-xl focus:outline-none focus:ring-4 focus:ring-brand-500/20 focus:border-brand-500 disabled:bg-gray-100 disabled:cursor-not-allowed"
               >
                 <option value="">
                   {isLoadingRoutes ? t('loadingRoutes') : t('selectRoute')}

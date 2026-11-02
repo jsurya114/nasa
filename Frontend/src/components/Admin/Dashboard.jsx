@@ -441,7 +441,7 @@ export default function Dashboard() {
         <Header />
 
         <main className="max-w-[1450px] mx-auto p-2 sm:p-4 pb-20 sm:pb-40">
-          <section className="bg-white border border-gray-200 rounded-xl shadow-sm mb-4">
+          <section className="card-surface mb-4">
             <div className="font-bold text-gray-900 bg-gray-50 border-b border-gray-200 px-4 py-3 flex items-center justify-between">
               <span>Data Filters</span>
               {showTodayOnly && (
@@ -464,7 +464,7 @@ export default function Dashboard() {
                   <div className="text-gray-600">{item.label}</div>
                   {item.type === "select" ? (
                     <select
-                      className="w-full border border-gray-200 rounded-lg px-3 py-2"
+                      className="bg-white text-ink placeholder:text-ink-muted/70 focus:outline-none transition-shadow focus:ring-4 focus:ring-brand-500/20 focus:border-brand-500 min-h-11 w-full border border-line rounded-xl px-3 py-2"
                       name={item.name}
                       value={localFilters[item.name]}
                       onChange={handleFilterChange}
@@ -481,7 +481,7 @@ export default function Dashboard() {
                       name={item.name}
                       value={localFilters[item.name]}
                       onChange={handleFilterChange}
-                      className="w-full border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-400"
+                      className="bg-white text-ink placeholder:text-ink-muted/70 transition-shadow min-h-11 w-full border border-line rounded-xl px-3 py-2 focus:outline-none focus:ring-4 focus:ring-brand-500/20"
                     />
                   )}
                   <div className="text-gray-400 text-center hidden sm:block">
@@ -582,7 +582,7 @@ export default function Dashboard() {
                         name={item.field}
                         value={item.isNegative ? `-$${extraFieldsData[item.field]}` : item.isBold ? `$${extraFieldsData[item.field]}` : extraFieldsData[item.field]}
                         readOnly
-                        className={`flex-1 border border-gray-200 rounded-lg px-3 py-2 bg-white font-semibold ${item.isNegative ? 'text-red-600' : item.isBold ? 'text-green-700' : 'text-gray-700'}`}
+                        className={`placeholder:text-ink-muted/70 focus:outline-none transition-shadow focus:ring-4 focus:ring-brand-500/20 focus:border-brand-500 min-h-11 flex-1 border border-line rounded-xl px-3 py-2 bg-white font-semibold ${item.isNegative ? 'text-red-600' : item.isBold ? 'text-green-700' : 'text-gray-700'}`}
                       />
                     </div>
                   ))}
@@ -592,7 +592,7 @@ export default function Dashboard() {
           </section>
 
           {shouldShowDataTypeTabs && (
-            <section className="bg-white border border-gray-200 rounded-xl shadow-sm mb-4 p-4">
+            <section className="card-surface mb-4 p-4">
               <div className="flex items-center gap-2 flex-wrap">
                 <span className="text-sm font-semibold text-gray-700 mr-2">View:</span>
 
@@ -629,7 +629,7 @@ export default function Dashboard() {
           )}
 
           {isFiltered && (
-            <section className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-x-auto">
+            <section className="card-surface overflow-x-auto">
               <div className="font-bold text-gray-900 bg-gray-50 border-b border-gray-200 px-4 py-3">
                 Driver Jobs
               </div>
@@ -643,7 +643,7 @@ export default function Dashboard() {
         {/* ✅ UPDATED: Confirmation Modal for Separate Daily/Weekly Payments */}
         {showConfirmModal && (
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-            <div className="bg-white rounded-lg shadow-xl max-w-md w-full animate-fadeIn border border-gray-200">
+            <div className="bg-white rounded-3xl shadow-[var(--shadow-float)] max-w-md w-full animate-fadeIn border border-line">
               <div className="p-6">
                 <div className="flex items-center gap-3 mb-4">
                   <div className={`w-12 h-12 rounded-full flex items-center justify-center ${selectedPaymentType === 'weekly' ? 'bg-purple-100' : 'bg-green-100'}`}>

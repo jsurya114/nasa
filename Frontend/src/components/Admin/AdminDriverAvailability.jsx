@@ -429,7 +429,7 @@ export default function AdminDriverAvailability() {
                       setSearchQuery(e.target.value);
                       setCurrentPage(1);
                     }}
-                    className="w-full pl-10 pr-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-500/40 focus:border-transparent text-sm transition-all"
+                    className="bg-white text-ink placeholder:text-ink-muted/70 focus:outline-none transition-shadow min-h-11 w-full pl-10 pr-4 py-2.5 border border-line rounded-xl focus:ring-4 focus:ring-brand-500/20 focus:border-brand-500 text-sm transition-all"
                   />
                   {searchQuery && (
                     <button
@@ -453,7 +453,7 @@ export default function AdminDriverAvailability() {
                     <select
                       value={filterDay}
                       onChange={(e) => handleFilterChange(e.target.value)}
-                      className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-500/40 focus:border-transparent text-sm appearance-none bg-white cursor-pointer transition-all"
+                      className="text-ink placeholder:text-ink-muted/70 focus:outline-none transition-shadow min-h-11 w-full px-4 py-2.5 border border-line rounded-xl focus:ring-4 focus:ring-brand-500/20 focus:border-brand-500 text-sm appearance-none bg-white cursor-pointer transition-all"
                     >
                       <option value="">All Days</option>
                       {daysOfWeek.map((day) => (
@@ -472,7 +472,7 @@ export default function AdminDriverAvailability() {
                     <select
                       value={filterAvailabilityStatus}
                       onChange={(e) => handleAvailabilityStatusChange(e.target.value)}
-                      className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-500/40 focus:border-transparent text-sm appearance-none bg-white cursor-pointer transition-all"
+                      className="text-ink placeholder:text-ink-muted/70 focus:outline-none transition-shadow min-h-11 w-full px-4 py-2.5 border border-line rounded-xl focus:ring-4 focus:ring-brand-500/20 focus:border-brand-500 text-sm appearance-none bg-white cursor-pointer transition-all"
                     >
                       <option value="">All Drivers</option>
                       <option value="available">
@@ -492,7 +492,7 @@ export default function AdminDriverAvailability() {
                     <select
                       value={filterCity}
                       onChange={(e) => handleCityFilterChange(e.target.value)}
-                      className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-500/40 focus:border-transparent text-sm appearance-none bg-white cursor-pointer transition-all"
+                      className="text-ink placeholder:text-ink-muted/70 focus:outline-none transition-shadow min-h-11 w-full px-4 py-2.5 border border-line rounded-xl focus:ring-4 focus:ring-brand-500/20 focus:border-brand-500 text-sm appearance-none bg-white cursor-pointer transition-all"
                       disabled={citiesLoading}
                     >
                       <option value="">All Cities</option>
@@ -512,7 +512,7 @@ export default function AdminDriverAvailability() {
                     <select
                       value={itemsPerPage}
                       onChange={(e) => handleItemsPerPageChange(parseInt(e.target.value))}
-                      className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-brand-500/40 focus:border-transparent text-sm appearance-none bg-white cursor-pointer transition-all"
+                      className="text-ink placeholder:text-ink-muted/70 focus:outline-none transition-shadow min-h-11 w-full px-4 py-2.5 border border-line rounded-xl focus:ring-4 focus:ring-brand-500/20 focus:border-brand-500 text-sm appearance-none bg-white cursor-pointer transition-all"
                     >
                       <option value="5">5 per page</option>
                       <option value="10">10 per page</option>
@@ -671,7 +671,7 @@ export default function AdminDriverAvailability() {
               <div className="hidden lg:block card-surface overflow-hidden">
                 <div className="overflow-x-auto">
                   <table className="w-full">
-                    <thead className="bg-gradient-to-r from-blue-50 to-blue-100 border-b border-line">
+                    <thead className="bg-brand-50/60 border-b border-line">
                       <tr>
                         <th className="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
                           Driver Info

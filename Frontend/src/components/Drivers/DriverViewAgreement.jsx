@@ -23,7 +23,7 @@ const DriverViewAgreement = () => {
           <div className="p-8 text-gray-700 text-sm leading-relaxed space-y-6 bg-gray-50 border-b">
             <p>This Independent Contractor Agreement (“Agreement”) is entered into by and between:</p>
             
-            <div className="bg-white p-4 rounded border border-line">
+            <div className="bg-white p-4 rounded-xl border border-line">
               <ul className="font-semibold text-ink space-y-1">
                 <li>Company: NASA LOGISTICS CARRIERS LLC</li>
                 <li>Owner: Abdul Rahiman</li>

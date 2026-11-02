@@ -355,9 +355,9 @@ export default function AddAccessCodePage() {
                 value={zipCode}
                 onChange={(e) => handleFieldChange("zipCode", e.target.value)}
                 onBlur={() => handleBlur("zipCode")}
-                className={`w-full px-4 py-3 border-2 ${
+                className={`placeholder:text-ink-muted/70 focus:outline-none transition-shadow min-h-11 w-full px-4 py-3 border ${
                   touched.zipCode && errors.zipCode ? "border-red-500" : "border-line"
-                } rounded-xl focus:ring-4 focus:ring-purple-100 focus:border-brand bg-white text-gray-900 transition-all`}
+                } rounded-xl focus:ring-4 focus:ring-brand-500/20 focus:border-brand-500 bg-white text-gray-900 transition-all`}
                 disabled={status === "loading"}
               />
               {touched.zipCode && errors.zipCode && (
@@ -387,9 +387,9 @@ export default function AddAccessCodePage() {
                 value={address}
                 onChange={(e) => handleFieldChange("address", e.target.value)}
                 onBlur={() => handleBlur("address")}
-                className={`w-full px-4 py-3 border-2 ${
+                className={`bg-white placeholder:text-ink-muted/70 focus:outline-none transition-shadow min-h-11 w-full px-4 py-3 border ${
                   touched.address && errors.address ? "border-red-500" : "border-line"
-                } rounded-xl focus:ring-4 focus:ring-purple-100 focus:border-brand text-gray-900 transition-all`}
+                } rounded-xl focus:ring-4 focus:ring-brand-500/20 focus:border-brand-500 text-gray-900 transition-all`}
                 disabled={status === "loading"}
               />
               {touched.address && errors.address && (
@@ -416,7 +416,7 @@ export default function AddAccessCodePage() {
                   id="cityId"
                   value={cityId}
                   onChange={(e) => setCityId(e.target.value)}
-                  className="w-full px-4 py-3 border-2 border-line rounded-xl focus:ring-4 focus:ring-purple-100 focus:border-brand text-gray-900 transition-all bg-white"
+                  className="placeholder:text-ink-muted/70 focus:outline-none transition-shadow min-h-11 w-full px-4 py-3 border border-line rounded-xl focus:ring-4 focus:ring-brand-500/20 focus:border-brand-500 text-gray-900 transition-all bg-white"
                   disabled={status === "loading"}
                 >
                   <option value="">{mustChooseCity ? "Select a city" : "No city"}</option>
@@ -441,9 +441,9 @@ export default function AddAccessCodePage() {
                 value={accessCode}
                 onChange={(e) => handleFieldChange("accessCode", e.target.value)}
                 onBlur={() => handleBlur("accessCode")}
-                className={`w-full px-4 py-3 border-2 ${
+                className={`bg-white placeholder:text-ink-muted/70 focus:outline-none transition-shadow min-h-11 w-full px-4 py-3 border ${
                   touched.accessCode && errors.accessCode ? "border-red-500" : "border-line"
-                } rounded-xl focus:ring-4 focus:ring-purple-100 focus:border-brand text-gray-900 transition-all`}
+                } rounded-xl focus:ring-4 focus:ring-brand-500/20 focus:border-brand-500 text-gray-900 transition-all`}
                 disabled={status === "loading"}
               />
               {touched.accessCode && errors.accessCode && (
@@ -472,7 +472,7 @@ export default function AddAccessCodePage() {
                 accept="image/jpeg,image/png,image/webp,image/jpg"
                 multiple
                 onChange={onImagesChange}
-                className="block w-full text-sm text-gray-900 border-2 border-line rounded-xl cursor-pointer bg-white focus:outline-none focus:ring-4 focus:ring-purple-100 focus:border-brand"
+                className="file:mr-3 file:rounded-lg file:border-0 file:bg-brand-50 file:px-3 file:py-2 file:text-sm file:font-semibold file:text-brand-800 hover:file:bg-brand-100 file:cursor-pointer block w-full text-sm text-gray-900 border-2 border-line rounded-xl cursor-pointer bg-white focus:outline-none focus:ring-4 focus:ring-purple-100 focus:border-brand"
                 disabled={status === "loading"}
               />
               <p className="text-xs text-gray-500">Allowed types: JPG, JPEG, PNG, WEBP. Max 3 images.</p>
@@ -534,7 +534,7 @@ export default function AddAccessCodePage() {
                 <select
                   value={pageLimit}
                   onChange={(e) => handleLimitChange(Number(e.target.value))}
-                  className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 text-sm"
+                  className="bg-white text-ink placeholder:text-ink-muted/70 focus:outline-none transition-shadow min-h-11 px-3 py-2 border border-line rounded-xl focus:ring-4 focus:ring-brand-500/20 text-sm"
                 >
                   <option value={5}>5</option>
                   <option value={10}>10</option>
@@ -556,7 +556,7 @@ export default function AddAccessCodePage() {
                     value={localSearch}
                     onChange={(e) => setLocalSearch(e.target.value)}
                     onKeyPress={(e) => e.key === "Enter" && handleSearch()}
-                    className="w-full px-4 py-2 pr-10 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 text-sm"
+                    className="bg-white text-ink placeholder:text-ink-muted/70 focus:outline-none transition-shadow min-h-11 w-full px-4 py-2 pr-10 border border-line rounded-xl focus:ring-4 focus:ring-brand-500/20 text-sm"
                   />
                   <button
                     onClick={handleSearch}
@@ -622,7 +622,7 @@ export default function AddAccessCodePage() {
                 <div className="hidden md:block w-full overflow-hidden">
                   <div className="shadow ring-1 ring-black ring-opacity-5 md:rounded-lg">
                     <table className="w-full divide-y divide-line">
-                      <thead className="bg-gradient-to-r from-gray-50 to-gray-100">
+                      <thead className="bg-brand-50/60">
                         <tr>
                           <th className="px-3 lg:px-4 py-3 sm:py-4 text-left text-xs font-bold text-gray-600 uppercase tracking-wider whitespace-nowrap">
                             Zip Code
