@@ -15,7 +15,27 @@ import { toast } from "../../utils/toast";
 import Header from "../../reuse/Header.jsx";
 import Nav from "../../reuse/Nav.jsx";
 import Select from "react-select";
+import { Plus, LoaderCircle } from "lucide-react";
 import { useNavigate } from "react-router-dom";
+
+// Same height, radius and focus ring as the text inputs, so every field in a row lines up.
+const selectStyles = (hasError = false) => ({
+  control: (base, state) => ({
+    ...base,
+    minHeight: '44px',
+    borderRadius: '0.75rem',
+    borderColor: hasError ? '#ef4444' : state.isFocused ? 'var(--color-brand-500)' : 'var(--color-line)',
+    boxShadow: state.isFocused ? '0 0 0 4px rgb(124 58 237 / 0.2)' : 'none',
+    '&:hover': { borderColor: hasError ? '#ef4444' : 'var(--color-brand-500)' },
+  }),
+  option: (base, state) => ({
+    ...base,
+    backgroundColor: state.isSelected ? 'var(--color-brand-700)' : state.isFocused ? 'var(--color-brand-50)' : 'white',
+    color: state.isSelected ? 'white' : 'var(--color-ink)',
+  }),
+  placeholder: (base) => ({ ...base, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }),
+  menu: (base) => ({ ...base, zIndex: 9999, borderRadius: '0.75rem', overflow: 'hidden' }),
+});
 
 const AdminJourney = () => {
   const dispatch = useDispatch();
@@ -366,7 +386,7 @@ useEffect(() => {
           }
         }
         if (!newJourneyData.journey_date) {
-          errors.journey_date = "Journey date is required";
+          errors.journey_date = "Delivery date is required";
         }
 
         if (newJourneyData.start_seq && newJourneyData.end_seq && !errors.start_seq && !errors.end_seq) {
@@ -400,7 +420,7 @@ useEffect(() => {
         }
 
         await dispatch(addJourney(newJourneyData)).unwrap();
-        toast.success("Journey added successfully!");
+        toast.success("Delivery added successfully!");
         
         dispatch(fetchPaginatedJourneys({ 
           page: currentPage, 
@@ -419,7 +439,7 @@ useEffect(() => {
         
       } catch (err) {
         setValidationErrors({
-          general: err.message || "Failed to add journey"
+          general: err.message || "Failed to add delivery"
         });
       } finally {
         setIsAdding(false);
@@ -760,19 +780,7 @@ useEffect(() => {
                 isClearable
                 isSearchable
                 classNamePrefix="react-select"
-                styles={{
-                  control: (base, state) => ({
-                    ...base,
-                    borderColor: '#3b82f6',
-                    boxShadow: state.isFocused ? '0 0 0 1px #3b82f6' : base.boxShadow,
-                    minHeight: '38px',
-                    borderRadius: '0.375rem',
-                  }),
-                  menu: base => ({
-                    ...base,
-                    zIndex: 9999,
-                  }),
-                }}
+                styles={selectStyles()}
               />
             </div>
 
@@ -801,8 +809,8 @@ useEffect(() => {
           </div>
         </div>
 
-        <div className="bg-white rounded-xl shadow-sm p-4 sm:p-6 mb-4 border-2 border-green-200">
-          <h2 className="text-lg font-semibold mb-4 text-green-700">Add New Journey</h2>
+        <div className="card-surface p-4 sm:p-6 mb-4">
+          <h2 className="text-lg font-semibold mb-4 text-ink">Add New Delivery</h2>
           
           {validationErrors.general && (
             <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-red-600 text-sm animate-fade-in">
@@ -835,23 +843,11 @@ useEffect(() => {
                 onChange={(selectedOption) =>
                   setNewJourneyData(prev => ({ ...prev, driver_id: selectedOption?.value || '' }))
                 }
-                placeholder="Search or select driver..."
+                placeholder="Select driver"
                 isClearable
                 isSearchable
                 classNamePrefix="react-select"
-                styles={{
-                  control: (base, state) => ({
-                    ...base,
-                    borderColor: validationErrors.driver_id ? '#ef4444' : '#22c55e',
-                    boxShadow: state.isFocused ? '0 0 0 1px #22c55e' : base.boxShadow,
-                    minHeight: '38px',
-                    borderRadius: '0.375rem',
-                  }),
-                  menu: base => ({
-                    ...base,
-                    zIndex: 9999,
-                  }),
-                }}
+                styles={selectStyles(!!validationErrors.driver_id)}
               />
               {validationErrors.driver_id && (
                 <p className="text-xs text-red-500 mt-1">{validationErrors.driver_id}</p>
@@ -877,23 +873,11 @@ useEffect(() => {
                 onChange={(selectedOption) =>
                   setNewJourneyData(prev => ({ ...prev, route_id: selectedOption?.value || '' }))
                 }
-                placeholder="Search or select route..."
+                placeholder="Select route"
                 isClearable
                 isSearchable
                 classNamePrefix="react-select"
-                styles={{
-                  control: (base, state) => ({
-                    ...base,
-                    borderColor: validationErrors.route_id ? '#ef4444' : '#22c55e',
-                    boxShadow: state.isFocused ? '0 0 0 1px #22c55e' : base.boxShadow,
-                    minHeight: '38px',
-                    borderRadius: '0.375rem',
-                  }),
-                  menu: base => ({
-                    ...base,
-                    zIndex: 9999,
-                  }),
-                }}
+                styles={selectStyles(!!validationErrors.route_id)}
               />
               {validationErrors.route_id && (
                 <p className="text-xs text-red-500 mt-1">{validationErrors.route_id}</p>
@@ -901,16 +885,16 @@ useEffect(() => {
             </div>
 
             <div>
-              <label className="block text-sm font-medium mb-1">Journey Date *</label>
+              <label className="block text-sm font-medium mb-1">Delivery Date *</label>
               <input
                 type="date"
                 name="journey_date"
                 value={newJourneyData.journey_date}
                 onChange={handleNewJourneyChange}
-                className={`bg-white text-ink placeholder:text-ink-muted/70 transition-shadow min-h-11 w-full border rounded-xl px-3 py-2 focus:outline-none focus:ring-4 ${
+                className={`bg-white text-ink placeholder:text-ink-muted/70 transition-shadow min-h-11 w-full border rounded-xl px-3 py-2 text-base focus:outline-none focus:ring-4 ${
                   validationErrors.journey_date 
-                    ? 'border-red-500 focus:ring-red-500' 
-                    : 'focus:ring-green-500'
+                    ? 'border-red-500 focus:ring-red-500/20' 
+                    : 'border-line focus:border-brand-500 focus:ring-brand-500/20'
                 }`}
               />
               {validationErrors.journey_date && (
@@ -925,10 +909,10 @@ useEffect(() => {
                 name="start_seq"
                 value={newJourneyData.start_seq}
                 onChange={handleNewJourneyChange}
-                className={`bg-white text-ink placeholder:text-ink-muted/70 transition-shadow min-h-11 w-full border rounded-xl px-3 py-2 focus:outline-none focus:ring-4 ${
+                className={`bg-white text-ink placeholder:text-ink-muted/70 transition-shadow min-h-11 w-full border rounded-xl px-3 py-2 text-base focus:outline-none focus:ring-4 ${
                   validationErrors.start_seq 
-                    ? 'border-red-500 focus:ring-red-500' 
-                    : 'focus:ring-green-500'
+                    ? 'border-red-500 focus:ring-red-500/20' 
+                    : 'border-line focus:border-brand-500 focus:ring-brand-500/20'
                 }`}
                 min="1"
                 placeholder="e.g. 1"
@@ -945,10 +929,10 @@ useEffect(() => {
                 name="end_seq"
                 value={newJourneyData.end_seq}
                 onChange={handleNewJourneyChange}
-                className={`bg-white text-ink placeholder:text-ink-muted/70 transition-shadow min-h-11 w-full border rounded-xl px-3 py-2 focus:outline-none focus:ring-4 ${
+                className={`bg-white text-ink placeholder:text-ink-muted/70 transition-shadow min-h-11 w-full border rounded-xl px-3 py-2 text-base focus:outline-none focus:ring-4 ${
                   validationErrors.end_seq 
-                    ? 'border-red-500 focus:ring-red-500' 
-                    : 'focus:ring-green-500'
+                    ? 'border-red-500 focus:ring-red-500/20' 
+                    : 'border-line focus:border-brand-500 focus:ring-brand-500/20'
                 }`}
                 min="1"
                 placeholder="e.g. 10"
@@ -961,62 +945,23 @@ useEffect(() => {
 
           <div className="flex gap-2 mt-4">
            <button
-  type="button"
-  onClick={handleAddJourney}
-  disabled={isAdding}
-  style={{ pointerEvents: isAdding ? 'none' : 'auto' }}
-  className={`
-    bg-green-500 text-white px-6 py-2 rounded
-    font-medium flex items-center gap-2
-    transition-all duration-200
-    ${isAdding 
-      ? 'opacity-50 cursor-not-allowed bg-green-500' 
-      : 'hover:bg-green-600 hover:shadow-lg active:scale-95'
-    }
-  `}
->
-  {isAdding ? (
-    <>
-      <svg
-        className="animate-spin h-5 w-5 pointer-events-none"
-        xmlns="http://www.w3.org/2000/svg"
-        fill="none"
-        viewBox="0 0 24 24"
-      >
-        <circle
-          className="opacity-25"
-          cx="12"
-          cy="12"
-          r="10"
-          stroke="currentColor"
-          strokeWidth="4"
-        ></circle>
-        <path
-          className="opacity-75"
-          fill="currentColor"
-          d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-        ></path>
-      </svg>
-      Adding...
-    </>
-  ) : (
-    <>
-      <svg
-        xmlns="http://www.w3.org/2000/svg"
-        className="h-5 w-5 pointer-events-none"
-        viewBox="0 0 20 20"
-        fill="currentColor"
-      >
-        <path
-          fillRule="evenodd"
-          d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z"
-          clipRule="evenodd"
-        />
-      </svg>
-      Add Journey
-    </>
-  )}
-</button>
+              type="button"
+              onClick={handleAddJourney}
+              disabled={isAdding}
+              className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-brand px-6 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-brand-900 focus:outline-none focus-visible:ring-4 focus-visible:ring-brand-500/30 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
+            >
+              {isAdding ? (
+                <>
+                  <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden="true" />
+                  Adding...
+                </>
+              ) : (
+                <>
+                  <Plus className="h-4 w-4" aria-hidden="true" />
+                  Add Delivery
+                </>
+              )}
+            </button>
           </div>
         </div>
 
