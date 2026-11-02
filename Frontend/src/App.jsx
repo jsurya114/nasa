@@ -33,12 +33,14 @@ import AppToaster from "./reuse/AppToaster.jsx";
 import "react-toastify/dist/ReactToastify.css";
 import UpdatePassword from "./components/Drivers/UpdatePassword.jsx";
 import useInactivityLogout from "./hooks/useInactivityLogout";
+import PushTapRouter from "./native/PushTapRouter.jsx";
 
 function App() {
   useInactivityLogout();
   return (
     <>
       <Router>
+        <PushTapRouter />
         <Suspense fallback={<Loader />}>
           <Routes>
             {/* Admin Public-only Login Route */}
