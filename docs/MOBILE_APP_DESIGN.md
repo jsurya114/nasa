@@ -8,7 +8,7 @@
 | Last updated | 2 November 2026, revised after Jasil's clarification of 16:36 IST (connectivity, push, testing first) |
 | Brief | Jasil's Slack brief of 2 Nov 2026 (architecture, security, store acceptance) |
 
-One NASA app for iOS and Android. It is a thin native shell around the hosted NASA web app. The web app, the backend and every business rule stay where they are. NASA is online-only.
+One NASA app for iOS and Android. It is a thin native shell around the hosted NASA web app. The web app, the backend and every business rule stay where they are. The app must work reliably on weak or intermittent connections (section 6); offline writes and replay queues are not an agreed requirement.
 
 ```
 Expo / React Native shell
@@ -176,12 +176,12 @@ Features 2 and 3 already work as plain `<input type="file">` in a WebView. The b
 
 ## 9. Store readiness (separate checklist, tracked on issue #22)
 
-- **Accounts.** Accounts are created by admins, not in the app. Apple's in-app account deletion rule applies when an app supports account creation; NASA does not, but the assessment goes in the review notes. Google Play asks for a deletion path where users sign in; plan an in-app "Request account deletion" screen plus a public web page. Business records (deliveries, payments, paid history) are **kept** for accounting; the request removes sign-in access and personal contact details, and an admin completes it.
+- **Account creation and deletion (assessment needed, not a conclusion).** Neither store's rule is applied or waived here. The actual flow: there is no self sign-up, but the single app exposes the admin screens that create driver and admin accounts (`POST /admin/create-users`), so account creation exists inside the app for admins and super admins. Google ties its account-deletion requirement to apps that let people create an account in the app; Apple's rule (guideline 5.1.1(v)) applies to apps that support account creation, and an admin provisioning accounts is not assumed to be an exemption. So until the owner and reviewer assess it against the final audience and the stores' current wording, plan as if deletion applies: an in-app "Request account deletion" action plus a public web page for the Google requirement. Retention is separate: deliveries, payments and paid history are business and accounting records and are **kept**; a deletion request removes sign-in access and personal contact details, completed by an admin. Open for decision: who may request deletion (driver, admin, both), the retention period, and what stays on paid history.
 - **Ownership.** Who owns the developer accounts, final bundle and package IDs, signing keys and store access is **to be discussed later**; this design does not choose it. Until then the IDs are placeholders and nothing is published. Dependencies that genuinely block a test are listed in section 10.4.
 - **Review material.** Reviewer accounts (one driver, one city admin, one super admin) with synthetic data, privacy policy URL, support URL, Data safety and privacy labels, content rating, screenshots from real devices. Credentials go in the store review fields only.
 - **Builds.** EAS profiles `development`, `preview`, `production`; TestFlight and Google Play internal testing before production. Use the Expo SDK, React Native and `react-native-webview` versions that are current and compatible at the time (checked then, not copied from BUSBEE). Confirm the current Apple SDK and Android target API requirements when the accounts are opened.
 
-**Issue #22 correction.** The issue still describes a PWA that queues actions on weak signal. That conflicts with this design (store app, online-only). On approval, update the issue text; the "done when" list (driver sign in, journey, availability, deliveries, weekly pay; admin screens) stays.
+**Issue #22 correction.** The issue still describes a PWA that queues actions on weak signal. That conflicts with this design (a store app that recovers on weak connections and does not queue writes). On approval, update the issue text; the "done when" list (driver sign in, journey, availability, deliveries, weekly pay; admin screens) stays.
 
 ## 10. Push notifications (design, approved to proceed)
 
@@ -207,15 +207,24 @@ Features 2 and 3 already work as plain `<input type="file">` in a WebView. The b
 
 Each event can later get an on/off switch per person. Nothing is sent for the Excel upload or pay calculation.
 
-**10.4 Credentials boundary.**
-| Test | Needs | Account needed |
+**10.4 What each test proves, and what it needs.** A simulated notification is not a test of the real path. The two kinds are kept apart.
+
+*A. Presentation and tap routing only (no backend, no push service).* A local notification, or a test payload injected into an iOS simulator, shows that the permission prompt, the lock-screen text, the tap and the route allowlist work. It does **not** prove token registration, server targeting, delivery through Expo and Apple or Google, receipts, or logout cleanup.
+
+| Test | Needs |
+|---|---|
+| Permission prompt, denied state, lock-screen text, tap routing, sign-in check after a tap | A development build on an iOS simulator or an Android device. No Apple or Google account |
+
+*B. The real remote path.* Token registration by a signed-in person, server targeting by role and city, delivery through Expo to APNs or FCM, receipt handling and removal of invalid tokens, and removal of the device at logout or user change. Each platform has its own credentials, set up as in Expo's push setup guide (https://docs.expo.dev/push-notifications/push-notifications-setup/).
+
+| Platform | Needs | Account |
 |---|---|---|
-| Register a token, send, show on lock screen and tap routing on an **iOS simulator** | A test payload only, no Apple credentials | None |
-| Same on an **Android device** or emulator with Google Play services | An FCM v1 service account key uploaded to Expo | A Google (Firebase) project |
-| Same on a **real iPhone** | An APNs key and the device registered | A paid Apple Developer account |
+| Android device (or an emulator with Google Play services) | A development build and an FCM V1 service account key uploaded to Expo | A Google (Firebase) project |
+| iPhone (real device) | A development build installed on the device and an APNs key | A paid Apple Developer account |
+| iOS simulator | Cannot receive real APNs deliveries; use test A only | None |
 | App Store or Play publishing | Final identifiers and signing | Decided later |
 
-A full iOS push test on a real phone can wait until just before deployment. Remote push cannot be tested in Expo Go, so a development build (EAS) is needed.
+Remote push cannot be tested in Expo Go. The end-to-end iOS test on a real phone can wait until just before deployment; the Android path can run earlier.
 
 ## 11. Testing before deployment
 
@@ -232,7 +241,8 @@ Testing on simulators and real devices comes before any release. Unit tests and 
 | Android Back, background and resume, WebView crash recovery | Android device | **Not done** |
 | Interrupted requests and weak signal, no duplicate submissions | Network throttling on device | **Not done** |
 | Cross-origin frame cannot use the bridge on Android | Android device with a test page | **Not done** |
-| Push: permission, registration, targeting, tap routing, logout cleanup | Dev build, section 10.4 | **Not started** |
+| Push, presentation: permission prompt, denied state, lock-screen text, tap routing | Local or simulated notifications, section 10.4 A | **Not started** |
+| Push, real path: registration, role and city targeting, Expo and APNs or FCM delivery, receipts, logout cleanup | Development build and platform credentials, section 10.4 B | **Not started** |
 
 **Reproducible test builds** (once the shell is verified to start):
 1. `eas build --profile development --platform ios` with the simulator setting, and `--platform android` for an installable `.apk`. Both need only a free Expo account.
