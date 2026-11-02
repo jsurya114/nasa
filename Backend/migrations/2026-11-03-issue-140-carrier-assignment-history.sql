@@ -58,7 +58,8 @@ CREATE TABLE IF NOT EXISTS carrier_package_assignments (
   city_id              INTEGER     REFERENCES city (id),
   first_import_id      BIGINT      NOT NULL REFERENCES carrier_assignment_imports (id),
   recorded_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
-  resolved_at          TIMESTAMPTZ,
+  driver_resolved_at   TIMESTAMPTZ,                                            -- when the Delivery ID was linked to the driver
+  route_resolved_at    TIMESTAMPTZ,                                            -- when the route was linked to its city
   CONSTRAINT carrier_package_assignments_identity UNIQUE (identity_hash),
   CONSTRAINT carrier_package_assignments_driver_consistent
     CHECK ((driver_state = 'resolved') = (driver_id IS NOT NULL)),
@@ -99,10 +100,10 @@ BEGIN
      OR NEW.recorded_at <> OLD.recorded_at THEN
     RAISE EXCEPTION 'carrier assignment evidence cannot be changed';
   END IF;
-  IF OLD.driver_state = 'resolved' AND (NEW.driver_state <> OLD.driver_state OR NEW.driver_id <> OLD.driver_id) THEN
+  IF OLD.driver_state = 'resolved' AND (NEW.driver_state <> OLD.driver_state OR NEW.driver_id <> OLD.driver_id OR NEW.driver_resolved_at IS DISTINCT FROM OLD.driver_resolved_at) THEN
     RAISE EXCEPTION 'a resolved driver on carrier assignment history cannot be changed';
   END IF;
-  IF OLD.route_state = 'resolved' AND (NEW.route_state <> OLD.route_state OR NEW.route_id <> OLD.route_id OR NEW.city_id <> OLD.city_id) THEN
+  IF OLD.route_state = 'resolved' AND (NEW.route_state <> OLD.route_state OR NEW.route_id <> OLD.route_id OR NEW.city_id <> OLD.city_id OR NEW.route_resolved_at IS DISTINCT FROM OLD.route_resolved_at) THEN
     RAISE EXCEPTION 'a resolved route and city on carrier assignment history cannot be changed';
   END IF;
   RETURN NEW;
