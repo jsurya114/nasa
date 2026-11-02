@@ -91,7 +91,10 @@ export const callNative = (action, payload = {}, { timeoutMs = DEFAULT_TIMEOUT_M
     pending.set(id, { resolve, reject, timer });
 
     try {
-      getHost().postMessage(JSON.stringify({ v: BRIDGE_VERSION, id, action, payload }));
+      // The shell puts a secret for this page load into the main frame only. Frames from other sites cannot read
+      // it, so the shell can refuse their messages.
+      const nonce = typeof window.__NASA_BRIDGE_NONCE__ === "string" ? window.__NASA_BRIDGE_NONCE__ : undefined;
+      getHost().postMessage(JSON.stringify({ v: BRIDGE_VERSION, id, nonce, action, payload }));
     } catch {
       pending.delete(id);
       clearTimeout(timer);
