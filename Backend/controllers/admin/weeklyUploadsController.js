@@ -310,6 +310,13 @@ import {
   isCityLimited
 } from "../../services/admin/adminCityAccess.js";
 
+import logger from "../../utils/logger.js";
+import {
+  UploadFileError,
+  lockUploads,
+  respondToUploadError
+} from "../../services/admin/uploadSafety.js";
+
 import { unlink } from "fs";
 
 
@@ -382,12 +389,11 @@ export const weeklyExcelUpload = async (req, res) => {
     if (err instanceof CityAccessError) {
       return res.status(HttpStatus.FORBIDDEN).json({ success: false, message: err.message });
     }
-    const totalTime = Date.now() - startTime;
-    console.error(`[${totalTime}ms] ❌ Error:`, err.message);
+    if (respondToUploadError(res, err)) return;
+    logger.error('Weekly upload failed', err);
     res.status(500).json({
       success: false,
-      message: 'Internal server error',
-      error: err.message
+      message: 'The weekly upload failed. Nothing was changed.'
     });
   } finally {
     client.release();
@@ -572,13 +578,17 @@ export const weeklyExcelUpload = async (req, res) => {
 async function processExcelFromBuffer(buffer, client, startTime, user) {
 
   const workbook = new ExcelJS.Workbook();
-  await workbook.xlsx.load(buffer);
+  try {
+    await workbook.xlsx.load(buffer);
+  } catch {
+    throw new UploadFileError("The file could not be read. Upload the Excel (.xlsx) file as downloaded. Nothing was changed.");
+  }
 
   const worksheet = workbook.getWorksheet("Details of Delivery Fees");
   if (!worksheet) {
     const availableSheets = workbook.worksheets.map(ws => ws.name);
-    throw new Error(
-      `Sheet "Details of Delivery Fees" not found. Available sheets: ${availableSheets.join(', ')}`
+    throw new UploadFileError(
+      `Sheet "Details of Delivery Fees" not found. Available sheets: ${availableSheets.join(', ')}. Nothing was changed.`
     );
   }
 
@@ -633,7 +643,7 @@ async function processExcelFromBuffer(buffer, client, startTime, user) {
 
   for (const aliases of requiredHeaders) {
     if (!resolveHeader(aliases)) {
-      throw new Error(`Missing required column in Excel: ${aliases.join(' / ')}`);
+      throw new UploadFileError(`Missing required column in Excel: ${aliases.join(' / ')}. Nothing was changed.`);
     }
   }
 
@@ -698,11 +708,16 @@ async function processExcelFromBuffer(buffer, client, startTime, user) {
 
       totalProcessed++;
 
-    } catch (rowError) {
-      console.error(`Row ${rowNumber} Error:`, rowError.message);
+    } catch {
       totalSkipped++;
     }
   });
+
+  if (aggregatedData.size === 0) {
+    throw new UploadFileError(
+      `No usable rows were found in the file (${totalSkipped} skipped). Each row needs a Delivery ID, a Signing Time (MM/DD/YYYY HH:mm:ss) and Stop Point Details. Nothing was changed.`
+    );
+  }
 
   // A city admin may upload only a file whose routes all belong to their cities.
   // This runs before the staging table is touched, so a refused file changes nothing.
@@ -717,12 +732,15 @@ async function processExcelFromBuffer(buffer, client, startTime, user) {
 
   const tableName = "weeklycount";
 
-  await WeeklyExcelQueries.deleteWeeklyTableIfExists(tableName);
-  await WeeklyExcelQueries.createWeeklyTable(tableName);
-
+  // Drop, create and fill happen in one transaction, one upload at a time. If anything fails, the
+  // previous staged data is still there.
   await client.query('BEGIN');
-  
+
   try {
+    await lockUploads(client);
+    await WeeklyExcelQueries.deleteWeeklyTableIfExists(tableName, client);
+    await WeeklyExcelQueries.createWeeklyTable(tableName, client);
+
     const BATCH_SIZE = 1000;
     const dataArray = Array.from(aggregatedData.values());
     let totalInserted = 0;
@@ -761,6 +779,7 @@ async function processExcelFromBuffer(buffer, client, startTime, user) {
     }
 
     await client.query('COMMIT');
+    logger.info('Weekly upload stored', { processed: totalProcessed, skipped: totalSkipped, groups: totalInserted });
 
     return {
       success: true,

@@ -2,6 +2,8 @@ import { AdminDashboardQueries } from "../../services/admin/dashboardQueries.js"
 import { WeeklyExcelQueries } from "../../services/admin/weeklyExcelQueries.js";
 import HttpStatus from "../../utils/statusCodes.js";
 import { parseClientDate, resolveToday } from "../../utils/businessDate.js";
+import logger from "../../utils/logger.js";
+import { UploadBusyError } from "../../services/admin/uploadSafety.js";
 import {
   CityAccessError,
   assertJobsAllowed,
@@ -293,18 +295,19 @@ export const updateWeeklyTempDataToDashboard = async (req, res) => {
       });
     }
 
-    // A city admin may add the staged weekly data only when it holds nothing but their cities
+    // A city admin may add the staged weekly data only when it holds nothing but their cities.
+    // The check runs inside the insert's own transaction, so the staged data cannot change in between.
     const { id, role } = req.user;
-    if (isCityLimited(role)) {
-      assertJobsAllowed(
-        await getWeeklyStagingJobs(),
-        await getAllowedJobs(id),
+    const beforeInsert = isCityLimited(role)
+      ? async (client) => assertJobsAllowed(
+        await getWeeklyStagingJobs(client),
+        await getAllowedJobs(id, client),
         "The uploaded weekly data includes cities outside your assigned cities. Nothing was changed."
-      );
-    }
+      )
+      : null;
 
-    const rowsInserted = await WeeklyExcelQueries.createEntriesFromWeeklyCount();
-    await WeeklyExcelQueries.deleteWeeklyTableIfExists('weeklycount');
+    // The staging table is cleared in the same transaction as the insert
+    const rowsInserted = await WeeklyExcelQueries.createEntriesFromWeeklyCount({ beforeInsert });
 
     return res.status(200).json({
       success: true,
@@ -313,9 +316,20 @@ export const updateWeeklyTempDataToDashboard = async (req, res) => {
     });
   } catch (err) {
     if (err instanceof CityAccessError) {
-      return res.status(HttpStatus.FORBIDDEN).json({ success: false, message: err.message });
+      return res.status(HttpStatus.FORBIDDEN).json({ success: false, error: err.message, message: err.message });
     }
-    console.error('Route handler error:', err);
-    return res.status(500).json({ success: false, error: err.message });
+    if (err instanceof UploadBusyError) {
+      return res.status(HttpStatus.CONFLICT).json({ success: false, error: err.message, message: err.message });
+    }
+    if (err.code === "42P01") {
+      // The staged data was cleared by someone else after the check above
+      return res.status(404).json({
+        success: false,
+        error: "Weekly count table does not exist or is empty",
+        message: "Please upload weekly data first"
+      });
+    }
+    logger.error("Could not add the weekly data to the dashboard", err);
+    return res.status(500).json({ success: false, message: "Could not add the weekly data. Nothing was changed." });
   }
 };
