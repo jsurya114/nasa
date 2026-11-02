@@ -6,6 +6,7 @@
 // Inside the NASA mobile app the shell owns the refresh token in the phone's secure storage. This page
 // keeps only the short-lived access token, in memory, and never writes either token to localStorage.
 
+import { clearDrafts } from "../utils/formDrafts";
 import { callNative, isNativeShell } from "./bridge";
 
 const AREAS = ["admin", "driver"];
@@ -165,6 +166,7 @@ const runSignOutHooks = (area, accessToken) => {
 // This page is signed out immediately. If the shell cannot be reached (after one retry) this rejects, so the
 // caller can tell the person that the phone may still hold a session.
 export const clearSession = (area) => {
+  clearDrafts(area);
   if (!isNativeShell()) {
     localStorage.removeItem(`${area}Token`);
     localStorage.removeItem(`${area}RefreshToken`);
