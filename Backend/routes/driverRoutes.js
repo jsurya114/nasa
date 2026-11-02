@@ -14,6 +14,7 @@ import { loginRateLimit } from '../middlewares/loginRateLimit.js';
 import driverAvailabilityController from "../controllers/driver/driveravailabilityController.js";
 import passwordController from "../controllers/driver/updatepasswordController.js";
 import languageController from "../controllers/driver/languageController.js";
+import { driverPushTokens } from "../controllers/pushTokenController.js";
 
 const router = express.Router()
 sanitizeRouterParams(router)
@@ -57,5 +58,9 @@ router.post("/availability", driverAvailabilityController.updateAvailability)
 
 router.get("/language/:driverId", requireSelf('driverId'), languageController.getDriverLanguage);
 router.put("/language", requireSelf('driverId', 'body'), languageController.updateDriverLanguage);
+
+// Push notifications: this driver's own phones only (the id comes from the token)
+router.post("/push-token", driverPushTokens.register)
+router.post("/push-token/remove", driverPushTokens.remove)
 
 export default router;
