@@ -48,10 +48,10 @@ test("only production is named without its environment", () => {
 
 const pluginOptions = (config, name) => config.plugins.find((p) => Array.isArray(p) && p[0] === name)?.[1];
 
-test("only the camera is requested, with a plain reason, and unused Android permissions are blocked", () => {
+test("iOS gets a plain camera reason, Android gets no camera permission, and unused Android permissions are blocked", () => {
   for (const env of [{ APP_ENV: "development" }, { APP_ENV: "production", ...HTTPS_ORIGINS }]) {
     const config = loadConfig(env);
-    assert.deepEqual(config.android.permissions, ["android.permission.CAMERA"]);
+    assert.equal(config.android.permissions, undefined, "no Android permission is requested by the app itself");
     assert.deepEqual(
       [...config.android.blockedPermissions].sort(),
       ["android.permission.READ_EXTERNAL_STORAGE", "android.permission.SYSTEM_ALERT_WINDOW", "android.permission.WRITE_EXTERNAL_STORAGE"]

@@ -28,9 +28,12 @@ const appId = process.env.NASA_APP_ID || "com.example.nasalogistics";
 // builds keep both platforms' default of refusing it.
 const isDevelopment = appEnv === "development";
 
-// Only what a shipped feature needs (docs/MOBILE_APP_DESIGN.md section 7). The camera is for taking the access-code photo
-// from the web form's own file picker. The storage and overlay permissions below are added by default but nothing here
-// uses them; the vibration permission stays because notifications use it.
+// Only what a shipped feature needs (docs/MOBILE_APP_DESIGN.md section 7). iOS needs the camera reason text for the
+// "Take Photo" choice in the web form's file picker. Android is deliberately given NO camera permission: the picker
+// hands the photo to the system camera app, which needs none, and an app that holds CAMERA would let a page in the
+// WebView start the camera by itself (react-native-webview grants a page's request when the app has the permission).
+// The storage and overlay permissions below are added by default but nothing here uses them; the vibration permission
+// stays because notifications use it.
 const CAMERA_REASON = "NASA Logistics uses the camera only when you choose to take a photo of an access code or gate for a delivery.";
 const UNUSED_ANDROID_PERMISSIONS = [
   "android.permission.READ_EXTERNAL_STORAGE",
@@ -71,7 +74,6 @@ module.exports = {
     },
     android: {
       package: appId,
-      permissions: ["android.permission.CAMERA"],
       blockedPermissions: UNUSED_ANDROID_PERMISSIONS,
       ...(googleServicesFile ? { googleServicesFile } : {}),
       adaptiveIcon: {
