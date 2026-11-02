@@ -15,3 +15,7 @@ web-build/
 .env
 .env.*
 !.env.example
+
+# Push credentials from Firebase and Apple stay out of the repository
+google-services.json
+GoogleService-Info.plist
