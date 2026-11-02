@@ -1,3 +1,5 @@
+const { withInfoPlist } = require("expo/config-plugins");
+
 // Build configuration. Everything that differs between development, preview (staging) and production
 // comes from environment variables set by the EAS build profile. No secrets live here.
 
@@ -26,6 +28,25 @@ const appId = process.env.NASA_APP_ID || "com.example.nasalogistics";
 // builds keep both platforms' default of refusing it.
 const isDevelopment = appEnv === "development";
 
+// Only what a shipped feature needs (docs/MOBILE_APP_DESIGN.md section 7). The camera is for taking the access-code photo
+// from the web form's own file picker. The storage and overlay permissions below are added by default but nothing here
+// uses them; the vibration permission stays because notifications use it.
+const CAMERA_REASON = "NASA Logistics uses the camera only when you choose to take a photo of an access code or gate for a delivery.";
+const UNUSED_ANDROID_PERMISSIONS = [
+  "android.permission.READ_EXTERNAL_STORAGE",
+  "android.permission.WRITE_EXTERNAL_STORAGE",
+  "android.permission.SYSTEM_ALERT_WINDOW",
+];
+
+// The development client adds local-network entries to the iOS settings. Release builds have no use for them and an
+// app review would ask why they are there, so they are removed outside development.
+const withoutDevelopmentOnlyEntries = (config) =>
+  withInfoPlist(config, (c) => {
+    delete c.modResults.NSLocalNetworkUsageDescription;
+    delete c.modResults.NSBonjourServices;
+    return c;
+  });
+
 // Push notifications need the Expo project that owns the push credentials. It is created by the owner's Expo account
 // (`eas init`); until then push reports itself unavailable and everything else works. The Firebase file for Android
 // push is passed as a path (an EAS secret file) and is never committed.
@@ -43,10 +64,15 @@ module.exports = {
     ios: {
       supportsTablet: false,
       bundleIdentifier: appId,
-      infoPlist: isDevelopment ? { NSAppTransportSecurity: { NSAllowsLocalNetworking: true } } : {},
+      infoPlist: {
+        NSCameraUsageDescription: CAMERA_REASON,
+        ...(isDevelopment ? { NSAppTransportSecurity: { NSAllowsLocalNetworking: true } } : {}),
+      },
     },
     android: {
       package: appId,
+      permissions: ["android.permission.CAMERA"],
+      blockedPermissions: UNUSED_ANDROID_PERMISSIONS,
       ...(googleServicesFile ? { googleServicesFile } : {}),
       adaptiveIcon: {
         backgroundColor: "#4C2A85",
@@ -56,9 +82,11 @@ module.exports = {
       },
     },
     plugins: [
-      "expo-secure-store",
+      // No biometric unlock in the first release (decision of 2 Nov 2026), so no Face ID permission text either
+      ["expo-secure-store", { faceIDPermission: false }],
       ["expo-notifications", { color: "#4C2A85" }],
       ["expo-build-properties", { android: { usesCleartextTraffic: isDevelopment } }],
+      ...(isDevelopment ? [] : [withoutDevelopmentOnlyEntries]),
     ],
     extra: { appEnv, webOrigin, apiOrigin, ...(easProjectId ? { eas: { projectId: easProjectId } } : {}) },
   },
