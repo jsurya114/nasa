@@ -1,5 +1,9 @@
 import { createSlice, createAsyncThunk } from "@reduxjs/toolkit"
 import axios from "../axiosInstance";
+import { isNativeShell } from "../../../native/bridge";
+import { clearBrowserTokens, clearSession, getRefreshToken, saveSession } from "../../../native/sessionStore";
+
+const DEVICE_SIGN_IN_ERROR = "Could not sign in on this device. Please try again.";
 
 const initialState = {
     admin: null,
@@ -16,17 +20,15 @@ export const adminLogin = createAsyncThunk(
             const res = await axios.post(`/admin/login`, credentials);
             const data = res.data;
 
-            // Store tokens in localStorage
+            // Store the tokens (in the mobile app the shell keeps the refresh token)
             if (data.accessToken) {
-                localStorage.setItem('adminToken', data.accessToken);
+                await saveSession('admin', { accessToken: data.accessToken, refreshToken: data.refreshToken });
                 localStorage.setItem('lastActivity', Date.now().toString());
-            }
-            if (data.refreshToken) {
-                localStorage.setItem('adminRefreshToken', data.refreshToken);
             }
 
             return data;
         } catch (error) {
+            if (error.name === "BridgeError") return rejectWithValue({ message: DEVICE_SIGN_IN_ERROR });
             return rejectWithValue(error.response?.data || { message: error.message })
         }
     }
@@ -41,8 +43,7 @@ export const accessAdminUser = createAsyncThunk(
         } catch (error) {
             // If blocked or unauthorized, clear token
             if (error.response?.status === 401 || error.response?.status === 403) {
-                localStorage.removeItem('adminToken');
-                localStorage.removeItem('adminRefreshToken');
+                await clearSession('admin');
             }
             return rejectWithValue(error.response?.data?.message || "Unable to get Users")
         }
@@ -53,18 +54,22 @@ export const adminLogout = createAsyncThunk(
     "admin/logout",
     async (_, { rejectWithValue }) => {
         try {
+            // In the mobile app the shell revokes the refresh token on the server and clears its copy.
+            if (isNativeShell()) {
+                await clearSession('admin');
+                localStorage.removeItem('lastActivity');
+                return {};
+            }
             // Send the refresh token too, so the server can revoke it.
-            const refreshToken = localStorage.getItem('adminRefreshToken');
+            const refreshToken = getRefreshToken('admin');
             const res = await axios.post(`/admin/logout`, { refreshToken });
             // Cleanup tokens after successful logout request
-            localStorage.removeItem('adminToken');
-            localStorage.removeItem('adminRefreshToken');
+            await clearSession('admin');
             localStorage.removeItem('lastActivity');
             return res.data;
         } catch (error) {
             // Ensure tokens are removed even on error
-            localStorage.removeItem('adminToken');
-            localStorage.removeItem('adminRefreshToken');
+            await clearSession('admin');
             localStorage.removeItem('lastActivity');
             return rejectWithValue(error.response?.data?.message || error.message)
         }
@@ -83,8 +88,7 @@ const adminSlice = createSlice({
             state.isAuthenticated = false;
             state.admin = null;
             state.isSuperAdmin = false;
-            localStorage.removeItem('adminToken');
-            localStorage.removeItem('adminRefreshToken');
+            clearSession('admin');
         }
     },
     extraReducers: (builder) => {
@@ -140,9 +144,8 @@ const adminSlice = createSlice({
             .addCase(accessAdminUser.rejected, (state, action) => {
                 state.loading = false;
                 state.isAuthenticated = false;
-                // Clear token on rejection
-                localStorage.removeItem('adminToken');
-                localStorage.removeItem('adminRefreshToken');
+                // Clear token on rejection (in the mobile app only a 401 or 403 signs out, above)
+                clearBrowserTokens('admin');
                 if (action.payload !== "UNAUTHORIZED") {
                     state.error = action.payload || "Access denied"
                 } else {

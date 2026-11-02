@@ -1,5 +1,13 @@
 import axios from "axios";
 import { API_BASE_URL } from "../../config";
+import { isNativeShell } from "../../native/bridge";
+import {
+  clearSession,
+  getAccessToken,
+  getRefreshToken,
+  refreshInApp,
+  saveRotatedTokens,
+} from "../../native/sessionStore";
 
 // Create a separate instance for refresh token requests to avoid interceptor loops
 const refreshInstance = axios.create({
@@ -29,9 +37,9 @@ const getArea = (url = '') => {
 
 // Request interceptor - Add the token of the request's own area
 axios.interceptors.request.use(
-  (config) => {
+  async (config) => {
     const area = getArea(config.url);
-    const token = area ? localStorage.getItem(`${area}Token`) : null;
+    const token = area ? await getAccessToken(area) : null;
 
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
@@ -61,7 +69,17 @@ axios.interceptors.response.use(
       originalRequest._retry = true;
 
       try {
-        const refreshToken = localStorage.getItem(`${area}RefreshToken`);
+        // In the mobile app the shell holds the refresh token and returns only a new access token
+        if (isNativeShell()) {
+          // Another request may already have refreshed since this one was sent: use the newer token as is
+          const current = await getAccessToken(area);
+          const sent = String(originalRequest.headers?.Authorization || '').replace(/^Bearer /, '');
+          const accessToken = current && current !== sent ? current : await refreshInApp(area);
+          originalRequest.headers.Authorization = `Bearer ${accessToken}`;
+          return axios(originalRequest);
+        }
+
+        const refreshToken = getRefreshToken(area);
 
         if (refreshToken) {
           const response = await refreshInstance.post(`/${area}/refresh-token`, { refreshToken });
@@ -69,8 +87,7 @@ axios.interceptors.response.use(
           if (response.status === 200) {
             const { accessToken, refreshToken: newRefreshToken } = response.data;
 
-            localStorage.setItem(`${area}Token`, accessToken);
-            localStorage.setItem(`${area}RefreshToken`, newRefreshToken);
+            saveRotatedTokens(area, { accessToken, refreshToken: newRefreshToken });
 
             // A logout that triggered this refresh carries the old refresh token. Send the new one
             // as well, so the whole session is revoked and no usable token is left behind.
@@ -96,8 +113,7 @@ axios.interceptors.response.use(
         }
       } catch {
         // If refresh fails, sign out of this area only. The other area keeps its session.
-        localStorage.removeItem(`${area}Token`);
-        localStorage.removeItem(`${area}RefreshToken`);
+        await clearSession(area);
         if (area === 'driver') {
           localStorage.removeItem('driverTimezone');
         }

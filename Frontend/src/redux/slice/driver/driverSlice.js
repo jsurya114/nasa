@@ -1,5 +1,9 @@
 import { createSlice, createAsyncThunk } from "@reduxjs/toolkit";
 import axios from "../axiosInstance";
+import { isNativeShell } from "../../../native/bridge";
+import { clearBrowserTokens, clearSession, getRefreshToken, saveSession } from "../../../native/sessionStore";
+
+const DEVICE_SIGN_IN_ERROR = "Could not sign in on this device. Please try again.";
 
 const initialState = {
   driver: null,
@@ -26,18 +30,16 @@ export const driverLogin = createAsyncThunk(
         return rejectWithValue({ message: "Invalid response from server" });
       }
 
-      // Store tokens and timezone in localStorage
+      // Store the tokens (in the mobile app the shell keeps the refresh token) and the timezone
       if (data.accessToken) {
-        localStorage.setItem('driverToken', data.accessToken);
+        await saveSession('driver', { accessToken: data.accessToken, refreshToken: data.refreshToken });
         localStorage.setItem('driverTimezone', timezone);
         localStorage.setItem('lastActivity', Date.now().toString());
-      }
-      if (data.refreshToken) {
-        localStorage.setItem('driverRefreshToken', data.refreshToken);
       }
 
       return data;
     } catch (error) {
+      if (error.name === "BridgeError") return rejectWithValue({ message: DEVICE_SIGN_IN_ERROR });
       return rejectWithValue(error.response?.data || { message: error.message || "Network error" });
     }
   }
@@ -58,8 +60,7 @@ export const accessDriver = createAsyncThunk(
     } catch (error) {
       // If blocked or unauthorized, remove token
       if (error.response?.status === 401 || error.response?.status === 403) {
-        localStorage.removeItem('driverToken');
-        localStorage.removeItem('driverRefreshToken');
+        await clearSession('driver');
         localStorage.removeItem('driverTimezone');
       }
       return rejectWithValue({
@@ -74,19 +75,24 @@ export const driverLogout = createAsyncThunk(
   "driver/logout",
   async (_, { rejectWithValue }) => {
     try {
+      // In the mobile app the shell revokes the refresh token on the server and clears its copy.
+      if (isNativeShell()) {
+        await clearSession('driver');
+        localStorage.removeItem('driverTimezone');
+        localStorage.removeItem('lastActivity');
+        return {};
+      }
       // Send the refresh token too, so the server can revoke it.
-      const refreshToken = localStorage.getItem('driverRefreshToken');
+      const refreshToken = getRefreshToken('driver');
       const res = await axios.post(`/driver/logout`, { refreshToken });
       // Cleanup tokens after successful logout request
-      localStorage.removeItem('driverToken');
-      localStorage.removeItem('driverRefreshToken');
+      await clearSession('driver');
       localStorage.removeItem('driverTimezone');
       localStorage.removeItem('lastActivity');
       return res.data;
     } catch (error) {
       // Ensure tokens are removed even on error
-      localStorage.removeItem('driverToken');
-      localStorage.removeItem('driverRefreshToken');
+      await clearSession('driver');
       localStorage.removeItem('driverTimezone');
       localStorage.removeItem('lastActivity');
       return rejectWithValue({ message: error.response?.data?.message || error.message || "Network error" });
@@ -117,8 +123,7 @@ const driverSlice = createSlice({
       state.driver = null;
       state.isAuthenticated = false;
       state.error = null;
-      localStorage.removeItem('driverToken');
-      localStorage.removeItem('driverRefreshToken');
+      clearSession('driver');
       localStorage.removeItem('driverTimezone');
     },
     setDriver: (state, action) => {
@@ -186,9 +191,8 @@ const driverSlice = createSlice({
         state.loading = false;
         state.isAuthenticated = false;
         state.driver = null;
-        // Clear token and timezone on rejection
-        localStorage.removeItem('driverToken');
-        localStorage.removeItem('driverRefreshToken');
+        // Clear token and timezone on rejection (in the mobile app only a 401 or 403 signs out, above)
+        clearBrowserTokens('driver');
         localStorage.removeItem('driverTimezone');
 
         const isUnauthorized = action.payload?.status === 401 ||
