@@ -10,6 +10,7 @@ import { isHttpsUrl, isTrustedOrigin, replyScript } from "./src/bridge/protocol"
 import { API_ORIGIN, APP_ENV, APP_VERSION, WEB_ORIGIN } from "./src/config";
 import { request } from "./src/native/api";
 import { secureStorage } from "./src/native/secureStorage";
+import ConnectionBanner from "./src/screens/ConnectionBanner";
 import ErrorScreen from "./src/screens/ErrorScreen";
 import { createSession } from "./src/session";
 
@@ -32,6 +33,9 @@ function Shell() {
   const canGoBack = useRef(false);
   const [failure, setFailure] = useState(null);
   const [attempt, setAttempt] = useState(0);
+  // Once the web app has loaded, a connection problem shows a bar over it instead of replacing it, so a form
+  // the person is filling in is not lost
+  const [hasLoaded, setHasLoaded] = useState(false);
 
   const session = useMemo(() => createSession({ storage: secureStorage, request }), []);
   const nonce = useMemo(() => newNonce(), [attempt]);
@@ -75,15 +79,17 @@ function Shell() {
 
   const retry = useCallback(() => {
     setFailure(null);
-    setAttempt((n) => n + 1);
-  }, []);
+    if (hasLoaded) webViewRef.current?.reload();
+    else setAttempt((n) => n + 1);
+  }, [hasLoaded]);
 
   return (
     <View style={[styles.root, { paddingTop: insets.top }]}>
       <StatusBar style="light" backgroundColor={BRAND} />
-      {failure ? (
+      {failure && !hasLoaded ? (
         <ErrorScreen kind={failure} onRetry={retry} />
       ) : (
+        <>
         <WebView
           key={attempt}
           ref={webViewRef}
@@ -94,6 +100,10 @@ function Shell() {
           onMessage={onMessage}
           onNavigationStateChange={(nav) => {
             canGoBack.current = nav.canGoBack;
+          }}
+          onLoad={() => {
+            setHasLoaded(true);
+            setFailure(null);
           }}
           onError={() => setFailure("offline")}
           onHttpError={(e) => {
@@ -121,6 +131,8 @@ function Shell() {
           contentInsetAdjustmentBehavior="never"
           webviewDebuggingEnabled={APP_ENV === "development"}
         />
+        {failure ? <ConnectionBanner kind={failure} onRetry={retry} /> : null}
+        </>
       )}
     </View>
   );

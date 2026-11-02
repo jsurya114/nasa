@@ -121,3 +121,124 @@ test("an unknown area is refused", async () => {
   const s = createSession({ storage: memoryStorage(), request: fakeServer().request });
   await assert.rejects(s.get("root"), { code: "bad_request" });
 });
+
+// ---- Ordering across the asynchronous secure-storage boundary (Jasil's review of #127)
+
+// Storage whose writes and deletes can be held back and released by hand, to force the bad orderings.
+const controlledStorage = (initial = {}) => {
+  const data = { ...initial };
+  const holds = { setItem: null, deleteItem: null };
+  const gate = (op) => {
+    const hold = holds[op];
+    if (!hold) return Promise.resolve();
+    return new Promise((resolve) => { hold.waiting.push(resolve); hold.started?.(); });
+  };
+  return {
+    data,
+    // hold the next call(s) of an operation; returns { release(), started } controls
+    hold(op) {
+      let signal;
+      const started = new Promise((r) => { signal = r; });
+      holds[op] = { waiting: [], started: signal };
+      return {
+        started,
+        release() { const h = holds[op]; holds[op] = null; h.waiting.forEach((r) => r()); },
+      };
+    },
+    getItem: async (k) => data[k] ?? null,
+    setItem: async (k, v) => { await gate("setItem"); data[k] = v; },
+    deleteItem: async (k) => { await gate("deleteItem"); delete data[k]; },
+  };
+};
+
+const settle = () => new Promise((r) => setImmediate(r));
+
+test("a refresh write that finishes after sign-out cannot bring the session back", async () => {
+  const storage = controlledStorage({ [keyFor("driver")]: "r1" });
+  const s = createSession({ storage, request: fakeServer().request });
+  const held = storage.hold("setItem");
+  const refreshing = s.refresh("driver");
+  const outcome = refreshing.then(() => "resolved", (e) => e.code);
+  await held.started; // the rotated token is being written
+  const clearing = s.clear("driver");
+  await settle();
+  held.release();
+  await clearing;
+  assert.equal(await outcome, "signed_out");
+  assert.equal(storage.data[keyFor("driver")], undefined);
+  assert.equal(await s.get("driver"), null);
+});
+
+test("a sign-in write that finishes after sign-out cannot bring the session back", async () => {
+  const storage = controlledStorage();
+  const s = createSession({ storage, request: fakeServer().request });
+  const held = storage.hold("setItem");
+  const signingIn = s.set("driver", { accessToken: "a1", refreshToken: "r1" });
+  await held.started;
+  const clearing = s.clear("driver");
+  await settle();
+  held.release();
+  await signingIn;
+  await clearing;
+  assert.equal(storage.data[keyFor("driver")], undefined);
+  assert.equal(await s.get("driver"), null);
+});
+
+test("a later sign-in survives a slow earlier sign-out", async () => {
+  const storage = controlledStorage({ [keyFor("driver")]: "r1" });
+  const s = createSession({ storage, request: fakeServer().request });
+  const held = storage.hold("deleteItem");
+  const clearing = s.clear("driver");
+  await held.started; // the old token is being deleted
+  const signingIn = s.set("driver", { accessToken: "new-access", refreshToken: "new-refresh" });
+  await settle();
+  held.release();
+  await clearing;
+  await signingIn;
+  assert.equal(storage.data[keyFor("driver")], "new-refresh");
+  assert.equal(await s.get("driver"), "new-access");
+});
+
+test("two quick sign-ins end with the newer one, however the writes finish", async () => {
+  const storage = controlledStorage();
+  const s = createSession({ storage, request: fakeServer().request });
+  const held = storage.hold("setItem");
+  const first = s.set("driver", { accessToken: "a-old", refreshToken: "r-old" });
+  await held.started;
+  const second = s.set("driver", { accessToken: "a-new", refreshToken: "r-new" });
+  await settle();
+  held.release();
+  await first;
+  await second;
+  assert.equal(storage.data[keyFor("driver")], "r-new");
+  assert.equal(await s.get("driver"), "a-new");
+});
+
+test("one area's slow write does not hold up or disturb the other area", async () => {
+  const storage = controlledStorage();
+  const s = createSession({ storage, request: fakeServer().request });
+  const held = storage.hold("setItem");
+  const driver = s.set("driver", { accessToken: "da", refreshToken: "dr" });
+  await held.started;
+  const admin = s.set("admin", { accessToken: "aa", refreshToken: "ar" });
+  await settle();
+  held.release();
+  await Promise.all([driver, admin]);
+  assert.equal(storage.data[keyFor("driver")], "dr");
+  assert.equal(storage.data[keyFor("admin")], "ar");
+});
+
+test("a refused-token cleanup that runs after a new sign-in is dropped", async () => {
+  const storage = controlledStorage({ [keyFor("driver")]: "revoked" });
+  const s = createSession({ storage, request: fakeServer().request });
+  const held = storage.hold("deleteItem");
+  const refreshing = s.refresh("driver");
+  const outcome = refreshing.then(() => "resolved", (e) => e.code);
+  await held.started; // cleaning up the refused token
+  const signingIn = s.set("driver", { accessToken: "a-new", refreshToken: "r-new" });
+  await settle();
+  held.release();
+  await signingIn;
+  await outcome;
+  assert.equal(storage.data[keyFor("driver")], "r-new");
+});

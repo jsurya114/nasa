@@ -3,6 +3,11 @@
 // The refresh token lives only in the phone's secure storage (Keychain / Keystore). The web page never sees it.
 // The access token is short-lived and kept in memory. The storage and the network are passed in, so this file
 // has no React Native imports and is tested with fakes.
+//
+// Ordering. Secure storage is asynchronous, so two operations on the same area could finish in the wrong order
+// (an older write landing after a sign-out). Every change to an area's stored session therefore goes through one
+// queue per area, and each queued change re-checks, at the moment it runs, that it has not been superseded.
+// A sign-out or a new sign-in raises the area's generation immediately; anything older is dropped or runs first.
 
 const { AREAS } = require("./bridge/protocol");
 
@@ -22,11 +27,18 @@ class SessionError extends Error {
 const createSession = ({ storage, request }) => {
   const accessTokens = { admin: null, driver: null };
   const refreshing = new Map();
-  // Goes up on every sign-in and sign-out, so a slow answer from before the change is dropped.
   const generation = { admin: 0, driver: 0 };
+  const queues = { admin: Promise.resolve(), driver: Promise.resolve() };
 
   const assertArea = (area) => {
     if (!AREAS.includes(area)) throw new SessionError("bad_request");
+  };
+
+  // Runs `change` after every earlier change for this area has finished, whether it succeeded or not.
+  const enqueue = (area, change) => {
+    const run = queues[area].then(change, change);
+    queues[area] = run.catch(() => {});
+    return run;
   };
 
   const refresh = (area) => {
@@ -46,18 +58,27 @@ const createSession = ({ storage, request }) => {
         throw new SessionError("network_error");
       }
 
-      if (generation[area] !== started) throw new SessionError("signed_out");
-
       if (reply.status === 200 && reply.data?.accessToken && reply.data?.refreshToken) {
-        await storage.setItem(keyFor(area), reply.data.refreshToken);
-        accessTokens[area] = reply.data.accessToken;
+        // The rotated token is saved in order with every other change. If a sign-out or a new sign-in happened
+        // meanwhile, this write is dropped, and if it was already running, the later change overwrites it.
+        await enqueue(area, async () => {
+          if (generation[area] !== started) throw new SessionError("signed_out");
+          await storage.setItem(keyFor(area), reply.data.refreshToken);
+          if (generation[area] !== started) throw new SessionError("signed_out");
+          accessTokens[area] = reply.data.accessToken;
+        });
         return reply.data.accessToken;
       }
 
+      if (generation[area] !== started) throw new SessionError("signed_out");
+
       // The server refused this refresh token (expired, revoked, wrong role): the session is over
       if (reply.status === 400 || reply.status === 401 || reply.status === 403) {
-        await storage.deleteItem(keyFor(area));
-        accessTokens[area] = null;
+        await enqueue(area, async () => {
+          if (generation[area] !== started) throw new SessionError("signed_out");
+          await storage.deleteItem(keyFor(area));
+          accessTokens[area] = null;
+        });
         throw new SessionError("refresh_failed");
       }
 
@@ -71,13 +92,17 @@ const createSession = ({ storage, request }) => {
   };
 
   return {
-    // After sign-in on the web page.
+    // After sign-in on the web page. A newer sign-in or a sign-out always wins over this one.
     async set(area, { accessToken, refreshToken }) {
       assertArea(area);
-      generation[area] += 1;
+      const mine = ++generation[area];
       refreshing.delete(area);
-      await storage.setItem(keyFor(area), refreshToken);
-      accessTokens[area] = accessToken;
+      accessTokens[area] = null;
+      await enqueue(area, async () => {
+        if (generation[area] !== mine) return;
+        await storage.setItem(keyFor(area), refreshToken);
+        if (generation[area] === mine) accessTokens[area] = accessToken;
+      });
     },
 
     // At web app start. Returns an access token, or null when this area has no session. A lost connection
@@ -103,8 +128,13 @@ const createSession = ({ storage, request }) => {
       refreshing.delete(area);
       accessTokens[area] = null;
 
-      const refreshToken = await storage.getItem(keyFor(area));
-      await storage.deleteItem(keyFor(area));
+      // Runs after every earlier write for this area, so it removes whatever they stored and it is the last word,
+      // unless a newer sign-in is queued behind it.
+      const refreshToken = await enqueue(area, async () => {
+        const stored = await storage.getItem(keyFor(area));
+        await storage.deleteItem(keyFor(area));
+        return stored;
+      });
 
       const revoke = async () => {
         if (!refreshToken) return false;
