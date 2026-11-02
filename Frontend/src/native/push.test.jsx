@@ -320,6 +320,36 @@ describe("registration and sign-out happen in order", () => {
     expect(control.registered.size).toBe(0);
   });
 
+  it("a registration the page gave up on (timeout) does not hold up the removal behind it", async () => {
+    installShell({ ...PUSH_SHELL });
+    const order = [];
+    const net = await installServer(async (config) => {
+      if (config.url.endsWith("/remove")) {
+        order.push("remove");
+        return { status: 200, data: { success: true } };
+      }
+      order.push("register");
+      throw new net.axios.AxiosError("timeout of 5000ms exceeded", "ECONNABORTED", config);
+    });
+    await mountSetup("driver");
+    const { clearSession } = await import("./sessionStore.js");
+    await waitFor(() => expect(posts(net, "/driver/push-token")).toHaveLength(1));
+    await clearSession("driver");
+    await waitFor(() => expect(posts(net, "/driver/push-token/remove")).toHaveLength(1));
+    expect(order).toEqual(["register", "remove"]);
+  });
+
+  it("a registration the server refuses as stale is silent: no refresh, no sign-out, no dialog", async () => {
+    const shell = installShell({ ...PUSH_SHELL });
+    const net = await installServer(async () => ({ status: 409, data: { message: "Registration is from a finished sign-in" } }));
+    await mountSetup("driver");
+    await waitFor(() => expect(posts(net, "/driver/push-token")).toHaveLength(1));
+    await new Promise((r) => setTimeout(r, 50));
+    expect(shell.count("session.refresh")).toBe(0);
+    expect(shell.count("session.clear")).toBe(0);
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
   it("signing out is never held up by a registration that has not answered", async () => {
     const shell = installShell({ ...PUSH_SHELL });
     const { handler } = rememberingServer({ holdRegistration: true });
