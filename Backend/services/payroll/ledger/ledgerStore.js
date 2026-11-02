@@ -102,6 +102,13 @@ export const voidEntry = async (db, admin, request) => {
   if (original.entry_type === 'void') throw new LedgerError(400, 'a void cannot be voided; record a correction instead');
   const { rows: already } = await db.query('SELECT id FROM driver_ledger_entries WHERE voids_entry_id = $1', [original.id]);
   if (already.length) throw new LedgerError(409, 'this entry is already voided');
+  // Once a pay run has used an entry, it stays; fix it with a correction entry (or discard/void that run first).
+  // (The pay run tables arrive with the #143 migration; until then no entry can be on a run.)
+  const { rows: tables } = await db.query("SELECT to_regclass('pay_statement_lines') IS NOT NULL AS ready");
+  if (tables[0].ready) {
+    const { rows: used } = await db.query('SELECT 1 FROM pay_statement_lines WHERE ledger_entry_id = $1 AND active LIMIT 1', [original.id]);
+    if (used.length) throw new LedgerError(409, 'this entry is already on a pay run; record a correction instead');
+  }
 
   const { rows: inserted } = await db.query(
     `INSERT INTO driver_ledger_entries
