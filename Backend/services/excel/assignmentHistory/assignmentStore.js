@@ -109,7 +109,13 @@ export const recordReport = async (db, report, source) => {
   if (!REPORT_HASH.test(source?.reportHash ?? '')) throw new Error('reportHash must be a sha256 hex digest');
   await db.query('SELECT pg_advisory_xact_lock(hashtextextended($1, $2))', ['carrier-assignments', IMPORT_LOCK_KEY]);
 
-  const earlier = await db.query('SELECT id, voided_at FROM carrier_assignment_imports WHERE carrier = $1 AND report_hash = $2', [CARRIER, source.reportHash]);
+  // The same bytes recorded with the same scope are already here. The same bytes with a wider scope are not: a city
+  // admin's copy left out other cities' rows, and someone who may use every city must still be able to add them.
+  const scopeKey = Array.isArray(source.allowedJobs) ? `jobs:${[...source.allowedJobs].sort().join('|')}` : '';
+  const earlier = await db.query(
+    'SELECT id, voided_at FROM carrier_assignment_imports WHERE carrier = $1 AND report_hash = $2 AND scope_key = $3',
+    [CARRIER, source.reportHash, scopeKey]
+  );
   if (earlier.rows[0]) {
     const resolved = await refreshOpenAssignments(db);
     return { importId: earlier.rows[0].id, alreadyRecorded: true, voided: earlier.rows[0].voided_at !== null, recorded: 0, known: 0, skipped: 0, problems: report.problemCount, resolved };
@@ -126,11 +132,11 @@ export const recordReport = async (db, report, source) => {
   const dates = rows.map((r) => r.signedOn).filter(Boolean).sort();
   const { rows: created } = await db.query(
     `INSERT INTO carrier_assignment_imports
-       (carrier, report_hash, source_label, imported_by, signed_from, signed_to, fee_rows, offset_rows, problem_rows, skipped_rows)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+       (carrier, report_hash, scope_key, source_label, imported_by, signed_from, signed_to, fee_rows, offset_rows, problem_rows, skipped_rows)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
      RETURNING id`,
     [
-      CARRIER, source.reportHash, cleanLabel(source.sourceLabel), source.importedBy ?? null,
+      CARRIER, source.reportHash, scopeKey, cleanLabel(source.sourceLabel), source.importedBy ?? null,
       dates[0] ?? null, dates[dates.length - 1] ?? null,
       report.sheets.fee_details?.rows ?? 0, report.sheets.offset_details?.rows ?? 0, report.problemCount, skipped,
     ]
@@ -167,6 +173,9 @@ export const voidImport = async (db, importId, { reason, adminId = null }) => {
 // - cityName is the city's code (city.city_code, for example "DFW GOFO"), the stored label the owner's
 //   exemption rule is written against. cityCode repeats it; cityJob is the city's display name.
 // - Only history is read. The driver's current city is never used.
+// - Each evidence entry says whether its import was scoped to a city admin's cities (scoped: true). resolvedAt is
+//   when NASA linked the Delivery ID to the driver: a link made long after journeyDate leans on the driver code
+//   still belonging to that person, which NASA does not record the history of (see the journal).
 // - An empty list means no history. courier other than "gofo" has no history here yet.
 export const findAssignmentCandidates = async (db, { courier, waybill }) => {
   if (courier !== CARRIER) return [];
@@ -176,7 +185,9 @@ export const findAssignmentCandidates = async (db, { courier, waybill }) => {
   const { rows } = await db.query(
     `SELECT a.id, a.external_delivery_id, a.driver_id, a.route_id, a.route_code, a.city_id,
             c.city_code, c.job AS city_job, to_char(a.signed_on, 'YYYY-MM-DD') AS signed_on,
-            (SELECT json_agg(json_build_object('importId', s.import_id, 'sheet', s.source_sheet, 'row', s.source_row)
+            a.resolved_at,
+            (SELECT json_agg(json_build_object('importId', s.import_id, 'sheet', s.source_sheet, 'row', s.source_row,
+                                               'scoped', i.scope_key <> '')
                              ORDER BY s.import_id, s.source_sheet)
                FROM carrier_assignment_sightings s
                JOIN carrier_assignment_imports i ON i.id = s.import_id
@@ -190,18 +201,22 @@ export const findAssignmentCandidates = async (db, { courier, waybill }) => {
 
   const groups = new Map();
   const keyOf = (row, city) => `${row.driver_id ?? ''}|${row.external_delivery_id}|${city ?? ''}`;
+  const idOf = (row) => `${row.driver_id ?? ''}|${row.external_delivery_id}`;
+  // The known cities of each Delivery ID, with their labels, taken from whichever row has them (the first row
+  // for a Delivery ID may be the one without a route).
   const knownCities = new Map();
   for (const row of rows) {
-    if (row.city_id !== null) {
-      const id = `${row.driver_id ?? ''}|${row.external_delivery_id}`;
-      knownCities.set(id, new Set([...(knownCities.get(id) ?? []), row.city_id]));
-    }
+    if (row.city_id === null) continue;
+    const cities = knownCities.get(idOf(row)) ?? new Map();
+    cities.set(row.city_id, { code: row.city_code, job: row.city_job });
+    knownCities.set(idOf(row), cities);
   }
 
   for (const row of rows) {
-    const cities = knownCities.get(`${row.driver_id ?? ''}|${row.external_delivery_id}`);
-    const city = row.city_id ?? (cities?.size === 1 ? [...cities][0] : null);
-    const id = keyOf(row, city);
+    const cities = knownCities.get(idOf(row));
+    const cityId = row.city_id ?? (cities?.size === 1 ? [...cities.keys()][0] : null);
+    const label = cityId === null ? null : cities.get(cityId);
+    const id = keyOf(row, cityId);
     const existing = groups.get(id);
     if (existing) {
       existing.assignmentIds.push(row.id);
@@ -210,14 +225,15 @@ export const findAssignmentCandidates = async (db, { courier, waybill }) => {
     }
     groups.set(id, {
       driverId: row.driver_id,
-      cityId: city,
-      cityName: row.city_code,
-      cityCode: row.city_code,
-      cityJob: row.city_job,
+      cityId,
+      cityName: label?.code ?? null,
+      cityCode: label?.code ?? null,
+      cityJob: label?.job ?? null,
       carrierDeliveryId: row.external_delivery_id,
       routeId: row.route_id,
       routeCode: row.route_code,
       journeyDate: row.signed_on,
+      resolvedAt: row.resolved_at,
       assignmentIds: [row.id],
       evidence: [...(row.evidence ?? [])],
     });

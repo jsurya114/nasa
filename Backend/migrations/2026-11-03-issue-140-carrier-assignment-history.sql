@@ -14,6 +14,9 @@ CREATE TABLE IF NOT EXISTS carrier_assignment_imports (
   id            BIGSERIAL PRIMARY KEY,
   carrier       TEXT        NOT NULL CHECK (carrier IN ('gofo')),
   report_hash   TEXT        NOT NULL CHECK (report_hash ~ '^[0-9a-f]{64}$'),
+  -- '' when the whole report was recorded. For a city admin, the cities they may use ('jobs:Name|Name'): the same
+  -- file recorded by someone with a wider scope is a separate import, so it adds what the narrow one left out.
+  scope_key     TEXT        NOT NULL DEFAULT '',
   source_label  TEXT        NOT NULL CHECK (char_length(source_label) BETWEEN 1 AND 200),
   imported_by   INTEGER,                       -- admin id; no foreign key so removing an admin never removes history
   imported_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -30,7 +33,7 @@ CREATE TABLE IF NOT EXISTS carrier_assignment_imports (
   void_reason   TEXT,
   CONSTRAINT carrier_assignment_imports_void_complete
     CHECK ((voided_at IS NULL AND void_reason IS NULL) OR (voided_at IS NOT NULL AND void_reason IS NOT NULL)),
-  CONSTRAINT carrier_assignment_imports_report_once UNIQUE (carrier, report_hash)
+  CONSTRAINT carrier_assignment_imports_report_once UNIQUE (carrier, report_hash, scope_key)
 );
 
 -- One row per distinct fact "this waybill was assigned to this Delivery ID on this route on this day".
@@ -131,7 +134,7 @@ BEGIN
   IF OLD.voided_at IS NOT NULL AND (NEW.voided_at IS DISTINCT FROM OLD.voided_at OR NEW.void_reason IS DISTINCT FROM OLD.void_reason) THEN
     RAISE EXCEPTION 'a voided carrier assignment import cannot be changed';
   END IF;
-  IF NEW.id <> OLD.id OR NEW.carrier <> OLD.carrier OR NEW.report_hash <> OLD.report_hash
+  IF NEW.id <> OLD.id OR NEW.carrier <> OLD.carrier OR NEW.report_hash <> OLD.report_hash OR NEW.scope_key <> OLD.scope_key
      OR NEW.source_label <> OLD.source_label OR NEW.imported_by IS DISTINCT FROM OLD.imported_by
      OR NEW.imported_at <> OLD.imported_at THEN
     RAISE EXCEPTION 'carrier assignment import details cannot be changed';
