@@ -506,7 +506,7 @@ export const AdminDashboardQueries = {
   },
 
   //  UPDATED: Only pay journeys with closed = true, with optional dataType and job (city) filter
-  updateDriverPaymentStatus: async (driverName, startDate, endDate, dataType = null, job = null) => {
+  updateDriverPaymentStatus: async (driverName, startDate, endDate, dataType = null, job = null, paymentDate = null) => {
     try {
       const whereClauses = [];
       const queryParams = [driverName];
@@ -550,11 +550,15 @@ export const AdminDashboardQueries = {
         joinConditions.push('pd.route_id = r.id', 'r.job = c.job');
       }
 
+      // The admin's own date when the screen sent one, otherwise the database date as before
+      queryParams.push(paymentDate);
+      const paymentDateParam = `$${queryParams.length}`;
+
       const updateQuery = `
         UPDATE payment_dashboard pd
         SET 
           paid = true,
-          payment_date = CURRENT_DATE
+          payment_date = COALESCE(${paymentDateParam}::date, CURRENT_DATE)
         FROM ${fromTables.join(', ')}
         WHERE ${joinConditions.join(' AND ')}
           AND ${whereClauses.join(' AND ')}

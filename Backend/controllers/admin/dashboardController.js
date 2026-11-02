@@ -1,6 +1,7 @@
 import { AdminDashboardQueries } from "../../services/admin/dashboardQueries.js";
 import { WeeklyExcelQueries } from "../../services/admin/weeklyExcelQueries.js";
 import HttpStatus from "../../utils/statusCodes.js";
+import { parseClientDate, resolveToday } from "../../utils/businessDate.js";
 
 // ✅ Get summary data for all records matching the filter
 export const getSummaryData = async (req, res) => {
@@ -30,7 +31,7 @@ export const getSummaryData = async (req, res) => {
 
     // Handle default today filter
     if (defaultToday === "true") {
-      const today = new Date().toISOString().split('T')[0];
+      const today = resolveToday(req.query.today);
       filters.startDate = today;
       filters.endDate = today;
     }
@@ -82,7 +83,7 @@ export const getPaymentDashboardData = async (req, res) => {
 
     // Handle default today filter
     if (defaultToday === "true") {
-      const today = new Date().toISOString().split('T')[0];
+      const today = resolveToday(req.query.today);
       filters.startDate = today;
       filters.endDate = today;
     }
@@ -154,7 +155,7 @@ export const getAllPaymentDashboardData = async (req, res) => {
 
     // Handle default today filter
     if (defaultToday === "true") {
-      const today = new Date().toISOString().split('T')[0];
+      const today = resolveToday(req.query.today);
       filters.startDate = today;
       filters.endDate = today;
     }
@@ -205,7 +206,7 @@ export const updatePaymentData = async (req, res) => {
 //  UPDATED: Pay journeys with closed = true, supports separate daily/weekly payments
 export const payDriver = async (req, res) => {
   try {
-    const { driverName, startDate, endDate, dataType, job } = req.body;
+    const { driverName, startDate, endDate, dataType, job, today } = req.body;
 
     if (!driverName) {
       return res.status(HttpStatus.BAD_REQUEST).json({
@@ -220,7 +221,8 @@ export const payDriver = async (req, res) => {
       startDate,
       endDate,
       dataType || null,
-      job || null
+      job || null,
+      parseClientDate(today)
     );
 
     // Generate appropriate message based on dataType
