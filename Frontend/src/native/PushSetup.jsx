@@ -11,6 +11,11 @@ import {
 } from "./push";
 import { onSignOut } from "./sessionStore";
 
+// iOS says "undetermined" before the first question. Android has no such state: before the first grant it says
+// "denied" but still allows asking (canAskAgain). Both mean the person has not refused yet. Only a refusal the system
+// will not repeat (denied and not askable) is left alone; the person can still turn notifications on in the settings.
+const canBeAsked = ({ permission, canAskAgain }) => permission === "undetermined" || (permission === "denied" && canAskAgain);
+
 // Mounted for a signed-in person inside the app. Registers this phone if notifications are already allowed, asks in
 // our own words first if they have not been decided, and does nothing in a browser, on a phone that cannot receive
 // push, or when the person said no. The app is fully usable in every case.
@@ -30,7 +35,7 @@ export default function PushSetup({ area }) {
       const status = await getPushStatus();
       if (cancelled || !status?.available) return;
       if (status.permission === "granted") await registerThisPhone(area);
-      else if (status.permission === "undetermined" && shouldAskAgain(area)) setAsking(true);
+      else if (canBeAsked(status) && shouldAskAgain(area)) setAsking(true);
     })();
     return () => {
       cancelled = true;

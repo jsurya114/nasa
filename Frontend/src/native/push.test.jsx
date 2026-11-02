@@ -167,6 +167,37 @@ describe("asking for permission", () => {
     expect(screen.queryByRole("dialog")).toBeNull();
   });
 
+  // Android's notification module reports "denied" with canAskAgain true before the first grant (there is no separate
+  // "not asked yet" state the way iOS has). That is still a question we may ask.
+  const androidFirstRun = { ...PUSH_SHELL, "push.status": { available: true, permission: "denied", canAskAgain: true } };
+
+  it("explains first on Android's first run, where the answer to 'not asked yet' is denied-but-askable", async () => {
+    const shell = installShell({ ...androidFirstRun });
+    const net = await installServer(okServer());
+    await mountSetup();
+    expect(await screen.findByRole("dialog", { name: "Turn on notifications?" })).toBeTruthy();
+    expect(shell.count("push.requestPermission")).toBe(0);
+    expect(net.calls).toEqual([]);
+
+    fireEvent.click(screen.getByRole("button", { name: "Turn on" }));
+    await waitFor(() => expect(posts(net, "/driver/push-token")).toHaveLength(1));
+    expect(shell.count("push.requestPermission")).toBe(1);
+  });
+
+  it("Not now on Android's first run is remembered like anywhere else", async () => {
+    const shell = installShell({ ...androidFirstRun });
+    await installServer(okServer());
+    const first = await mountSetup();
+    fireEvent.click(await screen.findByRole("button", { name: "Not now" }));
+    expect(shell.count("push.requestPermission")).toBe(0);
+    first.unmount();
+    const before = shell.count("push.status");
+    await mountSetup();
+    await waitFor(() => expect(shell.count("push.status")).toBe(before + 1));
+    await new Promise((r) => setTimeout(r, 50));
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
   it("does not ask when the person already said no in the phone's settings", async () => {
     const shell = installShell({ ...PUSH_SHELL, "push.status": { available: true, permission: "denied", canAskAgain: false } });
     const net = await installServer(okServer());
@@ -247,5 +278,95 @@ describe("signing out", () => {
     await clearSession("driver");
     expect(localStorage.getItem("driverToken")).toBeNull();
     expect(net.calls).toEqual([]);
+  });
+});
+
+describe("registration and sign-out happen in order", () => {
+  // A small server that remembers which phones are registered, the way the real one does.
+  const rememberingServer = ({ holdRegistration = false } = {}) => {
+    const registered = new Set();
+    const control = { registered, release: null, order: [] };
+    const handler = async (config) => {
+      const body = JSON.parse(config.data);
+      if (config.url.endsWith("/remove")) {
+        control.order.push("remove");
+        registered.delete(body.token);
+        return { status: 200, data: { success: true } };
+      }
+      if (holdRegistration) await new Promise((resolve) => { control.release = resolve; });
+      control.order.push("register");
+      registered.add(body.token);
+      return { status: 200, data: { success: true } };
+    };
+    return { control, handler };
+  };
+
+  it("a registration still on its way when the person signs out cannot bring the phone back", async () => {
+    installShell({ ...PUSH_SHELL });
+    const { control, handler } = rememberingServer({ holdRegistration: true });
+    const net = await installServer(handler);
+    await mountSetup("driver"); // registers this phone on its own, and removes it again at sign-out
+    const { clearSession } = await import("./sessionStore.js");
+    await waitFor(() => expect(posts(net, "/driver/push-token")).toHaveLength(1)); // sent, not answered yet
+
+    await clearSession("driver"); // local sign-out is immediate; the removal is sent in order behind the registration
+    await new Promise((r) => setTimeout(r, 60));
+    expect(posts(net, "/driver/push-token/remove")).toHaveLength(0); // still waiting its turn
+    control.release();
+    await waitFor(() => expect(posts(net, "/driver/push-token/remove")).toHaveLength(1));
+    await new Promise((r) => setTimeout(r, 30));
+
+    expect(control.order).toEqual(["register", "remove"]);
+    expect(control.registered.size).toBe(0);
+  });
+
+  it("signing out is never held up by a registration that has not answered", async () => {
+    const shell = installShell({ ...PUSH_SHELL });
+    const { handler } = rememberingServer({ holdRegistration: true });
+    const net = await installServer(handler);
+    await mountSetup("driver");
+    const { clearSession } = await import("./sessionStore.js");
+    await waitFor(() => expect(posts(net, "/driver/push-token")).toHaveLength(1));
+
+    await expect(clearSession("driver")).resolves.toBeUndefined();
+    expect(shell.count("session.clear")).toBe(1);
+  });
+
+  it("a registration for the person who has since signed out is dropped before it is sent, and never takes the next person's place", async () => {
+    let signedInAs = "token-A";
+    const tokenReplies = [];
+    const shell = installShell({
+      ...PUSH_SHELL,
+      "session.get": () => ({ accessToken: signedInAs }),
+      "push.getToken": (message) => {
+        tokenReplies.push(message.id);
+        return tokenReplies.length === 1 ? "silent" : { token: TOKEN, platform: "ios" };
+      },
+    });
+    const { control, handler } = rememberingServer();
+    const net = await installServer(handler);
+    const { registerThisPhone } = await import("./push.js");
+    const { getAccessToken, clearSession, saveSession } = await import("./sessionStore.js");
+    await getAccessToken("driver");
+
+    const stale = registerThisPhone("driver"); // person A: waiting on the phone for its token
+    await waitFor(() => expect(tokenReplies).toHaveLength(1));
+    await clearSession("driver");
+    signedInAs = "token-B";
+    await saveSession("driver", { accessToken: "token-B", refreshToken: "r" });
+    expect(await registerThisPhone("driver")).toBe(true); // person B registers the phone
+
+    // Now the phone finally answers person A's request
+    window.dispatchEvent(
+      new CustomEvent("nasa-native-reply", { detail: JSON.stringify({ v: 1, id: tokenReplies[0], ok: true, data: { token: TOKEN, platform: "ios" } }) })
+    );
+    expect(await stale).toBe(false);
+    await new Promise((r) => setTimeout(r, 60));
+
+    const registrations = posts(net, "/driver/push-token");
+    expect(registrations).toHaveLength(1);
+    expect(registrations[0].authorization).toBe("Bearer token-B");
+    expect(control.registered.has(TOKEN)).toBe(true);
+    expect(shell.count("session.set")).toBe(1);
   });
 });
