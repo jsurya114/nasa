@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState, useCallback } from "react";
+import { RefreshCw, Wallet, ShieldCheck, Banknote } from "lucide-react";
 import { useDispatch, useSelector } from "react-redux";
 import { fetchFilteredPaymentData, fetchTodayPaymentData } from "../../redux/slice/admin/dashSlice";
 
@@ -195,14 +196,15 @@ export default function PaymentDashboardTable() {
         }
       `}</style>
 
-      <div className="flex items-center justify-between font-bold text-gray-900 bg-gray-50 border-b border-gray-200 px-4 py-3">
+      <div className="flex items-center justify-between font-bold text-ink bg-brand-50/60 border-b border-line px-4 py-3">
         <span>Driver Jobs</span>
         <button
           onClick={handleRefresh}
-          className="px-3 py-1 text-sm bg-blue-600 text-white rounded hover:bg-blue-500 disabled:opacity-50"
+          className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-semibold bg-brand text-white rounded-xl hover:bg-brand-900 disabled:opacity-50"
           disabled={isLoading}
         >
-          🔄 Refresh
+          <RefreshCw className={`h-4 w-4 ${isLoading ? "animate-spin" : ""}`} aria-hidden="true" />
+          Refresh
         </button>
       </div>
 
@@ -342,7 +344,10 @@ export default function PaymentDashboardTable() {
                         -
                       </td>
                       <td className="px-3 py-3 border-b border-gray-200 text-green-700 text-lg whitespace-nowrap">
-                        💰 ${totals.driverPayment.toFixed(2)}
+                        <span className="inline-flex items-center gap-1.5">
+                          <Wallet className="h-4 w-4" aria-hidden="true" />
+                          ${totals.driverPayment.toFixed(2)}
+                        </span>
                       </td>
                       <td className="px-3 py-3 border-b border-gray-200 whitespace-nowrap">
                         -
@@ -354,7 +359,8 @@ export default function PaymentDashboardTable() {
                     {totals.insuranceDeduction > 0 && (
                       <tr className="bg-red-50 font-bold">
                         <td className="px-3 py-3 border-b border-gray-200 whitespace-nowrap" colSpan="11">
-                          🛡️ Insurance Payment Deduction ({totals.insuranceDays} day{totals.insuranceDays !== 1 ? 's' : ''} × $1.92)
+                          <ShieldCheck className="inline h-4 w-4 -mt-0.5 mr-1.5" aria-hidden="true" />
+                          Insurance Payment Deduction ({totals.insuranceDays} day{totals.insuranceDays !== 1 ? 's' : ''} × $1.92)
                         </td>
                         <td className="px-3 py-3 border-b border-gray-200 text-red-600 text-lg whitespace-nowrap">
                           -${totals.insuranceDeduction.toFixed(2)}
@@ -366,7 +372,8 @@ export default function PaymentDashboardTable() {
                     {totals.insuranceDeduction > 0 && (
                       <tr className="bg-green-50 font-bold border-b-2 border-green-600">
                         <td className="px-3 py-3 border-b border-gray-200 whitespace-nowrap" colSpan="11">
-                          💵 Net Payment
+                          <Banknote className="inline h-4 w-4 -mt-0.5 mr-1.5" aria-hidden="true" />
+                          Net Payment
                         </td>
                         <td className="px-3 py-3 border-b border-gray-200 text-green-700 text-lg whitespace-nowrap">
                           ${totals.netPayment.toFixed(2)}

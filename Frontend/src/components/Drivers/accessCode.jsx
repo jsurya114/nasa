@@ -1,7 +1,7 @@
 // components/driver/DriverAccessCodePage.jsx
 "use client";
 
-import { MapPin, Camera, Lock } from "lucide-react";
+import { MapPin, Camera, Lock, KeyRound, ListChecks, Save, LoaderCircle } from "lucide-react";
 import { useState, useEffect } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import {
@@ -259,13 +259,11 @@ export default function DriverAccessCodePage() {
         {/* Add New Access Code Card */}
         <div className="card-surface p-4 sm:p-8 mb-6 sm:mb-8">
           <div className="flex flex-col sm:flex-row sm:items-center mb-6 sm:mb-8">
-            <div className="bg-brand p-3 rounded-xl mb-4 sm:mb-0 sm:mr-4 w-fit">
-              <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
-              </svg>
+            <div className="mb-4 sm:mb-0 sm:mr-4 grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-brand-50 text-brand-700 ring-1 ring-brand-100">
+              <KeyRound className="h-6 w-6" aria-hidden="true" />
             </div>
             <div>
-              <h1 className="text-xl sm:text-2xl lg:text-3xl font-bold bg-gradient-to-r from-gray-900 to-gray-600 bg-clip-text text-transparent">
+              <h1 className="text-xl sm:text-2xl lg:text-3xl font-bold tracking-tight text-ink">
                 {t('addNewAccessCode')}
               </h1>
               <p className="text-gray-600 mt-1 text-sm sm:text-base">
@@ -396,13 +394,18 @@ export default function DriverAccessCodePage() {
             <div className="flex justify-end pt-4">
               <button
                 type="submit"
-                className={`px-6 sm:px-8 py-3 bg-brand text-white rounded-xl shadow-lg hover:bg-brand-dark focus:outline-none focus:ring-4 focus:ring-purple-200 transition-all font-semibold ${status === "loading"
+                className={`px-6 sm:px-8 py-3 bg-brand text-white rounded-xl shadow-lg hover:bg-brand-dark focus:outline-none focus:ring-4 focus:ring-brand-500/30 transition-all font-semibold ${status === "loading"
                     ? "opacity-50 cursor-not-allowed"
                     : "hover:shadow-xl transform hover:-translate-y-0.5"
                   }`}
                 disabled={status === "loading"}
               >
-                {status === "loading" ? t('saving') : t('saveAccessCode')}
+                <span className="inline-flex items-center justify-center gap-2">
+                  {status === "loading"
+                    ? <LoaderCircle className="h-5 w-5 animate-spin" aria-hidden="true" />
+                    : <Save className="h-5 w-5" aria-hidden="true" />}
+                  {status === "loading" ? t('saving') : t('saveAccessCode')}
+                </span>
               </button>
             </div>
           </form>
@@ -413,18 +416,11 @@ export default function DriverAccessCodePage() {
           <div className="px-3 sm:px-4 lg:px-8 py-4 sm:py-6 border-b border-gray-100">
             <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
               <div className="flex flex-col sm:flex-row sm:items-center">
-                <div className="bg-gradient-to-r from-emerald-500 to-teal-600 p-3 rounded-xl mb-4 sm:mb-0 sm:mr-4 w-fit">
-                  <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
-                    />
-                  </svg>
+                <div className="mb-4 sm:mb-0 sm:mr-4 grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-brand-50 text-brand-700 ring-1 ring-brand-100">
+                  <ListChecks className="h-6 w-6" aria-hidden="true" />
                 </div>
                 <div>
-                  <h2 className="text-xl sm:text-2xl lg:text-3xl font-bold bg-gradient-to-r from-gray-900 to-gray-600 bg-clip-text text-transparent">
+                  <h2 className="text-xl sm:text-2xl lg:text-3xl font-bold tracking-tight text-ink">
                     {t('savedAccessCodes')}
                   </h2>
                   <p className="text-gray-600 mt-1 text-sm sm:text-base">{t('total')}: {totalItems} {t('codes')}</p>

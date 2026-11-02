@@ -272,7 +272,7 @@ function DriversList({ onEdit }) {
                         disabled={!d.enabled}
                         className={`group relative px-4 py-1.5 text-white text-xs font-medium rounded-md transition-all duration-200 shadow-sm flex items-center gap-1.5 ${
                           d.enabled
-                            ? "bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 hover:shadow-md cursor-pointer"
+                            ? "bg-brand hover:bg-brand-900 hover:shadow-md cursor-pointer"
                             : "bg-gray-400 cursor-not-allowed opacity-50"
                         }`}
                         title={d.enabled ? "Edit driver" : "Enable driver to edit"}

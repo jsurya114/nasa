@@ -16,6 +16,7 @@ import Header from "../../reuse/Header.jsx";
 import Nav from "../../reuse/Nav.jsx";
 import PaymentDashboardTable from "./DashboardTable.jsx";
 import Loader from "../Loader.jsx"
+import { CalendarDays, CalendarRange, ChevronDown, LayoutGrid, ShieldCheck, Banknote } from "lucide-react";
 
 export default function Dashboard() {
   const dispatch = useDispatch();
@@ -413,21 +414,24 @@ export default function Dashboard() {
         
         .data-type-tab {
           position: relative;
+          display: inline-flex;
+          align-items: center;
+          gap: 0.5rem;
           padding: 0.75rem 1.5rem;
           font-weight: 600;
-          border-radius: 0.5rem;
+          border-radius: 0.75rem;
           transition: all 0.2s ease;
           cursor: pointer;
         }
         
         .data-type-tab:hover:not(.active):not(.disabled) {
-          background-color: #e0f2fe;
+          background-color: var(--color-brand-50);
         }
         
         .data-type-tab.active {
-          background-color: #3b82f6;
+          background-color: var(--color-brand);
           color: white;
-          box-shadow: 0 4px 6px -1px rgba(59, 130, 246, 0.3);
+          box-shadow: 0 4px 10px -2px rgb(59 31 107 / 0.35);
         }
         
         .data-type-tab.disabled {
@@ -437,21 +441,23 @@ export default function Dashboard() {
         }
       `}</style>
 
-      <div className="min-h-screen bg-gray-100 text-gray-900 font-poppins">
+      <div className="min-h-dvh bg-canvas text-ink">
         <Header />
 
         <main className="max-w-[1450px] mx-auto p-2 sm:p-4 pb-20 sm:pb-40">
           <section className="card-surface mb-4">
-            <div className="font-bold text-gray-900 bg-gray-50 border-b border-gray-200 px-4 py-3 flex items-center justify-between">
+            <div className="font-bold text-ink bg-brand-50/60 border-b border-line px-4 py-3 flex items-center justify-between">
               <span>Data Filters</span>
               {showTodayOnly && (
-                <span className="text-sm font-normal text-blue-600">
-                  📅 Showing today's journeys
+                <span className="inline-flex items-center gap-1.5 text-sm font-medium text-brand-700">
+                  <CalendarDays className="h-4 w-4" aria-hidden="true" />
+                  Showing today's journeys
                 </span>
               )}
               {isFiltered && !showTodayOnly && (
-                <span className="text-sm font-normal text-gray-600">
-                  📅 Showing filtered data
+                <span className="inline-flex items-center gap-1.5 text-sm font-medium text-ink-muted">
+                  <CalendarDays className="h-4 w-4" aria-hidden="true" />
+                  Showing filtered data
                 </span>
               )}
             </div>
@@ -484,13 +490,15 @@ export default function Dashboard() {
                       className="bg-white text-ink placeholder:text-ink-muted/70 transition-shadow min-h-11 w-full border border-line rounded-xl px-3 py-2 focus:outline-none focus:ring-4 focus:ring-brand-500/20"
                     />
                   )}
-                  <div className="text-gray-400 text-center hidden sm:block">
-                    {item.type === "select" ? "▾" : "📅"}
+                  <div className="text-ink-muted hidden sm:flex justify-center">
+                    {item.type === "select"
+                      ? <ChevronDown className="h-4 w-4" aria-hidden="true" />
+                      : <CalendarDays className="h-5 w-5" aria-hidden="true" />}
                   </div>
                 </div>
               ))}
 
-              <div className="flex items-center gap-3 px-4 py-3 bg-blue-50 border-l-4 border-blue-500">
+              <div className="flex items-center gap-3 px-4 py-3 bg-brand-50 border-l-4 border-brand-500">
                 <input
                   type="checkbox"
                   name="companyEarnings"
@@ -506,7 +514,7 @@ export default function Dashboard() {
               <div className="px-4 py-3 flex flex-wrap gap-3">
                 <button
                   onClick={handleFilterClick}
-                  className="bg-blue-600 text-white font-semibold px-4 py-2 rounded-lg shadow-md hover:bg-blue-700 transition-colors"
+                  className="bg-brand text-white font-semibold px-4 py-2.5 rounded-xl shadow-md hover:bg-brand-900 transition-colors"
                 >
                   Filter Data
                 </button>
@@ -518,7 +526,7 @@ export default function Dashboard() {
                 </button>
                 <button
                   onClick={handleAddDelivery}
-                  className="bg-blue-600 text-white font-semibold px-4 py-2 rounded-lg shadow-md hover:bg-blue-700 transition-colors"
+                  className="bg-brand text-white font-semibold px-4 py-2.5 rounded-xl shadow-md hover:bg-brand-900 transition-colors"
                 >
                   Add Delivery
                 </button>
@@ -531,9 +539,11 @@ export default function Dashboard() {
                       setShowConfirmModal(true);
                     }}
                     disabled={paymentProcessing}
-                    className="bg-green-600 text-white font-semibold px-4 py-2 rounded-lg shadow-md hover:bg-green-700 transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed"
+                    className="inline-flex items-center gap-2 bg-green-600 text-white font-semibold px-4 py-2.5 rounded-xl shadow-md hover:bg-green-700 transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed"
                   >
-                    {paymentProcessing ? "Processing..." : `📅 Pay Daily (${paymentCounts.dailyClosedUnpaid})`}
+                    {paymentProcessing ? "Processing..." : (
+                      <><CalendarDays className="h-4 w-4" aria-hidden="true" />Pay Daily ({paymentCounts.dailyClosedUnpaid})</>
+                    )}
                   </button>
                 )}
 
@@ -544,15 +554,17 @@ export default function Dashboard() {
                       setShowConfirmModal(true);
                     }}
                     disabled={paymentProcessing}
-                    className="bg-purple-600 text-white font-semibold px-4 py-2 rounded-lg shadow-md hover:bg-purple-700 transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed"
+                    className="inline-flex items-center gap-2 bg-brand text-white font-semibold px-4 py-2.5 rounded-xl shadow-md hover:bg-brand-900 transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed"
                   >
-                    {paymentProcessing ? "Processing..." : `📆 Pay Weekly (${paymentCounts.weeklyClosedUnpaid})`}
+                    {paymentProcessing ? "Processing..." : (
+                      <><CalendarRange className="h-4 w-4" aria-hidden="true" />Pay Weekly ({paymentCounts.weeklyClosedUnpaid})</>
+                    )}
                   </button>
                 )}
               </div>
 
               {showExtraFields && (
-                <div className="px-4 py-3 grid grid-cols-1 gap-3 bg-blue-50">
+                <div className="px-4 py-3 grid grid-cols-1 gap-3 bg-brand-50">
                   <div className="mb-2 font-semibold text-gray-700 flex items-center gap-2">
                     <svg className="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
@@ -570,13 +582,16 @@ export default function Dashboard() {
                     { field: "delivered", label: "Total Delivered" },
                     { field: "driversPayment", label: "Total Drivers Payment" },
                     ...(Number(extraFieldsData.insuranceDeduction) > 0 ? [
-                      { field: "insuranceDeduction", label: "🛡️ Insurance Deduction", highlight: false, isNegative: true },
-                      { field: "netDriverPayment", label: "💵 Net Driver Payment", highlight: false, isBold: true },
+                      { field: "insuranceDeduction", label: "Insurance Deduction", icon: ShieldCheck, highlight: false, isNegative: true },
+                      { field: "netDriverPayment", label: "Net Driver Payment", icon: Banknote, highlight: false, isBold: true },
                     ] : []),
                     ...(isSuperAdmin ? [{ field: "companyEarnings", label: "Total Company Earnings", highlight: true }] : []),
                   ].map((item, i) => (
                     <div key={i} className="flex items-center gap-3">
-                      <label className={`w-48 ${item.isNegative ? 'text-red-600' : item.isBold ? 'text-green-700 font-bold' : 'text-gray-600'}`}>{item.label}:</label>
+                      <label className={`w-48 inline-flex items-center gap-1.5 ${item.isNegative ? 'text-red-600' : item.isBold ? 'text-green-700 font-bold' : 'text-gray-600'}`}>
+                        {item.icon && <item.icon className="h-4 w-4 shrink-0" aria-hidden="true" />}
+                        {item.label}:
+                      </label>
                       <input
                         type="text"
                         name={item.field}
@@ -600,7 +615,8 @@ export default function Dashboard() {
                   onClick={() => handleDataTypeChange("all")}
                   className={`data-type-tab ${selectedDataType === "all" ? "active" : ""}`}
                 >
-                  📊 All Data
+                  <LayoutGrid className="h-4 w-4" aria-hidden="true" />
+                  All Data
                 </button>
 
                 <button
@@ -608,7 +624,8 @@ export default function Dashboard() {
                   disabled={!availableDataTypes.daily}
                   className={`data-type-tab ${selectedDataType === "daily" ? "active" : ""} ${!availableDataTypes.daily ? "disabled" : ""}`}
                 >
-                  📅 SPEEDX
+                  <CalendarDays className="h-4 w-4" aria-hidden="true" />
+                  SPEEDX
                 </button>
 
                 <button
@@ -616,7 +633,8 @@ export default function Dashboard() {
                   disabled={!availableDataTypes.weekly}
                   className={`data-type-tab ${selectedDataType === "weekly" ? "active" : ""} ${!availableDataTypes.weekly ? "disabled" : ""}`}
                 >
-                  📆 GOFO
+                  <CalendarRange className="h-4 w-4" aria-hidden="true" />
+                  GOFO
                 </button>
 
                 <span className="ml-auto text-xs text-gray-500">
@@ -630,7 +648,7 @@ export default function Dashboard() {
 
           {isFiltered && (
             <section className="card-surface overflow-x-auto">
-              <div className="font-bold text-gray-900 bg-gray-50 border-b border-gray-200 px-4 py-3">
+              <div className="font-bold text-ink bg-brand-50/60 border-b border-line px-4 py-3">
                 Driver Jobs
               </div>
               <PaymentDashboardTable showExtraFields={showExtraFields} />
