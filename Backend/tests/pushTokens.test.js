@@ -101,6 +101,70 @@ dbTest('a person keeps at most the allowed number of active phones; the oldest a
   assert.ok(mine.includes(TOKEN(30 + MAX_DEVICES + 1)), 'the newest is on');
 });
 
+// Two registrations for the same person that overlap. Each one is held right after its insert, and again right after
+// its clean-up of the extra phones, until the other has done the same (or a short wait passes). That is the moment
+// the old code let both of them count "5 phones" and both commit.
+const overlapping = (parties, waitMs = 400) => {
+  const patterns = [/INSERT INTO device_tokens/, /UPDATE device_tokens SET revoked_at/];
+  const stages = patterns.map(() => {
+    let arrived = 0;
+    let open;
+    const gate = new Promise((resolve) => { open = resolve; });
+    return async () => {
+      arrived += 1;
+      if (arrived >= parties) open();
+      await Promise.race([gate, new Promise((resolve) => setTimeout(resolve, waitMs))]);
+    };
+  });
+  return {
+    connect: async () => {
+      const client = await pool.connect();
+      const query = client.query.bind(client);
+      client.query = async (sql, ...rest) => {
+        const result = await query(sql, ...rest);
+        const stage = typeof sql === 'string' ? patterns.findIndex((pattern) => pattern.test(sql)) : -1;
+        if (stage >= 0) await stages[stage]();
+        return result;
+      };
+      return client;
+    },
+  };
+};
+
+dbTest('overlapping registrations still leave the person at most the allowed number of phones', async () => {
+  const person = { userType: 'driver', userId: 11 };
+  for (let n = 0; n < MAX_DEVICES - 1; n++) {
+    await queries.default.register({ ...person, token: TOKEN(110 + n), platform: 'ios', appVersion: null });
+  }
+  const db = overlapping(2);
+  await Promise.all([
+    queries.default.register({ ...person, token: TOKEN(120), platform: 'ios', appVersion: null }, db),
+    queries.default.register({ ...person, token: TOKEN(121), platform: 'android', appVersion: null }, db),
+  ]);
+  const mine = await active('driver', 11);
+  assert.equal(mine.length, MAX_DEVICES);
+  assert.ok(mine.includes(TOKEN(120)) && mine.includes(TOKEN(121)), 'both new phones are on');
+});
+
+dbTest('a burst of registrations for one person never leaves more than the allowed number on', async () => {
+  const burst = Array.from({ length: 12 }, (_, n) =>
+    queries.default.register({ userType: 'admin', userId: 12, token: TOKEN(130 + n), platform: 'ios', appVersion: null }));
+  await Promise.all(burst);
+  assert.equal((await active('admin', 12)).length, MAX_DEVICES);
+});
+
+dbTest('registrations for different people do not wait for each other', async () => {
+  const db = overlapping(2, 5000);
+  const started = Date.now();
+  await Promise.all([
+    queries.default.register({ userType: 'driver', userId: 13, token: TOKEN(140), platform: 'ios', appVersion: null }, db),
+    queries.default.register({ userType: 'driver', userId: 14, token: TOKEN(141), platform: 'ios', appVersion: null }, db),
+  ]);
+  assert.ok(Date.now() - started < 2000, 'both inserted together, so the barrier opened at once');
+  assert.deepEqual(await active('driver', 13), [TOKEN(140)]);
+  assert.deepEqual(await active('driver', 14), [TOKEN(141)]);
+});
+
 dbTest('a person can switch off only their own phone', async () => {
   await queries.default.register({ userType: 'driver', userId: 4, token: TOKEN(40), platform: 'ios', appVersion: null });
   assert.equal(await queries.default.revoke({ userType: 'driver', userId: 5, token: TOKEN(40) }), 0);
