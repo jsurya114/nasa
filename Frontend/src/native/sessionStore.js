@@ -89,6 +89,11 @@ const hydrate = () => {
   return hydration;
 };
 
+// Changes every time this area signs in or out. Something that started under one value and finds another when it is
+// about to act belongs to a person who is no longer signed in, and must not go on (for example a push registration
+// that was still waiting on the phone when the person signed out).
+export const sessionGeneration = (area) => generation[area];
+
 export const getAccessToken = async (area) => {
   if (!isNativeShell()) return localStorage.getItem(`${area}Token`);
   if (readPending(area)) {

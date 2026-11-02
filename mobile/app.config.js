@@ -41,10 +41,12 @@ const UNUSED_ANDROID_PERMISSIONS = [
   "android.permission.SYSTEM_ALERT_WINDOW",
 ];
 
-// The development client adds local-network entries to the iOS settings. Release builds have no use for them and an
-// app review would ask why they are there, so they are removed outside development.
-const withoutDevelopmentOnlyEntries = (config) =>
+// The native iOS template itself ships NSAllowsLocalNetworking, and the development client adds its local-network
+// and Bonjour entries, so leaving the setting out of `infoPlist` is not enough: the generated Info.plist keeps them.
+// Outside development they are removed from the generated file, leaving iOS's default of refusing plain http.
+const withoutLocalNetworkExceptions = (config) =>
   withInfoPlist(config, (c) => {
+    if (c.modResults.NSAppTransportSecurity) delete c.modResults.NSAppTransportSecurity.NSAllowsLocalNetworking;
     delete c.modResults.NSLocalNetworkUsageDescription;
     delete c.modResults.NSBonjourServices;
     return c;
@@ -88,7 +90,7 @@ module.exports = {
       ["expo-secure-store", { faceIDPermission: false }],
       ["expo-notifications", { color: "#4C2A85" }],
       ["expo-build-properties", { android: { usesCleartextTraffic: isDevelopment } }],
-      ...(isDevelopment ? [] : [withoutDevelopmentOnlyEntries]),
+      ...(isDevelopment ? [] : [withoutLocalNetworkExceptions]),
     ],
     extra: { appEnv, webOrigin, apiOrigin, ...(easProjectId ? { eas: { projectId: easProjectId } } : {}) },
   },

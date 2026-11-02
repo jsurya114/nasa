@@ -172,6 +172,7 @@ const Journey = () => {
   const uncertain = useUncertainSave({
     check: async () => (await dispatch(fetchTodayJourney(driver.id)).unwrap()).length > 0,
     onSaved: finishSaved,
+    persist: { area: "driver", userId: driver?.id, form: "journey", scope: formData.journey_date },
   });
 
   const handleSubmit = useCallback(async (e) => {

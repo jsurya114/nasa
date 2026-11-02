@@ -4,9 +4,14 @@
 // sees it, and all of an area's drafts are removed at sign-out.
 
 const PREFIX = "nasa.draft.";
+// A save whose result the page could not confirm (see hooks/useUncertainSave.js). It is remembered here, apart from the
+// typed entries, so a reload cannot forget that the server may already hold the record. Same rules as a draft:
+// private to this tab, keyed by area and person, and removed at sign-out.
+const PENDING_PREFIX = "nasa.pending.";
 const MAX_VALUE_LENGTH = 500;
 
 const keyFor = (area, userId, form) => `${PREFIX}${area}.${userId}.${form}`;
+const pendingKeyFor = (area, userId, form) => `${PENDING_PREFIX}${area}.${userId}.${form}`;
 
 const storage = () => {
   try {
@@ -54,14 +59,41 @@ export const clearDraft = (area, userId, form) => {
   }
 };
 
-// At sign-out: every draft of this area, whoever it belonged to.
+// `scope` says which submission is unconfirmed (for the journey form, its date), so a leftover from another day is
+// never mistaken for today's.
+export const markPending = (area, userId, form, scope) => {
+  try {
+    storage()?.setItem(pendingKeyFor(area, userId, form), String(scope));
+  } catch {
+    // Without storage this only lasts until the page is reloaded
+  }
+};
+
+// The scope that was marked, or null.
+export const readPending = (area, userId, form) => {
+  try {
+    return storage()?.getItem(pendingKeyFor(area, userId, form)) ?? null;
+  } catch {
+    return null;
+  }
+};
+
+export const clearPending = (area, userId, form) => {
+  try {
+    storage()?.removeItem(pendingKeyFor(area, userId, form));
+  } catch {
+    // Nothing to clear
+  }
+};
+
+// At sign-out: every draft and unconfirmed-save mark of this area, whoever it belonged to.
 export const clearDrafts = (area) => {
   try {
     const store = storage();
     if (!store) return;
-    const prefix = `${PREFIX}${area}.`;
+    const prefixes = [`${PREFIX}${area}.`, `${PENDING_PREFIX}${area}.`];
     Object.keys(store)
-      .filter((key) => key.startsWith(prefix))
+      .filter((key) => prefixes.some((prefix) => key.startsWith(prefix)))
       .forEach((key) => store.removeItem(key));
   } catch {
     // Nothing to clear
