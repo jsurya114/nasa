@@ -53,6 +53,23 @@ test('the driver ledger: city access, exemption, no double entries, immutable hi
       assert.equal(result.entry.created_by, dfwAdmin.id);
     });
 
+    await t.test('a debit without a repayment arrangement is flagged for review; one with a plan is not', async () => {
+      const noPlan = await createEntry(db, dfwAdmin, entry({ type: 'advance', amount: '200', disbursedOutsidePayroll: true, reason: 'No plan yet' }));
+      const plan = await createEntry(db, dfwAdmin, entry({ type: 'advance', amount: '200', disbursedOutsidePayroll: true, recoveryPlan: 'installments', installmentAmount: '50' }));
+      const credit = await createEntry(db, dfwAdmin, entry({ type: 'reimbursement', amount: '1' }));
+      assert.deepEqual([noPlan.entry.needs_review, plan.entry.needs_review, credit.entry.needs_review], [true, false, false]);
+      assert.deepEqual([plan.entry.recovery_plan, plan.entry.installment_amount], ['installments', '50.00']);
+      // the database refuses an instalment as large as the whole amount, and a plan on a credit
+      await savepoint(() => assert.rejects(db.query(
+        `INSERT INTO driver_ledger_entries (request_id, driver_id, city_id, entry_type, direction, amount, reason, effective_date, recovery_plan, installment_amount, created_by)
+         VALUES ($1, $2, $3, 'advance', 'debit', 50, 'bad plan', '2026-11-03', 'installments', 50, $4)`, [randomUUID(), d1, dfw, dfwAdmin.id]), /check constraint/));
+      await savepoint(() => assert.rejects(db.query(
+        `INSERT INTO driver_ledger_entries (request_id, driver_id, city_id, entry_type, direction, amount, reason, effective_date, recovery_plan, created_by)
+         VALUES ($1, $2, $3, 'reimbursement', 'credit', 50, 'bad plan', '2026-11-03', 'full_next_payday', $4)`, [randomUUID(), d1, dfw, dfwAdmin.id]), /check constraint/));
+      // keep the balances below independent of this step
+      for (const id of [noPlan.entry.id, plan.entry.id, credit.entry.id]) await voidEntry(db, dfwAdmin, { entryId: id, requestId: randomUUID(), reason: 'Test cleanup' });
+    });
+
     await t.test('wrong city, no city, or a driver from another city is refused', async () => {
       await assert.rejects(createEntry(db, dfwAdmin, entry({ cityId: other, driverId: d3 })), { status: 403 });
       await assert.rejects(createEntry(db, noCityAdmin, entry({})), { status: 403 });

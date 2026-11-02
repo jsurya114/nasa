@@ -26,6 +26,10 @@ CREATE TABLE IF NOT EXISTS driver_ledger_entries (
   effective_date             date          NOT NULL,
   intended_payday            date,
   disbursed_outside_payroll  boolean       NOT NULL DEFAULT false,
+  -- How a debit is recovered from pay (issue #143): all on the next payday, or fixed instalments. NULL means no
+  -- arrangement was recorded: the entry is flagged for review and never recovered automatically.
+  recovery_plan              text          CHECK (recovery_plan IN ('full_next_payday', 'installments')),
+  installment_amount         numeric(12,2),
   claim_type                 text,
   waybill                    text,
   exempt                     boolean       NOT NULL DEFAULT false,
@@ -33,6 +37,9 @@ CREATE TABLE IF NOT EXISTS driver_ledger_entries (
   created_by                 integer       NOT NULL REFERENCES admin(id),
   created_at                 timestamptz   NOT NULL DEFAULT now(),
   CHECK (disbursed_outside_payroll = false OR entry_type = 'advance'),
+  CHECK (recovery_plan IS NULL OR (direction = 'debit' AND entry_type <> 'void')),
+  CHECK ((recovery_plan = 'installments') = (installment_amount IS NOT NULL)),
+  CHECK (installment_amount IS NULL OR (installment_amount > 0 AND installment_amount < amount)),
   CHECK ((entry_type = 'manual_claim') = (claim_type IS NOT NULL)),
   CHECK (exempt = false OR entry_type = 'manual_claim'),
   CHECK ((entry_type = 'void') = (voids_entry_id IS NOT NULL)),

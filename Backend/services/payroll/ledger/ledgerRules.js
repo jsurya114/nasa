@@ -14,6 +14,7 @@ export const ENTRY_DIRECTIONS = Object.freeze({
   correction: null,            // the person states the direction
 });
 export const ENTRY_TYPES = Object.freeze(Object.keys(ENTRY_DIRECTIONS));
+export const RECOVERY_PLANS = Object.freeze(['full_next_payday', 'installments']);
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const MAX_AMOUNT = 10000;
@@ -72,6 +73,24 @@ export const parseNewEntry = (body = {}) => {
     errors.disbursedOutsidePayroll = 'say whether this advance was already paid out outside payroll (true or false)';
   }
 
+  // Repayment arrangement for a debit (#143). Optional: without one, the entry waits for review and is never
+  // recovered automatically. Credits never carry one.
+  let recoveryPlan = null;
+  let installmentAmount = null;
+  if (body.recoveryPlan !== undefined && body.recoveryPlan !== null && body.recoveryPlan !== '') {
+    if (direction !== 'debit') errors.recoveryPlan = 'only an amount the driver owes can have a repayment arrangement';
+    else if (!RECOVERY_PLANS.includes(body.recoveryPlan)) errors.recoveryPlan = `recoveryPlan must be one of: ${RECOVERY_PLANS.join(', ')}`;
+    else recoveryPlan = body.recoveryPlan;
+  }
+  if (recoveryPlan === 'installments') {
+    const per = parseCharge(body.installmentAmount);
+    if (per.error || Number(per.charge) <= 0) errors.installmentAmount = 'give the amount recovered each payday';
+    else if (!amount.error && Number(per.charge) >= Number(amount.charge)) errors.installmentAmount = 'an instalment must be less than the whole amount; use full_next_payday instead';
+    else installmentAmount = per.charge;
+  } else if (body.installmentAmount !== undefined && body.installmentAmount !== null && body.installmentAmount !== '') {
+    errors.installmentAmount = 'an instalment amount needs recoveryPlan "installments"';
+  }
+
   const claimType = type === 'manual_claim' ? cleanText(body.claimType, 100) : null;
   if (type === 'manual_claim' && !claimTypeKey(claimType)) errors.claimType = 'a manual claim needs its claim type';
   const waybill = type === 'manual_claim' && body.waybill ? normalizeWaybill(body.waybill).slice(0, 64) : null;
@@ -80,7 +99,7 @@ export const parseNewEntry = (body = {}) => {
   return {
     entry: {
       requestId, driverId, cityId, type, direction, amount: amount.charge, reason, effectiveDate, intendedPayday,
-      disbursedOutsidePayroll: disbursed, claimType, waybill,
+      disbursedOutsidePayroll: disbursed, claimType, waybill, recoveryPlan, installmentAmount,
     },
   };
 };

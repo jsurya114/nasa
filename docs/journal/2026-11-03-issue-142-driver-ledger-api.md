@@ -20,6 +20,7 @@
   - a `correction` states its own direction.
   
   Amounts are always positive, to the cent, at most 10,000.
+- **Repayment arrangement for any debit** (owner's proposed policy, 3 Nov 2026, to be confirmed with the client): `recovery_plan` is either `full_next_payday` or `installments`, with `installment_amount` (for example $200 recovered as $50 over four paydays). If no arrangement is recorded, the entry is shown as `needs_review` and #143 never recovers it automatically. Credits cannot carry one. The database refuses an instalment that is not smaller than the whole amount.
 - **An advance must say** whether it was already paid out outside payroll (`disbursed_outside_payroll`), so recording it never pays it again. Only advances can carry that flag.
 - **City access on the server for every call:** a super admin sees all cities; a city admin sees only cities in `admin_city_ref`. The driver must currently belong to the chosen city. The admin comes from the token.
 - **No double entries:**

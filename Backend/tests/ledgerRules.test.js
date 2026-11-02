@@ -20,7 +20,24 @@ test('a valid entry is cleaned and keeps the amount positive, to the cent', () =
   assert.deepEqual(entry, {
     requestId: REQ, driverId: 7, cityId: 2, type: 'expense', direction: 'debit', amount: '25.50', reason: 'Lost scanner',
     effectiveDate: '2026-11-03', intendedPayday: '2026-11-07', disbursedOutsidePayroll: false, claimType: null, waybill: null,
+    recoveryPlan: null, installmentAmount: null,
   });
+});
+
+test('a debit may record how it is repaid: all next payday, or fixed instalments', () => {
+  const advance = (o) => parseNewEntry(base({ type: 'advance', amount: '200', disbursedOutsidePayroll: true, ...o }));
+  assert.deepEqual([advance({}).entry.recoveryPlan, advance({}).entry.installmentAmount], [null, null], 'no plan: left for review');
+  assert.equal(advance({ recoveryPlan: 'full_next_payday' }).entry.recoveryPlan, 'full_next_payday');
+  assert.deepEqual(
+    [advance({ recoveryPlan: 'installments', installmentAmount: '50' }).entry.recoveryPlan, advance({ recoveryPlan: 'installments', installmentAmount: '50' }).entry.installmentAmount],
+    ['installments', '50.00'],
+    '$200 as $50 over four paydays'
+  );
+  for (const per of [undefined, '0', '-5', 'x', '200', '250']) assert.ok(advance({ recoveryPlan: 'installments', installmentAmount: per }).errors?.installmentAmount, String(per));
+  assert.ok(advance({ installmentAmount: '50' }).errors.installmentAmount, 'an amount without the plan');
+  assert.ok(advance({ recoveryPlan: 'weekly' }).errors.recoveryPlan);
+  assert.ok(parseNewEntry(base({ type: 'reimbursement', recoveryPlan: 'full_next_payday' })).errors.recoveryPlan, 'credits are not recovered');
+  assert.equal(parseNewEntry(base({ recoveryPlan: 'full_next_payday' })).entry.recoveryPlan, 'full_next_payday', 'expenses can have one too');
 });
 
 test('bad input is refused field by field', () => {
