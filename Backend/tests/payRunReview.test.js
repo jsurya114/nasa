@@ -122,6 +122,28 @@ test('pay run review cases: dates, one recovery per period, lowered claims, undi
       assert.equal(settled.reimbursements, '10.00');
     });
 
+    await isolated('a lowered claim is flagged only in the city whose run deducted it', async () => {
+      const cityB = (await one("INSERT INTO city (job, city_code, city_type) VALUES ('Test Review B', 'TSTRB', 'DAILY') RETURNING id")).id;
+      const routeB = (await one(`INSERT INTO routes (name, job, company_route_price, driver_route_price, company_doublestop_price, driver_doublestop_price, route_code_in_string)
+        VALUES ('TRB 1', 'Test Review B', 2, 1.6, 0.5, 0.25, 'TRB-1') RETURNING id`)).id;
+      const dd = (await one('INSERT INTO dashboard_data (driver_id, route_id, start_seq, end_seq, journey_date, packages) VALUES ($1,$2,9900,9909,$3,10) RETURNING id', [d1, routeB, '2026-11-05'])).id;
+      await db.query('UPDATE payment_dashboard SET closed = true, paid = false, driver_payment = 100, insurance_deduction = 0 WHERE dashboard_data_id = $1', [dd]);
+      const claimIn = async (version, charge) => {
+        const id = (await one(`INSERT INTO courier_claims (courier, claim_key, version, waybill, claim_type, claim_type_key, claim_at, original_charge, deduction_amount, import_city_id, source_file, source_sheet, source_row)
+          VALUES ('gofo', repeat('f', 64), $1, 'TESTR002', 'Damaged Item', 'damaged item', '2026-10-30 10:00', $2::numeric, abs($2::numeric), $3, 'synthetic.xlsx', 'Claims Detail', 2) RETURNING id`, [version, charge, cityB])).id;
+        await db.query(`INSERT INTO courier_claim_matches (claim_id, status, driver_id, city_id, eligible_deduction, reason, rule_version) VALUES ($1, 'chargeable', $2, $3, abs($4::numeric), 'test', 'test')`, [id, d1, cityB, charge]);
+        return id;
+      };
+      const v1 = await claimIn(1, '-40');
+      const runB = await run({ cityId: cityB });
+      await finalizeRun(db, admin, runB.id);
+      assert.equal((await statement(runB)).claim_deductions, '40.00');
+      await db.query('UPDATE courier_claims SET superseded_at = now() WHERE id = $1', [v1]);
+      await claimIn(2, '-30');
+      // The driver also works in this test's main city: that city's run does not read city B's deductions.
+      assert.equal(codes(await statement(await run())).includes('claim_over_recovered'), false);
+    });
+
     await isolated('an advance not marked as paid out is never recovered and is counted as waiting', async () => {
       await ledger({ type: 'advance', amount: '100', disbursedOutsidePayroll: false, recoveryPlan: 'full_next_payday' });
       const r = await run();

@@ -113,20 +113,23 @@ const loadLedger = async (db, run, driverIds) => {
 // now belongs to another driver. Counted per driver who was actually charged, less any credit correction recorded for
 // that claim (#142 corrections may name the waybill and claim type). Only decided claims count: while an amended
 // version is still unresolved, nothing is concluded. These are flagged for an approved correction, never refunded here.
-const loadOverRecovered = async (db, driverIds) => {
+// Only this city's runs and corrections count, so a city's run never reads another city's pay. A claim later matched
+// to another city is still flagged here, where it was deducted.
+const loadOverRecovered = async (db, cityId, driverIds) => {
   const { rows } = await db.query(
     `WITH taken AS (
        SELECT cv.claim_key, s.driver_id, SUM(-l.amount) AS taken
          FROM pay_statement_lines l
          JOIN courier_claims cv ON cv.id = l.claim_id
          JOIN pay_statements s ON s.id = l.statement_id
-        WHERE l.active AND l.line_type = 'claim' AND s.driver_id = ANY($1::int[])
+         JOIN pay_runs r ON r.id = s.pay_run_id
+        WHERE l.active AND l.line_type = 'claim' AND s.driver_id = ANY($1::int[]) AND r.city_id = $2
         GROUP BY cv.claim_key, s.driver_id)
      SELECT t.driver_id, c.id AS claim_id,
             (t.taken
-              - CASE WHEN m.status = 'chargeable' AND m.driver_id = t.driver_id THEN m.eligible_deduction ELSE 0 END
+              - CASE WHEN m.status = 'chargeable' AND m.driver_id = t.driver_id AND m.city_id = $2 THEN m.eligible_deduction ELSE 0 END
               - COALESCE((SELECT SUM(e.amount) FROM driver_ledger_entries e
-                           WHERE e.entry_type = 'correction' AND e.direction = 'credit' AND e.driver_id = t.driver_id
+                           WHERE e.entry_type = 'correction' AND e.direction = 'credit' AND e.driver_id = t.driver_id AND e.city_id = $2
                              AND e.waybill = c.waybill
                              AND lower(regexp_replace(btrim(e.claim_type), '\\s+', ' ', 'g')) = c.claim_type_key
                              AND NOT EXISTS (SELECT 1 FROM driver_ledger_entries v WHERE v.voids_entry_id = e.id)), 0))::text AS over
@@ -134,7 +137,7 @@ const loadOverRecovered = async (db, driverIds) => {
        JOIN courier_claims c ON c.claim_key = t.claim_key AND c.superseded_at IS NULL
        JOIN courier_claim_matches m ON m.claim_id = c.id
       WHERE m.status IN ('chargeable', 'exempt')`,
-    [driverIds]
+    [driverIds, cityId]
   );
   return rows.filter((r) => toCents(r.over) > 0);
 };
@@ -202,7 +205,7 @@ export const generateRun = async (db, admin, request) => {
   const driverIds = [...new Set(earnings.map((e) => e.driver_id))];
   const claims = driverIds.length ? await loadClaims(db, run.city_id, driverIds) : [];
   const ledger = driverIds.length ? await loadLedger(db, run, driverIds) : [];
-  const overRecovered = driverIds.length ? await loadOverRecovered(db, driverIds) : [];
+  const overRecovered = driverIds.length ? await loadOverRecovered(db, run.city_id, driverIds) : [];
 
   for (const driverId of driverIds) {
     const { lines, totals, flags } = calculateStatement(inputsFor(driverId, run, earnings, claims, ledger, overRecovered));
