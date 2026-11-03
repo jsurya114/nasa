@@ -60,18 +60,18 @@ const insertVersion = async (db, claim, version, source, manual) => {
     `INSERT INTO courier_claims
        (courier, claim_key, version, waybill, claim_type, claim_type_key, claim_at, confirmed_at,
         original_charge, deduction_amount, declared_value, remarks, import_city_id,
-        source_file, source_sheet, source_row, imported_by)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)
+        source_file, source_sheet, source_row, imported_by, courier_name, courier_name_key)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)
      RETURNING id`,
     [claim.courier, claim.key, version, claim.waybill, claim.claimType, claim.claimTypeKey, claim.claimAt, claim.confirmedAt,
       claim.charge, claim.deduction, claim.declaredValue, claim.remarks, source.importCityId,
-      source.sourceFile, source.sourceSheet, claim.sourceRow, source.importedBy ?? null]
+      source.sourceFile, source.sourceSheet, claim.sourceRow, source.importedBy ?? null, claim.courierName ?? null, claim.courierNameKey ?? null]
   );
   await db.query(
     `INSERT INTO courier_claim_matches (claim_id, status, reason, rule_version) VALUES ($1, $2, $3, $4)`,
     [rows[0].id, manual ? 'review' : 'unresolved',
       manual ? `on hold: hand-entered claim (ledger entry ${manual.id}) covers this waybill and claim type; void it to apply the carrier's claim instead`
-        : 'waiting for delivery history',
+        : 'waiting to be matched by the courier name',
       CLAIM_RULES_VERSION]
   );
   return rows[0].id;
@@ -110,7 +110,7 @@ export const importClaims = async (db, claims, source) => {
     await db.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 141))', [claim.key]);
     await lockClaimSubject(db, claim.waybill, claim.claimTypeKey);
     const { rows } = await db.query(
-      `SELECT id, version, original_charge, claim_type, import_city_id,
+      `SELECT id, version, original_charge, claim_type, import_city_id, courier_name_key,
               to_char(claim_at, 'YYYY-MM-DD HH24:MI:SS') AS claim_at,
               to_char(confirmed_at, 'YYYY-MM-DD HH24:MI:SS') AS confirmed_at
          FROM courier_claims WHERE claim_key = $1 AND superseded_at IS NULL`,
@@ -123,6 +123,10 @@ export const importClaims = async (db, claims, source) => {
       continue;
     }
     if (current && sameFacts(current, claim)) {
+      // The same claim again. If it was stored before names were read, it learns its name now so it can be matched.
+      if (!current.courier_name_key && claim.courierNameKey) {
+        await db.query('UPDATE courier_claims SET courier_name = $2, courier_name_key = $3 WHERE id = $1', [current.id, claim.courierName, claim.courierNameKey]);
+      }
       result.duplicates.push({ claimId: current.id, sourceRow: claim.sourceRow });
       continue;
     }
@@ -143,28 +147,30 @@ export const importClaims = async (db, claims, source) => {
 };
 
 // Tries again to match one batch of current claims that are still unresolved or ambiguous, in claim order after
-// `afterId`. findCandidates({ courier, waybill }) must return the delivery history for that waybill, from history
-// only: [{ driverId, cityId, cityName, carrierDeliveryId, routeId, journeyDate }]. It is supplied by the GOFO
-// waybill history (#140). Claims already chargeable, exempt or held for review are never changed here.
-// waybills: limit the batch to these waybills (for example the ones an assignment import just added), or null.
+// `afterId`. findCandidates({ courier, waybill, nameKey }) returns the candidate drivers: [{ driverId, cityId, cityName,
+// carrierDeliveryId, routeId, journeyDate }]. Weekly uploads match by the Courier name (#180: nameKey, found in Details of
+// Delivery Fees); `by` says which, for the reason text. Claims already chargeable, exempt or held for review are never changed here.
+// waybills: limit the batch to these waybills, or null. cityId: limit it to one city's claims (a report matches its own city's
+// claims only), or null.
 // Call inside a transaction. Returns { counts, nextAfterId }; nextAfterId is null when there is nothing after this batch.
-export const rematchOpenClaims = async (db, findCandidates, { limit = 500, afterId = 0, waybills = null } = {}) => {
+export const rematchOpenClaims = async (db, findCandidates, { limit = 500, afterId = 0, waybills = null, cityId = null, by = 'waybill' } = {}) => {
   const { rows } = await db.query(
-    `SELECT c.id, c.courier, c.waybill, c.claim_type, c.deduction_amount, c.import_city_id
+    `SELECT c.id, c.courier, c.waybill, c.claim_type, c.deduction_amount, c.import_city_id, c.courier_name_key
        FROM courier_claims c
        JOIN courier_claim_matches m ON m.claim_id = c.id
       WHERE c.superseded_at IS NULL AND m.status = ANY($1::text[]) AND c.id > $3
         AND ($4::text[] IS NULL OR c.waybill = ANY($4::text[]))
+        AND ($5::int IS NULL OR c.import_city_id = $5)
       ORDER BY c.id
       LIMIT $2
       FOR UPDATE OF m SKIP LOCKED`,
-    [OPEN, limit, afterId, waybills]
+    [OPEN, limit, afterId, waybills, cityId]
   );
 
   const counts = { chargeable: 0, exempt: 0, unresolved: 0, ambiguous: 0 };
   for (const row of rows) {
-    const candidates = await findCandidates({ courier: row.courier, waybill: row.waybill });
-    const match = resolveClaim({ claimType: row.claim_type, deduction: Number(row.deduction_amount).toFixed(2) }, candidates, row.import_city_id);
+    const candidates = await findCandidates({ courier: row.courier, waybill: row.waybill, nameKey: row.courier_name_key });
+    const match = resolveClaim({ claimType: row.claim_type, deduction: Number(row.deduction_amount).toFixed(2) }, candidates, row.import_city_id, { by });
     await db.query(
       `UPDATE courier_claim_matches
           SET status = $2, driver_id = $3, city_id = $4, carrier_delivery_id = $5, route_id = $6, journey_date = $7,
@@ -180,11 +186,11 @@ export const rematchOpenClaims = async (db, findCandidates, { limit = 500, after
 
 // One fair pass over every open claim (or only `waybills`), batch after batch. Claims that stay unresolved at the
 // front no longer stop later claims from being matched. Returns the summed counts.
-export const rematchAllOpenClaims = async (db, findCandidates, { batch = 500, waybills = null } = {}) => {
+export const rematchAllOpenClaims = async (db, findCandidates, { batch = 500, waybills = null, cityId = null, by = 'waybill' } = {}) => {
   const total = { chargeable: 0, exempt: 0, unresolved: 0, ambiguous: 0 };
   let afterId = 0;
   do {
-    const { counts, nextAfterId } = await rematchOpenClaims(db, findCandidates, { limit: batch, afterId, waybills });
+    const { counts, nextAfterId } = await rematchOpenClaims(db, findCandidates, { limit: batch, afterId, waybills, cityId, by });
     for (const key of Object.keys(total)) total[key] += counts[key];
     afterId = nextAfterId;
   } while (afterId !== null);

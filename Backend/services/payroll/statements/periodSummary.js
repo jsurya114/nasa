@@ -16,6 +16,8 @@ import {
 import { parseDate } from '../ledger/ledgerRules.js';
 import { getDriverBalances } from './statementStore.js';
 
+const EARLIEST = '1970-01-01'; // the start of "all of it" when no dates are given
+
 const sum = (rows, key) => rows.reduce((total, r) => total + toCents(r[key]), 0);
 
 const totalsOf = (rows) => {
@@ -87,8 +89,9 @@ const estimatePayday = async (db, driverId, cityId, from, to) => {
   };
 };
 
-// range: { from, to } as YYYY-MM-DD, or both left out. Without dates only what is outstanding is returned (the dashboard
-// shows it as soon as a record is saved); the pay-run part is then empty. Returns the figures, or throws PayrollError.
+// range: { from, to } as YYYY-MM-DD, or both left out. Without dates (the owner does not want to choose them) the estimate covers all
+// the driver's closed, unpaid pay up to today, as the next pay run would; runs already made are then not looked at. Returns the
+// figures, or throws PayrollError.
 export const getDriverPeriodSummary = async (db, admin, { driverId, cityId, from, to }) => {
   const hasRange = Boolean(from || to);
   if (hasRange && (!parseDate(from) || !parseDate(to) || from > to)) throw new PayrollError(400, 'from and to must be real dates (YYYY-MM-DD), from not after to, or both left out');
@@ -118,6 +121,11 @@ export const getDriverPeriodSummary = async (db, admin, { driverId, cityId, from
   if (approved.count > 0) payday = { source: 'approved', ...approved, flags: [] };
   else if (draft.count > 0) payday = { source: 'draft', ...draft, flags: [] };
   else if (hasRange) payday = { source: 'estimate', ...(await estimatePayday(db, driverId, cityId, from, to)) };
+  else {
+    // No dates: everything closed and unpaid, up to today (the database's date).
+    const { rows: today } = await db.query("SELECT to_char(CURRENT_DATE, 'YYYY-MM-DD') AS d");
+    payday = { source: 'estimate', ...(await estimatePayday(db, driverId, cityId, EARLIEST, today[0].d)) };
+  }
 
   return {
     driverId, cityId, from: from || null, to: to || null,

@@ -60,9 +60,10 @@ test('dashboard period summary: this payday, approved or preview, and what is st
       assert.equal(s.payday.source, 'estimate');
       assert.equal(s.payday.deducted, '0.00');
       assert.ok(s.payday.flags.some((f) => f.code === 'recovery_limit_not_set'));
-      // no dates: only what is owed, and no pay-run figures
+      // no dates: the same estimate, over all the driver's closed, unpaid pay up to today
       const noDates = await getDriverPeriodSummary(db, cityAdmin, { driverId: d1, cityId: city });
-      assert.deepEqual([noDates.payday.source, noDates.payday.deducted], ['none', '0.00']);
+      assert.deepEqual([noDates.payday.source, noDates.payday.deducted], ['estimate', '0.00']);
+      assert.ok(noDates.payday.flags.some((f) => f.code === 'recovery_limit_not_set'));
     });
 
     let run;
@@ -203,6 +204,8 @@ test('dashboard period summary: this payday, approved or preview, and what is st
 
       const estimate = (await getDriverPeriodSummary(db, superAdmin, { driverId: d2, cityId: city2, from: '2026-11-01', to: '2026-11-07' })).payday;
       assert.equal(estimate.source, 'estimate');
+      // no dates chosen: the same figures, because all of this driver's closed, unpaid pay is in the range anyway
+      assert.deepEqual((await getDriverPeriodSummary(db, superAdmin, { driverId: d2, cityId: city2 })).payday, estimate, 'without dates the estimate is the same');
       const period = { cityId: city2, periodStart: '2026-11-01', periodEnd: '2026-11-07' };
       const daily = (await generateRun(db, superAdmin, { requestId: randomUUID(), ...period, dataType: 'daily' })).run;
       const weekly = (await generateRun(db, superAdmin, { requestId: randomUUID(), ...period, dataType: 'weekly' })).run;
@@ -214,6 +217,10 @@ test('dashboard period summary: this payday, approved or preview, and what is st
       assert.deepEqual([estimate.claimDeductions, estimate.recoveries, estimate.deducted], [total('claim_deductions'), total('recoveries'), (Number(total('claim_deductions')) + Number(total('recoveries'))).toFixed(2)],
         'the estimate takes exactly what the two drafts took, not the instalment and the claim twice');
       assert.equal(estimate.net, total('net'), 'and its net is the calculator\'s own net, with the reimbursement in it');
+      // The same driver without dates: the estimate was worked out before the runs above, so it is gone now; ask again on a fresh
+      // driver below. Here the rows are on live statements, so nothing is eligible.
+      const after = (await getDriverPeriodSummary(db, superAdmin, { driverId: d2, cityId: city2 })).payday;
+      assert.deepEqual([after.source, after.deducted, after.net], ['estimate', '0.00', null]);
     });
 
     await t.test('without dates only what is outstanding is returned, and half a range is refused', async () => {

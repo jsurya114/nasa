@@ -14,6 +14,9 @@ const WHITESPACE_RE = new RegExp(WHITESPACE, 'g');
 // removes more kinds of whitespace than the database does.
 export const cleanDriverName = (name) => (typeof name === 'string' ? name.replace(WHITESPACE_RE, ' ').replace(/^ | $/g, '') : '');
 
+// The key two names are compared by: cleaned, then lower case. Identical to NAME_KEY_SQL on the database side.
+export const driverNameKey = (name) => cleanDriverName(name).toLowerCase();
+
 // The same expression the database index uses (migrations/2026-11-04-issue-177-driver-name-unique.sql). Keep them in step:
 // collapse, then trim spaces, then lower case.
 export const NAME_KEY_SQL = (column) => `lower(btrim(regexp_replace(${column}, '${WHITESPACE}', ' ', 'g'), ' '))`;

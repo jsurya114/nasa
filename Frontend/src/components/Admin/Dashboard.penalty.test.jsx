@@ -91,7 +91,8 @@ describe("Dashboard: this payday's Penalty & Others, apart from what is still ow
     // summary: this payday and the balance are separate lines, and the net is the same
     await waitFor(() => expect(screen.getByTestId("summary-deducted")).toBeTruthy());
     expect(within(screen.getByTestId("summary-deducted")).getByRole("textbox").value).toBe("-$50.00");
-    expect(within(screen.getByTestId("summary-owed")).getByRole("textbox").value).toBe("$250.00");
+    expect(screen.queryByTestId("summary-owed")).toBeNull(); // the Summary shows only Penalty & Others, not what is still owed
+    expect(screen.getByTestId("summary-deducted").textContent).toContain("Penalty & Others:");
     expect(within(screen.getByTestId("summary-net")).getByRole("textbox").value).toBe("$30.00");
     expect(server.lastParams).toEqual({ cityId: 3, from: "2026-11-01", to: "2026-11-07" });
   });
@@ -143,14 +144,16 @@ describe("Dashboard: this payday's Penalty & Others, apart from what is still ow
     expect(screen.getByTestId("net-payment-row").textContent).not.toContain("preview");
   });
 
-  it("with no dates the balance is still shown, the deduction asks for dates, and the net is the usual one", async () => {
-    const server = await startServer(reply({ source: "none", penalties: "250.00" }));
+  it("no dates are needed: the deduction, including weekly Excel claims, shows and comes off the net, and only the city is asked for", async () => {
+    // the server's estimate covers all the driver's closed, unpaid pay; the claims from the weekly Excel are part of it
+    const server = await startServer(reply({ source: "estimate", deducted: "35.00", net: "45.00", penalties: "250.00" }));
     const { container } = await mount();
     await filter(container, "Test City", "Dee Test", { dates: false });
     expect(await screen.findByTestId("penalty-deduction-row")).toBeTruthy();
-    expect(screen.getByTestId("penalty-note").textContent).toContain("Choose a start and an end date");
-    expect(screen.getByTestId("penalty-owed").textContent).toContain("$250.00");
-    expect(screen.getByTestId("net-payment-row").textContent).toContain("$80.00");
+    expect(screen.getByTestId("penalty-deduction-row").textContent).toContain("-$35.00");
+    expect(screen.queryByText(/Choose a start and an end date/)).toBeNull();
+    expect(screen.getByTestId("net-payment-row").textContent).toContain("$45.00");
+    await waitFor(() => expect(within(screen.getByTestId("summary-deducted")).getByRole("textbox").value).toBe("-$35.00"));
     expect(server.lastParams).toEqual({ cityId: 3 });
   });
 

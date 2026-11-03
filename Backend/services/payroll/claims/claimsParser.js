@@ -1,9 +1,11 @@
 // Reads the carrier's "Claims Detail" sheet into claim records (issue #141). No database work here.
 // Every row that is not blank becomes either a claim or a reported problem: nothing is skipped silently,
-// turned into zero, or assigned to anyone. Who owes a claim is decided later, from delivery history only.
+// turned into zero, or assigned to anyone. Who owes a claim is decided later, by matching the Courier name (the driver's name)
+// with the same name in Details of Delivery Fees, whose Delivery ID is the driver code (issue #180).
 
 import XLSX from 'xlsx';
 import { claimKey, claimTypeKey, normalizeWaybill, parseCarrierDateTime, parseCharge } from './claimRules.js';
+import { cleanDriverName, driverNameKey } from '../../admin/driverName.js';
 
 export const CLAIMS_SHEET = 'Claims Detail';
 
@@ -14,6 +16,7 @@ const COLUMNS = Object.freeze({
   claimType: 'Claim Type',
   charge: 'The total expenses-exclusive of taxes',
   declaredValue: 'Declared value (USD)',
+  courierName: 'Courier', // the driver's name: how a claim is matched to a driver (issue #180)
   confirmDate: 'Confirm date.',
   remarks: 'Remarks',
 });
@@ -83,6 +86,9 @@ export const parseClaimsRows = (rows, { courier }) => {
       // Kept only as evidence. Never used for the deduction.
       declaredValue: declared && !declared.error ? declared.charge : null,
       remarks: text(cell('remarks')),
+      // The driver's name as the carrier wrote it, and the key it is compared by. Blank when the column is empty or missing.
+      courierName: isBlank(cell('courierName')) ? null : cleanDriverName(String(cell('courierName'))).slice(0, 100) || null,
+      courierNameKey: isBlank(cell('courierName')) ? null : driverNameKey(String(cell('courierName'))).slice(0, 100) || null,
     };
 
     const earlier = byKey.get(claim.key);

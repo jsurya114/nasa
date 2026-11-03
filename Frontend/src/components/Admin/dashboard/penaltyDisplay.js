@@ -1,7 +1,8 @@
 // How the dashboard words and works out the penalty figures (#166). Two different numbers, never mixed up:
-// - this payday: what comes off the driver now, by how each record was created (all on the next payday, or its instalment),
-//   under the recovery limit. The server gives it: an approved pay run's frozen figures, else a draft's, else an estimate
-//   from the same calculator. It comes off the net.
+// - this payday: what comes off the driver now, by how each record was created (all on the next payday, or its instalment) and
+//   from the weekly Excel's claims, under the recovery limit. The server gives it: an approved pay run's frozen figures, else a
+//   draft's, else an estimate from the same calculator; with no dates, the estimate covers all the driver's closed, unpaid pay.
+//   It comes off the net.
 // - still owed: the balance in all (penalties, and others), shown beside it. It never comes off the net and never implies the
 //   whole amount is due this payday.
 // Net Payment: the approved pay run's frozen net when there is one; a draft's net as a preview; otherwise the server's own
@@ -24,7 +25,6 @@ const SOURCE_NOTE = {
   approved: "Approved: already in the pay run net below.",
   draft: "Draft pay run: a preview, not yet approved.",
   estimate: "Preview: what the next pay run would take, by each record's arrangement.",
-  none: "Choose a start and an end date, then Filter Data, to see this payday's deduction.",
 };
 export const sourceNote = (source) => SOURCE_NOTE[source];
 
@@ -60,23 +60,21 @@ export const summaryNotice = (penalty) => {
   return null;
 };
 
-// The extra Summary lines, as ready-to-show text: this payday's "Penalty & Others", and what is still owed.
+// The extra Summary line, as ready-to-show text: "Penalty & Others", what comes off the driver (entered on the Payroll page, and
+// from the weekly Excel's Claims Detail). What is still owed in all is not shown here.
 export const summaryItems = (penalty, baseNet) => {
   const notice = summaryNotice(penalty);
   const info = rowInfo(penalty);
   let afterInsurance = [];
   if (notice) afterInsurance = [{ kind: "notice", label: "Penalty & Others", text: notice }];
   else if (info && showRow(penalty)) {
-    afterInsurance = [
-      { kind: "deducted", label: "Penalty & Others (this payday)", text: info.source === "none" ? "Choose dates" : `-$${info.deducted.toFixed(2)}` },
-      { kind: "owed", label: "Still Owed (all)", text: `$${info.owed.toFixed(2)}` },
-    ];
+    afterInsurance = [{ kind: "deducted", label: "Penalty & Others", text: `-$${info.deducted.toFixed(2)}` }];
   }
   const net = netFor(baseNet, penalty, "Net Driver Payment");
   return { afterInsurance, net, hasRow: showRow(penalty) };
 };
 
-const TEXT_KIND = { deducted: "text-red-600", notice: "text-red-600", owed: "text-gray-700" };
+const TEXT_KIND = { deducted: "text-red-600", notice: "text-red-600" };
 export const summaryLook = (item) => {
   let tone;
   if (item.kind === "net") tone = item.preview ? "text-amber-700 font-bold" : "text-green-700 font-bold";
