@@ -98,6 +98,9 @@ export const parseNewEntry = (body = {}) => {
   const waybill = claimRef && body.waybill ? normalizeWaybill(body.waybill).slice(0, 64) || null : null;
   if (type === 'manual_claim' && !claimTypeKey(claimType)) errors.claimType = 'a manual claim needs its claim type';
   if (type === 'correction' && Boolean(claimType) !== Boolean(waybill)) errors.waybill = 'a correction names both the waybill and the claim type of the claim it corrects, or neither';
+  // Only a refund (credit) may name a claim. A charge for a claim comes from the carrier import or a manual claim, where
+  // the agreed exemption is applied; a claim-linked debit correction would bypass it, so it is refused.
+  if (type === 'correction' && claimType && direction === 'debit') errors.direction = 'a correction that names a claim can only be a credit (a refund)';
   if (!claimRef && (body.claimType || body.waybill)) errors.claimType = 'only a manual claim or a correction can name a claim';
 
   if (Object.keys(errors).length) return { errors };

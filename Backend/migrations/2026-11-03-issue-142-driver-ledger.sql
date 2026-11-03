@@ -44,6 +44,8 @@ CREATE TABLE IF NOT EXISTS driver_ledger_entries (
   CHECK (entry_type <> 'manual_claim' OR claim_type IS NOT NULL),
   CHECK ((claim_type IS NULL AND waybill IS NULL) OR entry_type IN ('manual_claim', 'correction')),
   CHECK (entry_type <> 'correction' OR (claim_type IS NULL) = (waybill IS NULL)),
+  -- A correction that names a claim is a refund: never a charge, which would bypass the claim exemption.
+  CHECK (entry_type <> 'correction' OR claim_type IS NULL OR direction = 'credit'),
   CHECK (exempt = false OR entry_type = 'manual_claim'),
   CHECK ((entry_type = 'void') = (voids_entry_id IS NOT NULL)),
   CHECK (voids_entry_id IS NULL OR voids_entry_id <> id)
