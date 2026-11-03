@@ -240,6 +240,7 @@ const translations = {
     // Delivery Page
     deliverySummary: 'Delivery Summary',
     filterDeliveries: 'Filter deliveries by date range',
+    lastTenDaysHint: 'Opens on the last 10 days. Choose other dates to see more.',
     fromDate: 'From Date',
     toDate: 'To Date',
     showAll: 'All',
@@ -547,6 +548,7 @@ const translations = {
     // Delivery Page
     deliverySummary: 'Resumen de Entregas',
     filterDeliveries: 'Filtrar entregas por rango de fechas',
+    lastTenDaysHint: 'Muestra los últimos 10 días. Elige otras fechas para ver más.',
     fromDate: 'Desde Fecha',
     toDate: 'Hasta Fecha',
     showAll: 'Todo',
