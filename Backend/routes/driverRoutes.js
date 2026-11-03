@@ -15,6 +15,7 @@ import driverAvailabilityController from "../controllers/driver/driveravailabili
 import passwordController from "../controllers/driver/updatepasswordController.js";
 import languageController from "../controllers/driver/languageController.js";
 import { driverPushTokens } from "../controllers/pushTokenController.js";
+import { getOwnBalances, getOwnStatement, getOwnStatements } from "../controllers/payroll/statementController.js";
 
 const router = express.Router()
 sanitizeRouterParams(router)
@@ -62,5 +63,10 @@ router.put("/language", requireSelf('driverId', 'body'), languageController.upda
 // Push notifications: this driver's own phones only (the id comes from the token)
 router.post("/push-token", driverPushTokens.register)
 router.post("/push-token/remove", driverPushTokens.remove)
+
+// Pay statements and balances: this driver's own only (the id comes from the token), approved runs only (#145)
+router.get("/payroll/statements", getOwnStatements)
+router.get("/payroll/statements/:statementId", getOwnStatement)
+router.get("/payroll/balances", getOwnBalances)
 
 export default router;
