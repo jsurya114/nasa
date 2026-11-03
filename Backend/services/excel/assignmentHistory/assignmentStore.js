@@ -81,6 +81,23 @@ const insertAssignments = async (db, facts, importId) => {
   return recorded;
 };
 
+// How many of these facts are already stored but no longer stand (every report that held them was voided). A report
+// that holds them again brings them back, so the caller is told how many, and can tell the person who uploaded it.
+const countRevived = async (db, facts) => {
+  let revived = 0;
+  for (const batch of chunks(facts, BATCH_SIZE)) {
+    const { rows } = await db.query(
+      `SELECT count(*)::int AS n
+         FROM carrier_package_assignments a
+        WHERE a.identity_hash = ANY($1::text[])
+          AND NOT EXISTS (SELECT 1 FROM carrier_package_assignments_live l WHERE l.id = a.id)`,
+      [batch.map((f) => f.identityHash)]
+    );
+    revived += rows[0].n;
+  }
+  return revived;
+};
+
 const insertSightings = async (db, rows, importId) => {
   for (const batch of chunks(rows, BATCH_SIZE)) {
     await db.query(
@@ -101,7 +118,9 @@ const insertSightings = async (db, rows, importId) => {
 //           allowedJobs } where allowedJobs is null for an admin who may use every city, or the list of city
 //           names (city.job) a city admin may use. A city admin's report records only facts whose route
 //           belongs to one of their cities; the rest is left out and counted, never refused.
-// Returns { importId, alreadyRecorded, voided, recorded, known, skipped, problems, resolved }.
+// Returns { importId, alreadyRecorded, voided, recorded, known, revived, skipped, problems, resolved }.
+// revived: facts this report holds that had stopped standing (all earlier reports holding them were voided). A
+// different file can bring a voided fact back; the count lets the caller say so instead of doing it silently.
 // - The same file bytes again (renamed or not) records nothing new.
 // - The same fact in another file is not added twice; the new sighting is kept as provenance.
 // - Two Delivery IDs for one waybill are both kept.
@@ -118,7 +137,7 @@ export const recordReport = async (db, report, source) => {
     [CARRIER, source.reportHash]
   );
   if (voidedBefore.rows[0]) {
-    return { importId: voidedBefore.rows[0].id, alreadyRecorded: true, voided: true, recorded: 0, known: 0, skipped: 0, problems: report.problemCount, resolved: { drivers: 0, routes: 0 } };
+    return { importId: voidedBefore.rows[0].id, alreadyRecorded: true, voided: true, recorded: 0, known: 0, revived: 0, skipped: 0, problems: report.problemCount, resolved: { drivers: 0, routes: 0 } };
   }
   const earlier = await db.query(
     'SELECT id, voided_at FROM carrier_assignment_imports WHERE carrier = $1 AND report_hash = $2 AND scope_key = $3',
@@ -126,7 +145,7 @@ export const recordReport = async (db, report, source) => {
   );
   if (earlier.rows[0]) {
     const resolved = await refreshOpenAssignments(db);
-    return { importId: earlier.rows[0].id, alreadyRecorded: true, voided: earlier.rows[0].voided_at !== null, recorded: 0, known: 0, skipped: 0, problems: report.problemCount, resolved };
+    return { importId: earlier.rows[0].id, alreadyRecorded: true, voided: earlier.rows[0].voided_at !== null, recorded: 0, known: 0, revived: 0, skipped: 0, problems: report.problemCount, resolved };
   }
 
   let rows = report.rows;
@@ -152,13 +171,14 @@ export const recordReport = async (db, report, source) => {
   const importId = created[0].id;
 
   const facts = [...new Map(rows.map((r) => [r.identityHash, r])).values()];
+  const revived = await countRevived(db, facts);
   const recorded = await insertAssignments(db, facts, importId);
   await insertSightings(db, rows, importId);
   const known = facts.length - recorded;
   await db.query('UPDATE carrier_assignment_imports SET recorded_rows = $2, known_rows = $3 WHERE id = $1', [importId, recorded, known]);
 
   const resolved = await refreshOpenAssignments(db);
-  return { importId, alreadyRecorded: false, voided: false, recorded, known, skipped, problems: report.problemCount, resolved };
+  return { importId, alreadyRecorded: false, voided: false, recorded, known, revived, skipped, problems: report.problemCount, resolved };
 };
 
 // Marks a report as wrong. Every copy of the same bytes (the same file recorded with another scope) is voided with

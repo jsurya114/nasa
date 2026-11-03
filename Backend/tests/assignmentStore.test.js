@@ -268,6 +268,19 @@ test('assignment history keeps, resolves and looks up carrier evidence without g
       assert.deepEqual(await find('TW0070'), []);
     });
 
+    await t.test('a different file that holds a voided fact brings it back, and says so', async () => {
+      const first = await recordReport(db, reportOf(row('fee_details', 2, 'TW0080', 90000001, 'TSTA 01-1'), row('fee_details', 3, 'TW0081', 90000001, 'TSTA 01-1')),
+        { reportHash: hashOf('revive-1'), sourceLabel: 'first.xlsx', importedBy: 1, allowedJobs: null });
+      assert.equal(first.revived, 0);
+      await voidImport(db, first.importId, { reason: 'wrong file', adminId: 1 });
+      assert.deepEqual(await find('TW0080'), []);
+      const second = await recordReport(db, reportOf(row('fee_details', 2, 'TW0080', 90000001, 'TSTA 01-1'), row('fee_details', 3, 'TW0082', 90000001, 'TSTA 01-1')),
+        { reportHash: hashOf('revive-2'), sourceLabel: 'second.xlsx', importedBy: 1, allowedJobs: null });
+      assert.deepEqual([second.recorded, second.known, second.revived], [1, 1, 1], 'one new fact, one old fact that stopped standing');
+      assert.equal((await find('TW0080')).length, 1, 'the fact stands again, because a new report holds it');
+      assert.deepEqual(await find('TW0081'), [], 'a voided fact that is not in the new report stays gone');
+    });
+
     await t.test('an unreadable signing time keeps the fact without a date', async () => {
       await recordReport(db, reportOf(row('fee_details', 2, 'TW0030', 90000001, 'TSTA 01-1', 'not a date')),
         { reportHash: hashOf('undated'), sourceLabel: 'undated.xlsx', importedBy: null, allowedJobs: null });
