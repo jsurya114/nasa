@@ -71,3 +71,20 @@ Nothing on this page sends money or marks pay rows paid; that is #31 and #144. E
 **Risks and follow-ups.**
 - With no limit set, the calculator's per-item flag still ends "(limit reached)". The separate "no recovery limit is set" flag explains it. The wording is in `payCalculator.js` (#150); change it in a small follow-up.
 - Opening a driver's full statement from a run is not on this page; use the Payroll page.
+
+## Review fix (Jasil's review on #156, 3 Nov 2026)
+
+- **A late answer could show another city's run, with its actions enabled.**
+  - Before: if a run was opening, a draft being made or an action running when the admin switched city, the late reply put the earlier city's run on the new city's page, with Finalize enabled. The run view did not name its city.
+  - Now every city switch starts a new "epoch" and aborts the run being opened. An answer is used only when it belongs to the current epoch **and** its run's `city_id` is the selected city. This applies to opening a run, a new draft, the refresh after finalize, discard or void, and the run list (which also keeps only that city's runs).
+  - The draft and action callbacks are built at render time, so they carry the city and epoch the admin saw when acting.
+  - The run view names its city under the period, and the confirmation dialog title names the city and period.
+  - If a run somehow does not match the selected city, no action button is shown and the page says it cannot be changed here.
+- **Tests:** `PayRuns.test.jsx` now has 8 tests. The fake server can hold a reply until the test releases it. The four new tests all fail on the code before the fix:
+  - the run view and confirmation name the city;
+  - opening a run, then switching city before it loads;
+  - drafting, then switching before the draft returns;
+  - finalizing, then switching before the result returns.
+
+  In the last three, no run, driver or Finalize button from the earlier city appears.
+- Full frontend suite: 130 pass, run one file at a time. On this machine (load average about 25) parallel runs time out at random in unrelated files; the same files pass alone. Lint is clean; `vite build` passes.

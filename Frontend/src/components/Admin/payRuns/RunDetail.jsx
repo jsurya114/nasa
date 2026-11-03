@@ -19,19 +19,23 @@ const TOTALS = [
   ["claim_deductions", "Claim deductions"], ["recoveries", "Recoveries"], ["net", "Net pay"], ["carried_forward", "Still owed after"],
 ];
 
-export default function RunDetail({ detail, isSuperAdmin, onChanged, onClose }) {
+export default function RunDetail({ detail, isSuperAdmin, onChanged, onClose, selectedCityId, cityName }) {
   const { run, totals, statements, waiting } = detail;
   const [reason, setReason] = useState("");
   const [busy, setBusy] = useState(false);
   const money = (v) => formatMoney(v);
   const less = (v) => (Number(v) ? `−${money(v)}` : money(v)); // deductions are stored as positive totals
 
+  // The run must belong to the city on screen. If not (it should never happen), nothing can be done to it here.
+  const sameCity = String(run.city_id) === String(selectedCityId);
+
   const act = async (action, question, needsReason) => {
+    if (!sameCity) return;
     if (needsReason && reason.trim().length < 3) {
       toast.error("Give a reason (at least 3 characters)");
       return;
     }
-    if (!(await confirmDialog({ title: question.title, text: question.text, confirmText: question.confirm, tone: action === "finalize" ? "warning" : "danger" }))) return;
+    if (!(await confirmDialog({ title: `${question.title} (${cityName}, ${run.period_start} – ${run.period_end})`, text: question.text, confirmText: question.confirm, tone: action === "finalize" ? "warning" : "danger" }))) return;
     setBusy(true);
     try {
       await axios.post(`/admin/payroll/runs/${run.id}/${action}`, needsReason ? { reason } : {});
@@ -51,7 +55,7 @@ export default function RunDetail({ detail, isSuperAdmin, onChanged, onClose }) 
     waiting.entries_needing_review > 0 && `${waiting.entries_needing_review} ledger entr${waiting.entries_needing_review === 1 ? "y" : "ies"} with no repayment arrangement`,
   ].filter(Boolean);
   const negative = statements.some((s) => Number(s.net) < 0);
-  const canClose = run.status === "draft" || (run.status === "finalized" && isSuperAdmin);
+  const canClose = sameCity && (run.status === "draft" || (run.status === "finalized" && isSuperAdmin));
 
   return (
     <div>
@@ -60,6 +64,7 @@ export default function RunDetail({ detail, isSuperAdmin, onChanged, onClose }) 
           <h2 className="text-lg font-semibold text-ink tabular-nums">
             <span className="whitespace-nowrap">{run.period_start}</span> – <span className="whitespace-nowrap">{run.period_end}</span>
           </h2>
+          <p className="text-sm font-medium text-ink">{cityName}</p>
           <p className="text-sm text-ink-muted">{run.data_type === "weekly" ? "Weekly" : "Daily"} · run #{run.id} · {describeLimit(run.recovery_limit)}</p>
         </div>
         <span className={`rounded-full border px-2.5 py-0.5 text-xs font-semibold ${STATUS_TONES[run.status] ?? STATUS_TONES.draft}`}>{run.status}</span>
@@ -110,9 +115,10 @@ export default function RunDetail({ detail, isSuperAdmin, onChanged, onClose }) 
             <input className="mt-1 min-h-11 w-full rounded-xl border border-line bg-white px-3 py-2 text-base" value={reason} onChange={(e) => setReason(e.target.value)} maxLength={500} />
           </label>
         )}
+        {!sameCity && <p role="alert" className="text-sm text-red-700">This run is not in the city selected above, so it cannot be changed here.</p>}
         {negative && run.status === "draft" && <p className="text-sm text-red-700">A statement is below zero; it must be reviewed before this run can be finalized.</p>}
         <div className="flex flex-wrap gap-2">
-          {run.status === "draft" && (
+          {sameCity && run.status === "draft" && (
             <>
               <button type="button" disabled={busy || negative} onClick={() => act("finalize", { title: "Finalize this pay run?", text: "Its statements are frozen and drivers can see them. No money is sent by this step.", confirm: "Finalize" })}
                 className="min-h-11 rounded-xl bg-brand px-4 font-semibold text-white disabled:bg-gray-400">Finalize</button>
@@ -120,7 +126,7 @@ export default function RunDetail({ detail, isSuperAdmin, onChanged, onClose }) 
                 className="min-h-11 rounded-xl border border-red-300 bg-white px-4 font-semibold text-red-700">Discard draft</button>
             </>
           )}
-          {run.status === "finalized" && isSuperAdmin && (
+          {sameCity && run.status === "finalized" && isSuperAdmin && (
             <button type="button" disabled={busy} onClick={() => act("void", { title: "Void this finalized run?", text: "Only possible while no payout is sent, paid or unconfirmed. Its deductions are released.", confirm: "Void run" }, true)}
               className="min-h-11 rounded-xl border border-red-300 bg-white px-4 font-semibold text-red-700">Void run</button>
           )}

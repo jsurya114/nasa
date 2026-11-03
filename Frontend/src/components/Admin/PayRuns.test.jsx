@@ -16,15 +16,23 @@ const detailOf = (run, net = "294.24") => ({
   waiting: { pending_claims: 2, entries_needing_review: 1 },
 });
 
-const startServer = async ({ net } = {}) => {
-  const state = { calls: [], run: { ...RUN } };
+// held: requests matching "METHOD url" wait until the test calls release(key), to test answers that arrive late.
+const startServer = async ({ net, held = [] } = {}) => {
+  const gates = Object.fromEntries(held.map((key) => {
+    let open;
+    const promise = new Promise((resolve) => { open = resolve; });
+    return [key, { promise, open }];
+  }));
+  const state = { calls: [], run: { ...RUN }, release: (key) => gates[key].open() };
   await installServer(async (config) => {
     const body = config.data ? JSON.parse(config.data) : undefined;
     state.calls.push({ method: config.method, url: config.url, params: config.params, body });
-    if (config.url === "/admin/get-admin-cities") return { status: 200, data: { cities: [{ id: 3, job: "Test City" }] } };
+    const gate = gates[`${config.method.toUpperCase()} ${config.url}`];
+    if (gate) await gate.promise;
+    if (config.url === "/admin/get-admin-cities") return { status: 200, data: { cities: [{ id: 3, job: "Test City" }, { id: 5, job: "Other City" }] } };
     if (config.url === "/admin/payroll/settings") return { status: 200, data: { recoveryLimit: null } };
     if (config.url === "/admin/payroll/settings/recovery-limit") return { status: 200, data: { recoveryLimit: body.recoveryLimit } };
-    if (config.method === "get" && config.url === "/admin/payroll/runs") return { status: 200, data: { runs: [state.run] } };
+    if (config.method === "get" && config.url === "/admin/payroll/runs") return { status: 200, data: { runs: String(config.params?.cityId) === "3" ? [state.run] : [] } };
     if (config.method === "post" && config.url === "/admin/payroll/runs") return { status: 201, data: { ...detailOf(state.run, net), replay: false } };
     const action = config.url.match(/^\/admin\/payroll\/runs\/17\/(finalize|discard|void)$/);
     if (action) {
@@ -127,5 +135,66 @@ describe("admin Pay runs", () => {
     fireEvent.change(await screen.findByLabelText("Reason (needed to discard or void)"), { target: { value: "Bank details wrong" } });
     fireEvent.click(screen.getByRole("button", { name: "Void run" }));
     expect(await screen.findByText("voided")).toBeTruthy();
+  });
+
+  it("names the run's city in its view and in the confirmation", async () => {
+    await startServer();
+    await mount();
+    await chooseCity();
+    fireEvent.click(await screen.findByRole("button", { name: /Open run\s*2026-11-01/ }));
+    expect(await screen.findByText("Test City", { selector: "p" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Finalize" }));
+    await waitFor(() => expect(confirm).toHaveBeenCalled());
+    expect(confirm.mock.calls[0][0].title).toMatch(/Test City, 2026-11-01 – 2026-11-07/);
+  });
+});
+
+// Answers that arrive after the admin switched city must never put the earlier city's run on screen.
+describe("admin Pay runs: late answers after a city switch", () => {
+  const switchTo = async (id) => {
+    fireEvent.change(screen.getByLabelText("City"), { target: { value: id } });
+    await screen.findByText("New draft");
+  };
+  const settle = () => new Promise((r) => setTimeout(r, 50));
+  const noRunShown = () => {
+    expect(screen.queryByText("Dee Test")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Finalize" })).toBeNull();
+  };
+
+  it("opening a run, then switching city before it loads", async () => {
+    const server = await startServer({ held: ["GET /admin/payroll/runs/17"] });
+    await mount();
+    await chooseCity();
+    fireEvent.click(await screen.findByRole("button", { name: /Open run\s*2026-11-01/ }));
+    await switchTo("5");
+    server.release("GET /admin/payroll/runs/17");
+    await settle();
+    noRunShown();
+    expect(screen.getByLabelText("City").value).toBe("5");
+  });
+
+  it("drafting a run, then switching city before the draft comes back", async () => {
+    const server = await startServer({ held: ["POST /admin/payroll/runs"] });
+    await mount();
+    await chooseCity();
+    fireEvent.click(screen.getByRole("button", { name: "Draft pay run" }));
+    await switchTo("5");
+    server.release("POST /admin/payroll/runs");
+    await settle();
+    noRunShown();
+  });
+
+  it("finalizing a run, then switching city before the result comes back", async () => {
+    const server = await startServer({ held: ["POST /admin/payroll/runs/17/finalize"] });
+    await mount();
+    await chooseCity();
+    fireEvent.click(await screen.findByRole("button", { name: /Open run\s*2026-11-01/ }));
+    fireEvent.click(await screen.findByRole("button", { name: "Finalize" }));
+    await waitFor(() => expect(posts(server, "/17/finalize")).toHaveLength(1));
+    await switchTo("5");
+    server.release("POST /admin/payroll/runs/17/finalize");
+    await settle();
+    noRunShown();
+    expect(screen.queryByText("finalized")).toBeNull();
   });
 });

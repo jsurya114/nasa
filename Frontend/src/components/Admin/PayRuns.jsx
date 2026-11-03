@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useSelector } from "react-redux";
 import { ChevronRight } from "lucide-react";
 import axios from "../../redux/slice/axiosInstance";
@@ -19,6 +19,19 @@ export default function PayRuns() {
   const [cityId, setCityId] = useState("");
   const [runs, setRuns] = useState({ status: "idle", list: [] });
   const [detail, setDetail] = useState(null);
+  // Every city change starts a new "epoch". An answer that arrives later is used only if it belongs to the same epoch
+  // and its run is in the city now selected, so a slow reply can never put another city's run (and its Finalize,
+  // Discard or Void buttons) on this city's page.
+  const epoch = useRef(0);
+  const openRequest = useRef(null);
+  const selectCity = (value) => {
+    epoch.current += 1;
+    openRequest.current?.abort();
+    setDetail(null);
+    setCityId(value);
+  };
+  const isCurrent = (city, era) => era === epoch.current && String(city) === String(cityId);
+  const accept = (data, city, era) => isCurrent(city, era) && String(data?.run?.city_id) === String(city);
 
   useEffect(() => {
     axios.get("/admin/get-admin-cities").then(({ data }) => setCities(data?.cities ?? [])).catch(() => setCities([]));
@@ -26,35 +39,45 @@ export default function PayRuns() {
 
   const loadRuns = useCallback(async (signal) => {
     if (!cityId) return;
+    const era = epoch.current;
     setRuns((r) => ({ ...r, status: "loading" }));
     try {
       const { data } = await axios.get("/admin/payroll/runs", { params: { cityId }, signal });
-      setRuns({ status: "ready", list: data?.runs ?? [] });
+      if (era !== epoch.current) return; // the city changed while this list was loading
+      setRuns({ status: "ready", list: (data?.runs ?? []).filter((r) => String(r.city_id) === String(cityId)) });
     } catch {
-      if (!signal?.aborted) setRuns({ status: "error", list: [] });
+      if (!signal?.aborted && era === epoch.current) setRuns({ status: "error", list: [] });
     }
   }, [cityId]);
 
   useEffect(() => {
-    setDetail(null);
     const controller = new AbortController();
     loadRuns(controller.signal);
     return () => controller.abort();
   }, [loadRuns]);
 
   const open = async (runId) => {
+    const city = cityId;
+    const era = epoch.current;
+    openRequest.current?.abort();
+    const controller = new AbortController();
+    openRequest.current = controller;
     try {
-      const { data } = await axios.get(`/admin/payroll/runs/${runId}`);
-      setDetail(data);
+      const { data } = await axios.get(`/admin/payroll/runs/${runId}`, { signal: controller.signal });
+      if (accept(data, city, era)) setDetail(data);
     } catch {
-      setRuns((r) => ({ ...r, status: "error" }));
+      if (!controller.signal.aborted && isCurrent(city, era)) setRuns((r) => ({ ...r, status: "error" }));
     }
   };
 
-  const changed = (data) => {
+  // For a draft just made or an action just taken. Built at render time, so the city and epoch are the ones on screen
+  // when the admin acted; a reply for an earlier city is dropped.
+  const changedFor = (city, era) => (data) => {
+    if (!accept(data, city, era)) return;
     setDetail(data);
     loadRuns();
   };
+  const changed = changedFor(cityId, epoch.current);
 
   return (
     <>
@@ -69,7 +92,7 @@ export default function PayRuns() {
           <RecoveryLimitPanel isSuperAdmin={isSuperAdmin} />
 
           <label className="block max-w-sm text-sm font-medium text-gray-700">City
-            <select className={selectClass} value={cityId} onChange={(e) => setCityId(e.target.value)}>
+            <select className={selectClass} value={cityId} onChange={(e) => selectCity(e.target.value)}>
               <option value="">Choose a city</option>
               {cities.map((c) => <option key={c.id} value={c.id}>{c.job}</option>)}
             </select>
@@ -77,7 +100,8 @@ export default function PayRuns() {
 
           {cityId && detail && (
             <section className="card-surface p-4">
-              <RunDetail detail={detail} isSuperAdmin={isSuperAdmin} onChanged={changed} onClose={() => setDetail(null)} />
+              <RunDetail detail={detail} isSuperAdmin={isSuperAdmin} onChanged={changed} onClose={() => setDetail(null)}
+                selectedCityId={cityId} cityName={cities.find((c) => String(c.id) === String(detail.run.city_id))?.job ?? `city ${detail.run.city_id}`} />
             </section>
           )}
 
