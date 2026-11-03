@@ -93,3 +93,16 @@ Not decided here, on purpose (owner decisions in #142/#143): installment recover
   - Ledger store: 13 pass (was 10). New: Jasil's exact debit/credit case, and changed instalment, plan, date, payday, paid-out flag, reason, driver, waybill and claim type all give 409, while an identical form is still a replay. Also: a carrier claim held after a hand-entered one, held again when amended, released by the void. Both new tests fail on the old code.
   - Ledger rules: 9 pass, including the fingerprint covering every field.
 - **Not reproduced:** two connections racing with different payloads. The test runs inside one transaction that is always rolled back, so a second connection cannot see its tables. That path now uses the same comparison as the first check.
+
+## Second review fix (Jasil's re-review on #149, 3 Nov 2026)
+
+- **A debit correction naming an exempt claim could charge it.**
+  - Before: a correction could name a claim in either direction, and the exemption was applied only to manual claims. A $40 debit correction naming a DFW GOFO tracking-interruption claim became recoverable.
+  - Now **only a credit correction (a refund) may name a claim.** Charges for a claim come only from the carrier import or a manual claim, where the exemption is applied.
+  - The form rule refuses it, and so does the database: a new check in this pull request's migration says a correction that names a claim must be a credit.
+  - Plain debit corrections without a claim are still allowed.
+  - Debit correction rules for claims can be defined later, with the exemption.
+- **Tests:**
+  - Rules: debit corrections naming a Tracking interruption or a Damaged Item claim are refused, and a plain debit correction is accepted.
+  - Store: a direct database insert of a debit correction naming a tracking-interruption claim in DFW GOFO is refused by the check.
+  - Full suite: 63 pass with the database.

@@ -5,7 +5,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { createEntry, listEntries, voidEntry } from '../services/payroll/ledger/ledgerStore.js';
 import { parseNewEntry } from '../services/payroll/ledger/ledgerRules.js';
-import { discardRun, finalizeRun, generateRun, getRun, setRecoveryLimit } from '../services/payroll/payRuns/payRunStore.js';
+import { discardRun, finalizeRun, generateRun, getRun, setRecoveryLimit, voidRun } from '../services/payroll/payRuns/payRunStore.js';
 
 // The cases from Jasil's review of #152, each reproduced and then fixed. Needs a PostgreSQL copy with the app's
 // tables (never production): PAYROLL_TEST_DB=1 and the DB_* variables. Everything runs in one transaction that is
@@ -28,26 +28,26 @@ test('pay run review cases: dates, one recovery per period, lowered claims, undi
     const city = (await one("INSERT INTO city (job, city_code, city_type) VALUES ('Test Review City', 'TSTRV', 'DAILY') RETURNING id")).id;
     const route = (await one(`INSERT INTO routes (name, job, company_route_price, driver_route_price, company_doublestop_price, driver_doublestop_price, route_code_in_string)
       VALUES ('TR 1', 'Test Review City', 2, 1.6, 0.5, 0.25, 'TR-1') RETURNING id`)).id;
-    const [d1] = (await db.query('SELECT id FROM drivers ORDER BY id LIMIT 1')).rows.map((r) => r.id);
-    await db.query('UPDATE drivers SET city_id = $1 WHERE id = $2', [city, d1]);
+    const [d1, d2] = (await db.query('SELECT id FROM drivers ORDER BY id LIMIT 2')).rows.map((r) => r.id);
+    await db.query('UPDATE drivers SET city_id = $1 WHERE id = ANY($2::int[])', [city, [d1, d2]]);
     const tag = randomUUID();
     const admin = await one("INSERT INTO admin (password, name, email, role) VALUES ('x', $1, $2, 'superadmin') RETURNING id, role", [`Test ${tag}`, `${tag}@example.com`]);
     await setRecoveryLimit(db, admin, { type: 'percent_of_available', value: 100 }, 'Test limit');
 
     let seq = 9500;
-    const payRow = async (date, gross = '100.00', insurance = '1.92') => {
-      const dd = (await one('INSERT INTO dashboard_data (driver_id, route_id, start_seq, end_seq, journey_date, packages) VALUES ($1,$2,$3,$4,$5,10) RETURNING id', [d1, route, seq, seq + 9, date])).id;
+    const payRow = async (date, gross = '100.00', insurance = '1.92', driver = d1) => {
+      const dd = (await one('INSERT INTO dashboard_data (driver_id, route_id, start_seq, end_seq, journey_date, packages) VALUES ($1,$2,$3,$4,$5,10) RETURNING id', [driver, route, seq, seq + 9, date])).id;
       seq += 10;
       await db.query('UPDATE payment_dashboard SET closed = true, paid = false, driver_payment = $2, insurance_deduction = $3 WHERE dashboard_data_id = $1', [dd, gross, insurance]);
     };
     for (const date of ['2026-11-02', '2026-11-03', '2026-11-04']) await payRow(date); // 294.24 available
     const ledger = async (o) => {
-      const parsed = parseNewEntry({ requestId: randomUUID(), driverId: d1, cityId: city, reason: 'Test entry', effectiveDate: '2026-11-01', ...o });
+      const parsed = parseNewEntry({ requestId: randomUUID(), driverId: o.driverId ?? d1, cityId: city, reason: 'Test entry', effectiveDate: '2026-11-01', ...o });
       assert.ok(parsed.entry, JSON.stringify(parsed.errors));
       return (await createEntry(db, admin, parsed.entry)).entry;
     };
     const run = async (o = {}) => (await generateRun(db, admin, { requestId: randomUUID(), cityId: city, periodStart: '2026-11-01', periodEnd: '2026-11-07', dataType: 'daily', ...o })).run;
-    const statement = async (r) => (await getRun(db, admin, r.id)).statements.find((s) => s.driver_id === d1);
+    const statement = async (r, driver = d1) => (await getRun(db, admin, r.id)).statements.find((s) => s.driver_id === driver);
     const codes = (s) => s.flags.map((f) => f.code);
 
     await isolated('a repayment dated in the future does not lower what is recovered today', async () => {
@@ -142,6 +142,62 @@ test('pay run review cases: dates, one recovery per period, lowered claims, undi
       await claimIn(2, '-30');
       // The driver also works in this test's main city: that city's run does not read city B's deductions.
       assert.equal(codes(await statement(await run())).includes('claim_over_recovered'), false);
+    });
+
+    // A claim first charged to A (d1), then matched to B (d2). Shared by the two reassignment cases below.
+    const reassignedClaim = async (key, waybill) => {
+      const claimFor = async (version, driver) => {
+        const id = (await one(`INSERT INTO courier_claims (courier, claim_key, version, waybill, claim_type, claim_type_key, claim_at, original_charge, deduction_amount, import_city_id, source_file, source_sheet, source_row)
+          VALUES ('gofo', repeat($1, 64), $2, $3, 'Damaged Item', 'damaged item', '2026-10-30 10:00', -40, 40, $4, 'synthetic.xlsx', 'Claims Detail', 2) RETURNING id`, [key, version, waybill, city])).id;
+        await db.query(`INSERT INTO courier_claim_matches (claim_id, status, driver_id, city_id, eligible_deduction, reason, rule_version) VALUES ($1, 'chargeable', $2, $3, 40, 'test', 'test')`, [id, driver, city]);
+        return id;
+      };
+      const v1 = await claimFor(1, d1);
+      const first = await run();
+      await finalizeRun(db, admin, first.id);
+      assert.equal((await statement(first)).claim_deductions, '40.00', 'A is charged');
+      await db.query('UPDATE courier_claims SET superseded_at = now() WHERE id = $1', [v1]);
+      await claimFor(2, d2); // the claim really belongs to B
+      for (const date of ['2026-11-10', '2026-11-17', '2026-11-24']) {
+        await payRow(date);
+        await payRow(date, '100.00', '0', d2);
+      }
+    };
+    const week = (n) => ({ periodStart: `2026-11-${String(1 + 7 * n).padStart(2, '0')}`, periodEnd: `2026-11-${String(7 + 7 * n).padStart(2, '0')}` });
+
+    await isolated('a claim moved to another driver: nothing twice while A is unrefunded, then B once after A\'s refund is final', async () => {
+      await reassignedClaim('1', 'TESTR003');
+      // Week 2: A is not refunded yet, so B is not charged (that would collect 80); A is flagged for a refund.
+      let draft = await run(week(1));
+      assert.equal((await statement(draft, d2)).claim_deductions, '0.00');
+      assert.ok(codes(await statement(draft)).includes('claim_over_recovered'));
+      await discardRun(db, admin, draft.id, 'Record the refund first');
+      // The refund to A, linked to the claim. While it is only in a draft, B is still not charged.
+      await ledger({ type: 'correction', direction: 'credit', amount: '40', waybill: 'TESTR003', claimType: 'Damaged Item', reason: 'Claim was not this driver' });
+      draft = await run(week(1));
+      assert.deepEqual([(await statement(draft)).reimbursements, (await statement(draft, d2)).claim_deductions], ['40.00', '0.00']);
+      await finalizeRun(db, admin, draft.id);
+      // Week 3: A's refund is final, so B owes the 40, exactly once (before the fix: 0, never recovered).
+      const third = await run(week(2));
+      assert.equal((await statement(third, d2)).claim_deductions, '40.00');
+      assert.equal(codes(await statement(third)).includes('claim_over_recovered'), false);
+      await finalizeRun(db, admin, third.id);
+      // Week 4: nothing more.
+      assert.equal((await statement(await run(week(3)), d2)).claim_deductions, '0.00');
+      // The refund run cannot now be voided: a later run charged B because of it.
+      await assert.rejects(voidRun(db, admin, draft.id, 'Payout failed'), { status: 409, message: /relied on a claim refund/ });
+    });
+
+    await isolated('a partial refund to A lets B be charged only the refunded part', async () => {
+      await reassignedClaim('2', 'TESTR004');
+      await ledger({ type: 'correction', direction: 'credit', amount: '25', waybill: 'TESTR004', claimType: 'Damaged Item', reason: 'Part refund' });
+      const refundRun = await run(week(1));
+      assert.equal((await statement(refundRun)).reimbursements, '25.00');
+      await finalizeRun(db, admin, refundRun.id);
+      const next = await run(week(2));
+      assert.equal((await statement(next, d2)).claim_deductions, '25.00', '15 still sits with A, so B owes 25');
+      const flag = (await statement(next)).flags.find((f) => f.code === 'claim_over_recovered');
+      assert.equal(flag?.amount, '15.00', 'A is still owed the other 15');
     });
 
     await isolated('an advance not marked as paid out is never recovered and is counted as waiting', async () => {
