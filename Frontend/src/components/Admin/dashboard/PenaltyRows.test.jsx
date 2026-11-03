@@ -24,19 +24,21 @@ describe("deductions and the net", () => {
     expect(netLine({ status: "idle", expected: false }, "Net Payment")).toEqual({ label: "Net Payment", muted: false });
   });
 
-  it("the Summary lines: Penalties and Others only when something is owed", () => {
-    expect(summaryItems(ready("25.00", "10.00")).afterInsurance.map((i) => [i.label, i.text])).toEqual([["Penalties", "-$25.00"], ["Others", "-$10.00"]]);
-    expect(summaryItems(ready("0.00", "10.00")).afterInsurance.map((i) => i.label)).toEqual(["Others"]);
+  it("the Summary line is one Penalty & Others amount, only when something is owed", () => {
+    expect(summaryItems(ready("25.00", "10.00")).afterInsurance.map((i) => [i.label, i.text])).toEqual([["Penalty & Others", "-$35.00"]]);
+    expect(summaryItems(ready("0.00", "10.00")).afterInsurance.map((i) => i.text)).toEqual(["-$10.00"]);
     expect(summaryItems(ready("0.00")).afterInsurance).toEqual([]);
     expect(summaryItems({ status: "error", expected: true }).afterInsurance[0].kind).toBe("notice");
   });
 });
 
 describe("PenaltyRows", () => {
-  it("shows a Penalties row and an Others row, each with its own amount", () => {
+  it("shows one Penalty & Others row with the total, and the two parts beside it", () => {
     show(ready("25.00", "10.00"));
-    expect(screen.getByTestId("penalty-deduction-row").textContent).toContain("-$25.00");
-    expect(screen.getByTestId("other-deduction-row").textContent).toContain("-$10.00");
+    expect(screen.getByTestId("penalty-deduction-row").textContent).toContain("Penalty & Others");
+    expect(screen.getByTestId("penalty-deduction-row").textContent).toContain("-$35.00");
+    expect(screen.getByTestId("penalty-breakdown").textContent).toBe("Penalties $25.00 · Others $10.00");
+    expect(document.querySelectorAll("tr").length).toBe(1);
     expect(screen.getByRole("link", { name: "View entries and history" }).getAttribute("href")).toBe("/admin/payroll?cityId=3&driverId=7");
   });
 

@@ -31,3 +31,10 @@
 **Tested.** `Dashboard.penalty.test.jsx` (7, real Dashboard with a fake server): the two rows right below insurance and the net in the table and the Summary, no dates; nothing owed gives no row and the old net; penalties only with the history link; a later change shows after Filter Data; loading, failure and retry; editing the city before applying; a late reply for another driver. `PenaltyRows.test.jsx` (5). `periodSummary.test.js` (9, database, includes no dates and half a range). Whole backend suite 0 failures (36 skipped by the other switch); every frontend test file passes; `vite build` passes. Lint: only the 7 existing errors in `Dashboard.jsx` and `DashboardTable.jsx` (#40).
 
 **Not tested.** By hand in a browser against real driver data (the local database holds no deliveries right now).
+
+## Follow-up (owner, 3 Nov 2026): one "Penalty & Others" line, and refresh when a record is completed
+
+- **One line.** The Penalties and Others rows are now one row labelled **Penalty & Others**, directly below the insurance deduction, with the total on the right and the two parts beside the label ("Penalties $25.00 · Others $10.00"; a part that is zero is left out). The Summary has the same single **Penalty & Others** line. Net Payment is unchanged: payment - insurance - penalties - others.
+- **Completing a record lowers it.** A record marked complete (repaid outside payroll or waived) already lowers what is outstanding, so it comes off Penalty & Others and the net goes up by the same amount. To make that show without pressing Filter Data, the dashboard now also asks again when its tab becomes visible again (for example after returning from the Payroll page), as well as on Filter Data and when the page is opened.
+- **Tests:** the real Dashboard shows one row in the right place with the breakdown; a $20 completion lowers the row from $35 to $15 and raises the net from $45 to $65, then the rest of the penalty leaves only Others ($70 net); `PenaltyRows.test.jsx` updated. All frontend test files pass; build passes; lint has only the 7 existing errors.
+- **Not changed:** database, backend, money rules, payout.

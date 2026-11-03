@@ -68,26 +68,26 @@ beforeEach(async () => {
 });
 afterEach(cleanup);
 
-describe("Dashboard deductions: penalties and others come off the net", () => {
-  it("shows Penalties and Others right below the insurance deduction, and Net Payment = payment - insurance - penalties - others, in the table and the Summary, with no dates", async () => {
+describe("Dashboard deductions: Penalty & Others comes off the net", () => {
+  it("shows one Penalty & Others row right below the insurance deduction, and Net Payment = payment - insurance - penalties - others, in the table and the Summary, with no dates", async () => {
     const server = await startServer(owing("25.00", "10.00"));
     const { container } = await mount();
     await filter(container);
     expect(await screen.findByTestId("penalty-deduction-row")).toBeTruthy();
-    expect(screen.getByTestId("penalty-deduction-row").textContent).toContain("-$25.00");
-    expect(screen.getByTestId("other-deduction-row").textContent).toContain("-$10.00");
-    // the order in the table: insurance, penalties, others, net
+    expect(screen.getByTestId("penalty-deduction-row").textContent).toContain("Penalty & Others");
+    expect(screen.getByTestId("penalty-deduction-row").textContent).toContain("-$35.00");
+    expect(screen.getByTestId("penalty-breakdown").textContent).toBe("Penalties $25.00 · Others $10.00");
+    // the order in the table: insurance, then Penalty & Others, then the net
     const rows = [...container.querySelectorAll("tr")].map((r) => r.textContent);
     const at = (text) => rows.findIndex((r) => r.includes(text));
     expect(at("Insurance Payment Deduction")).toBeGreaterThan(-1);
-    expect(at("Penalties")).toBe(at("Insurance Payment Deduction") + 1);
-    expect(at("Others (advances")).toBe(at("Penalties") + 1);
-    expect(at("Net Payment")).toBe(at("Others (advances") + 1);
+    expect(at("Penalty & Others")).toBe(at("Insurance Payment Deduction") + 1);
+    expect(at("Net Payment")).toBe(at("Penalty & Others") + 1);
     expect(screen.getByTestId("net-payment-row").textContent).toContain("$45.00"); // 100 - 20 - 25 - 10
     // summary
-    await waitFor(() => expect(screen.getAllByTestId("summary-deducted")).toHaveLength(2));
-    const values = screen.getAllByTestId("summary-deducted").map((n) => within(n).getByRole("textbox").value);
-    expect(values).toEqual(["-$25.00", "-$10.00"]);
+    await waitFor(() => expect(screen.getAllByTestId("summary-deducted")).toHaveLength(1));
+    expect(within(screen.getByTestId("summary-deducted")).getByRole("textbox").value).toBe("-$35.00");
+    expect(screen.getByTestId("summary-deducted").textContent).toContain("Penalty & Others");
     expect(screen.getByDisplayValue("$45.00")).toBeTruthy();
     expect(server.lastParams).toEqual({ cityId: 3 }); // no dates needed
   });
@@ -98,7 +98,6 @@ describe("Dashboard deductions: penalties and others come off the net", () => {
     await filter(container);
     await waitFor(() => expect(screen.getByTestId("net-payment-row")).toBeTruthy());
     expect(screen.queryByTestId("penalty-deduction-row")).toBeNull();
-    expect(screen.queryByTestId("other-deduction-row")).toBeNull();
     expect(screen.getByTestId("net-payment-row").textContent).toContain("$80.00");
   });
 
@@ -107,9 +106,28 @@ describe("Dashboard deductions: penalties and others come off the net", () => {
     const { container } = await mount();
     await filter(container);
     expect(await screen.findByTestId("penalty-deduction-row")).toBeTruthy();
-    expect(screen.queryByTestId("other-deduction-row")).toBeNull();
+    expect(screen.getByTestId("penalty-breakdown").textContent).toBe("Penalties $40.00");
     expect(within(screen.getByTestId("penalty-deduction-row")).getByRole("link", { name: "View entries and history" }).getAttribute("href")).toBe("/admin/payroll?cityId=3&driverId=7");
     expect(screen.getByTestId("net-payment-row").textContent).toContain("$40.00");
+  });
+
+  it("marking a record complete lowers Penalty & Others and raises the net, when the tab is visible again or Filter Data is pressed", async () => {
+    let owed = owing("25.00", "10.00");
+    await startServer(() => owed);
+    const { container } = await mount();
+    await filter(container);
+    expect((await screen.findByTestId("penalty-deduction-row")).textContent).toContain("-$35.00");
+    expect(screen.getByTestId("net-payment-row").textContent).toContain("$45.00");
+    owed = owing("5.00", "10.00"); // $20 of the penalty was marked complete on the Payroll page
+    Object.defineProperty(document, "visibilityState", { configurable: true, get: () => "visible" });
+    document.dispatchEvent(new Event("visibilitychange"));
+    await waitFor(() => expect(screen.getByTestId("penalty-deduction-row").textContent).toContain("-$15.00"));
+    expect(screen.getByTestId("penalty-breakdown").textContent).toBe("Penalties $5.00 · Others $10.00");
+    expect(screen.getByTestId("net-payment-row").textContent).toContain("$65.00");
+    owed = owing("0.00", "10.00"); // the rest of the penalty is completed too: only Others remain
+    document.dispatchEvent(new Event("visibilitychange"));
+    await waitFor(() => expect(screen.getByTestId("penalty-breakdown").textContent).toBe("Others $10.00"));
+    expect(screen.getByTestId("net-payment-row").textContent).toContain("$70.00");
   });
 
   it("a record saved or completed later shows when the filters are applied again", async () => {

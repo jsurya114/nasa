@@ -43,6 +43,14 @@ export default function usePenaltySummary() {
 
   // Figures belong to the scope they were fetched for. For the render between a new scope arriving and its request starting, say
   // "loading" rather than show the previous scope's figures against the new table.
+  // Coming back to this tab (for example from the Payroll page, after marking an entry complete) asks again.
+  useEffect(() => {
+    if (!expected) return undefined;
+    const onVisible = () => { if (document.visibilityState === "visible") setAttempt((n) => n + 1); };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => document.removeEventListener("visibilitychange", onVisible);
+  }, [expected]);
+
   const current = state.scopeKey === scopeKey ? state : { status: expected ? "loading" : "idle", data: null };
 
   return { status: current.status, data: current.data, cityId, driverId, expected, rememberScope, retry: () => setAttempt((n) => n + 1) };

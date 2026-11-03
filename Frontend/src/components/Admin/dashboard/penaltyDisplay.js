@@ -31,22 +31,17 @@ export const netLine = (penalty, baseLabel) => {
 export const summaryNotice = (penalty) => {
   if (!penalty?.expected) return null;
   if (penalty.status === "loading") return "Loading…";
-  if (penalty.status === "error") return "Could not be loaded; the net does not include penalties or other deductions";
+  if (penalty.status === "error") return "Could not be loaded; the net does not include penalties or others";
   return null;
 };
 
-// The extra Summary lines, as ready-to-show text: Penalties and Others (red) below the insurance deduction.
+// The extra Summary line, as ready-to-show text: "Penalty & Others" (red) below the insurance deduction.
 export const summaryItems = (penalty) => {
   const notice = summaryNotice(penalty);
   const d = deductions(penalty);
   let afterInsurance = [];
-  if (notice) afterInsurance = [{ kind: "notice", label: "Penalties / Others", text: notice }];
-  else if (d) {
-    afterInsurance = [
-      ...(d.penalties > 0 ? [{ kind: "deducted", label: "Penalties", text: `-$${d.penalties.toFixed(2)}` }] : []),
-      ...(d.other > 0 ? [{ kind: "deducted", label: "Others", text: `-$${d.other.toFixed(2)}` }] : []),
-    ];
-  }
+  if (notice) afterInsurance = [{ kind: "notice", label: "Penalty & Others", text: notice }];
+  else if (d && d.total > 0) afterInsurance = [{ kind: "deducted", label: "Penalty & Others", text: `-$${d.total.toFixed(2)}` }];
   return { afterInsurance, netLabel: netLine(penalty, "Net Driver Payment"), hasDeductions: Boolean(d && d.total > 0) };
 };
 
