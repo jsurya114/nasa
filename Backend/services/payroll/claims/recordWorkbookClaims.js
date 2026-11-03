@@ -68,11 +68,20 @@ export const recordWorkbookClaims = async (client, { buffer, fileName, user, rou
       return notStored(true, parsed, 'Claims were not stored: the report is for a city you do not have access to.');
     }
 
-    const stored = await importClaims(client, parsed.claims, {
+    // A claim is stored for one city. importClaims finds the current version by courier, waybill and type alone, so a
+    // claim already held for ANOTHER city would be seen as a duplicate or superseded by this upload. Those are left out
+    // before it is called, and only counted: no city learns more about another city's claims than that some were left out.
+    const { rows: elsewhere } = await client.query(
+      `SELECT claim_key FROM courier_claims WHERE claim_key = ANY($1::text[]) AND superseded_at IS NULL AND import_city_id IS DISTINCT FROM $2`,
+      [parsed.claims.map((c) => c.key), city.id]);
+    const otherCity = new Set(elsewhere.map((r) => r.claim_key));
+    const claimsHere = parsed.claims.filter((c) => !otherCity.has(c.key));
+
+    const stored = await importClaims(client, claimsHere, {
       importCityId: city.id, sourceFile: fileName, sourceSheet: parsed.sheet, importedBy: user?.id ?? null,
     });
     // Only this upload's waybills are looked at. importClaims stores; it does not match.
-    const waybills = [...new Set(parsed.claims.map((c) => c.waybill))];
+    const waybills = [...new Set(claimsHere.map((c) => c.waybill))];
     await rematchAllOpenClaims(client, candidateFinderFor(client), { waybills });
 
     const touched = [...stored.inserted, ...stored.amended].map((c) => c.claimId);
@@ -86,6 +95,8 @@ export const recordWorkbookClaims = async (client, { buffer, fileName, user, rou
       stored: true,
       cityId: city.id,
       inFile: parsed.claims.length,
+      // Not stored because the claim already belongs to another city. A count only, for every kind of admin.
+      notStored: otherCity.size,
       inserted: stored.inserted.length,
       duplicates: stored.duplicates.length,
       amended: stored.amended.length,

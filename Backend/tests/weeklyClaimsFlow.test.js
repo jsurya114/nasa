@@ -201,6 +201,31 @@ test('the weekly upload stores the Claims Detail sheet, matches it from history,
       assert.equal((await claimState('WCL011')).WCL011[0], 'chargeable');
     });
 
+    await t.test('a claim already held for another city is neither amended nor counted by this city\'s upload', async () => {
+      const before = await claimState('WCL001');
+      const file = await fileOf({
+        fee: [fee('WCL012', 'CLFT 01-1', 91000012, '12/12/2030 10:00:00')],
+        claims: [
+          ['12/12/2030 09:00:00', 'WCL001', 'Damaged Item', 500, null, -99],  // Dallas's claim, named in a Tyler report
+          ['12/12/2030 09:00:00', 'WCL012', 'Damaged Item', 500, null, -2],   // Tyler's own
+        ],
+      });
+      let round = 0;
+      for (const user of [{ id: cityAdmin.id, role: 'admin' }, SUPER]) {
+        const result = await upload(file, user, `tyler-${user.role}.xlsx`);
+        assert.equal(result.status, 200);
+        const c = result.body.data.claims;
+        assert.equal(c.notStored, 1);
+        assert.equal(c.inFile, 2);
+        // Only Tyler's own claim can be new or a duplicate; the other city's claim shows up only in notStored.
+        assert.deepEqual([c.amended, c.duplicates, c.inserted], [0, round, 1 - round]);
+        round += 1;
+      }
+      assert.deepEqual(await claimState('WCL001'), before, 'Dallas\'s claim is untouched');
+      assert.equal(Number((await client.query("SELECT count(*) n FROM courier_claims WHERE waybill = 'WCL001'")).rows[0].n), 2, 'no new version was made');
+      assert.equal((await claimState('WCL012')).WCL012[0], 'chargeable');
+    });
+
     await t.test('a report without a Claims Detail sheet says so and changes nothing', async () => {
       const result = await upload(await fileOf({ fee: [fee('WCL009', 'CLFD 01-1', 91000011, '12/10/2030 10:00:00')] }), SUPER, 'no-claims.xlsx');
       assert.deepEqual(result.body.data.claims, { found: false, stored: false });
