@@ -16,8 +16,6 @@ import {
 import { parseDate } from '../ledger/ledgerRules.js';
 import { getDriverBalances } from './statementStore.js';
 
-const EARLIEST = '1970-01-01'; // the start of "all of it" when no dates are given
-
 const sum = (rows, key) => rows.reduce((total, r) => total + toCents(r[key]), 0);
 
 const totalsOf = (rows) => {
@@ -27,14 +25,28 @@ const totalsOf = (rows) => {
 };
 
 // A read-only run of the pay calculator for this driver and range, for when no pay run exists yet. Nothing is written and no row
-// is locked. It follows what real drafts do: if the driver has both daily and weekly pay rows in the range, the daily run is
+// is locked. With no range (from and to null) the period is the span of this driver's own closed, unpaid pay rows, the period a real run
+// for that work would cover, so an instalment taken for an earlier period is not mistaken for one taken in this period. It follows what real drafts do: if the driver has both daily and weekly pay rows in the range, the daily run is
 // worked out first and what it takes (claims, instalments) and pays (reimbursements) is carried into the weekly one, as the
 // reservations of a first draft are for the second, so nothing is counted twice. `net` is the calculator's own net for the
 // same earnings (reimbursements included). When the driver has no closed, unpaid pay rows in the range a real run creates no
 // statement, so nothing is taken and `net` is null; the reasons (no recovery limit set, no repayment arrangement, ...) are still
 // returned.
-const estimatePayday = async (db, driverId, cityId, from, to) => {
+// The earliest and latest day of the driver's closed, unpaid pay rows not yet on a run (both data types), or today when there are none.
+const workSpan = async (db, driverId, cityId, recoveryLimit) => {
+  const wide = { id: 0, city_id: cityId, period_start: '1970-01-01', period_end: '2999-12-31', recovery_limit: recoveryLimit };
+  const days = [];
+  for (const dataType of ['daily', 'weekly']) {
+    (await loadEarnings(db, { ...wide, data_type: dataType })).filter((e) => e.driver_id === driverId).forEach((e) => days.push(e.journey_date));
+  }
+  if (days.length) return { from: days.reduce((a, b) => (a < b ? a : b)), to: days.reduce((a, b) => (a > b ? a : b)) };
+  const { rows } = await db.query("SELECT to_char(CURRENT_DATE, 'YYYY-MM-DD') AS d");
+  return { from: rows[0].d, to: rows[0].d };
+};
+
+const estimatePayday = async (db, driverId, cityId, rangeFrom, rangeTo) => {
   const recoveryLimit = await getRecoveryLimit(db);
+  const { from, to } = rangeFrom && rangeTo ? { from: rangeFrom, to: rangeTo } : await workSpan(db, driverId, cityId, recoveryLimit);
   const base = { id: 0, city_id: cityId, period_start: from, period_end: to, recovery_limit: recoveryLimit };
   const [claims, ledger, over] = await Promise.all([
     loadClaims(db, cityId, [driverId], false), loadLedger(db, base, [driverId], false), loadOverRecovered(db, cityId, [driverId]),
@@ -48,7 +60,8 @@ const estimatePayday = async (db, driverId, cityId, from, to) => {
   const flags = [];
   const seen = new Set();
   const run = (dataType, earnings) => {
-    const result = calculateStatement(inputsFor(driverId, { ...base, data_type: dataType }, earnings, claims, ledger, over));
+    // Carrier claims are taken only by a weekly run; a daily run never consumes them.
+    const result = calculateStatement(inputsFor(driverId, { ...base, data_type: dataType }, earnings, dataType === 'weekly' ? claims : [], ledger, over));
     claimCents += toCents(result.totals.claimDeductions);
     recoveryCents += toCents(result.totals.recoveries);
     netCents += toCents(result.totals.net);
@@ -90,7 +103,7 @@ const estimatePayday = async (db, driverId, cityId, from, to) => {
 };
 
 // range: { from, to } as YYYY-MM-DD, or both left out. Without dates (the owner does not want to choose them) the estimate covers all
-// the driver's closed, unpaid pay up to today, as the next pay run would; runs already made are then not looked at. Returns the
+// the driver's closed, unpaid pay, as the next pay run would; runs already made are then not looked at. Returns the
 // figures, or throws PayrollError.
 export const getDriverPeriodSummary = async (db, admin, { driverId, cityId, from, to }) => {
   const hasRange = Boolean(from || to);
@@ -122,9 +135,8 @@ export const getDriverPeriodSummary = async (db, admin, { driverId, cityId, from
   else if (draft.count > 0) payday = { source: 'draft', ...draft, flags: [] };
   else if (hasRange) payday = { source: 'estimate', ...(await estimatePayday(db, driverId, cityId, from, to)) };
   else {
-    // No dates: everything closed and unpaid, up to today (the database's date).
-    const { rows: today } = await db.query("SELECT to_char(CURRENT_DATE, 'YYYY-MM-DD') AS d");
-    payday = { source: 'estimate', ...(await estimatePayday(db, driverId, cityId, EARLIEST, today[0].d)) };
+    // No dates: all the driver's closed, unpaid pay, over the span of that work (see estimatePayday).
+    payday = { source: 'estimate', ...(await estimatePayday(db, driverId, cityId, null, null)) };
   }
 
   return {

@@ -49,7 +49,7 @@ test('statements: own data only, frozen amounts, source charge next to the appli
 
     let seq = 8000;
     const payRow = async (driver, date, gross, insurance) => {
-      const dd = (await one('INSERT INTO dashboard_data (driver_id, route_id, start_seq, end_seq, journey_date, packages) VALUES ($1,$2,$3,$4,$5,10) RETURNING id', [driver, route, seq, seq + 9, date])).id;
+      const dd = (await one('INSERT INTO dashboard_data (driver_id, route_id, start_seq, end_seq, journey_date, packages) VALUES ($1,$2,$3,$4,$5,10) RETURNING id', [driver, route, 0, 0, date])).id;
       seq += 10;
       return (await one('UPDATE payment_dashboard SET closed = true, paid = false, driver_payment = $2, insurance_deduction = $3 WHERE dashboard_data_id = $1 RETURNING id', [dd, gross, insurance])).id;
     };
@@ -74,7 +74,7 @@ test('statements: own data only, frozen amounts, source charge next to the appli
     }).entry)).entry;
 
     await setRecoveryLimit(db, superAdmin, { type: 'percent_of_available', value: 100 }, 'Test limit');
-    const period = { cityId: city, periodStart: '2026-11-01', periodEnd: '2026-11-07', dataType: 'daily' };
+    const period = { cityId: city, periodStart: '2026-11-01', periodEnd: '2026-11-07', dataType: 'weekly' };
     const run = (await generateRun(db, cityAdmin, { requestId: randomUUID(), ...period })).run;
 
     await t.test('a driver sees nothing from a draft run; an admin sees it as pending', async () => {
@@ -179,7 +179,7 @@ test('statements: own data only, frozen amounts, source charge next to the appli
           }).entry);
           await payRow(d2, weekStart, '50.00', '0');
           await payRow(d1, weekEnd, '50.00', '0');
-          const r = (await generateRun(db, cityAdmin, { requestId: randomUUID(), cityId: city, periodStart: weekStart, periodEnd: weekEnd, dataType: 'daily' })).run;
+          const r = (await generateRun(db, cityAdmin, { requestId: randomUUID(), cityId: city, periodStart: weekStart, periodEnd: weekEnd, dataType: 'weekly' })).run;
           await finalizeRun(db, cityAdmin, r.id);
           // Finalized is not paid: until the refund's payout is confirmed, nothing moves to d1.
           assert.equal(await owed(), before, 'unchanged while the refund payout is not confirmed');
@@ -190,7 +190,7 @@ test('statements: own data only, frozen amounts, source charge next to the appli
         await refundAndDeduct('4', '2026-11-08', '2026-11-14');
         assert.equal(await owed(), '4.00', 'before the fix: 0');
         await payRow(d1, '2026-11-16', '50.00', '0');
-        const r3 = (await generateRun(db, cityAdmin, { requestId: randomUUID(), cityId: city, periodStart: '2026-11-15', periodEnd: '2026-11-21', dataType: 'daily' })).run;
+        const r3 = (await generateRun(db, cityAdmin, { requestId: randomUUID(), cityId: city, periodStart: '2026-11-15', periodEnd: '2026-11-21', dataType: 'weekly' })).run;
         const s3 = (await listDriverStatements(db, cityAdmin, d1, city)).find((x) => String(x.pay_run_id) === String(r3.id));
         assert.equal(s3.claim_deductions, '4.00', 'the deduction matches the balance shown');
         await finalizeRun(db, cityAdmin, r3.id);

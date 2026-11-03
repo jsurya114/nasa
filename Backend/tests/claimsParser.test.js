@@ -36,6 +36,21 @@ test('a sheet without a Courier column still gives its claims, with no name to m
   assert.deepEqual([claims.length, claims[0].courierName, claims[0].courierNameKey], [1, null, null]);
 });
 
+test('one claim twice in a file under different driver names conflicts: neither is imported, so no driver is picked by position', () => {
+  const { claims, problems } = parseClaimsRows([HEADER, row({ courier: 'Sam Lee' }), row({ courier: 'Pat Jones' })], { courier: 'gofo' });
+  assert.deepEqual(claims, []);
+  assert.equal(problems.length, 1);
+  assert.match(problems[0].message, /conflicts with row 2 .*different driver name.*neither is imported/);
+});
+
+test('a repeat that differs only by case or spacing is a plain repeat, and a repeat that supplies the missing name keeps it', () => {
+  const same = parseClaimsRows([HEADER, row({ courier: 'Sam Lee' }), row({ courier: '  sam   LEE ' })], { courier: 'gofo' });
+  assert.deepEqual([same.claims.length, same.problems.length], [1, 1]);
+  assert.match(same.problems[0].message, /repeats row 2; imported once/);
+  const lateName = parseClaimsRows([HEADER, row({ courier: '' }), row({ courier: 'Sam Lee' })], { courier: 'gofo' });
+  assert.deepEqual([lateName.claims.length, lateName.claims[0].courierNameKey], [1, 'sam lee']);
+});
+
 test('bad rows are reported with their Excel row number and are not imported', () => {
   const rows = [
     HEADER,

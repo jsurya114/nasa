@@ -81,18 +81,21 @@ export const recordWorkbookClaims = async (client, { buffer, fileName, user, rou
 
   await client.query(`SAVEPOINT ${SAVEPOINT}`);
   try {
-    if (parsed.claims.length === 0) {
-      await client.query(`RELEASE SAVEPOINT ${SAVEPOINT}`);
-      return notStored(true, parsed, parsed.problems.length ? 'Every claim row has a problem; nothing was stored.' : 'The Claims Detail sheet has no claims.');
-    }
+    // A present Claims Detail sheet with no new claims still counts: the report's fee sheet may name a driver whose earlier claim is
+    // waiting, so after the same city and access checks the open claims are matched (issue #180 review). The answer for a sheet with
+    // no claims is unchanged, apart from the counts of what was matched.
+    const empty = parsed.claims.length === 0;
+    const emptyReason = parsed.problems.length ? 'Every claim row has a problem; nothing was stored.' : 'The Claims Detail sheet has no claims.';
     const { cities, unresolved } = await cityOfRoutes(client, routeCodes ?? []);
     if (unresolved.length > 0) {
       await client.query(`RELEASE SAVEPOINT ${SAVEPOINT}`);
+      if (empty) return notStored(true, parsed, emptyReason);
       const shown = unresolved.slice(0, 5).join(', ');
       return notStored(true, parsed, `Claims were not stored: ${unresolved.length} route${unresolved.length === 1 ? '' : 's'} in the report ${unresolved.length === 1 ? 'is' : 'are'} not set up (${shown}${unresolved.length > 5 ? ', ...' : ''}), so the city cannot be confirmed. Add the route${unresolved.length === 1 ? '' : 's'} and upload again.`);
     }
     if (cities.length !== 1) {
       await client.query(`RELEASE SAVEPOINT ${SAVEPOINT}`);
+      if (empty) return notStored(true, parsed, emptyReason);
       return notStored(true, parsed, cities.length === 0
         ? 'Claims were not stored: the report names no route, so its city cannot be confirmed. Upload one city\'s report at a time.'
         : 'Claims were not stored: the report\'s routes belong to more than one city. Upload one city\'s report at a time.');
@@ -101,7 +104,13 @@ export const recordWorkbookClaims = async (client, { buffer, fileName, user, rou
     const limited = isCityLimited(user?.role);
     if (limited && !(await getAllowedJobs(user.id, client)).includes(city.job)) {
       await client.query(`RELEASE SAVEPOINT ${SAVEPOINT}`);
-      return notStored(true, parsed, 'Claims were not stored: the report is for a city you do not have access to.');
+      return notStored(true, parsed, empty ? emptyReason : 'Claims were not stored: the report is for a city you do not have access to.');
+    }
+    if (empty) {
+      const fees = parseFeeNames(readSheetWorkbook(buffer, FEES_SHEET));
+      const rematched = await rematchAllOpenClaims(client, nameFinderFor(client, fees.names), { cityId: city.id, by: 'name' });
+      await client.query(`RELEASE SAVEPOINT ${SAVEPOINT}`);
+      return { ...notStored(true, parsed, emptyReason), cityId: city.id, rematched, names: { sheetFound: fees.found, drivers: fees.names.size, missingColumns: fees.missingColumns } };
     }
 
     // A claim is stored for one city. importClaims finds the current version by courier, waybill and type alone, so a

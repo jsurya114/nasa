@@ -32,7 +32,12 @@ export const lockClaimSubject = (db, waybill, typeKey) =>
 export const lockCityPayroll = (db, cityId) =>
   db.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 143))', [`city:${cityId}`]);
 
+// The driver's name is a fact (#180): it decides who is charged. A name that differs only by case or spacing has the same key, so it is
+// the same fact. A missing name on either side is no information, not a change (a claim stored before names were read keeps matching).
+const sameName = (row, claim) => !row.courier_name_key || !claim.courierNameKey || row.courier_name_key === claim.courierNameKey;
+
 const sameFacts = (row, claim) =>
+  sameName(row, claim) &&
   Number(row.original_charge).toFixed(2) === Number(claim.charge).toFixed(2) &&
   row.claim_at === claim.claimAt &&
   (row.confirmed_at ?? null) === (claim.confirmedAt ?? null) &&
@@ -98,7 +103,8 @@ export const releaseHeldClaims = async (db, waybill, typeKey) => {
 // - A claim belongs to the city it was first imported for. An upload for any other city can neither duplicate, amend
 //   nor supersede it (#162). Whether the city should become part of the claim's identity is an owner decision (#161).
 // - A claim seen before with the same facts is a duplicate: nothing is written, so it can never charge twice.
-// - A claim seen before with different facts becomes a new version; the old one is marked superseded.
+// - A claim seen before with different facts (the amount, the dates, the type, or the driver's name) becomes a new version; the old one is
+//   marked superseded and the new one is matched afresh.
 //   If the old version was already applied to a pay run, #143 must correct it with a later entry.
 export const importClaims = async (db, claims, source) => {
   if (!Number.isInteger(source?.importCityId)) throw new Error('importCityId is required');

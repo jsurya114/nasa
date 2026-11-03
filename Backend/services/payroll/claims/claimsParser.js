@@ -27,6 +27,9 @@ const isBlank = (v) => v === null || v === undefined || (typeof v === 'string' &
 const MAX_TEXT = 500;
 const text = (v) => (isBlank(v) ? null : String(v).trim().slice(0, MAX_TEXT));
 
+// Two rows name different drivers only when both give a name and the names differ (case and spacing do not count).
+const namesDiffer = (a, b) => Boolean(a.courierNameKey && b.courierNameKey && a.courierNameKey !== b.courierNameKey);
+
 // rows: the sheet as an array of arrays (first non-blank row is the header).
 // Returns { claims, problems }. A problem is { row, message } with the Excel row number.
 export const parseClaimsRows = (rows, { courier }) => {
@@ -95,11 +98,18 @@ export const parseClaimsRows = (rows, { courier }) => {
     if (!earlier) {
       byKey.set(claim.key, claim);
       claims.push(claim);
-    } else if (earlier.charge !== claim.charge || earlier.claimAt !== claim.claimAt) {
-      // Same waybill and claim type twice with different facts: neither row is trusted until a person checks.
-      problems.push({ row: excelRow, message: `conflicts with row ${earlier.sourceRow} for the same waybill and claim type; neither is imported` });
+    } else if (earlier.charge !== claim.charge || earlier.claimAt !== claim.claimAt || namesDiffer(earlier, claim)) {
+      // Same waybill and claim type twice with different facts: neither row is trusted until a person checks. The driver's name is a
+      // fact: it decides who is charged, so two rows naming different drivers must not pick one of them by position (#180).
+      const what = namesDiffer(earlier, claim) ? 'a different driver name' : 'different facts';
+      problems.push({ row: excelRow, message: `conflicts with row ${earlier.sourceRow} for the same waybill and claim type (${what}); neither is imported` });
       earlier.conflict = true;
     } else {
+      // A repeat may carry the name the first row lacked; keep it, so the claim can be matched.
+      if (!earlier.courierNameKey && claim.courierNameKey) {
+        earlier.courierName = claim.courierName;
+        earlier.courierNameKey = claim.courierNameKey;
+      }
       problems.push({ row: excelRow, message: `repeats row ${earlier.sourceRow}; imported once` });
     }
   }

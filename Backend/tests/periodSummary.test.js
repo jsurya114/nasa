@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { createEntry } from '../services/payroll/ledger/ledgerStore.js';
 import { settleEntry } from '../services/payroll/ledger/ledgerSettlements.js';
 import { parseNewEntry, parseSettlement } from '../services/payroll/ledger/ledgerRules.js';
-import { finalizeRun, generateRun, getRun, setRecoveryLimit } from '../services/payroll/payRuns/payRunStore.js';
+import { discardRun, finalizeRun, generateRun, getRun, setRecoveryLimit } from '../services/payroll/payRuns/payRunStore.js';
 import { getDriverPeriodSummary } from '../services/payroll/statements/periodSummary.js';
 
 // Needs a PostgreSQL copy with the app's tables (never production). Run with PAYROLL_TEST_DB=1 and the DB_*
@@ -42,7 +42,7 @@ test('dashboard period summary: this payday, approved or preview, and what is st
 
     // One closed pay row of 100 on 3 Nov; a carrier claim of 25 and a hand-entered penalty of 40, both due; and a
     // second penalty of 300 recovered as 50 a payday, which will stay mostly outstanding.
-    const dd = (await one('INSERT INTO dashboard_data (driver_id, route_id, start_seq, end_seq, journey_date, packages) VALUES ($1,$2,9200,9209,$3,10) RETURNING id', [d1, route, '2026-11-03'])).id;
+    const dd = (await one('INSERT INTO dashboard_data (driver_id, route_id, start_seq, end_seq, journey_date, packages) VALUES ($1,$2,0,0,$3,10) RETURNING id', [d1, route, '2026-11-03'])).id;
     await one('UPDATE payment_dashboard SET closed = true, paid = false, driver_payment = 100, insurance_deduction = 0 WHERE dashboard_data_id = $1 RETURNING id', [dd]);
     const claimId = (await one(`INSERT INTO courier_claims (courier, claim_key, version, waybill, claim_type, claim_type_key, claim_at, original_charge, deduction_amount, import_city_id, source_file, source_sheet, source_row)
       VALUES ('gofo', repeat('d', 64), 1, 'TESTU001', 'Damaged Item', 'damaged item', '2026-10-30 10:00', -25, 25, $1, 'synthetic.xlsx', 'Claims Detail', 2) RETURNING id`, [city])).id;
@@ -74,7 +74,7 @@ test('dashboard period summary: this payday, approved or preview, and what is st
       assert.equal(estimate.source, 'estimate');
       assert.equal(await one('SELECT count(*)::int n FROM pay_runs WHERE city_id = $1', [city]).then((r) => r.n), 0, 'the estimate saves no run');
       assert.deepEqual([estimate.claimDeductions, estimate.recoveries, estimate.deducted], ['25.00', '75.00', '100.00'], 'claim 25, then the 40 due in full and 35 of the 50 instalment, capped at the 100 earned');
-      run = (await generateRun(db, cityAdmin, { requestId: randomUUID(), cityId: city, periodStart: '2026-11-01', periodEnd: '2026-11-07', dataType: 'daily' })).run;
+      run = (await generateRun(db, cityAdmin, { requestId: randomUUID(), cityId: city, periodStart: '2026-11-01', periodEnd: '2026-11-07', dataType: 'weekly' })).run;
       const s = await ask(cityAdmin);
       assert.equal(s.payday.source, 'draft');
       assert.deepEqual([s.payday.claimDeductions, s.payday.recoveries, s.payday.deducted], [estimate.claimDeductions, estimate.recoveries, estimate.deducted], 'the draft run takes exactly what the estimate showed');
@@ -211,9 +211,10 @@ test('dashboard period summary: this payday, approved or preview, and what is st
       const weekly = (await generateRun(db, superAdmin, { requestId: randomUUID(), ...period, dataType: 'weekly' })).run;
       const statements = [(await getRun(db, superAdmin, daily.id)).statements[0], (await getRun(db, superAdmin, weekly.id)).statements[0]];
       const total = (key) => statements.reduce((sum, st) => sum + Number(st[key]), 0).toFixed(2);
-      // real drafts: daily takes the claim (25) and the instalment (50) and pays the reimbursement (50), net 55; weekly takes nothing more, net 100
-      assert.deepEqual([statements[0].claim_deductions, statements[0].recoveries, statements[0].net], ['25.00', '50.00', '55.00']);
-      assert.deepEqual([statements[1].claim_deductions, statements[1].recoveries, statements[1].net], ['0.00', '0.00', '100.00']);
+      // real drafts: the daily run takes the instalment (50) and pays the reimbursement (50), net 80, and never the carrier claim; the weekly run
+      // takes the claim (25) and no second instalment, net 75. Carrier claims are taken only by a weekly run.
+      assert.deepEqual([statements[0].claim_deductions, statements[0].recoveries, statements[0].net], ['0.00', '50.00', '80.00']);
+      assert.deepEqual([statements[1].claim_deductions, statements[1].recoveries, statements[1].net], ['25.00', '0.00', '75.00']);
       assert.deepEqual([estimate.claimDeductions, estimate.recoveries, estimate.deducted], [total('claim_deductions'), total('recoveries'), (Number(total('claim_deductions')) + Number(total('recoveries'))).toFixed(2)],
         'the estimate takes exactly what the two drafts took, not the instalment and the claim twice');
       assert.equal(estimate.net, total('net'), 'and its net is the calculator\'s own net, with the reimbursement in it');
@@ -221,6 +222,84 @@ test('dashboard period summary: this payday, approved or preview, and what is st
       // driver below. Here the rows are on live statements, so nothing is eligible.
       const after = (await getDriverPeriodSummary(db, superAdmin, { driverId: d2, cityId: city2 })).payday;
       assert.deepEqual([after.source, after.deducted, after.net], ['estimate', '0.00', null]);
+    });
+
+    // A clean city, route and driver for a scenario of its own (the drivers above are used up). Weekly pay rows have no sequence numbers.
+    let scenario = 0;
+    const freshScenario = async () => {
+      scenario += 1;
+      const name = `Test Sum Scenario ${scenario}`;
+      const c = (await one("INSERT INTO city (job, city_code, city_type) VALUES ($1, $2, 'DAILY') RETURNING id", [name, `TSS${scenario}`])).id;
+      const r = (await one(`INSERT INTO routes (name, job, company_route_price, driver_route_price, company_doublestop_price, driver_doublestop_price, route_code_in_string)
+        VALUES ($1, $2, 2, 1.6, 0.5, 0.25, $3) RETURNING id`, [`TS ${scenario}`, name, `TS-${scenario}`])).id;
+      const tag = randomUUID();
+      const d = (await one("INSERT INTO drivers (password, name, email, driver_code, city_id, enabled) VALUES ('x', $1, $2, $3, $4, true) RETURNING id",
+        [`Scenario Driver ${scenario}`, `${tag}@example.com`, 8700000 + scenario, c])).id;
+      let seq = 9600 + scenario * 100;
+      const row = async (date, gross, { weekly = true } = {}) => {
+        const dd = (await one('INSERT INTO dashboard_data (driver_id, route_id, start_seq, end_seq, journey_date, packages) VALUES ($1,$2,$3,$4,$5,10) RETURNING id', [d, r, weekly ? 0 : seq, weekly ? 0 : seq + 9, date])).id;
+        seq += 10;
+        await one('UPDATE payment_dashboard SET closed = true, paid = false, driver_payment = $2, insurance_deduction = 0 WHERE dashboard_data_id = $1 RETURNING id', [dd, gross]);
+      };
+      const day = async (offset) => (await one("SELECT to_char(CURRENT_DATE + $1::int, 'YYYY-MM-DD') AS d", [offset])).d;
+      const claim = async (amount) => {
+        const id = (await one(`INSERT INTO courier_claims (courier, claim_key, version, waybill, claim_type, claim_type_key, claim_at, original_charge, deduction_amount, import_city_id, source_file, source_sheet, source_row)
+          VALUES ('gofo', encode(sha256($1::bytea), 'hex'), 1, $2, 'Damaged Item', 'damaged item', now(), $3, $4, $5, 'synthetic.xlsx', 'Claims Detail', 2) RETURNING id`, [`scenario-${scenario}`, `TESTSC${scenario}`, -amount, amount, c])).id;
+        await db.query(`INSERT INTO courier_claim_matches (claim_id, status, driver_id, city_id, eligible_deduction, reason, rule_version) VALUES ($1, 'chargeable', $2, $3, $4, 'test', 'test')`, [id, d, c, amount]);
+        return id;
+      };
+      const penalty = (o) => createEntry(db, superAdmin, parseNewEntry({ requestId: randomUUID(), driverId: d, cityId: c, type: 'manual_claim', claimType: 'Fake POD', reason: 'Penalty', effectiveDate: '2026-01-01', ...o }).entry);
+      const estimate = async (range = {}) => (await getDriverPeriodSummary(db, superAdmin, { driverId: d, cityId: c, ...range })).payday;
+      const draft = async (periodStart, periodEnd, dataType) => (await getRun(db, superAdmin, (await generateRun(db, superAdmin, { requestId: randomUUID(), cityId: c, periodStart, periodEnd, dataType })).run.id));
+      return { c, d, row, day, claim, penalty, estimate, draft };
+    };
+
+    await t.test('carrier claims are taken only by a weekly run: a daily run in the same city never consumes one, and the estimate agrees', async () => {
+      const sc = await freshScenario();
+      const claimId = await sc.claim(25);
+      await sc.penalty({ amount: '300', recoveryPlan: 'installments', installmentAmount: '50' });
+      const today = await sc.day(0);
+      const from = await sc.day(-6);
+      await sc.row(today, '100.00', { weekly: false }); // a daily (SpeedX-style) pay row
+      // the estimate and the real daily draft both take only the manual instalment, and leave the carrier claim alone
+      const dailyEstimate = await sc.estimate({ from, to: today });
+      const daily = await sc.draft(from, today, 'daily');
+      const statement = daily.statements[0];
+      assert.deepEqual([statement.claim_deductions, statement.recoveries], ['0.00', '50.00']);
+      assert.deepEqual([dailyEstimate.claimDeductions, dailyEstimate.recoveries], ['0.00', '50.00']);
+      assert.equal(Number((await one('SELECT count(*) n FROM pay_statement_lines WHERE claim_id = $1 AND active', [claimId])).n), 0, 'the claim is still waiting for a weekly run');
+      // a weekly pay row for the same driver: now the claim is taken, by the weekly run only (the instalment is held: same period)
+      await discardRun(db, superAdmin, daily.run.id, 'Test');
+      await sc.row(today, '100.00');
+      const weeklyEstimate = await sc.estimate({ from, to: today });
+      const weekly = await sc.draft(from, today, 'weekly');
+      assert.deepEqual([weekly.statements[0].claim_deductions, weekly.statements[0].recoveries], ['25.00', '50.00']);
+      // (the estimate runs the daily run, then the weekly run, as above: the instalment once, the claim once)
+      assert.deepEqual([weeklyEstimate.claimDeductions, weeklyEstimate.recoveries], ['25.00', '50.00']);
+      assert.equal(Number((await one('SELECT count(*) n FROM pay_statement_lines WHERE claim_id = $1 AND active', [claimId])).n), 1, 'taken once, by the weekly run');
+    });
+
+    await t.test('with no dates, an instalment taken for an earlier period does not hold back this period\'s (relative to today, against the real draft)', async () => {
+      const sc = await freshScenario();
+      await sc.penalty({ amount: '300', recoveryPlan: 'installments', installmentAmount: '50' });
+      const earlierDay = await sc.day(-14);
+      const today = await sc.day(0);
+      // an earlier pay period: $100 earned two weeks ago, $50 taken for it
+      await sc.row(earlierDay, '100.00');
+      const earlier = await sc.draft(await sc.day(-20), earlierDay, 'weekly');
+      assert.equal(earlier.statements[0].recoveries, '50.00');
+      await finalizeRun(db, superAdmin, earlier.run.id);
+      // new work today: $100 eligible
+      await sc.row(today, '100.00');
+      const noDates = await sc.estimate();
+      const current = await sc.estimate({ from: await sc.day(-6), to: today });
+      assert.deepEqual([noDates.deducted, noDates.net], ['50.00', '50.00'], 'before the fix: 0.00 and 100.00, the old instalment held it back');
+      assert.deepEqual([current.deducted, current.net], [noDates.deducted, noDates.net], 'the same as an explicit current-period estimate');
+      const real = await sc.draft(await sc.day(-6), today, 'weekly');
+      assert.deepEqual([real.statements[0].recoveries, real.statements[0].net], ['50.00', '50.00'], 'and the same as the real following draft');
+      // the once-per-overlapping-period protection is kept: with that draft in place the same work cannot be taken twice
+      const again = await sc.estimate();
+      assert.deepEqual([again.deducted, again.net], ['0.00', null]);
     });
 
     await t.test('without dates only what is outstanding is returned, and half a range is refused', async () => {
