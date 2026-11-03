@@ -119,7 +119,7 @@ test('statements: own data only, frozen amounts, source charge next to the appli
       assert.deepEqual([exempt.status, exempt.source_charge, exempt.applied, exempt.outstanding], ['exempt', '-25.00', '0.00', '0.00']);
       const charged = claims.find((c) => c.waybill === 'TESTS001');
       assert.deepEqual([charged.applied, charged.outstanding], ['40.00', '0.00']);
-      assert.deepEqual(totals, { owedByDriver: '150.00', owedToDriver: '0.00' });
+      assert.deepEqual(totals, { owedByDriver: '150.00', owedPenalties: '0.00', owedOther: '150.00', owedToDriver: '0.00' });
     });
 
     await t.test('a claim moved from another driver shows none of that driver\'s statements', async () => {
@@ -175,6 +175,23 @@ test('statements: own data only, frozen amounts, source charge next to the appli
         assert.equal(moved.pay_runs.some((p) => d2Statements.includes(String(p.statementId))), false, 'none of d2\'s statements are linked for d1');
       } finally {
         await db.query('ROLLBACK TO SAVEPOINT refund_case');
+      }
+    });
+
+    await t.test('penalties and everything else owed always add up to the total, even with a repayment outside payroll', async () => {
+      await db.query('SAVEPOINT repaid_case');
+      try {
+        const before = (await getMyBalances(db, d1)).totals;
+        const add = (o) => createEntry(db, cityAdmin, parseNewEntry({ requestId: randomUUID(), driverId: d1, cityId: city, reason: 'Test entry', effectiveDate: '2026-12-01', ...o }).entry);
+        await add({ type: 'manual_claim', claimType: 'Damaged Item', amount: '40' });
+        await add({ type: 'advance_repayment', amount: '20' });
+        const after = (await getMyBalances(db, d1)).totals;
+        assert.equal(Number(after.owedByDriver) - Number(before.owedByDriver), 20, 'a 40 penalty less a 20 repayment adds 20');
+        for (const totals of [before, after]) assert.equal((Number(totals.owedPenalties) + Number(totals.owedOther)).toFixed(2), Number(totals.owedByDriver).toFixed(2));
+        const admin = (await getDriverBalances(db, cityAdmin, d1, city)).totals;
+        assert.deepEqual([admin.owedPenalties, admin.owedOther, admin.owedByDriver], [after.owedPenalties, after.owedOther, after.owedByDriver]);
+      } finally {
+        await db.query('ROLLBACK TO SAVEPOINT repaid_case');
       }
     });
 
