@@ -14,12 +14,16 @@ const WHITESPACE_RE = new RegExp(WHITESPACE, 'g');
 // removes more kinds of whitespace than the database does.
 export const cleanDriverName = (name) => (typeof name === 'string' ? name.replace(WHITESPACE_RE, ' ').replace(/^ | $/g, '') : '');
 
-// The key two names are compared by: cleaned, then lower case. Identical to NAME_KEY_SQL on the database side.
-export const driverNameKey = (name) => cleanDriverName(name).toLowerCase();
+// The key two names are compared by: cleaned, put in Unicode normal form NFC (so "é" typed as one character or as "e" plus an accent is
+// one name), then lower case with full Unicode rules. Identical to NAME_KEY_SQL on the database side.
+export const driverNameKey = (name) => cleanDriverName(name).normalize('NFC').toLowerCase();
 
-// The same expression the database index uses (migrations/2026-11-04-issue-177-driver-name-unique.sql). Keep them in step:
-// collapse, then trim spaces, then lower case.
-export const NAME_KEY_SQL = (column) => `lower(btrim(regexp_replace(${column}, '${WHITESPACE}', ' ', 'g'), ' '))`;
+// The same expression the database index uses (migrations/2026-11-04-issue-177-driver-name-unique.sql). Keep them in step: collapse
+// whitespace, trim spaces, NFC, then lower case. The case step names the ICU collation "und-x-icu" on purpose: plain lower() follows
+// the database's own locale, which under the C locale lowers only ASCII letters, so "Émile" and "émile" would get different keys
+// there. With this collation every database gives the same answer. The migration checks that UTF8 and the collation are available.
+export const NAME_KEY_SQL = (column) =>
+  `lower((normalize(btrim(regexp_replace(${column}, '${WHITESPACE}', ' ', 'g'), ' '), NFC)) COLLATE "und-x-icu")`;
 
 // Checks a name from a form. Returns { name } (cleaned) or { error }.
 export const parseDriverName = (value) => {
