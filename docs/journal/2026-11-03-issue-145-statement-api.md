@@ -68,3 +68,14 @@ Balances show, per ledger entry and per matched claim, the original amount, what
 **Not tested.** Real production data. The screens (next pull request). Large drivers with more than 100 statements (the list stops at 100).
 
 **Risks and follow-ups.** The screens for drivers (EN/ES, phone layout) and admins come next under #145. Repayments made outside payroll are subtracted from the driver's total, not from a single entry, because the calculator spreads them over the oldest debts at each run.
+
+## Review fix (Jasil's review on #153, 3 Nov 2026)
+
+- **A refunded charge still cleared another driver's claim balance.** The claim's outstanding amount now uses `NET_COLLECTED_SQL` from #152, the same figure pay runs use: each driver's live deductions less refunds paid to them on finalized runs. So the balance a driver sees and the next deduction always agree. Only that total is read; the privacy fix stands, and no other driver's statement is linked.
+- **Refunds due (admin only).** `GET /admin/payroll/drivers/:driverId/balances?cityId=` now also returns `refundsDue`: the claims this driver paid more for than they now owe in that city, each with waybill, claim type and amount. It is the same list pay runs flag as `claim_over_recovered`. The admin Payroll page (#155) uses it to record the linked refund. Drivers do not get this list.
+- **Test** (fails on the code before the fix): TESTS003 was deducted from d2 and now belongs to d1.
+  - Before any refund, d1 owes 0 and the admin sees a 10 refund due for d2.
+  - After a finalized partial refund of 4, d1 shows 4, the next run deducts exactly 4, and then d1 shows 0.
+  - After the remaining refund of 6, d1 shows 6.
+  - None of d2's statements are linked under d1.
+- Full backend suite: 111 pass with the database.

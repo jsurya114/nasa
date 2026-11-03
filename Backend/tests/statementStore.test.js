@@ -133,6 +133,47 @@ test('statements: own data only, frozen amounts, source charge next to the appli
       assert.deepEqual(adminView.pay_runs, []);
     });
 
+    await t.test('after a claim moves and the first driver is refunded, the balance shown and the next deduction agree', async () => {
+      await db.query('SAVEPOINT refund_case');
+      try {
+        // TESTS003 was deducted from d2 (10) and now belongs to d1. Until d2 is refunded, d1 owes nothing.
+        const owed = async () => (await getMyBalances(db, d1)).claims.find((c) => c.waybill === 'TESTS003').outstanding;
+        assert.equal(await owed(), '0.00');
+        const due = (await getDriverBalances(db, cityAdmin, d2, city)).refundsDue;
+        assert.deepEqual(due.map((r) => [r.waybill, r.claimType, r.amount]), [['TESTS003', 'Damaged Item', '10.00']]);
+        assert.equal((await getMyBalances(db, d2)).refundsDue, undefined, 'drivers do not get the admin work list');
+
+        const refundAndDeduct = async (amount, weekStart, weekEnd) => {
+          await createEntry(db, cityAdmin, parseNewEntry({
+            requestId: randomUUID(), driverId: d2, cityId: city, type: 'correction', direction: 'credit', amount,
+            waybill: 'TESTS003', claimType: 'Damaged Item', reason: 'Claim belongs to another driver', effectiveDate: weekStart,
+          }).entry);
+          await payRow(d2, weekStart, '50.00', '0');
+          await payRow(d1, weekEnd, '50.00', '0');
+          const r = (await generateRun(db, cityAdmin, { requestId: randomUUID(), cityId: city, periodStart: weekStart, periodEnd: weekEnd, dataType: 'daily' })).run;
+          await finalizeRun(db, cityAdmin, r.id);
+          return r;
+        };
+        // A partial refund of 4, finalized: d1 now shows 4 owed, and the next run deducts exactly 4.
+        await refundAndDeduct('4', '2026-11-08', '2026-11-14');
+        assert.equal(await owed(), '4.00', 'before the fix: 0');
+        await payRow(d1, '2026-11-16', '50.00', '0');
+        const r3 = (await generateRun(db, cityAdmin, { requestId: randomUUID(), cityId: city, periodStart: '2026-11-15', periodEnd: '2026-11-21', dataType: 'daily' })).run;
+        const s3 = (await listDriverStatements(db, cityAdmin, d1, city)).find((x) => String(x.pay_run_id) === String(r3.id));
+        assert.equal(s3.claim_deductions, '4.00', 'the deduction matches the balance shown');
+        await finalizeRun(db, cityAdmin, r3.id);
+        assert.equal(await owed(), '0.00');
+        // The rest of the refund (6), finalized: d1 owes 6 more, and the privacy rule still holds.
+        await refundAndDeduct('6', '2026-11-22', '2026-11-28');
+        assert.equal(await owed(), '6.00');
+        const moved = (await getMyBalances(db, d1)).claims.find((c) => c.waybill === 'TESTS003');
+        const d2Statements = (await listMyStatements(db, d2)).map((x) => String(x.id));
+        assert.equal(moved.pay_runs.some((p) => d2Statements.includes(String(p.statementId))), false, 'none of d2\'s statements are linked for d1');
+      } finally {
+        await db.query('ROLLBACK TO SAVEPOINT refund_case');
+      }
+    });
+
     await t.test('a voided run stays visible as voided and its deductions count as not taken', async () => {
       await voidRun(db, superAdmin, run.id, 'Test void');
       const [statement] = await listMyStatements(db, d1);

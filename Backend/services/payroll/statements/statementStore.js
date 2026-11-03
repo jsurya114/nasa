@@ -6,7 +6,7 @@
 // city check, never from trust in the request.
 
 import { fromCents, toCents } from '../payRuns/payCalculator.js';
-import { assertCityAllowed, isSuperAdmin, PayrollError } from '../payRuns/payRunStore.js';
+import { assertCityAllowed, isSuperAdmin, loadOverRecovered, NET_COLLECTED_SQL, PayrollError } from '../payRuns/payRunStore.js';
 
 export const DRIVER_RUN_STATUSES = Object.freeze(['finalized', 'voided']);
 export const ADMIN_RUN_STATUSES = Object.freeze(['draft', 'finalized', 'voided']);
@@ -107,11 +107,9 @@ const loadClaimBalances = async (db, driverId, statuses, cityIds) => {
   const { rows } = await db.query(
     `SELECT c.id, m.city_id, c.courier, c.waybill, c.claim_type, to_char(c.claim_at, 'YYYY-MM-DD HH24:MI') AS claim_at,
             c.original_charge AS source_charge, m.status, m.eligible_deduction, x.pay_runs,
-            -- Everything finalized runs took for any version, whoever it was charged to, as pay runs count it.
-            -- Only the total: which statements those were is not shown.
-            (SELECT COALESCE(SUM(-l.amount), 0) FROM pay_statement_lines l JOIN courier_claims cv ON cv.id = l.claim_id
-               JOIN pay_statements s ON s.id = l.statement_id JOIN pay_runs r ON r.id = s.pay_run_id
-              WHERE cv.claim_key = c.claim_key AND l.active AND r.status = 'finalized')::text AS taken_all
+            -- What has really been collected for any version from anyone, net of finalized refunds: the same figure pay
+            -- runs use, so this balance and the next deduction agree. Only the total: no other driver's statement is shown.
+            ${NET_COLLECTED_SQL('c')}::text AS net_collected
        FROM courier_claim_matches m
        JOIN courier_claims c ON c.id = m.claim_id
        CROSS JOIN LATERAL (
@@ -125,15 +123,17 @@ const loadClaimBalances = async (db, driverId, statuses, cityIds) => {
       ORDER BY c.claim_at DESC, c.id DESC`,
     [driverId, statuses, cityIds]
   );
-  return rows.map(({ taken_all: takenAll, ...c }) => {
+  return rows.map(({ net_collected: netCollected, ...c }) => {
     const applied = sumFinalized(c.pay_runs);
-    const outstanding = c.status === 'exempt' ? 0 : Math.max(0, toCents(c.eligible_deduction ?? '0') - toCents(takenAll));
+    const outstanding = c.status === 'exempt' ? 0 : Math.max(0, toCents(c.eligible_deduction ?? '0') - toCents(netCollected));
     return { ...c, applied: fromCents(applied), outstanding: fromCents(outstanding) };
   });
 };
 
 // owedByDriver: still to be recovered, after repayments made outside payroll. owedToDriver: reimbursements not yet paid.
-const balances = async (db, driverId, statuses, cityIds) => {
+// refundsDue (admin, one city): claims this driver paid more for than they now owe, in that city, with what a linked
+// credit correction needs (waybill, claim type, amount). The same list pay runs flag as claim_over_recovered.
+const balances = async (db, driverId, statuses, cityIds, { withRefunds = false } = {}) => {
   const entries = await loadLedgerBalances(db, driverId, statuses, cityIds);
   const claims = await loadClaimBalances(db, driverId, statuses, cityIds);
   const debitCents = entries.filter((e) => e.direction === 'debit').reduce((sum, e) => sum + toCents(e.outstanding), 0)
@@ -141,7 +141,11 @@ const balances = async (db, driverId, statuses, cityIds) => {
   const repaidCents = entries.filter((e) => e.entry_type === 'advance_repayment').reduce((sum, e) => sum + toCents(e.amount), 0);
   const creditCents = entries.filter((e) => e.direction === 'credit' && e.entry_type !== 'advance_repayment')
     .reduce((sum, e) => sum + toCents(e.outstanding), 0);
+  const refundsDue = withRefunds && cityIds?.length === 1
+    ? (await loadOverRecovered(db, cityIds[0], [driverId])).map((r) => ({ claimId: r.claim_id, waybill: r.waybill, claimType: r.claim_type, amount: fromCents(toCents(r.over)) }))
+    : undefined;
   return {
+    ...(refundsDue && { refundsDue }),
     entries,
     claims,
     totals: { owedByDriver: fromCents(Math.max(0, debitCents - repaidCents)), owedToDriver: fromCents(creditCents) },
@@ -184,4 +188,4 @@ export const getStatement = async (db, admin, statementId) => {
 };
 
 export const getDriverBalances = async (db, admin, driverId, cityId) =>
-  balances(db, driverId, ADMIN_RUN_STATUSES, await adminCities(db, admin, cityId));
+  balances(db, driverId, ADMIN_RUN_STATUSES, await adminCities(db, admin, cityId), { withRefunds: true });
