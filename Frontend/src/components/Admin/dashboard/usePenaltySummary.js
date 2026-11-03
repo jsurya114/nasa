@@ -12,9 +12,13 @@ export default function usePenaltySummary() {
   const from = filters?.startDate;
   const to = filters?.endDate;
   const [state, setState] = useState({ status: "idle", data: null });
+  const [attempt, setAttempt] = useState(0);
+  // "Expected": the admin chose a city, a driver and both dates, so payroll figures belong on this page. Until they arrive,
+  // or if they fail, the page must say so rather than leave an unadjusted amount looking payable.
+  const expected = Boolean(cityId && driverId && from && to);
 
   useEffect(() => {
-    if (!cityId || !driverId || !from || !to) {
+    if (!expected) {
       setState({ status: "idle", data: null });
       return undefined;
     }
@@ -24,9 +28,9 @@ export default function usePenaltySummary() {
       .then(({ data }) => setState({ status: "ready", data }))
       .catch(() => { if (!controller.signal.aborted) setState({ status: "error", data: null }); });
     return () => controller.abort();
-  }, [cityId, driverId, from, to]);
+  }, [expected, cityId, driverId, from, to, attempt]);
 
-  return { ...state, cityId, driverId };
+  return { ...state, cityId, driverId, expected, retry: () => setAttempt((n) => n + 1) };
 }
 
 // What to show, or null when there is nothing to show. "approved" figures come from finalized pay runs and the run's
