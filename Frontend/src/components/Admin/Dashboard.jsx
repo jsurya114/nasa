@@ -15,8 +15,9 @@ import {
 import Header from "../../reuse/Header.jsx";
 import Nav from "../../reuse/Nav.jsx";
 import PaymentDashboardTable from "./DashboardTable.jsx";
+import usePenaltySummary, { describePenalty } from "./dashboard/usePenaltySummary.js";
 import Loader from "../Loader.jsx"
-import { CalendarDays, CalendarRange, ChevronDown, LayoutGrid, ShieldCheck, Banknote } from "lucide-react";
+import { CalendarDays, CalendarRange, ChevronDown, Gavel, LayoutGrid, ShieldCheck, Banknote } from "lucide-react";
 
 export default function Dashboard() {
   const dispatch = useDispatch();
@@ -40,6 +41,8 @@ export default function Dashboard() {
   } = useSelector((state) => state.dash);
 
   const { isSuperAdmin } = useSelector((state) => state.admin);
+  const penalty = usePenaltySummary();
+  const penaltyInfo = useMemo(() => describePenalty(penalty), [penalty]);
 
   const getTodayDate = () => {
     const today = new Date();
@@ -157,6 +160,9 @@ export default function Dashboard() {
         companyEarnings: 0,
         insuranceDeduction: 0,
         netDriverPayment: 0,
+        penaltyDeducted: penaltyInfo?.deducted ?? 0,
+        penaltyNet: penaltyInfo?.net ?? 0,
+        penaltyOutstanding: penaltyInfo ? `$${penaltyInfo.penalties}` : 0,
       };
     }
 
@@ -174,8 +180,11 @@ export default function Dashboard() {
       companyEarnings: Number(summaryData.total_company_earnings) || 0,
       insuranceDeduction: totalInsurance.toFixed(2),
       netDriverPayment: (totalDriverPayment - totalInsurance).toFixed(2),
+      penaltyDeducted: penaltyInfo?.deducted ?? 0,
+      penaltyNet: penaltyInfo?.net ?? 0,
+      penaltyOutstanding: penaltyInfo ? `$${penaltyInfo.penalties}` : 0,
     };
-  }, [summaryData, isFiltered]);
+  }, [summaryData, isFiltered, penaltyInfo]);
 
   // Fetch dropdown data AND today's data on mount
   useEffect(() => {
@@ -583,8 +592,18 @@ export default function Dashboard() {
                     { field: "driversPayment", label: "Total Drivers Payment" },
                     ...(Number(extraFieldsData.insuranceDeduction) > 0 ? [
                       { field: "insuranceDeduction", label: "Insurance Deduction", icon: ShieldCheck, highlight: false, isNegative: true },
+                    ] : []),
+                    // #166: this payday's pay-run deductions and the penalties still owed, from the server; the pay run's own net.
+                    ...(penaltyInfo?.deducted != null ? [
+                      { field: "penaltyDeducted", label: `Claims / Deductions (${penaltyInfo.status})`, icon: Gavel, highlight: false, isNegative: true },
+                    ] : []),
+                    ...(Number(extraFieldsData.insuranceDeduction) > 0 ? [
                       { field: "netDriverPayment", label: "Net Driver Payment", icon: Banknote, highlight: false, isBold: true },
                     ] : []),
+                    ...(penaltyInfo?.net != null ? [
+                      { field: "penaltyNet", label: `Pay Run Net (${penaltyInfo.status})`, icon: Banknote, highlight: false, isBold: true },
+                    ] : []),
+                    ...(penaltyInfo ? [{ field: "penaltyOutstanding", label: "Penalties Outstanding" }] : []),
                     ...(isSuperAdmin ? [{ field: "companyEarnings", label: "Total Company Earnings", highlight: true }] : []),
                   ].map((item, i) => (
                     <div key={i} className="flex items-center gap-3">
@@ -651,7 +670,7 @@ export default function Dashboard() {
               <div className="font-bold text-ink bg-brand-50/60 border-b border-line px-4 py-3">
                 Driver Jobs
               </div>
-              <PaymentDashboardTable showExtraFields={showExtraFields} />
+              <PaymentDashboardTable showExtraFields={showExtraFields} penalty={penalty} />
             </section>
           )}
         </main>

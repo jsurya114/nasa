@@ -1,0 +1,55 @@
+import { afterEach, describe, expect, it } from "vitest";
+import { cleanup, render, screen } from "@testing-library/react";
+import { MemoryRouter } from "react-router-dom";
+import PenaltyRows from "./PenaltyRows.jsx";
+import { describePenalty } from "./usePenaltySummary.js";
+
+// Made-up figures, shaped as GET /admin/payroll/drivers/:id/dashboard-summary returns them (#166).
+const none = { deducted: "0.00", claimDeductions: "0.00", recoveries: "0.00", net: "0.00", count: 0 };
+const summary = (period, outstanding = { penalties: "250.00", other: "0.00", total: "250.00" }) =>
+  ({ status: "ready", cityId: 3, driverId: 7, data: { period: { status: "none", approved: none, preview: none, statements: [], crossingRuns: 0, ...period }, outstanding } });
+const approved = { status: "approved", approved: { deducted: "50.00", claimDeductions: "0.00", recoveries: "50.00", net: "246.49", count: 1 } };
+const preview = { status: "preview", preview: { deducted: "50.00", claimDeductions: "0.00", recoveries: "50.00", net: "246.49", count: 1 } };
+
+const show = (penalty) => render(<MemoryRouter><table><tbody><PenaltyRows penalty={penalty} /></tbody></table></MemoryRouter>);
+afterEach(cleanup);
+
+describe("PenaltyRows", () => {
+  it("shows this payday's $50, not the $300 debt: $250 stays outstanding, and the net is the pay run's own", () => {
+    show(summary(approved));
+    expect(screen.getByTestId("penalty-deduction-row").textContent).toContain("-$50.00");
+    expect(screen.getByTestId("penalty-deduction-row").textContent).toContain("Approved");
+    expect(screen.getByTestId("penalty-deduction-row").textContent).toContain("not subtracted again");
+    expect(screen.getByTestId("penalty-outstanding-row").textContent).toContain("$250.00");
+    expect(screen.getByTestId("penalty-net-row").textContent).toContain("Pay run net (approved)");
+    expect(screen.getByTestId("penalty-net-row").textContent).toContain("$246.49");
+    expect(screen.getByRole("link", { name: "View entries and history" }).getAttribute("href")).toBe("/admin/payroll?cityId=3&driverId=7");
+  });
+
+  it("labels a draft as a preview, never as approved", () => {
+    show(summary(preview));
+    expect(screen.getByTestId("penalty-deduction-row").textContent).toContain("Preview");
+    expect(screen.getByTestId("penalty-deduction-row").textContent).not.toContain("Approved");
+    expect(screen.getByTestId("penalty-net-row").textContent).toContain("Pay run net (preview)");
+  });
+
+  it("with no pay run in the dates it shows only what is outstanding, and says nothing is deducted yet", () => {
+    show(summary({}));
+    expect(screen.queryByTestId("penalty-deduction-row")).toBeNull();
+    expect(screen.queryByTestId("penalty-net-row")).toBeNull();
+    expect(screen.getByTestId("penalty-outstanding-row").textContent).toContain("$250.00");
+  });
+
+  it("says when a pay run crosses the dates and is not counted", () => {
+    show(summary({ ...approved, crossingRuns: 1 }));
+    expect(screen.getByTestId("penalty-deduction-row").textContent).toContain("1 pay run crosses these dates and is not counted");
+  });
+
+  it("shows nothing while loading, on an error, or when there is no penalty and no deduction", () => {
+    expect(describePenalty({ status: "loading", data: null })).toBeNull();
+    expect(describePenalty({ status: "error", data: null })).toBeNull();
+    expect(describePenalty(summary({}, { penalties: "0.00", other: "0.00", total: "0.00" }))).toBeNull();
+    const { container } = show({ status: "idle", data: null });
+    expect(container.querySelectorAll("tr").length).toBe(0);
+  });
+});

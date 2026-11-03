@@ -1,4 +1,5 @@
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import axios from "../../redux/slice/axiosInstance";
 import Header from "../../reuse/Header";
 import Nav from "../../reuse/Nav";
@@ -42,8 +43,12 @@ function useDriverPayroll(cityId, driverId) {
 export default function Payroll() {
   const [cities, setCities] = useState([]);
   const [drivers, setDrivers] = useState([]);
-  const [cityId, setCityId] = useState("");
+  // The dashboard links here with ?cityId=&driverId= (#166); only digits are used, the server checks access either way.
+  const [params] = useSearchParams();
+  const fromLink = (key) => (/^\d{1,9}$/.test(params.get(key) ?? "") ? params.get(key) : "");
+  const [cityId, setCityId] = useState(() => fromLink("cityId"));
   const [driverId, setDriverId] = useState("");
+  const linkedDriver = useRef(fromLink("driverId")); // used once, when that city's drivers have loaded
   const [openId, setOpenId] = useState(null);
   const [prefill, setPrefill] = useState(null); // a refund chosen from "Refunds due"
   const payroll = useDriverPayroll(cityId, driverId);
@@ -58,7 +63,12 @@ export default function Payroll() {
     setDrivers([]);
     if (!city) return;
     axios.get("/admin/dashboard/drivers-by-city", { params: { cityJob: city.job } })
-      .then(({ data }) => setDrivers(data?.data ?? []))
+      .then(({ data }) => {
+        const list = data?.data ?? [];
+        setDrivers(list);
+        if (linkedDriver.current && list.some((d) => String(d.id) === linkedDriver.current)) setDriverId(linkedDriver.current);
+        linkedDriver.current = "";
+      })
       .catch(() => setDrivers([]));
   }, [city]);
 

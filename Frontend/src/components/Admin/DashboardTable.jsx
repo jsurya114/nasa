@@ -3,8 +3,9 @@ import { SkeletonList } from "../../reuse/Skeleton.jsx";
 import { RefreshCw, Wallet, ShieldCheck, Banknote } from "lucide-react";
 import { useDispatch, useSelector } from "react-redux";
 import { fetchFilteredPaymentData, fetchTodayPaymentData } from "../../redux/slice/admin/dashSlice";
+import PenaltyRows from "./dashboard/PenaltyRows.jsx";
 
-export default function PaymentDashboardTable() {
+export default function PaymentDashboardTable({ penalty }) {
   const dispatch = useDispatch();
   
   const { 
@@ -364,6 +365,7 @@ export default function PaymentDashboardTable() {
                         </td>
                       </tr>
                     )}
+                    <PenaltyRows penalty={penalty} />
                     {totals.insuranceDeduction > 0 && (
                       <tr className="bg-green-50 font-bold border-b-2 border-green-600">
                         <td className="px-3 py-3 border-b border-gray-200 whitespace-nowrap" colSpan="11">
