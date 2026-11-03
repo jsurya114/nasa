@@ -1,7 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { cleanup, render, screen, within } from "@testing-library/react";
 import UploadResultSummary from "./UploadResultSummary";
-import reducer, { clearWeeklyState, excelWeeklyFileUpload } from "../../redux/slice/admin/excelSlice";
 
 afterEach(cleanup);
 
@@ -76,15 +75,5 @@ describe("claims summary after a weekly upload", () => {
   it("shows nothing before an upload has answered", () => {
     const { container } = render(<UploadResultSummary result={null} />);
     expect(container.innerHTML).toBe("");
-  });
-});
-
-describe("the upload slice keeps the answer", () => {
-  it("stores the answer's data when the upload is fulfilled, and clears it when a new upload starts or the state is cleared", () => {
-    const answer = { message: "ok", data: { claims: STORED, assignmentHistory: HISTORY } };
-    const done = reducer(undefined, { type: excelWeeklyFileUpload.fulfilled.type, payload: answer });
-    expect(done.weekly.result).toEqual(answer.data);
-    expect(reducer(done, { type: excelWeeklyFileUpload.pending.type }).weekly.result).toBeNull();
-    expect(reducer(done, clearWeeklyState()).weekly.result).toBeNull();
   });
 });

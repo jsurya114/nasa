@@ -3,6 +3,7 @@ import { useDispatch, useSelector } from "react-redux";
 import {
   excelDailyFileUpload,
   excelWeeklyFileUpload,
+  selectWeeklyResult,
 } from "../../redux/slice/admin/excelSlice";
 import { fetchDashboardData, fetchWeeklyTempData } from "../../redux/slice/admin/doublestopSlice";
 import { fetchDriverPayment, updateWeeklyExcelToDashboard } from "../../redux/slice/admin/dashboardUpdateSlice";
@@ -29,7 +30,7 @@ const DoubleStop = () => {
   // Get loading states from Redux
   const weeklyLoading = useSelector((state) => state.excel?.weekly?.loading);
   const dailyLoading = useSelector((state) => state.excel?.daily?.loading);
-  const weeklyResult = useSelector((state) => state.excel?.weekly?.result);
+  const weeklyResult = useSelector(selectWeeklyResult);
 
   // Daily form state
   const [dailyForm, setDailyForm] = useState({

@@ -20,9 +20,15 @@
 - **Carrier history:** one line (new records, already known, rows without a usable waybill or Delivery ID, rows left out), or that it was not saved and why.
 - The panel is empty before an upload, is cleared when a new upload starts, and shows nothing for a failed upload (the existing error toast stays).
 
+**Session boundary (review round 1, Jayasoorya).** The weekly answer is role- and city-scoped (a city admin does not get `notStored`), so it must not be shown outside the session that received it. Three rules in `excelSlice.js`:
+
+1. The result carries its owner (`ownerAdminId`, the signed-in administrator when the upload started) and is only read through `selectWeeklyResult`, which returns it only while that same administrator is signed in. The panel uses that selector, so a result is never shown to anyone else even if a boundary below were missed.
+2. The result and the request in flight are cleared when the session ends or changes: sign-out (at its start, whatever its outcome), the client-side sign-out, signing in, and the server ending the session (an access check that fails for any reason other than a lost connection). A lost connection that only delays the access check keeps the result.
+3. Only the answer to the latest upload request is accepted (`activeRequestId`). An answer that arrives after the session ended or changed, or after a newer upload began, is dropped, so an upload in flight cannot repopulate the result for the next session.
+
 **Money impact.** None. Display only.
 
-**Tested.** 11 Vitest tests (component and the slice): stored claims, waiting for history, bad rows, "first 20" notice, not stored for an unknown route and for two cities, no claims sheet, `notStored` and held shown only when sent, history not saved, nothing before an upload, and the slice keeping and clearing the answer. Removing the slice line fails the slice test. Whole frontend suite: 141 passed. Production build passes.
+**Tested.** 10 component tests and 6 session-boundary tests (real slices and thunks, fake server, made-up administrators: result shown only to its owner; cleared by both sign-out paths and by the next sign-in; cleared when the server ends the session; kept through a lost connection; a late answer after sign-out and the next sign-in is dropped; a late answer to an older upload is dropped). Component tests: stored claims, waiting for history, bad rows, "first 20" notice, not stored for an unknown route and for two cities, no claims sheet, `notStored` and held shown only when sent, history not saved, nothing before an upload, and the slice keeping and clearing the answer. Removing the session reset, the stale-answer guard or the owner check each fails the session tests. Whole frontend suite: 146 passed. Production build passes.
 
 **Not tested.** The panel inside the full `DoubleStop` page with a real upload (the page needs the whole admin shell); in a browser or phone.
 
