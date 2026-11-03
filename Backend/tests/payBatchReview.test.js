@@ -10,27 +10,26 @@ const codes = (list) => list.map((b) => b.code);
 const base = { net: '10.00', payout_status: 'not_submitted', flags: [] };
 
 test('blockers: only a finalized run with a non-negative, unpaid statement is eligible', () => {
-  assert.deepEqual(blockersFor({ statement: base, waitingClaims: 0, runStatus: 'finalized' }), []);
-  assert.deepEqual(codes(blockersFor({ statement: base, waitingClaims: 0, runStatus: 'draft' })), ['run_not_finalized']);
-  assert.deepEqual(codes(blockersFor({ statement: { ...base, net: '-0.01' }, waitingClaims: 0, runStatus: 'finalized' })), ['negative_net']);
-  assert.deepEqual(codes(blockersFor({ statement: { ...base, net: '0.00' }, waitingClaims: 0, runStatus: 'finalized' })), []);
+  assert.deepEqual(blockersFor({ statement: base, runStatus: 'finalized' }), []);
+  assert.deepEqual(codes(blockersFor({ statement: base, runStatus: 'draft' })), ['run_not_finalized']);
+  assert.deepEqual(codes(blockersFor({ statement: { ...base, net: '-0.01' }, runStatus: 'finalized' })), ['negative_net']);
+  assert.deepEqual(codes(blockersFor({ statement: { ...base, net: '0.00' }, runStatus: 'finalized' })), []);
 });
 
 test('blockers: paid, submitted and unconfirmed block; failed is disclosed so it is checked before a retry', () => {
-  const of = (payout_status) => blockersFor({ statement: { ...base, payout_status }, waitingClaims: 0, runStatus: 'finalized' });
+  const of = (payout_status) => blockersFor({ statement: { ...base, payout_status }, runStatus: 'finalized' });
   assert.deepEqual(codes(of('paid')), ['already_paid']);
   assert.deepEqual(codes(of('submitted')), ['payout_in_progress']);
   assert.deepEqual(codes(of('unconfirmed')), ['payout_in_progress']);
   assert.deepEqual(of('failed').map((b) => [b.code, b.severity]), [['previous_payout_failed', 'disclose']]);
 });
 
-test('blockers: waiting claims and statement flags are disclosed and never block', () => {
+test('blockers: statement flags are disclosed and never block', () => {
   const found = blockersFor({
     statement: { ...base, flags: [{ code: 'needs_review', entryId: 7, message: 'no repayment arrangement recorded; not recovered' }] },
-    waitingClaims: 2, runStatus: 'finalized',
+    runStatus: 'finalized',
   });
-  assert.deepEqual(found.map((b) => [b.code, b.severity]), [['claims_waiting', 'disclose'], ['needs_review', 'disclose']]);
-  assert.equal(found[0].count, 2);
+  assert.deepEqual(found.map((b) => [b.code, b.severity]), [['needs_review', 'disclose']]);
 });
 
 // Needs a PostgreSQL copy with the app's tables (never production): PAYROLL_TEST_DB=1 and the DB_* variables.
@@ -67,6 +66,21 @@ test('the batch review reads a run read-only, by city, and tells who can be paid
     const { run } = await generateRun(db, superAdmin, { requestId: randomUUID(), cityId: city, periodStart: '2026-11-01', periodEnd: '2026-11-07', dataType: 'daily' });
     const snapshot = async () => (await db.query(`SELECT (SELECT count(*) FROM pay_statements) s, (SELECT count(*) FROM pay_statement_lines) l, (SELECT count(*) FROM pay_runs) r, (SELECT string_agg(payout_status, ',') FROM pay_statements) p`)).rows[0];
 
+    // Claims with no decision have no driver (#141). Three of this city, one of the other city, one superseded.
+    const { importClaims } = await import('../services/payroll/claims/claimsStore.js');
+    const { parseClaimsRows } = await import('../services/payroll/claims/claimsParser.js');
+    const head = ['date', 'Waybill No.', 'Claim Type', 'Declared value (USD)', 'Confirm date.', 'The total expenses-exclusive of taxes'];
+    const claimsOf = (rows) => parseClaimsRows([head, ...rows], { courier: 'gofo' }).claims;
+    const src = (importCityId) => ({ importCityId, sourceFile: 'synthetic.xlsx', sourceSheet: 'Claims Detail', importedBy: null });
+    await importClaims(db, claimsOf([
+      ['10/07/2026 10:00:00', 'PBR001', 'Damaged Item', 10, null, -5],
+      ['10/07/2026 10:00:00', 'PBR002', 'Damaged Item', 10, null, -6],
+      ['10/07/2026 10:00:00', 'PBR003', 'Damaged Item', 10, null, -7],
+    ]), src(city));
+    await importClaims(db, claimsOf([['10/07/2026 10:00:00', 'PBR004', 'Damaged Item', 10, null, -8]]), src(otherCity));
+    await db.query(`UPDATE courier_claim_matches SET status = 'ambiguous' WHERE claim_id = (SELECT id FROM courier_claims WHERE waybill = 'PBR002')`);
+    await db.query(`UPDATE courier_claim_matches SET status = 'review' WHERE claim_id = (SELECT id FROM courier_claims WHERE waybill = 'PBR003')`);
+
     const before = await snapshot();
     const draft = await reviewRunAsBatch(db, superAdmin, run.id);
     assert.equal(draft.readOnly, true);
@@ -78,6 +92,8 @@ test('the batch review reads a run read-only, by city, and tells who can be paid
     const negative = draft.drivers.find((d) => d.driverId === d2);
     assert.ok(negative.blockers.some((b) => b.code === 'negative_net'));
     assert.equal(draft.drivers.length, 2);
+    assert.deepEqual(draft.summary.pendingClaims, { unresolved: 1, ambiguous: 1, review: 1, total: 3 }, 'this city\'s open claims, not the other city\'s');
+    assert.ok(draft.drivers.every((d) => d.blockers.every((b) => b.code !== 'claims_waiting')), 'a claim is never attributed to a driver');
     assert.deepEqual(await snapshot(), before, 'reading the review changes nothing');
 
     await assert.rejects(reviewRunAsBatch(db, cityAdmin, run.id), (e) => e.status === 403, 'a city admin of another city is refused');
@@ -90,6 +106,12 @@ test('the batch review reads a run read-only, by city, and tells who can be paid
     const review = await reviewRunAsBatch(db, superAdmin, clean.id);
     assert.deepEqual([review.summary.drivers, review.summary.eligible, review.summary.blocked], [1, 1, 0]);
     assert.equal(review.summary.eligibleTotals.net, '50.00');
+    assert.equal(review.summary.pendingClaims.total, 3, 'a finalized run discloses them too');
+    const otherReview = await (async () => {
+      const { run: o } = await generateRun(db, superAdmin, { requestId: randomUUID(), cityId: otherCity, periodStart: '2026-11-01', periodEnd: '2026-11-07', dataType: 'daily' });
+      return reviewRunAsBatch(db, superAdmin, o.id);
+    })();
+    assert.deepEqual(otherReview.summary.pendingClaims, { unresolved: 1, ambiguous: 0, review: 0, total: 1 });
 
     await db.query("UPDATE pay_statements SET payout_status = 'submitted' WHERE pay_run_id = $1", [clean.id]);
     const submitted = await reviewRunAsBatch(db, superAdmin, clean.id);

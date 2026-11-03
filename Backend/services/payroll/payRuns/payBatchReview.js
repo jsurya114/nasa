@@ -1,6 +1,6 @@
 // Read-only review of one pay run as a city payment batch (issue #144). It moves no money and changes nothing:
 // it lays out each driver's statement, says who could be paid and why anyone cannot, and discloses what is still
-// waiting (claims not yet matched). Recording a payment or submitting to Everee (#31) are separate, later steps.
+// waiting for the city (claims not yet matched, which have no driver). Recording a payment or submitting to Everee (#31) are separate, later steps.
 //
 // The population is the statements frozen on the run, chosen by immutable IDs on the server. No name, page or
 // client-sent list decides who is in the batch.
@@ -15,13 +15,12 @@ export const BLOCKERS = Object.freeze({
   payout_in_progress: { severity: 'blocking', message: 'a payment was already submitted or its result is unconfirmed; reconcile it before paying again' },
   already_paid: { severity: 'blocking', message: 'this statement is already paid' },
   previous_payout_failed: { severity: 'disclose', message: 'an earlier payment attempt failed; check that it did not go through before paying again' },
-  claims_waiting: { severity: 'disclose', message: 'claims for this driver are not matched yet and are not deducted in this statement' },
 });
 
 const FLAG_SEVERITY = 'disclose';
 
-// Pure. statement: a pay_statements row. waitingClaims: number. runStatus: the run's status.
-export const blockersFor = ({ statement, waitingClaims, runStatus }) => {
+// Pure. statement: a pay_statements row. runStatus: the run's status.
+export const blockersFor = ({ statement, runStatus }) => {
   const found = [];
   const add = (code, extra = {}) => found.push({ code, ...BLOCKERS[code], ...extra });
   if (runStatus !== 'finalized') add('run_not_finalized');
@@ -29,7 +28,6 @@ export const blockersFor = ({ statement, waitingClaims, runStatus }) => {
   if (statement.payout_status === 'paid') add('already_paid');
   else if (statement.payout_status === 'submitted' || statement.payout_status === 'unconfirmed') add('payout_in_progress');
   else if (statement.payout_status === 'failed') add('previous_payout_failed');
-  if (waitingClaims > 0) add('claims_waiting', { count: waitingClaims });
   for (const flag of statement.flags ?? []) {
     found.push({ code: flag.code, severity: FLAG_SEVERITY, message: flag.message, ...(flag.entryId ? { entryId: flag.entryId } : {}) });
   }
@@ -53,20 +51,18 @@ export const reviewRunAsBatch = async (db, admin, runId) => {
       WHERE s.pay_run_id = $1 ORDER BY d.name, s.id`, [runId]);
   const driverIds = statements.map((s) => s.driver_id);
 
-  // Claims of these drivers in this city that are not decided yet. Disclosed, never deducted here.
-  const waiting = new Map();
-  if (driverIds.length) {
-    const { rows } = await db.query(
-      `SELECT m.driver_id, count(*)::int AS n
-         FROM courier_claim_matches m JOIN courier_claims c ON c.id = m.claim_id
-        WHERE c.import_city_id = $1 AND c.superseded_at IS NULL AND m.status IN ('unresolved', 'ambiguous', 'review')
-          AND m.driver_id = ANY($2::int[])
-        GROUP BY m.driver_id`, [run.city_id, driverIds]);
-    for (const r of rows) waiting.set(r.driver_id, r.n);
-  }
+  // Claims of this city that are not decided yet. A claim with no decision has no driver (#141), so these are shown for
+  // the whole city and never attributed to a driver. They are not deducted in any statement of this batch.
+  const { rows: pending } = await db.query(
+    `SELECT m.status, count(*)::int AS n
+       FROM courier_claim_matches m JOIN courier_claims c ON c.id = m.claim_id
+      WHERE c.import_city_id = $1 AND c.superseded_at IS NULL AND m.status IN ('unresolved', 'ambiguous', 'review')
+      GROUP BY m.status`, [run.city_id]);
+  const pendingClaims = { unresolved: 0, ambiguous: 0, review: 0, total: 0 };
+  for (const r of pending) { pendingClaims[r.status] = r.n; pendingClaims.total += r.n; }
 
   const drivers = statements.map((s) => {
-    const blockers = blockersFor({ statement: s, waitingClaims: waiting.get(s.driver_id) ?? 0, runStatus: run.status });
+    const blockers = blockersFor({ statement: s, runStatus: run.status });
     return {
       statementId: s.id,
       driverId: s.driver_id,
@@ -89,6 +85,8 @@ export const reviewRunAsBatch = async (db, admin, runId) => {
       blocked: drivers.length - eligible.length,
       withDisclosures: eligible.filter((d) => d.blockers.length > 0).length,
       eligibleTotals: totalsOf(eligible),
+      // City-level: claims still waiting for a driver. They are not deducted here; confirm knowing they are open.
+      pendingClaims,
     },
     // Reading the review changes nothing and cannot pay anyone. Paying is a separate confirmed step.
     readOnly: true,

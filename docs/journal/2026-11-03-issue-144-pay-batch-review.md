@@ -15,7 +15,8 @@
 - **Population by immutable IDs.** The drivers are the statements of the run, found by run ID on the server. No name, page, or client-sent list decides who is in.
 - **City scope on the server.** The run's city is checked with the same `assertCityAllowed` the pay-run API uses; another city's admin gets 403.
 - **Blocking** (driver is not eligible): the run is not finalized; the net is below zero; the statement is already paid; a payment is submitted or unconfirmed (reconcile first).
-- **Disclosed** (does not block, shown to whoever confirms): claims of this driver not matched yet (so not deducted), an earlier payout that failed, and every flag the calculator set (undisbursed advance, no repayment arrangement, recovery limit not set, ...).
+- **Disclosed** (does not block, shown to whoever confirms): an earlier payout that failed, and every flag the calculator set (undisbursed advance, no repayment arrangement, recovery limit not set, ...).
+- **Pending claims, city level.** A claim with no decision has no driver (#141 requires it), so `summary.pendingClaims` counts the run's city's `unresolved`, `ambiguous` and `review` claims (current versions only, other cities excluded) and no driver is named. None is deducted in this batch. (Review round 1: a first version tried to attribute them per driver and could never match.)
 - **Eligible totals** add up only eligible drivers, to the cent, using the calculator's cent helpers.
 
 **Not in this part (and why).**
@@ -30,6 +31,6 @@
 
 **Database.** None.
 
-**Tested.** Unit tests for the blocker rules. A database test on a private scratch copy (one rolled-back transaction, made-up data): a draft run has nobody eligible; a driver whose insurance exceeds the pay is blocked as negative; reading the review changes no row; another city's admin is refused (403); unknown run is 404; a finalized run shows its driver eligible with the exact total; marking the statement submitted makes the driver blocked and the eligible total zero. Removing the city check fails the database test. Default backend suite: 0 failures.
+**Tested.** Unit tests for the blocker rules. A database test on a private scratch copy (one rolled-back transaction, made-up data): a draft run has nobody eligible; open claims of one city are counted by status, with another city's and no driver attributed; a driver whose insurance exceeds the pay is blocked as negative; reading the review changes no row; another city's admin is refused (403); unknown run is 404; a finalized run shows its driver eligible with the exact total; marking the statement submitted makes the driver blocked and the eligible total zero. Removing the city check fails the database test. Default backend suite: 0 failures.
 
 **Not tested.** Over HTTP with real tokens; the first part has no UI.
