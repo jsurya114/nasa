@@ -4,6 +4,7 @@ import { buttonClass } from "./formParts.jsx";
 import EditEntryPanel from "./EditEntryPanel.jsx";
 import HistoryPanel from "./HistoryPanel.jsx";
 import SettlePanel from "./SettlePanel.jsx";
+import { describeStanding } from "./describeStanding.js";
 
 const TYPE_LABEL = { manual_claim: "Penalty", advance: "Advance", expense: "Expense", correction: "Correction" };
 
@@ -27,7 +28,7 @@ export default function EntryManager({ entries, isSuperAdmin, onChanged }) {
               <p className="min-w-0 break-words text-sm font-medium text-ink">{TYPE_LABEL[e.entry_type] ?? "Entry"}: {e.reason}</p>
               <p className="whitespace-nowrap text-sm font-semibold tabular-nums text-ink">{formatMoney(e.outstanding)}</p>
             </div>
-            <p className="mt-0.5 text-xs text-ink-muted">{e.effective_date} · original {formatMoney(e.amount)}{Number(e.outstanding) === 0 ? " · settled" : " · outstanding"}</p>
+            <p className="mt-0.5 text-xs text-ink-muted">{e.effective_date} · original {formatMoney(e.amount)} · {describeStanding(e, formatMoney)}</p>
             <div className="mt-2 flex flex-wrap gap-2">
               <button type="button" className={buttonClass} onClick={() => toggle(e.id, "edit")} aria-expanded={open?.id === e.id && open.panel === "edit"}>Edit</button>
               {Number(e.outstanding) > 0 && <button type="button" className={buttonClass} onClick={() => toggle(e.id, "settle")} aria-expanded={open?.id === e.id && open.panel === "settle"}>Mark complete</button>}

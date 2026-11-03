@@ -34,7 +34,8 @@ export default function EditEntryPanel({ entry, onDone, onCancel }) {
     return () => controller.abort();
   }, [entry.id]);
 
-  const set = (key) => (e) => setForm((f) => ({ ...f, [key]: e.target.value }));
+  // Leaving instalments clears the instalment amount too: it is hidden then, and the server refuses an amount without a plan.
+  const set = (key) => (e) => setForm((f) => ({ ...f, [key]: e.target.value, ...(key === "recoveryPlan" && e.target.value !== "installments" && { installmentAmount: "" }) }));
 
   const submit = async (e) => {
     e.preventDefault();
@@ -64,6 +65,9 @@ export default function EditEntryPanel({ entry, onDone, onCancel }) {
   if (!current) return <p className="mt-3 text-sm text-gray-600">Loading…</p>;
   const isClaim = current.entry_type === "manual_claim";
   const shown = FIELDS.filter(([key]) => (key === "claimType" || key === "waybill" ? isClaim : key === "installmentAmount" ? form.recoveryPlan === "installments" : true));
+  // An error about a field that is not on screen must still be seen, or the admin is stuck with no way to fix it.
+  const shownKeys = new Set([...shown.map(([key]) => key), "reason", "changes"]);
+  const otherErrors = Object.entries(errors).filter(([key]) => !shownKeys.has(key));
 
   return (
     <form onSubmit={submit} className="mt-3 grid grid-cols-1 gap-3 rounded-xl border border-line bg-canvas p-3 sm:grid-cols-2" noValidate aria-label="Edit entry">
@@ -86,6 +90,11 @@ export default function EditEntryPanel({ entry, onDone, onCancel }) {
         </Field>
       </div>
       {errors.changes && <p className="text-sm text-red-600 sm:col-span-2">{errors.changes}</p>}
+      {otherErrors.length > 0 && (
+        <ul role="alert" className="list-disc pl-5 text-sm text-red-600 sm:col-span-2">
+          {otherErrors.map(([key, message]) => <li key={key}>{message}</li>)}
+        </ul>
+      )}
       <p className="text-xs text-gray-600 sm:col-span-2">The original stays in the entry's history. An entry already on a pay run, or with a repayment, cannot be edited.</p>
       <div className="flex gap-2 sm:col-span-2">
         <button type="submit" className={primaryClass} disabled={saving}>{saving ? "Saving…" : "Save correction"}</button>

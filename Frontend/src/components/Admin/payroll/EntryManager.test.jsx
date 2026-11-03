@@ -22,22 +22,24 @@ const HISTORY = {
   payRuns: [{ run_id: 1, run_status: "finalized", line_type: "recovery", amount: "-0.00", period_start: "2026-11-01", period_end: "2026-11-07" }],
 };
 
-const startServer = async (handlers = {}) => {
+const withPlan = (plan, installment) => ({ ...HISTORY, versions: [HISTORY.versions[0], { ...HISTORY.versions[1], entry: { ...HISTORY.versions[1].entry, recovery_plan: plan, installment_amount: installment } }] });
+
+const startServer = async (handlers = {}, history = HISTORY) => {
   const state = { posts: [] };
   await installServer(async (config) => {
     if (config.method === "post") {
       state.posts.push({ url: config.url, body: JSON.parse(config.data) });
       return handlers[config.url] ?? { status: 201, data: {} };
     }
-    if (config.url === "/admin/payroll/ledger/5/history") return { status: 200, data: HISTORY };
+    if (config.url === "/admin/payroll/ledger/5/history") return { status: 200, data: history };
     return { status: 200, data: {} };
   });
   return state;
 };
 
-const mount = async ({ isSuperAdmin = false, onChanged = vi.fn() } = {}) => {
+const mount = async ({ isSuperAdmin = false, onChanged = vi.fn(), entries = ENTRIES } = {}) => {
   const { default: EntryManager } = await import("./EntryManager.jsx");
-  render(<EntryManager entries={ENTRIES} isSuperAdmin={isSuperAdmin} onChanged={onChanged} />);
+  render(<EntryManager entries={entries} isSuperAdmin={isSuperAdmin} onChanged={onChanged} />);
   return onChanged;
 };
 const fill = (label, value) => fireEvent.change(screen.getByLabelText(label), { target: { value } });
@@ -58,6 +60,41 @@ describe("EntryManager", () => {
     expect(screen.queryByText(/Fuel/)).toBeNull();
     // a settled entry offers Edit and History but no Mark complete
     expect(screen.getAllByRole("button", { name: "Mark complete" })).toHaveLength(1);
+  });
+
+  it("keeps approved and paid apart: only a confirmed payment, a repayment or a waiver is called settled", async () => {
+    const base = ENTRIES[0];
+    const entries = [
+      { ...base, id: 11, reason: "Draft one", outstanding: "100.00", reserved: "50.00", allocated: "0.00", paid: "0.00" },
+      { ...base, id: 12, reason: "Approved unpaid", outstanding: "0.00", reserved: "0.00", allocated: "100.00", paid: "0.00" },
+      { ...base, id: 13, reason: "Partly allocated", outstanding: "50.00", reserved: "0.00", allocated: "50.00", paid: "0.00" },
+      { ...base, id: 14, reason: "Paid one", outstanding: "0.00", reserved: "0.00", allocated: "0.00", paid: "100.00" },
+      { ...base, id: 15, reason: "Repaid one", outstanding: "0.00", reserved: "0.00", allocated: "0.00", paid: "0.00", settled_outside: "100.00" },
+    ];
+    await startServer();
+    await mount({ entries });
+    const line = (reason) => screen.getByText(`Penalty: ${reason}`).closest("li").textContent;
+    expect(line("Draft one")).toContain("$50.00 reserved in a draft pay run (not approved)");
+    expect(line("Draft one")).not.toContain("settled");
+    expect(line("Approved unpaid")).toContain("$100.00 allocated to an approved pay run, payment not confirmed");
+    expect(line("Approved unpaid")).not.toContain("settled");
+    expect(line("Partly allocated")).toContain("$50.00 outstanding");
+    expect(line("Partly allocated")).toContain("$50.00 allocated");
+    expect(line("Paid one")).toContain("$100.00 paid through payroll");
+    expect(line("Paid one")).toContain("settled");
+    expect(line("Repaid one")).toContain("$100.00 repaid or waived outside payroll");
+    expect(line("Repaid one")).toContain("settled");
+    // an allocated amount cannot also be recorded as repaid or waived: Mark complete only where something is outstanding
+    expect(screen.getAllByRole("button", { name: "Mark complete" })).toHaveLength(2);
+  });
+
+  it("says that a payroll deduction is settled only after the payment is confirmed", async () => {
+    await startServer();
+    await mount();
+    fireEvent.click(screen.getByRole("button", { name: "Mark complete" }));
+    fireEvent.click(screen.getByRole("radio", { name: "Deducted through payroll" }));
+    expect(screen.getByText(/counts as settled only once the payment is confirmed/)).toBeTruthy();
+    expect(screen.queryByText(/drafting/i)).toBeNull();
   });
 
   it("marks part of a penalty repaid outside payroll, with a reference, then reloads", async () => {
@@ -82,7 +119,7 @@ describe("EntryManager", () => {
     fireEvent.click(screen.getByRole("button", { name: "Mark complete" }));
     expect(screen.getByRole("radio", { name: /Waived by NASA/ }).disabled).toBe(true);
     fireEvent.click(screen.getByRole("radio", { name: "Deducted through payroll" }));
-    expect(screen.getByText(/taken, and settled, by a pay run/)).toBeTruthy();
+    expect(screen.getByText(/counts as settled only once the payment is confirmed/)).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Record repayment" })).toBeNull();
   });
 
@@ -143,5 +180,51 @@ describe("EntryManager", () => {
     fireEvent.click(screen.getByRole("button", { name: "Confirm reversal" }));
     await waitFor(() => expect(onChanged).toHaveBeenCalled());
     expect(server.posts[0]).toMatchObject({ url: "/admin/payroll/ledger/settlements/31/reverse", body: { reason: "Entered on the wrong driver" } });
+  });
+
+  const plan = (value) => fireEvent.change(screen.getByLabelText("Repayment arrangement"), { target: { value } });
+  const save = async (server) => {
+    fireEvent.change(screen.getByLabelText("Why are you editing this?"), { target: { value: "Plan changed" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save correction" }));
+    await waitFor(() => expect(server.posts.length).toBeGreaterThan(0));
+    return server.posts[server.posts.length - 1].body.changes;
+  };
+  const openEdit = async () => {
+    fireEvent.click(screen.getAllByRole("button", { name: "Edit" })[0]);
+    await screen.findByLabelText("Repayment arrangement");
+  };
+
+  it("leaving instalments clears the hidden instalment amount: to all-on-payday, and to no arrangement", async () => {
+    let server = await startServer({}, withPlan("installments", "50.00"));
+    await mount();
+    await openEdit();
+    expect(screen.getByLabelText("Instalment per payday (USD)").value).toBe("50.00");
+    plan("full_next_payday");
+    expect(screen.queryByLabelText("Instalment per payday (USD)")).toBeNull();
+    expect(await save(server)).toEqual({ recoveryPlan: "full_next_payday", installmentAmount: null });
+    cleanup();
+    server = await startServer({}, withPlan("installments", "50.00"));
+    await mount();
+    await openEdit();
+    plan("");
+    expect(await save(server)).toEqual({ recoveryPlan: null, installmentAmount: null });
+  });
+
+  it("going back to instalments needs a fresh valid amount, and an error about a hidden field is still shown", async () => {
+    const server = await startServer({ "/admin/payroll/ledger/5/edit": { status: 400, data: { message: "check the highlighted fields", errors: { installmentAmount: "an instalment amount needs recoveryPlan \"installments\"" } } } }, withPlan("installments", "50.00"));
+    await mount();
+    await openEdit();
+    plan("full_next_payday");
+    plan("installments");
+    expect(screen.getByLabelText("Instalment per payday (USD)").value).toBe("");
+    fireEvent.change(screen.getByLabelText("Instalment per payday (USD)"), { target: { value: "25" } });
+    fireEvent.change(screen.getByLabelText("Why are you editing this?"), { target: { value: "Plan changed" } });
+    // the stored plan was already instalments, so only the new amount changes
+    fireEvent.click(screen.getByRole("button", { name: "Save correction" }));
+    await waitFor(() => expect(server.posts[0].body.changes).toEqual({ installmentAmount: "25" }));
+    // the server answers with an error on a field that is not on screen once the plan is switched away: it must still be visible
+    plan("full_next_payday");
+    expect(await screen.findByRole("alert")).toBeTruthy();
+    expect(screen.getByRole("alert").textContent).toContain("needs recoveryPlan");
   });
 });

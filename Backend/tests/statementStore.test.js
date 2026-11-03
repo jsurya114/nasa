@@ -81,6 +81,9 @@ test('statements: own data only, frozen amounts, source charge next to the appli
       const forAdmin = await listDriverStatements(db, cityAdmin, d1, city);
       assert.deepEqual(forAdmin.map((s) => s.state), ['pending']);
       await assert.rejects(getMyStatement(db, d1, forAdmin[0].id), { status: 404 });
+      // the draft only reserves the instalment: nothing is allocated or paid, and the whole advance is still outstanding
+      const adv = (await getDriverBalances(db, cityAdmin, d1, city)).entries.find((e) => String(e.id) === String(advance.id));
+      assert.deepEqual([adv.reserved, adv.allocated, adv.paid, adv.outstanding], ['50.00', '0.00', '0.00', '200.00']);
     });
 
     let statementId;
@@ -120,6 +123,30 @@ test('statements: own data only, frozen amounts, source charge next to the appli
       const charged = claims.find((c) => c.waybill === 'TESTS001');
       assert.deepEqual([charged.applied, charged.outstanding], ['40.00', '0.00']);
       assert.deepEqual(totals, { owedByDriver: '150.00', owedToDriver: '0.00' });
+    });
+
+    await t.test('approved is not paid: an unpaid payout is allocated, only a confirmed payout is paid, and what is left stays outstanding', async () => {
+      const find = async () => (await getMyBalances(db, d1)).entries.find((e) => String(e.id) === String(advance.id));
+      for (const status of ['not_submitted', 'submitted', 'failed', 'unconfirmed']) {
+        await db.query('SAVEPOINT payout_case');
+        try {
+          if (status !== 'not_submitted') await db.query('UPDATE pay_statements SET payout_status = $1 WHERE id = $2', [status, statementId]);
+          const adv = await find();
+          assert.deepEqual([adv.reserved, adv.allocated, adv.paid, adv.outstanding], ['0.00', '50.00', '0.00', '150.00'], `${status}: 50 allocated, not paid; 150 still outstanding`);
+        } finally {
+          await db.query('ROLLBACK TO SAVEPOINT payout_case');
+        }
+      }
+      await db.query('SAVEPOINT payout_case');
+      try {
+        await db.query("UPDATE pay_statements SET payout_status = 'paid', paid_at = now() WHERE id = $1", [statementId]);
+        const adv = await find();
+        assert.deepEqual([adv.reserved, adv.allocated, adv.paid, adv.outstanding], ['0.00', '0.00', '50.00', '150.00'], 'paid: 50 is paid');
+        const claim = (await getMyBalances(db, d1)).claims.find((c) => c.waybill === 'TESTS001');
+        assert.deepEqual([claim.allocated, claim.paid], ['0.00', '40.00'], 'carrier claims are labelled the same way');
+      } finally {
+        await db.query('ROLLBACK TO SAVEPOINT payout_case');
+      }
     });
 
     await t.test('a claim moved from another driver shows none of that driver\'s statements', async () => {

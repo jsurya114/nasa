@@ -73,9 +73,28 @@ const statementWithLines = async (db, where, params) => {
 // Callers limit the lines to this driver's own statements in the reader's cities: claim versions share a claim_key,
 // so an earlier version could sit on another driver's or city's statement.
 const RUNS_JSON = `COALESCE(json_agg(json_build_object(
-    'statementId', s.id, 'runId', r.id, 'runStatus', r.status, 'amount', l.amount::text,
+    'statementId', s.id, 'runId', r.id, 'runStatus', r.status, 'payoutStatus', s.payout_status, 'amount', l.amount::text,
     'periodStart', to_char(r.period_start, 'YYYY-MM-DD'), 'periodEnd', to_char(r.period_end, 'YYYY-MM-DD'))
     ORDER BY r.period_end, r.id), '[]'::json)`;
+
+// Where a deduction stands (issue #166): reserved by a draft; allocated by an approved (finalized) run whose payout is not
+// confirmed paid yet (not submitted, submitted, failed or unconfirmed); paid, once the payout is confirmed. Approved is not
+// paid, so only "paid" may be called settled. `outstanding` still drops at approval, which is what keeps a deduction from
+// being recovered a second time while the payment is pending.
+export const runUse = (runs) => {
+  let reserved = 0;
+  let allocated = 0;
+  let paid = 0;
+  for (const r of runs) {
+    const cents = Math.abs(toCents(r.amount));
+    if (r.runStatus === 'draft') reserved += cents;
+    else if (r.runStatus === 'finalized') {
+      if (r.payoutStatus === 'paid') paid += cents;
+      else allocated += cents;
+    }
+  }
+  return { reserved: fromCents(reserved), allocated: fromCents(allocated), paid: fromCents(paid) };
+};
 
 const sumFinalized = (runs) => runs.filter((r) => r.runStatus === 'finalized').reduce((sum, r) => sum + Math.abs(toCents(r.amount)), 0);
 
@@ -100,7 +119,7 @@ const loadLedgerBalances = async (db, driverId, statuses, cityIds) => {
   return rows.map((e) => {
     const applied = e.entry_type === 'advance_repayment' ? toCents(e.amount) : sumFinalized(e.pay_runs);
     const outstanding = e.exempt || e.entry_type === 'advance_repayment' ? 0 : Math.max(0, toCents(e.amount) - applied - toCents(e.settled_outside));
-    return { ...e, applied: fromCents(applied), outstanding: fromCents(outstanding) };
+    return { ...e, applied: fromCents(applied), outstanding: fromCents(outstanding), ...runUse(e.pay_runs) };
   });
 };
 
@@ -128,7 +147,7 @@ const loadClaimBalances = async (db, driverId, statuses, cityIds) => {
   return rows.map(({ net_collected: netCollected, ...c }) => {
     const applied = sumFinalized(c.pay_runs);
     const outstanding = c.status === 'exempt' ? 0 : Math.max(0, toCents(c.eligible_deduction ?? '0') - toCents(netCollected));
-    return { ...c, applied: fromCents(applied), outstanding: fromCents(outstanding) };
+    return { ...c, applied: fromCents(applied), outstanding: fromCents(outstanding), ...runUse(c.pay_runs) };
   });
 };
 

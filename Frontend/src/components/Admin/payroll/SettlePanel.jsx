@@ -55,7 +55,8 @@ export default function SettlePanel({ entry, isSuperAdmin, onDone, onCancel }) {
       </fieldset>
       {method === "payroll" ? (
         <p className="text-sm text-gray-700 sm:col-span-2">
-          A deduction through payroll is taken, and settled, by a pay run: draft one on Pay runs, and finalize it. Nothing is recorded here.
+          A deduction through payroll is allocated when a pay run is finalized, and counts as settled only once the payment is confirmed.
+          Nothing is recorded here, and an amount allocated to an approved pay run cannot also be recorded as repaid or waived.
         </p>
       ) : (
         <>
