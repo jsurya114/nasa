@@ -84,7 +84,12 @@ Not decided here, on purpose (owner decisions in #142/#143): installment recover
   - Hand-entered first: the carrier claim is held as `review` (#148).
   - Voiding a hand-entered claim takes the subject lock *before* writing the void. It then releases the held carrier claim into matching. An import at the same moment waits and sees the void.
 - **Corrections may name the claim they correct** (waybill and claim type, both or neither), so a refund after a carrier lowers a claim can be traced (#143). Other types that send a claim are now refused, where before the fields were silently dropped.
+  - Schema change in this pull request's migration: the rule "only a manual claim has a claim type" becomes three rules:
+    - a manual claim must have a claim type;
+    - only a manual claim or a correction may name a claim;
+    - a correction names both the waybill and the claim type, or neither.
+  - Tested: a credit correction naming a claim is saved, and the database refuses a waybill on an expense, or on a correction without its claim type.
 - **Tests.**
-  - Ledger store: 12 pass (was 10). New: Jasil's exact debit/credit case, and changed instalment, plan, date, payday, paid-out flag, reason, driver, waybill and claim type all give 409, while an identical form is still a replay. Also: a carrier claim held after a hand-entered one, held again when amended, released by the void. Both new tests fail on the old code.
+  - Ledger store: 13 pass (was 10). New: Jasil's exact debit/credit case, and changed instalment, plan, date, payday, paid-out flag, reason, driver, waybill and claim type all give 409, while an identical form is still a replay. Also: a carrier claim held after a hand-entered one, held again when amended, released by the void. Both new tests fail on the old code.
   - Ledger rules: 9 pass, including the fingerprint covering every field.
 - **Not reproduced:** two connections racing with different payloads. The test runs inside one transaction that is always rolled back, so a second connection cannot see its tables. That path now uses the same comparison as the first check.
