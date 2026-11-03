@@ -14,6 +14,7 @@ import DriverPaymentSection from "./DriverPaymentUpdate";
 import TempUploadedData from "../../reuse/TempUploadedData";
 import { toast } from "react-toastify";
 import Analystic from "./Analystic";
+import UploadResultSummary from "./UploadResultSummary";
 
 const DoubleStop = () => {
   const dispatch = useDispatch();
@@ -28,6 +29,7 @@ const DoubleStop = () => {
   // Get loading states from Redux
   const weeklyLoading = useSelector((state) => state.excel?.weekly?.loading);
   const dailyLoading = useSelector((state) => state.excel?.daily?.loading);
+  const weeklyResult = useSelector((state) => state.excel?.weekly?.result);
 
   // Daily form state
   const [dailyForm, setDailyForm] = useState({
@@ -231,6 +233,8 @@ const DoubleStop = () => {
             </form>
           </section>
         )}
+
+        {activeView === "weekly" && <UploadResultSummary result={weeklyResult} />}
 
         {/* Daily Form */}
         {activeView === "daily" && (

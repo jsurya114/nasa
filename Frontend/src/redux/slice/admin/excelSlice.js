@@ -40,6 +40,7 @@ const excelSlice = createSlice({
       message: null,
       error: null,
       data: null,
+      result: null, // the `data` of the answer: staging counts, assignmentHistory, claims
     },
     daily: {
       loading: false,
@@ -50,7 +51,7 @@ const excelSlice = createSlice({
   },
   reducers: {
     clearWeeklyState: (state) => {
-      state.weekly = { loading: false, success: false, error: null, data: null, message: null };
+      state.weekly = { loading: false, success: false, error: null, data: null, message: null, result: null };
     },
     clearDailyState: (state) => {
       state.daily = { loading: false, success: false, error: null, data: null };
@@ -79,12 +80,14 @@ const excelSlice = createSlice({
         state.weekly.loading = true;
         state.weekly.error = null;
         state.weekly.success = false;
+        state.weekly.result = null;
       })
       .addCase(excelWeeklyFileUpload.fulfilled, (state, action) => {
         state.weekly.loading = false;
         state.weekly.success = action.payload.message;
         state.weekly.message = action.payload.message;
         state.weekly.data = action.payload.insertedData;
+        state.weekly.result = action.payload.data ?? null;
       })
       .addCase(excelWeeklyFileUpload.rejected, (state, action) => {
         state.weekly.loading = false;
