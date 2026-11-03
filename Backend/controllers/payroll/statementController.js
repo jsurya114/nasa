@@ -8,6 +8,7 @@ import logger from '../../utils/logger.js';
 import {
   getDriverBalances, getMyBalances, getMyStatement, getStatement, listDriverStatements, listMyStatements,
 } from '../../services/payroll/statements/statementStore.js';
+import { getDriverPeriodSummary } from '../../services/payroll/statements/periodSummary.js';
 import { PayrollError } from '../../services/payroll/payRuns/payRunStore.js';
 
 const id = (value) => (/^\d{1,12}$/.test(String(value ?? '')) && Number(value) > 0 ? Number(value) : null);
@@ -69,4 +70,13 @@ export const getAdminStatement = async (req, res) => {
   const statementId = id(req.params.statementId);
   if (!statementId) return badRequest(res, 'unknown statement');
   return send('read', () => getStatement(pool, req.admin, statementId))(req, res);
+};
+
+// The dashboard's penalty figures for one driver, one city and a date range (#166). The city is required.
+export const getDriverDashboardSummary = async (req, res) => {
+  const driverId = id(req.params.driverId);
+  const cityId = id(req.query.cityId);
+  if (!driverId) return badRequest(res, 'unknown driver');
+  if (!cityId) return badRequest(res, 'choose a city');
+  return send('summary', () => getDriverPeriodSummary(pool, req.admin, { driverId, cityId, from: String(req.query.from ?? ''), to: String(req.query.to ?? '') }))(req, res);
 };

@@ -8,7 +8,7 @@ import {
   getPayrollSettings, getPayRun, getPayRuns, postDiscard, postFinalize, postPayRun, postVoid, putRecoveryLimit,
 } from '../controllers/payroll/payRunController.js';
 import { getBatchReview } from '../controllers/payroll/payBatchController.js';
-import { getAdminStatement, getDriverBalanceList, getDriverStatementList } from '../controllers/payroll/statementController.js';
+import { getAdminStatement, getDriverBalanceList, getDriverDashboardSummary, getDriverStatementList } from '../controllers/payroll/statementController.js';
 
 const router = express.Router();
 sanitizeRouterParams(router);
@@ -42,5 +42,7 @@ router.get('/runs/:runId/batch-review', getBatchReview);
 router.get('/statements/:statementId', getAdminStatement);
 router.get('/drivers/:driverId/statements', getDriverStatementList);
 router.get('/drivers/:driverId/balances', getDriverBalanceList);
+// This payday's deductions and what is still outstanding, for the dashboard (#166).
+router.get('/drivers/:driverId/dashboard-summary', getDriverDashboardSummary);
 
 export default router;
