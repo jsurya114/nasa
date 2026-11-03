@@ -9,7 +9,7 @@ import { toLocalDateString } from "../../../utils/dateRange.js";
 const TYPES = [
   { value: "advance", label: "Advance (driver owes)", debit: true },
   { value: "expense", label: "Expense charged to driver", debit: true },
-  { value: "manual_claim", label: "Claim entered by hand", debit: true },
+  { value: "manual_claim", label: "Penalty (entered by hand)", debit: true },
   { value: "advance_repayment", label: "Advance repaid outside payroll", debit: false },
   { value: "reimbursement", label: "Reimbursement (owed to driver)", debit: false },
   { value: "correction", label: "Correction", debit: null },

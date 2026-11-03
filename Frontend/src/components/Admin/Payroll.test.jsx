@@ -9,13 +9,13 @@ const BALANCES = {
   entries: [{ id: 5, entry_type: "expense", direction: "debit", amount: "30.00", reason: "Lost scanner", effective_date: "2026-11-01", exempt: false,
     recovery_plan: null, installment_amount: null, applied: "0.00", outstanding: "30.00", pay_runs: [] }],
   claims: [],
-  totals: { owedByDriver: "30.00", owedToDriver: "0.00" },
+  totals: { owedByDriver: "30.00", owedPenalties: "0.00", owedOther: "30.00", owedToDriver: "0.00" },
 };
 const STATEMENTS = [{ id: 21, city: "Test City", data_type: "daily", period_start: "2026-11-01", period_end: "2026-11-07", state: "pending", net: "80.50" }];
 const DETAIL = { ...STATEMENTS[0], gross: "80.50", insurance: "0.00", reimbursements: "0.00", claim_deductions: "0.00", recoveries: "0.00", carried_forward: "30.00",
   lines: [{ id: 1, line_type: "earning", amount: "80.50", journey_date: "2026-11-03", route_name: "Route T" }] };
 
-const startServer = async ({ ledgerReplies = [], refundsDue = [] } = {}) => {
+const startServer = async ({ ledgerReplies = [], refundsDue = [], balances = BALANCES } = {}) => {
   const state = { requests: [], posts: [], refundsDue };
   await installServer(async (config) => {
     state.requests.push({ url: config.url, params: config.params });
@@ -29,7 +29,7 @@ const startServer = async ({ ledgerReplies = [], refundsDue = [] } = {}) => {
     }
     if (config.url === "/admin/get-admin-cities") return { status: 200, data: { cities: [{ id: 3, job: "Test City" }] } };
     if (config.url === "/admin/dashboard/drivers-by-city") return { status: 200, data: { data: [{ id: 7, name: "Dee Test" }] } };
-    if (config.url === "/admin/payroll/drivers/7/balances") return { status: 200, data: { ...BALANCES, refundsDue: state.refundsDue } };
+    if (config.url === "/admin/payroll/drivers/7/balances") return { status: 200, data: { ...balances, refundsDue: state.refundsDue } };
     if (config.url === "/admin/payroll/drivers/7/statements") return { status: 200, data: { statements: STATEMENTS } };
     if (config.url === "/admin/payroll/statements/21") return { status: 200, data: DETAIL };
     return { status: 200, data: {} };
@@ -86,6 +86,39 @@ describe("admin Payroll", () => {
     cleanup();
     await mount("/admin/payroll?cityId=3;DROP&driverId=abc");
     expect(await screen.findByText("Choose a city and a driver.")).toBeTruthy();
+  });
+
+  it("shows a hand-entered claim as Penalty charges, apart from other debts", async () => {
+    const penalty = { ...BALANCES.entries[0], id: 6, entry_type: "manual_claim", amount: "40.00", outstanding: "40.00", reason: "Damaged parcel" };
+    await startServer({ balances: { ...BALANCES, entries: [...BALANCES.entries, penalty], totals: { owedByDriver: "70.00", owedPenalties: "40.00", owedOther: "30.00", owedToDriver: "0.00" } } });
+    await mount();
+    await chooseDriver();
+    expect(screen.getAllByText("Penalty charges").length).toBeGreaterThan(0);
+    // The two totals are separate: $70 in all is $30 owed plus $40 of penalties.
+    expect(screen.getByText("Driver owes NASA").nextSibling.textContent).toBe("$30.00");
+    expect(screen.getByText("Penalty charges", { selector: "dt" }).nextSibling.textContent).toBe("$40.00");
+    expect(screen.getByText("Penalty charges: Damaged parcel")).toBeTruthy();
+    expect(screen.getByRole("option", { name: "Penalty (entered by hand)" })).toBeTruthy();
+    expect(screen.getByText("NASA owes driver — reimbursements and adjustments")).toBeTruthy();
+    expect(screen.queryByText("You still owe")).toBeNull();
+  });
+
+  it("after a repayment outside payroll the cards add up to what the server says is owed, and a fully repaid balance shows no penalty", async () => {
+    // a $40 penalty with $20 repaid outside payroll: $20 owed, all of it a penalty (the server's split)
+    const penalty = { ...BALANCES.entries[0], id: 6, entry_type: "manual_claim", amount: "40.00", outstanding: "40.00", reason: "Damaged parcel" };
+    await startServer({ balances: { ...BALANCES, entries: [penalty], totals: { owedByDriver: "20.00", owedPenalties: "20.00", owedOther: "0.00", owedToDriver: "0.00" } } });
+    await mount();
+    await chooseDriver();
+    expect(screen.getByText("Driver owes NASA").nextSibling.textContent).toBe("$0.00");
+    expect(screen.getByText("Penalty charges", { selector: "dt" }).nextSibling.textContent).toBe("$20.00");
+    expect(screen.getByText(/Total owed:/).textContent).toContain("$20.00");
+    cleanup();
+    await startServer({ balances: { ...BALANCES, entries: [], totals: { owedByDriver: "0.00", owedPenalties: "0.00", owedOther: "0.00", owedToDriver: "0.00" } } });
+    await mount();
+    await chooseDriver();
+    expect(screen.getByText("Driver owes NASA").nextSibling.textContent).toBe("$0.00");
+    expect(screen.queryByText("Penalty charges", { selector: "dt" })).toBeNull();
+    expect(screen.queryByText(/Total owed:/)).toBeNull();
   });
 
   it("records an advance with its instalment plan, then reloads the driver's payroll", async () => {
