@@ -319,6 +319,7 @@ import {
 
 import { unlink } from "fs";
 import { recordWorkbookHistory } from "../../services/excel/assignmentHistory/recordWorkbookHistory.js";
+import { recordWorkbookClaims } from "../../services/payroll/claims/recordWorkbookClaims.js";
 
 
 export const getWeeklyTempData=async(req,res)=>{
@@ -781,7 +782,11 @@ async function processExcelFromBuffer(buffer, client, startTime, user, fileName)
 
     // Keep who carried which package (issue #140). Inside this transaction, but in a savepoint: if the history
     // cannot be saved, the pay data above is stored exactly as it always was.
-    const assignmentHistory = await recordWorkbookHistory(client, workbook, { buffer, fileName, user, bestEffort: true });
+    const { routeCodes, ...assignmentHistory } = await recordWorkbookHistory(client, workbook, { buffer, fileName, user, bestEffort: true });
+
+    // Courier claims on the report's Claims Detail sheet (issue #141), stored after the history so they can be matched
+    // against it. Also in a savepoint: a claims problem never changes what the pay upload stores.
+    const claims = await recordWorkbookClaims(client, { buffer, fileName, user, routeCodes });
 
     await client.query('COMMIT');
     logger.info('Weekly upload stored', { processed: totalProcessed, skipped: totalSkipped, groups: totalInserted });
@@ -793,7 +798,8 @@ async function processExcelFromBuffer(buffer, client, startTime, user, fileName)
       recordsInserted: totalInserted,
       batchSize: BATCH_SIZE,
       numberOfBatches: Math.ceil(dataArray.length / BATCH_SIZE),
-      assignmentHistory
+      assignmentHistory,
+      claims
     };
 
   } catch (dbError) {
