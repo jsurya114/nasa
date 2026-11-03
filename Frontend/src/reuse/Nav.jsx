@@ -9,6 +9,7 @@ import {
   CalendarDays,
   FileText,
   Wallet,
+  Banknote,
 } from "lucide-react";
 import GlassTabBar from "./GlassTabBar.jsx";
 
@@ -23,6 +24,7 @@ function Nav() {
     { to: "/admin/driver-availability", Icon: CalendarDays, label: "Availability" },
     { to: "/admin/agreements", Icon: FileText, label: "Agreements" },
     { to: "/admin/payroll", Icon: Wallet, label: "Payroll" },
+    { to: "/admin/pay-runs", Icon: Banknote, label: "Pay runs" },
   ];
 
   return <GlassTabBar items={links} primaryCount={4} moreLabel="More" navLabel="Admin navigation" lang="en" />;
