@@ -163,8 +163,10 @@ test('the driver ledger: city access, exemption, no double entries, immutable hi
     });
 
     await t.test('a credit correction can name the claim it refunds; the database refuses a claim on debits and other types', async () => {
-      const refund = await createEntry(db, dfwAdmin, entry({ type: 'correction', direction: 'credit', amount: '10', waybill: 'TESTL070', claimType: 'Damaged Item', claimCourier: 'gofo' }));
-      assert.deepEqual([refund.entry.waybill, refund.entry.claim_type, refund.entry.claim_courier], ['TESTL070', 'Damaged Item', 'gofo']);
+      // With the pay run tables (#143), a refund must also fit what is still refundable: here there is no such claim.
+      // Refunds that fit are tested in payRunReview.test.js.
+      await assert.rejects(createEntry(db, dfwAdmin, entry({ type: 'correction', direction: 'credit', amount: '10', waybill: 'TESTL070', claimType: 'Damaged Item', claimCourier: 'gofo' })),
+        { status: 409, message: /no carrier claim/ });
       for (const sql of [
         `INSERT INTO driver_ledger_entries (request_id, driver_id, city_id, entry_type, direction, amount, reason, effective_date, waybill, created_by)
          VALUES ('${randomUUID()}', ${d1}, ${dfw}, 'expense', 'debit', 5, 'Test entry', '2026-11-03', 'TESTL071', ${dfwAdmin.id})`,

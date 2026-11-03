@@ -6,6 +6,7 @@
 import { calculateStatement, fromCents, RECOVERY_LIMIT_TYPES, toCents } from './payCalculator.js';
 import { LedgerError as PayrollError } from '../ledger/ledgerStore.js';
 import { lockCityPayroll } from '../claims/claimsStore.js';
+import { CLAIM_TYPE_KEY_SQL } from '../claims/claimRefunds.js';
 
 export { PayrollError };
 
@@ -65,15 +66,18 @@ const loadEarnings = async (db, run) => {
   return rows;
 };
 
-// The claim-type key in SQL, the same rule as claimTypeKey(): trimmed, single spaces, lower case.
-export const CLAIM_TYPE_KEY_SQL = (column) => `lower(regexp_replace(btrim(${column}), '\\s+', ' ', 'g'))`;
+export { CLAIM_TYPE_KEY_SQL };
 
 // What has really been collected for one claim, all versions and every driver, for SQL where the current claim row is
 // `alias`. It is each driver's live deductions less the refunds paid to that driver for this claim (a credit correction
-// naming it, #142) on a finalized run, never below zero per driver. Deductions held by drafts count, so nothing is
-// taken twice. Refunds count only once finalized, so the liable driver is not charged while a refund is still open.
-// Example: A was wrongly charged 40 and the claim now belongs to B. B owes nothing until A's 40 refund is finalized,
-// then B owes 40, exactly once. Shared with the statement view (#145) so both show the same figure.
+// naming it, #142) whose payout is confirmed paid, never below zero per driver. Deductions held by drafts count, so
+// nothing is taken twice. A refund counts only once its money has reached the driver: finalized is approval, not
+// settlement, and a submitted, failed or unconfirmed payout releases nothing. Until payouts are recorded (#31), the
+// liable driver is therefore never charged for a reassigned claim, which is the safe side.
+// Example: A was wrongly charged 40 and the claim now belongs to B. B owes nothing until A's 40 refund is paid, then
+// B owes 40, exactly once. Shared with the statement view (#145) so both show the same figure.
+// Contract for #31: a payout recorded as paid is final here. If paid money comes back (a return), it must be
+// reconciled before the statement leaves "paid", because a later run may already have charged the liable driver.
 export const NET_COLLECTED_SQL = (alias = 'c') => `(
   SELECT COALESCE(SUM(GREATEST(t.taken - COALESCE(rf.refunded, 0), 0)), 0)
     FROM (SELECT s.driver_id, SUM(-l.amount) AS taken
@@ -87,7 +91,7 @@ export const NET_COLLECTED_SQL = (alias = 'c') => `(
                  JOIN driver_ledger_entries e ON e.id = l.ledger_entry_id
                  JOIN pay_statements s ON s.id = l.statement_id
                  JOIN pay_runs r ON r.id = s.pay_run_id
-                WHERE l.active AND l.line_type = 'reimbursement' AND r.status = 'finalized'
+                WHERE l.active AND l.line_type = 'reimbursement' AND r.status = 'finalized' AND s.payout_status = 'paid'
                   AND e.entry_type = 'correction' AND e.direction = 'credit'
                   AND e.claim_courier = ${alias}.courier AND e.waybill = ${alias}.waybill
                   AND ${CLAIM_TYPE_KEY_SQL('e.claim_type')} = ${alias}.claim_type_key
@@ -150,7 +154,7 @@ const loadOverRecovered = async (db, cityId, driverIds) => {
          JOIN courier_claims cv ON cv.id = l.claim_id
          JOIN pay_statements s ON s.id = l.statement_id
          JOIN pay_runs r ON r.id = s.pay_run_id
-        WHERE l.active AND l.line_type = 'claim' AND s.driver_id = ANY($1::int[]) AND r.city_id = $2
+        WHERE l.active AND l.line_type = 'claim' AND s.driver_id = ANY($1::int[]) AND r.city_id = $2 AND r.status = 'finalized'
         GROUP BY cv.claim_key, s.driver_id)
      SELECT t.driver_id, c.id AS claim_id,
             (t.taken
@@ -368,6 +372,21 @@ export const voidRun = async (db, admin, runId, reason) => {
     [runId]
   );
   if (relied.length) throw new PayrollError(409, 'a later pay run relied on a claim refund in this run; reconcile that claim before voiding');
+  // The other direction: a refund recorded for a claim charged on this run depends on that charge. Voiding the charge
+  // while the refund stands would pay the driver back money that is no longer taken. Void the refund first.
+  const { rows: refunded } = await db.query(
+    `SELECT 1
+       FROM pay_statement_lines cl
+       JOIN pay_statements cs ON cs.id = cl.statement_id
+       JOIN courier_claims cv ON cv.id = cl.claim_id
+       JOIN driver_ledger_entries e ON e.entry_type = 'correction' AND e.direction = 'credit' AND e.driver_id = cs.driver_id
+            AND e.claim_courier = cv.courier AND e.waybill = cv.waybill AND ${CLAIM_TYPE_KEY_SQL('e.claim_type')} = cv.claim_type_key
+      WHERE cs.pay_run_id = $1 AND cl.active AND cl.line_type = 'claim'
+        AND NOT EXISTS (SELECT 1 FROM driver_ledger_entries v WHERE v.voids_entry_id = e.id)
+      LIMIT 1`,
+    [runId]
+  );
+  if (refunded.length) throw new PayrollError(409, 'a refund is recorded for a claim charged on this run; void that refund first');
   await releaseLines(db, runId);
   const { rows } = await db.query(
     `UPDATE pay_runs SET status = 'voided', closed_by = $2, closed_at = now(), close_reason = $3 WHERE id = $1 RETURNING ${RUN_COLUMNS}`,
