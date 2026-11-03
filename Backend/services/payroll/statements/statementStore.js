@@ -70,6 +70,8 @@ const statementWithLines = async (db, where, params) => {
 };
 
 // Pay runs that took money for each entry or claim (active lines only; a voided run released its lines).
+// Callers limit the lines to this driver's own statements in the reader's cities: claim versions share a claim_key,
+// so an earlier version could sit on another driver's or city's statement.
 const RUNS_JSON = `COALESCE(json_agg(json_build_object(
     'statementId', s.id, 'runId', r.id, 'runStatus', r.status, 'amount', l.amount::text,
     'periodStart', to_char(r.period_start, 'YYYY-MM-DD'), 'periodEnd', to_char(r.period_end, 'YYYY-MM-DD'))
@@ -85,7 +87,8 @@ const loadLedgerBalances = async (db, driverId, statuses, cityIds) => {
        CROSS JOIN LATERAL (
          SELECT ${RUNS_JSON} AS pay_runs
            FROM pay_statement_lines l JOIN pay_statements s ON s.id = l.statement_id JOIN pay_runs r ON r.id = s.pay_run_id
-          WHERE l.ledger_entry_id = e.id AND l.active AND r.status = ANY($2::text[])) x
+          WHERE l.ledger_entry_id = e.id AND l.active AND r.status = ANY($2::text[]) AND s.driver_id = $1
+            AND ($3::int[] IS NULL OR r.city_id = ANY($3::int[]))) x
       WHERE e.driver_id = $1 AND e.entry_type <> 'void'
         AND NOT EXISTS (SELECT 1 FROM driver_ledger_entries v WHERE v.voids_entry_id = e.id)
         AND ($3::int[] IS NULL OR e.city_id = ANY($3::int[]))
@@ -103,22 +106,28 @@ const loadLedgerBalances = async (db, driverId, statuses, cityIds) => {
 const loadClaimBalances = async (db, driverId, statuses, cityIds) => {
   const { rows } = await db.query(
     `SELECT c.id, m.city_id, c.courier, c.waybill, c.claim_type, to_char(c.claim_at, 'YYYY-MM-DD HH24:MI') AS claim_at,
-            c.original_charge AS source_charge, m.status, m.eligible_deduction, x.pay_runs
+            c.original_charge AS source_charge, m.status, m.eligible_deduction, x.pay_runs,
+            -- Everything finalized runs took for any version, whoever it was charged to, as pay runs count it.
+            -- Only the total: which statements those were is not shown.
+            (SELECT COALESCE(SUM(-l.amount), 0) FROM pay_statement_lines l JOIN courier_claims cv ON cv.id = l.claim_id
+               JOIN pay_statements s ON s.id = l.statement_id JOIN pay_runs r ON r.id = s.pay_run_id
+              WHERE cv.claim_key = c.claim_key AND l.active AND r.status = 'finalized')::text AS taken_all
        FROM courier_claim_matches m
        JOIN courier_claims c ON c.id = m.claim_id
        CROSS JOIN LATERAL (
          SELECT ${RUNS_JSON} AS pay_runs
            FROM pay_statement_lines l JOIN courier_claims cv ON cv.id = l.claim_id
            JOIN pay_statements s ON s.id = l.statement_id JOIN pay_runs r ON r.id = s.pay_run_id
-          WHERE cv.claim_key = c.claim_key AND l.active AND r.status = ANY($2::text[])) x
+          WHERE cv.claim_key = c.claim_key AND l.active AND r.status = ANY($2::text[]) AND s.driver_id = $1
+            AND ($3::int[] IS NULL OR r.city_id = ANY($3::int[]))) x
       WHERE m.driver_id = $1 AND m.status IN ('chargeable', 'exempt') AND c.superseded_at IS NULL
         AND ($3::int[] IS NULL OR m.city_id = ANY($3::int[]))
       ORDER BY c.claim_at DESC, c.id DESC`,
     [driverId, statuses, cityIds]
   );
-  return rows.map((c) => {
+  return rows.map(({ taken_all: takenAll, ...c }) => {
     const applied = sumFinalized(c.pay_runs);
-    const outstanding = c.status === 'exempt' ? 0 : Math.max(0, toCents(c.eligible_deduction ?? '0') - applied);
+    const outstanding = c.status === 'exempt' ? 0 : Math.max(0, toCents(c.eligible_deduction ?? '0') - toCents(takenAll));
     return { ...c, applied: fromCents(applied), outstanding: fromCents(outstanding) };
   });
 };

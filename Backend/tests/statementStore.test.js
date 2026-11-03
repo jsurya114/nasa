@@ -56,15 +56,17 @@ test('statements: own data only, frozen amounts, source charge next to the appli
     await payRow(d1, '2026-11-03', '100.00', '1.92');
     await payRow(d2, '2026-11-03', '80.50', '0');
 
-    // A chargeable claim (carrier charge -40) and an exempt one (-25, shown as 0) for d1.
-    const claim = async (key, waybill, type, charge, status, eligible) => {
+    // A chargeable claim (carrier charge -40) and an exempt one (-25, shown as 0) for d1, and one (-10) first
+    // matched to d2 that is later corrected to d1.
+    const claim = async (key, waybill, type, charge, status, eligible, driver = d1, version = 1) => {
       const id = (await one(`INSERT INTO courier_claims (courier, claim_key, version, waybill, claim_type, claim_type_key, claim_at, original_charge, deduction_amount, import_city_id, source_file, source_sheet, source_row)
-        VALUES ('gofo', repeat($1, 64), 1, $2, $3, lower($3), '2026-10-30 10:00', $4::numeric, abs($4::numeric), $5, 'synthetic.xlsx', 'Claims Detail', 2) RETURNING id`, [key, waybill, type, charge, city])).id;
-      await db.query(`INSERT INTO courier_claim_matches (claim_id, status, driver_id, city_id, eligible_deduction, reason, rule_version) VALUES ($1, $2, $3, $4, $5, 'test', 'test')`, [id, status, d1, city, eligible]);
+        VALUES ('gofo', repeat($1, 64), $6, $2, $3, lower($3), '2026-10-30 10:00', $4::numeric, abs($4::numeric), $5, 'synthetic.xlsx', 'Claims Detail', 2) RETURNING id`, [key, waybill, type, charge, city, version])).id;
+      await db.query(`INSERT INTO courier_claim_matches (claim_id, status, driver_id, city_id, eligible_deduction, reason, rule_version) VALUES ($1, $2, $3, $4, $5, 'test', 'test')`, [id, status, driver, city, eligible]);
       return id;
     };
     await claim('a', 'TESTS001', 'Damaged Item', -40, 'chargeable', 40);
     await claim('b', 'TESTS002', 'Tracking interruption', -25, 'exempt', 0);
+    const movedClaim = await claim('d', 'TESTS003', 'Damaged Item', -10, 'chargeable', 10, d2);
     const advance = (await createEntry(db, cityAdmin, parseNewEntry({
       requestId: randomUUID(), driverId: d1, cityId: city, type: 'advance', amount: '200', reason: 'Test advance', effectiveDate: '2026-11-01',
       disbursedOutsidePayroll: true, recoveryPlan: 'installments', installmentAmount: '50',
@@ -120,12 +122,23 @@ test('statements: own data only, frozen amounts, source charge next to the appli
       assert.deepEqual(totals, { owedByDriver: '150.00', owedToDriver: '0.00' });
     });
 
+    await t.test('a claim moved from another driver shows none of that driver\'s statements', async () => {
+      await db.query('UPDATE courier_claims SET superseded_at = now() WHERE id = $1', [movedClaim]);
+      await claim('d', 'TESTS003', 'Damaged Item', -10, 'chargeable', 10, d1, 2);
+      const moved = (await getMyBalances(db, d1)).claims.find((c) => c.waybill === 'TESTS003');
+      // d2 already paid it on their statement: nothing is owed again, and d2's statement is not linked here.
+      assert.deepEqual([moved.pay_runs, moved.applied, moved.outstanding], [[], '0.00', '0.00']);
+      assert.equal('taken_all' in moved, false);
+      const adminView = (await getDriverBalances(db, cityAdmin, d1, city)).claims.find((c) => c.waybill === 'TESTS003');
+      assert.deepEqual(adminView.pay_runs, []);
+    });
+
     await t.test('a voided run stays visible as voided and its deductions count as not taken', async () => {
       await voidRun(db, superAdmin, run.id, 'Test void');
       const [statement] = await listMyStatements(db, d1);
       assert.deepEqual([statement.id, statement.state, statement.net], [statementId, 'voided', '106.16']);
       const { totals } = await getMyBalances(db, d1);
-      assert.equal(totals.owedByDriver, '240.00', 'claim 40 and advance 200 are owed again');
+      assert.equal(totals.owedByDriver, '250.00', 'claims 40 and 10 and advance 200 are owed again');
     });
   } finally {
     await db.query('ROLLBACK');

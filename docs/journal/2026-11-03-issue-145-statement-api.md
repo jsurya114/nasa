@@ -29,6 +29,7 @@ Who sees what:
 - **Drivers** see only their own statements. The driver ID comes from the verified token; there is no driver ID in the URL. They see only finalized and voided runs, never a draft. Someone else's statement answers 404, the same as a missing one.
 - **City admins** must name one of their cities (400 without one, 403 for another city). A super admin may leave the city out. Admins also see drafts, marked `pending`.
 - **Unmatched claims** belong to nobody yet and are never shown to a driver.
+- **Linked pay runs** list only the reader's own statements, in the cities they may see. Claim versions share one key, so an earlier version can sit on another driver's statement (a claim later corrected to a different driver); that statement is never linked. Only the total already taken counts toward what is still outstanding, the same way pay runs count it (found by an automated security review).
 
 Each statement carries a `state`, so the stages are never mixed up: `pending` (draft), `approved` (finalized, not sent), `submitted`, `paid`, `failed`, `unconfirmed` (from the payout fields #31 will fill), or `voided`. A voided statement stays visible as voided; corrections appear as later ledger entries, never as an edit.
 
@@ -50,8 +51,9 @@ Balances show, per ledger entry and per matched claim, the original amount, what
   - another driver gets 404, and a wrong-city or no-city admin is refused;
   - balances with original, taken, outstanding and linked run;
   - an exempt claim shows 0;
+  - a claim moved from another driver links none of that driver's statements and is not owed twice;
   - a voided run stays visible and its deductions count as owed again.
-- Full backend suite: 86 pass with the database, 52 pass without it (CI mode), 0 fail.
+- Full backend suite: 87 pass with the database, 52 pass without it (CI mode), 0 fail.
 - By hand over HTTP on a local backend (port 5003, `nasa_local` with the three payroll migrations applied, removed afterwards), with tokens for made-up IDs:
   - no token: 401;
   - an admin token on a driver route, or a driver token on an admin route: 403;
