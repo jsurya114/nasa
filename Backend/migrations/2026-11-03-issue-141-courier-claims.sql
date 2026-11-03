@@ -44,7 +44,8 @@ CREATE INDEX IF NOT EXISTS idx_courier_claims_waybill ON courier_claims (courier
 
 CREATE TABLE IF NOT EXISTS courier_claim_matches (
   claim_id            bigint        PRIMARY KEY REFERENCES courier_claims(id),
-  status              text          NOT NULL CHECK (status IN ('unresolved', 'ambiguous', 'chargeable', 'exempt')),
+  -- review: held, never deducted, because a hand-entered claim (#142) already covers the same waybill and claim type.
+  status              text          NOT NULL CHECK (status IN ('unresolved', 'ambiguous', 'chargeable', 'exempt', 'review')),
   driver_id           integer       REFERENCES drivers(id),
   city_id             integer       REFERENCES city(id),
   carrier_delivery_id text,
@@ -58,7 +59,7 @@ CREATE TABLE IF NOT EXISTS courier_claim_matches (
   CHECK (
     (status = 'chargeable' AND driver_id IS NOT NULL AND city_id IS NOT NULL AND eligible_deduction > 0)
     OR (status = 'exempt' AND driver_id IS NOT NULL AND city_id IS NOT NULL AND eligible_deduction = 0)
-    OR (status IN ('unresolved', 'ambiguous') AND driver_id IS NULL AND city_id IS NULL AND eligible_deduction IS NULL)
+    OR (status IN ('unresolved', 'ambiguous', 'review') AND driver_id IS NULL AND city_id IS NULL AND eligible_deduction IS NULL)
   )
 );
 
