@@ -7,6 +7,7 @@ import { getLedger, postLedgerEntry, postLedgerVoid } from '../controllers/payro
 import {
   getPayrollSettings, getPayRun, getPayRuns, postDiscard, postFinalize, postPayRun, postVoid, putRecoveryLimit,
 } from '../controllers/payroll/payRunController.js';
+import { getBatchReview } from '../controllers/payroll/payBatchController.js';
 import { getAdminStatement, getDriverBalanceList, getDriverStatementList } from '../controllers/payroll/statementController.js';
 
 const router = express.Router();
@@ -28,6 +29,8 @@ router.get('/runs/:runId', getPayRun);
 router.post('/runs/:runId/finalize', postFinalize);
 router.post('/runs/:runId/discard', postDiscard);
 router.post('/runs/:runId/void', postVoid);
+// City payment batch review (#144): read-only; says who could be paid and why not.
+router.get('/runs/:runId/batch-review', getBatchReview);
 
 // Read-only statements and balances for one driver of the admin's cities (#145).
 router.get('/statements/:statementId', getAdminStatement);
