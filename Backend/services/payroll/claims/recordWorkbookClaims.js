@@ -63,7 +63,8 @@ export const recordWorkbookClaims = async (client, { buffer, fileName, user, rou
         : 'Claims were not stored: the report\'s routes belong to more than one city. Upload one city\'s report at a time.');
     }
     const [city] = cities;
-    if (isCityLimited(user?.role) && !(await getAllowedJobs(user.id, client)).includes(city.job)) {
+    const limited = isCityLimited(user?.role);
+    if (limited && !(await getAllowedJobs(user.id, client)).includes(city.job)) {
       await client.query(`RELEASE SAVEPOINT ${SAVEPOINT}`);
       return notStored(true, parsed, 'Claims were not stored: the report is for a city you do not have access to.');
     }
@@ -71,6 +72,11 @@ export const recordWorkbookClaims = async (client, { buffer, fileName, user, rou
     // A claim is stored for one city. importClaims finds the current version by courier, waybill and type alone, so a
     // claim already held for ANOTHER city would be seen as a duplicate or superseded by this upload. Those are left out
     // before it is called, and only counted: no city learns more about another city's claims than that some were left out.
+    // The check and the store must not be separated by another upload of the same claim, so the per-claim locks that
+    // importClaims takes are taken first (in key order, so two uploads cannot wait on each other).
+    for (const key of [...new Set(parsed.claims.map((c) => c.key))].sort()) {
+      await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 141))', [key]);
+    }
     const { rows: elsewhere } = await client.query(
       `SELECT claim_key FROM courier_claims WHERE claim_key = ANY($1::text[]) AND superseded_at IS NULL AND import_city_id IS DISTINCT FROM $2`,
       [parsed.claims.map((c) => c.key), city.id]);
@@ -95,10 +101,11 @@ export const recordWorkbookClaims = async (client, { buffer, fileName, user, rou
       stored: true,
       cityId: city.id,
       inFile: parsed.claims.length,
-      // Not stored because the claim already belongs to another city. A count only, for every kind of admin.
-      notStored: otherCity.size,
+      // A claim that already belongs to another city is not stored. A city admin is told only "already recorded", the
+      // same as for their own repeat, so the answer cannot be used to find out what other cities hold. Others see the count.
+      ...(limited ? {} : { notStored: otherCity.size }),
       inserted: stored.inserted.length,
-      duplicates: stored.duplicates.length,
+      duplicates: stored.duplicates.length + (limited ? otherCity.size : 0),
       amended: stored.amended.length,
       held: stored.held.length,
       // Where this upload's new and changed claims stand now. `exempt` carries no deduction.

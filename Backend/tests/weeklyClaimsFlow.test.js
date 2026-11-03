@@ -215,10 +215,12 @@ test('the weekly upload stores the Claims Detail sheet, matches it from history,
         const result = await upload(file, user, `tyler-${user.role}.xlsx`);
         assert.equal(result.status, 200);
         const c = result.body.data.claims;
-        assert.equal(c.notStored, 1);
+        const limited = user.role !== 'superadmin';
+        // A city admin is told only "already recorded", as for their own repeat; a super admin also gets the count.
+        assert.equal(c.notStored, limited ? undefined : 1);
         assert.equal(c.inFile, 2);
         // Only Tyler's own claim can be new or a duplicate; the other city's claim shows up only in notStored.
-        assert.deepEqual([c.amended, c.duplicates, c.inserted], [0, round, 1 - round]);
+        assert.deepEqual([c.amended, c.duplicates, c.inserted], [0, round + (limited ? 1 : 0), 1 - round]);
         round += 1;
       }
       assert.deepEqual(await claimState('WCL001'), before, 'Dallas\'s claim is untouched');
