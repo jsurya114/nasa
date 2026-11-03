@@ -91,28 +91,37 @@ export const releaseHeldClaims = async (db, waybill, typeKey) => {
 
 // Saves the claims from one parsed file. Call inside a transaction (see withTransaction).
 // source: { importCityId, sourceFile, sourceSheet, importedBy }.
-// Returns { inserted, duplicates, amended, held }, each a list of { claimId, sourceRow } (amended also has previousId).
-// held lists the new versions put on hold because a hand-entered claim already covers them.
+// Returns { inserted, duplicates, amended, held, otherCity }. The first four are lists of { claimId, sourceRow }
+// (amended also has previousId); held lists the new versions put on hold because a hand-entered claim already covers them.
+// otherCity lists { sourceRow } only: claims whose current version belongs to another city. They are never written,
+// and the other city's claim ID is not returned, so a caller learns nothing about what another city holds.
+// - A claim belongs to the city it was first imported for. An upload for any other city can neither duplicate, amend
+//   nor supersede it (#162). Whether the city should become part of the claim's identity is an owner decision (#161).
 // - A claim seen before with the same facts is a duplicate: nothing is written, so it can never charge twice.
 // - A claim seen before with different facts becomes a new version; the old one is marked superseded.
 //   If the old version was already applied to a pay run, #143 must correct it with a later entry.
 export const importClaims = async (db, claims, source) => {
   if (!Number.isInteger(source?.importCityId)) throw new Error('importCityId is required');
   if (!source.sourceFile || !source.sourceSheet) throw new Error('sourceFile and sourceSheet are required');
-  const result = { inserted: [], duplicates: [], amended: [], held: [] };
+  const result = { inserted: [], duplicates: [], amended: [], held: [], otherCity: [] };
 
   for (const claim of claims) {
     // Two uploads of the same claim at the same moment wait for each other here.
     await db.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 141))', [claim.key]);
     await lockClaimSubject(db, claim.waybill, claim.claimTypeKey);
     const { rows } = await db.query(
-      `SELECT id, version, original_charge, claim_type,
+      `SELECT id, version, original_charge, claim_type, import_city_id,
               to_char(claim_at, 'YYYY-MM-DD HH24:MI:SS') AS claim_at,
               to_char(confirmed_at, 'YYYY-MM-DD HH24:MI:SS') AS confirmed_at
          FROM courier_claims WHERE claim_key = $1 AND superseded_at IS NULL`,
       [claim.key]
     );
     const current = rows[0];
+    // Checked under the claim's locks, so another city's upload of the same claim cannot slip in between.
+    if (current && Number(current.import_city_id) !== source.importCityId) {
+      result.otherCity.push({ sourceRow: claim.sourceRow });
+      continue;
+    }
     if (current && sameFacts(current, claim)) {
       result.duplicates.push({ claimId: current.id, sourceRow: claim.sourceRow });
       continue;

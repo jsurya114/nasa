@@ -115,6 +115,29 @@ test('claims are stored once, amended as versions, and matched only from history
       assert.deepEqual(seen, ['TESTX003']);
     });
 
+    await t.test('an import for another city never duplicates, amends or supersedes a claim (#162)', async () => {
+      const versions = () => db.query("SELECT id, version, deduction_amount, superseded_at IS NOT NULL AS old FROM courier_claims WHERE waybill = 'TESTW001' ORDER BY version");
+      const before = (await versions()).rows;
+      const cityBSource = { ...source, importCityId: cityB, sourceFile: 'synthetic-city-b.xlsx' };
+      const counts = (r) => [r.inserted.length, r.duplicates.length, r.amended.length, r.held.length, r.otherCity.length];
+      // Same facts as city A's current version: not a duplicate for city B.
+      const same = await importClaims(db, parse([['09/28/2026 10:00:00', 'TESTW001', 'Damaged Item', 500, '10/02/2026 09:00:00', -45]]), cityBSource);
+      assert.deepEqual(counts(same), [0, 0, 0, 0, 1]);
+      assert.deepEqual(same.otherCity, [{ sourceRow: 2 }]); // the row only, never the other city's claim ID
+      // A changed amount: no new version.
+      const changed = await importClaims(db, parse([
+        ['09/28/2026 10:00:00', 'TESTW001', 'Damaged Item', 500, '10/02/2026 09:00:00', -99],
+        ['10/03/2026 10:00:00', 'TESTB001', 'Damaged Item', 10, null, -6], // a claim only city B has
+      ]), cityBSource);
+      assert.deepEqual(counts(changed), [1, 0, 0, 0, 1]);
+      assert.deepEqual((await versions()).rows, before);
+      const { rows } = await db.query("SELECT import_city_id FROM courier_claims WHERE waybill = 'TESTB001'");
+      assert.deepEqual(rows, [{ import_city_id: cityB }]);
+      // City A can still amend its own claim.
+      const own = await importClaims(db, parse([['09/28/2026 10:00:00', 'TESTW001', 'Damaged Item', 500, '10/02/2026 09:00:00', -50]]), source);
+      assert.deepEqual([own.amended.length, own.otherCity.length], [1, 0]);
+    });
+
     await t.test('the database itself refuses an exempt claim with money or a chargeable claim without a driver', async () => {
       const { rows } = await db.query("SELECT claim_id FROM courier_claim_matches m JOIN courier_claims c ON c.id = m.claim_id WHERE c.waybill = 'TESTW002' AND c.superseded_at IS NULL");
       const id = rows[0].claim_id;
