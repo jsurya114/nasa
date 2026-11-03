@@ -54,6 +54,7 @@ test('the weekly upload keeps assignment history without changing what it stages
   try {
     await client.query('BEGIN');
     await client.query(migration('2026-11-03-issue-140-carrier-assignment-history.sql'));
+    await client.query(migration('2026-11-03-issue-141-courier-claims.sql'));
 
     const city = async (job, code) => (await client.query("INSERT INTO city (job, city_code, city_type) VALUES ($1, $2, 'WEEKLY') RETURNING id", [job, code])).rows[0].id;
     const route = (job, code) => client.query(
@@ -134,6 +135,7 @@ test('the weekly upload keeps assignment history without changing what it stages
       const imported = await callHandler(importAssignmentHistory, { file: { buffer: mixed, originalname: 'mixed.xlsx' }, user: { id: cityAdmin, role: 'admin' } });
       assert.equal(imported.status, 200);
       assert.deepEqual([imported.body.data.recorded, imported.body.data.leftOut], [1, 1]);
+      assert.deepEqual(imported.body.data.claimsRematched, { ran: true }, 'a city admin is not shown claim counts of other cities');
       const own = (await client.query("SELECT count(*) n FROM carrier_package_assignments WHERE waybill_key IN ('FW0200','FW0201')")).rows[0].n;
       assert.equal(Number(own), 1);
     });
@@ -166,6 +168,50 @@ test('the weekly upload keeps assignment history without changing what it stages
       assert.equal((await callHandler(voidAssignmentImport, { params: { importId: String(importId) }, body: { reason: 'wrong region' }, user: SUPER })).status, 404);
       const after = await callHandler(getAssignmentConflicts, { query: { limit: '500' } });
       assert.equal(after.body.data.some((c) => c.waybillKey === 'FW0300'), false);
+    });
+
+    await t.test('new history settles claims that were waiting for it, and leaves the unproven and the conflicting open', async () => {
+      const { importClaims } = await import('../services/payroll/claims/claimsStore.js');
+      const { parseClaimsRows } = await import('../services/payroll/claims/claimsParser.js');
+      const claimsHeader = ['date', 'Waybill No.', 'Claim Type', 'Declared value (USD)', 'Confirm date.', 'The total expenses-exclusive of taxes'];
+      const { claims } = parseClaimsRows([claimsHeader,
+        ['10/07/2026 10:00:00', 'FWC001', 'Damaged Item', 500, null, -12.5],
+        ['10/07/2026 10:00:00', 'FWC002', 'Damaged Item', 500, null, -8],
+        ['10/07/2026 10:00:00', 'FWC003', 'Damaged Item', 500, null, -3],
+      ], { courier: 'gofo' });
+      await importClaims(client, claims, { importCityId: cityA, sourceFile: 'synthetic-claims.xlsx', sourceSheet: 'Claims Detail', importedBy: null });
+      const state = async () => Object.fromEntries((await client.query(
+        "SELECT c.waybill, m.status, m.eligible_deduction, m.driver_id FROM courier_claim_matches m JOIN courier_claims c ON c.id = m.claim_id WHERE c.waybill LIKE 'FWC%' AND c.superseded_at IS NULL ORDER BY c.waybill"
+      )).rows.map((r) => [r.waybill, [r.status, r.eligible_deduction, r.driver_id]]));
+      assert.deepEqual(Object.values(await state()).map((v) => v[0]), ['unresolved', 'unresolved', 'unresolved']);
+
+      const result = await callHandler(importAssignmentHistory, {
+        file: { buffer: await fileOf([
+          ['FWC001', 'Sam', 'FLWA 01-1', 90000011, '10/07/2026 09:00:00', 4.5, '1'],
+          ['FWC002', 'Sam', 'FLWA 01-1', 90000011, '10/07/2026 09:00:00', 4.5, '1'],
+          ['FWC002', 'Pat', 'FLWB 01-1', 90000012, '10/07/2026 09:00:00', 4.5, '1'], // a conflict
+        ]), originalname: 'claims-history.xlsx' },
+        user: SUPER,
+      });
+      assert.equal(result.status, 200);
+      assert.deepEqual(result.body.data.claimsRematched, { chargeable: 1, exempt: 0, unresolved: 1, ambiguous: 1 });
+      assert.deepEqual(await state(), {
+        FWC001: ['chargeable', '12.50', driverA],
+        FWC002: ['ambiguous', null, null],
+        FWC003: ['unresolved', null, null],
+      });
+
+      const again = await callHandler(importAssignmentHistory, { file: { buffer: await fileOf([['FWC001', 'Sam', 'FLWA 01-1', 90000011, '10/07/2026 09:00:00', 4.5, '1']]), originalname: 'claims-history-2.xlsx' }, user: SUPER });
+      assert.equal(again.body.data.claimsRematched, null, 'nothing new, so no claim is looked at');
+    });
+
+    await t.test('if the claims tables are missing, the history is still kept and the answer says the claims were not rematched', async () => {
+      await client.query(migration('2026-11-03-issue-141-courier-claims.rollback.sql'));
+      const before = await facts();
+      const result = await callHandler(importAssignmentHistory, { file: { buffer: await fileOf([['FWD001', 'Sam', 'FLWA 01-1', 90000011, '10/08/2026 09:00:00', 4.5, '1']]), originalname: 'no-claims.xlsx' }, user: SUPER });
+      assert.equal(result.status, 200);
+      assert.deepEqual([result.body.data.saved, result.body.data.recorded, result.body.data.claimsRematched], [true, 1, { failed: true }]);
+      assert.equal(await facts(), before + 1);
     });
 
     await t.test('if the history tables are missing, the weekly upload still stages exactly the same and says so', async () => {
