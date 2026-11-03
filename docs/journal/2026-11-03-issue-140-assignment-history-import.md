@@ -46,3 +46,5 @@ For both reports, the staged rows (count, deliveries, first stops, double stops)
 - The upload page does not show `assignmentHistory` yet. A short line ("history saved" / "history not saved: reason") belongs in the upload screen and can follow.
 - The history-only import is open to any admin, like the weekly upload. If only a super admin should import older reports, it is a one-word change in `routes/assignmentHistoryRoutes.js`.
 - Part 1's follow-ups still stand: driver codes have no history, and a city admin's file can name any driver (a conflict is kept for review, not silently settled).
+
+**Review round 1 (Jayasoorya, PR #157).** The void endpoint now checks out one client and wraps the whole void in an explicit transaction, because the store's void takes a transaction lock (see part 1's journal). The store fixes (lock shared with imports, frozen void actor, concurrent test) come in with the merge of part 1.

@@ -87,8 +87,19 @@ export const voidAssignmentImport = async (req, res) => {
   if (reason === '') {
     return res.status(HttpStatus.BAD_REQUEST).json({ success: false, message: 'A reason is required.' });
   }
+  let client;
   try {
-    const voided = await voidImport(pool, importId, { reason, adminId: req.user.id });
+    // One client and one transaction: the void takes the import lock and must hold it until it commits.
+    client = await pool.connect();
+    await client.query('BEGIN');
+    let voided;
+    try {
+      voided = await voidImport(client, importId, { reason, adminId: req.user.id });
+      await client.query('COMMIT');
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    }
     if (!voided) {
       return res.status(HttpStatus.NOT_FOUND).json({ success: false, message: 'No such import, or it was already voided.' });
     }
@@ -96,5 +107,7 @@ export const voidAssignmentImport = async (req, res) => {
     return res.status(HttpStatus.OK).json({ success: true });
   } catch (error) {
     return answerFailure(res, error, 'The import could not be voided.');
+  } finally {
+    client?.release();
   }
 };
