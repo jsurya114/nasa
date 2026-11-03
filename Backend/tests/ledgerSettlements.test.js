@@ -125,6 +125,35 @@ test('settling a debit outside payroll: exact entry, partial, waiver, reversal, 
       await voidEntry(db, cityAdmin, { entryId: e4.id, requestId: randomUUID(), reason: 'Wrong entry' });
     });
 
+    await t.test('a repeated request is authorized again: withdrawn city access and a demoted super admin are refused', async () => {
+      const e5 = await entry({ amount: '60' });
+      const demoted = await admin('superadmin');
+      const asSuper = { ...demoted };
+      await db.query('INSERT INTO admin_city_ref (admin_id, city_id) VALUES ($1, $2)', [demoted.id, city]);
+      const repaid = parseSettlement(body({ amount: '10', reference: 'RCPT-5' }), e5.id).settlement;
+      const waiver = parseSettlement(body({ kind: 'waiver', amount: '10', reference: undefined, reason: 'Approved by owner' }), e5.id).settlement;
+      await settleEntry(db, cityAdmin, repaid);
+      const w = await settleEntry(db, asSuper, waiver);
+      const reversal = { settlementId: w.settlement.id, requestId: randomUUID(), reason: 'Entered by mistake' };
+      await reverseSettlement(db, asSuper, reversal);
+
+      // the same requests again, now as a plain admin (the role was withdrawn): the waiver and its reversal are refused
+      const plain = { ...demoted, role: 'admin' };
+      await assert.rejects(settleEntry(db, plain, waiver), { status: 403, message: /super admin/ });
+      await assert.rejects(reverseSettlement(db, plain, reversal), { status: 403, message: /super admin/ });
+      // access to the city withdrawn: even an exact replay of a repayment is refused
+      await db.query('DELETE FROM admin_city_ref WHERE admin_id = $1', [cityAdmin.id]);
+      await assert.rejects(settleEntry(db, cityAdmin, repaid), { status: 403, message: /access to this city/ });
+      await db.query('INSERT INTO admin_city_ref (admin_id, city_id) VALUES ($1, $2)', [cityAdmin.id, city]);
+      // with access back, the exact replays still work and nothing was recorded twice
+      assert.equal((await settleEntry(db, cityAdmin, repaid)).replay, true);
+      assert.equal((await settleEntry(db, asSuper, waiver)).replay, true);
+      assert.equal((await reverseSettlement(db, asSuper, reversal)).replay, true);
+      // another admin's city cannot read it by guessing the request ID
+      await assert.rejects(settleEntry(db, otherAdmin, repaid), { status: 403 });
+      assert.equal(await outstandingOf(e5.id), '50.00', 'the repayment of 10 stands; the waiver was reversed');
+    });
+
     await t.test('the database refuses edits, deletes, a repayment without a reference and a reference on a waiver', async () => {
       await savepoint(() => assert.rejects(db.query("UPDATE driver_ledger_settlements SET reason = 'changed'"), /cannot be changed or deleted/));
       await savepoint(() => assert.rejects(db.query('DELETE FROM driver_ledger_settlements'), /cannot be changed or deleted/));
