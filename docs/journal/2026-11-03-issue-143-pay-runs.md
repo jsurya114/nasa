@@ -143,3 +143,25 @@ Each case below is reproduced in the new `Backend/tests/payRunReview.test.js` (8
   1. *Refunds match one claim.* Refunds are now matched to a claim by courier, waybill and claim type (#149 `claim_courier`), in the net-collected figure, the over-recovery flag and the void guard. Tested: a GOFO refund leaves a SpeedX claim with the same waybill and type untouched (GOFO 0.00 collected, SpeedX 40.00).
   2. *Void versus a run being built.* Voiding now takes the run's city payroll lock, then locks the match rows of every claim the run refunds before the "relied on" check. A pay run building at that moment, in any city, locks the same rows while it reads claims, so the two are serialised: either the run finishes first and the void sees its deduction, or the run waits and then sees no refund. The locks are taken city first, then claims, in claim order, so they cannot deadlock. A true two-connection race is not reproduced in the rolled-back tests, which cannot share their tables with a second connection.
 - Full backend suite: 103 pass with the database.
+
+## Third review fix (Jasil's re-review on #152, 3 Nov 2026)
+
+1. **A finalized refund is not money paid.**
+   - The net-collected rule now subtracts a refund only when its statement's payout is `paid`.
+   - A refund that is not submitted, submitted, failed or unconfirmed releases nothing, so the liable driver is not charged.
+   - Until payouts are recorded (#31), a reassigned claim is therefore never charged to the new driver. That is the safe side.
+   - **Contract for #31**, written in the code: a payout recorded as `paid` is final here. Money that comes back must be reconciled before the statement leaves `paid`, because a later run may already have charged the liable driver.
+   - Tested: for each of not submitted, submitted, failed and unconfirmed, B is charged 0. After a retry is confirmed paid, B is charged 40 once, and the next run 0.
+2. **Voiding the original charge while a refund depends on it.** A run cannot be voided while an un-voided refund is recorded for a claim it charged (same driver, courier, waybill and claim type), whether the refund is only recorded, in a draft, or finalized. The refund must be voided first: its run, then the entry. Tested in all three states, and then that the charge run can be voided once the refund is gone. This adds to the guard from round two (a refund run cannot be voided after a later run relied on it).
+3. **One over-recovery could be refunded twice.**
+   - Recording a refund that names a claim now takes the claim's subject lock and checks the amount against what is **still refundable** to that driver for that claim, in that city (`claims/claimRefunds.js`):
+     - what finalized runs deducted from them for any version;
+     - minus what they owe for it now;
+     - minus every refund already recorded for it (voided ones excepted, paid or not).
+   - A larger amount is refused (409) with what is left. A claim not yet matched has nothing refundable.
+   - Partial refunds add up to the remainder and no further.
+   - The over-recovery flag and "refunds due" now also count only finalized deductions, so both agree with this limit.
+   - Voiding an unpaid refund entry releases its share.
+   - Tested: the same 10 recorded twice gives 409 on the second, and the next run pays 10, not 20. Refunds of 15 + 20 + 5 on a claim of 40 are accepted, and 10 after 35 is refused with "only 5.00 is still refundable". Two admins at the same moment are serialised by the claim lock; the stale-form case is the same check in sequence.
+- The four new tests fail on the code before this fix. The earlier refund cases now record the payout as paid where they expect B to be charged.
+- Full backend suite: 122 pass with the database.

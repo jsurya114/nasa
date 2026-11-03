@@ -4,6 +4,7 @@
 
 import { claimTypeKey, isExempt } from '../claims/claimRules.js';
 import { entryFingerprint, rowFingerprint } from './ledgerRules.js';
+import { refundableForClaim } from '../claims/claimRefunds.js';
 import { lockCityPayroll, lockClaimSubject, releaseHeldClaims } from '../claims/claimsStore.js';
 
 export class LedgerError extends Error {
@@ -77,6 +78,19 @@ export const createEntry = async (db, admin, entry) => {
           ? 'this claim was already imported from the carrier; it will be applied from there'
           : 'this claim is already recorded; void the earlier entry first if it was wrong');
       }
+    }
+  }
+
+  // A refund for a claim may not exceed what is still refundable to this driver for it. Checked under the claim's
+  // lock, so two admins (or two stale forms) cannot both refund the same over-recovery.
+  if (entry.type === 'correction' && entry.claimType) {
+    const typeKey = claimTypeKey(entry.claimType);
+    await lockClaimSubject(db, entry.waybill, typeKey);
+    const { refundable, reason } = await refundableForClaim(db, {
+      driverId: entry.driverId, cityId: entry.cityId, courier: entry.claimCourier, waybill: entry.waybill, typeKey,
+    });
+    if (Number(entry.amount) > Number(refundable)) {
+      throw new LedgerError(409, Number(refundable) > 0 ? `only ${refundable} is still refundable to this driver for this claim` : reason);
     }
   }
 
