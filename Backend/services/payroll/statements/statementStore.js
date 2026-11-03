@@ -132,6 +132,25 @@ const loadClaimBalances = async (db, driverId, statuses, cityIds) => {
   });
 };
 
+// Spreads repayments made outside payroll over what is owed, oldest first (the driver's ledger debts, then carrier
+// claims), so the amounts by kind always add up to the total: nothing is counted twice or lost. Penalties are the
+// hand-entered claims (ledger type manual_claim). All amounts are whole cents.
+export const allocateOwed = (entries, claims, repaidCents) => {
+  const byDate = (key) => (a, b) => (String(a[key]) < String(b[key]) ? -1 : String(a[key]) > String(b[key]) ? 1 : Number(a.id) - Number(b.id));
+  const items = [
+    ...entries.filter((e) => e.direction === 'debit').sort(byDate('effective_date')).map((e) => ({ owed: toCents(e.outstanding), penalty: e.entry_type === 'manual_claim' })),
+    ...[...claims].sort(byDate('claim_at')).map((c) => ({ owed: toCents(c.outstanding), penalty: false })),
+  ];
+  let pool = repaidCents;
+  const left = { penalties: 0, other: 0 };
+  for (const item of items) {
+    const used = Math.min(item.owed, pool);
+    pool -= used;
+    left[item.penalty ? 'penalties' : 'other'] += item.owed - used;
+  }
+  return { ...left, total: left.penalties + left.other };
+};
+
 // owedByDriver: still to be recovered, after repayments made outside payroll. owedToDriver: reimbursements not yet paid.
 // refundsDue (admin, one city): claims this driver paid more for than they now owe, in that city, with what a linked
 // credit correction needs (courier, waybill, claim type, amount). The same list pay runs flag as claim_over_recovered.
@@ -141,6 +160,7 @@ const balances = async (db, driverId, statuses, cityIds, { withRefunds = false }
   const debitCents = entries.filter((e) => e.direction === 'debit').reduce((sum, e) => sum + toCents(e.outstanding), 0)
     + claims.reduce((sum, c) => sum + toCents(c.outstanding), 0);
   const repaidCents = entries.filter((e) => e.entry_type === 'advance_repayment').reduce((sum, e) => sum + toCents(e.amount), 0);
+  const owed = allocateOwed(entries, claims, repaidCents);
   const creditCents = entries.filter((e) => e.direction === 'credit' && e.entry_type !== 'advance_repayment')
     .reduce((sum, e) => sum + toCents(e.outstanding), 0);
   const refundsDue = withRefunds && cityIds?.length === 1
@@ -150,7 +170,8 @@ const balances = async (db, driverId, statuses, cityIds, { withRefunds = false }
     ...(refundsDue && { refundsDue }),
     entries,
     claims,
-    totals: { owedByDriver: fromCents(Math.max(0, debitCents - repaidCents)), owedToDriver: fromCents(creditCents) },
+    // owedPenalties + owedOther always equals owedByDriver (hand-entered penalties apart from everything else owed).
+    totals: { owedByDriver: fromCents(Math.max(0, debitCents - repaidCents)), owedPenalties: fromCents(owed.penalties), owedOther: fromCents(owed.other), owedToDriver: fromCents(creditCents) },
   };
 };
 
