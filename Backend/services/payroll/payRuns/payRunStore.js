@@ -84,24 +84,68 @@ const loadClaims = async (db, cityId, driverIds) => {
 };
 
 // Ledger entries of these drivers in this city that still stand, with what each still has to recover. Locked.
-const loadLedger = async (db, cityId, driverIds) => {
+// recovered_in_overlap: a live run whose period overlaps this one already recovered from the entry. Recovery is at most
+// once per pay period, so a supplemental or overlapping run (daily and weekly, or a second run of the same week)
+// never takes a second instalment. Runs of one city are built one at a time (lockCityPayroll), so this holds.
+const loadLedger = async (db, run, driverIds) => {
   const { rows } = await db.query(
     `SELECT e.id, e.driver_id, e.entry_type, e.direction, e.amount::text AS amount, e.exempt, e.recovery_plan,
             e.installment_amount::text AS installment_amount,
             to_char(e.effective_date, 'YYYY-MM-DD') AS effective_date, to_char(e.intended_payday, 'YYYY-MM-DD') AS intended_payday,
             (e.amount + COALESCE((SELECT SUM(l.amount) FROM pay_statement_lines l WHERE l.ledger_entry_id = e.id AND l.active AND l.line_type = 'recovery'), 0))::text AS outstanding,
-            EXISTS (SELECT 1 FROM pay_statement_lines l WHERE l.ledger_entry_id = e.id AND l.active AND l.line_type = 'reimbursement') AS reimbursed
+            EXISTS (SELECT 1 FROM pay_statement_lines l WHERE l.ledger_entry_id = e.id AND l.active AND l.line_type = 'reimbursement') AS reimbursed,
+            e.disbursed_outside_payroll,
+            EXISTS (SELECT 1 FROM pay_statement_lines l
+                      JOIN pay_statements s ON s.id = l.statement_id JOIN pay_runs r ON r.id = s.pay_run_id
+                     WHERE l.ledger_entry_id = e.id AND l.active AND l.line_type = 'recovery' AND r.id <> $3
+                       AND r.period_start <= $5 AND r.period_end >= $4) AS recovered_in_overlap
        FROM driver_ledger_entries e
       WHERE e.city_id = $1 AND e.driver_id = ANY($2::int[]) AND e.entry_type <> 'void'
         AND NOT EXISTS (SELECT 1 FROM driver_ledger_entries v WHERE v.voids_entry_id = e.id)
       ORDER BY e.id
       FOR UPDATE OF e`,
-    [cityId, driverIds]
+    [run.city_id, driverIds, run.id, run.period_start, run.period_end]
   );
   return rows;
 };
 
-const inputsFor = (driverId, run, earnings, claims, ledger) => {
+// Claims where these drivers had more deducted than they now owe: the carrier lowered the claim, made it exempt, or it
+// now belongs to another driver. Counted per driver who was actually charged, less any credit correction recorded for
+// that claim (#142 corrections may name the waybill and claim type). Only decided claims count: while an amended
+// version is still unresolved, nothing is concluded. These are flagged for an approved correction, never refunded here.
+const loadOverRecovered = async (db, driverIds) => {
+  const { rows } = await db.query(
+    `WITH taken AS (
+       SELECT cv.claim_key, s.driver_id, SUM(-l.amount) AS taken
+         FROM pay_statement_lines l
+         JOIN courier_claims cv ON cv.id = l.claim_id
+         JOIN pay_statements s ON s.id = l.statement_id
+        WHERE l.active AND l.line_type = 'claim' AND s.driver_id = ANY($1::int[])
+        GROUP BY cv.claim_key, s.driver_id)
+     SELECT t.driver_id, c.id AS claim_id,
+            (t.taken
+              - CASE WHEN m.status = 'chargeable' AND m.driver_id = t.driver_id THEN m.eligible_deduction ELSE 0 END
+              - COALESCE((SELECT SUM(e.amount) FROM driver_ledger_entries e
+                           WHERE e.entry_type = 'correction' AND e.direction = 'credit' AND e.driver_id = t.driver_id
+                             AND e.waybill = c.waybill
+                             AND lower(regexp_replace(btrim(e.claim_type), '\\s+', ' ', 'g')) = c.claim_type_key
+                             AND NOT EXISTS (SELECT 1 FROM driver_ledger_entries v WHERE v.voids_entry_id = e.id)), 0))::text AS over
+       FROM taken t
+       JOIN courier_claims c ON c.claim_key = t.claim_key AND c.superseded_at IS NULL
+       JOIN courier_claim_matches m ON m.claim_id = c.id
+      WHERE m.status IN ('chargeable', 'exempt')`,
+    [driverIds]
+  );
+  return rows.filter((r) => toCents(r.over) > 0);
+};
+
+const holdFor = (e) => {
+  if (e.entry_type === 'advance' && !e.disbursed_outside_payroll) return 'advance_not_disbursed';
+  if (e.recovered_in_overlap) return 'already_recovered_this_period';
+  return undefined;
+};
+
+const inputsFor = (driverId, run, earnings, claims, ledger, overRecovered) => {
   const mine = ledger.filter((e) => e.driver_id === driverId);
   const dueBy = (e) => e.effective_date <= run.period_end && (!e.intended_payday || e.intended_payday <= run.period_end);
   return {
@@ -114,8 +158,11 @@ const inputsFor = (driverId, run, earnings, claims, ledger) => {
     reimbursements: mine.filter((e) => e.direction === 'credit' && e.entry_type !== 'advance_repayment' && !e.reimbursed && dueBy(e))
       .map((e) => ({ entryId: e.id, amount: e.amount })),
     debits: mine.filter((e) => e.direction === 'debit' && !e.exempt)
-      .map((e) => ({ entryId: e.id, effectiveDate: e.effective_date, intendedPayday: e.intended_payday, plan: e.recovery_plan, installmentAmount: e.installment_amount, outstanding: e.outstanding })),
-    repayments: mine.filter((e) => e.entry_type === 'advance_repayment').map((e) => ({ entryId: e.id, amount: e.amount })),
+      .map((e) => ({ entryId: e.id, effectiveDate: e.effective_date, intendedPayday: e.intended_payday, plan: e.recovery_plan,
+        installmentAmount: e.installment_amount, outstanding: e.outstanding, hold: holdFor(e) })),
+    // A repayment counts only once it has taken effect, by the same date rules as a reimbursement.
+    repayments: mine.filter((e) => e.entry_type === 'advance_repayment' && dueBy(e)).map((e) => ({ entryId: e.id, amount: e.amount })),
+    overRecovered: overRecovered.filter((o) => o.driver_id === driverId).map((o) => ({ claimId: o.claim_id, amount: fromCents(toCents(o.over)) })),
   };
 };
 
@@ -154,10 +201,11 @@ export const generateRun = async (db, admin, request) => {
   const earnings = await loadEarnings(db, run);
   const driverIds = [...new Set(earnings.map((e) => e.driver_id))];
   const claims = driverIds.length ? await loadClaims(db, run.city_id, driverIds) : [];
-  const ledger = driverIds.length ? await loadLedger(db, run.city_id, driverIds) : [];
+  const ledger = driverIds.length ? await loadLedger(db, run, driverIds) : [];
+  const overRecovered = driverIds.length ? await loadOverRecovered(db, driverIds) : [];
 
   for (const driverId of driverIds) {
-    const { lines, totals, flags } = calculateStatement(inputsFor(driverId, run, earnings, claims, ledger));
+    const { lines, totals, flags } = calculateStatement(inputsFor(driverId, run, earnings, claims, ledger, overRecovered));
     const { rows: st } = await db.query(
       `INSERT INTO pay_statements (pay_run_id, driver_id, gross, insurance, reimbursements, claim_deductions, recoveries, net, carried_forward, flags)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING id`,
@@ -186,7 +234,9 @@ export const getRun = async (db, admin, runId) => {
        FROM pay_statement_lines l JOIN pay_statements s ON s.id = l.statement_id WHERE s.pay_run_id = $1 ORDER BY l.id`, [runId]);
   const { rows: waiting } = await db.query(
     `SELECT (SELECT count(*) FROM courier_claim_matches m JOIN courier_claims c ON c.id = m.claim_id
-              WHERE c.import_city_id = $1 AND c.superseded_at IS NULL AND m.status IN ('unresolved', 'ambiguous'))::int AS pending_claims,
+              WHERE c.import_city_id = $1 AND c.superseded_at IS NULL AND m.status IN ('unresolved', 'ambiguous', 'review'))::int AS pending_claims,
+            (SELECT count(*) FROM driver_ledger_entries e WHERE e.city_id = $1 AND e.entry_type = 'advance' AND NOT e.disbursed_outside_payroll
+              AND NOT EXISTS (SELECT 1 FROM driver_ledger_entries v WHERE v.voids_entry_id = e.id))::int AS advances_not_paid_out,
             (SELECT count(*) FROM driver_ledger_entries e WHERE e.city_id = $1 AND e.direction = 'debit' AND e.entry_type <> 'void'
               AND NOT e.exempt AND e.recovery_plan IS NULL
               AND NOT EXISTS (SELECT 1 FROM driver_ledger_entries v WHERE v.voids_entry_id = e.id))::int AS entries_needing_review`,

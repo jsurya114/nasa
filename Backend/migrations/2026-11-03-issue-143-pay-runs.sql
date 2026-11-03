@@ -9,6 +9,7 @@
 -- pay_statements            one per driver per run, with the totals worked out by payCalculator.js.
 -- pay_statement_lines       each earning, insurance, reimbursement, claim and recovery on a statement. A line is
 --                           "active" while its run is a draft or finalized; discarding or voiding a run releases it.
+--                           Repayment lines are audit only and never count toward the statement's money.
 --
 -- HOW TO RUN: BACK UP THE DATABASE FIRST and run on a copy first. Safe to run more than once.
 
@@ -75,7 +76,9 @@ CREATE TABLE IF NOT EXISTS pay_statements (
 CREATE TABLE IF NOT EXISTS pay_statement_lines (
   id                    bigserial     PRIMARY KEY,
   statement_id          bigint        NOT NULL REFERENCES pay_statements(id),
-  line_type             text          NOT NULL CHECK (line_type IN ('earning', 'insurance', 'reimbursement', 'claim', 'recovery')),
+  -- repayment: how much of a repayment made outside payroll this statement relied on. Audit only; it moves no money,
+  -- but it stops that repayment being voided while a live run depends on it.
+  line_type             text          NOT NULL CHECK (line_type IN ('earning', 'insurance', 'reimbursement', 'claim', 'recovery', 'repayment')),
   amount                numeric(12,2) NOT NULL,
   payment_dashboard_id  integer       REFERENCES payment_dashboard(id),
   claim_id              bigint        REFERENCES courier_claims(id),
@@ -85,7 +88,8 @@ CREATE TABLE IF NOT EXISTS pay_statement_lines (
   CHECK (line_type NOT IN ('earning', 'insurance') OR payment_dashboard_id IS NOT NULL),
   CHECK (line_type <> 'claim' OR (claim_id IS NOT NULL AND amount < 0)),
   CHECK (line_type <> 'recovery' OR (ledger_entry_id IS NOT NULL AND amount < 0)),
-  CHECK (line_type <> 'reimbursement' OR (ledger_entry_id IS NOT NULL AND amount > 0))
+  CHECK (line_type <> 'reimbursement' OR (ledger_entry_id IS NOT NULL AND amount > 0)),
+  CHECK (line_type <> 'repayment' OR (ledger_entry_id IS NOT NULL AND amount > 0))
 );
 CREATE INDEX IF NOT EXISTS idx_pay_lines_statement ON pay_statement_lines (statement_id);
 CREATE INDEX IF NOT EXISTS idx_pay_lines_claim ON pay_statement_lines (claim_id) WHERE active;
