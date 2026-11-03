@@ -26,6 +26,7 @@ test('the driver ledger: city access, exemption, no double entries, immutable hi
     await db.query(migration('2026-11-03-issue-141-courier-claims.sql'));
     await db.query(migration('2026-11-03-issue-142-driver-ledger.sql'));
     await db.query(migration('2026-11-03-issue-143-pay-runs.sql')); // listEntries reads what pay runs did with each entry
+    await db.query(migration('2026-11-03-issue-166-ledger-settlements.sql')); // ... and what was settled outside payroll
 
     const one = async (sql, params) => (await db.query(sql, params)).rows[0];
     const dfw = (await one("INSERT INTO city (job, city_code, city_type) VALUES ('DFW GOFO', 'TSTDFW', 'WEEKLY') RETURNING id")).id;
