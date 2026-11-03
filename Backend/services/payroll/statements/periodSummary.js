@@ -32,16 +32,23 @@ const totalsOf = (rows) => {
 // same earnings (reimbursements included). When the driver has no closed, unpaid pay rows in the range a real run creates no
 // statement, so nothing is taken and `net` is null; the reasons (no recovery limit set, no repayment arrangement, ...) are still
 // returned.
-// The earliest and latest day of the driver's closed, unpaid pay rows not yet on a run (both data types), or today when there are none.
+// The span of the driver's own closed, unpaid pay rows not yet on a run (both data types): from their first day to today, or to their last
+// day if that is later. A real run is drafted for the latest days and ends today, so a record dated up to today is due in it; ending the
+// span at the work's last day would call a penalty entered after that week "not yet due" and silently take nothing. With no such rows the
+// span is today.
 const workSpan = async (db, driverId, cityId, recoveryLimit) => {
   const wide = { id: 0, city_id: cityId, period_start: '1970-01-01', period_end: '2999-12-31', recovery_limit: recoveryLimit };
   const days = [];
   for (const dataType of ['daily', 'weekly']) {
     (await loadEarnings(db, { ...wide, data_type: dataType })).filter((e) => e.driver_id === driverId).forEach((e) => days.push(e.journey_date));
   }
-  if (days.length) return { from: days.reduce((a, b) => (a < b ? a : b)), to: days.reduce((a, b) => (a > b ? a : b)) };
   const { rows } = await db.query("SELECT to_char(CURRENT_DATE, 'YYYY-MM-DD') AS d");
-  return { from: rows[0].d, to: rows[0].d };
+  const today = rows[0].d;
+  if (days.length) {
+    const last = days.reduce((a, b) => (a > b ? a : b));
+    return { from: days.reduce((a, b) => (a < b ? a : b)), to: last > today ? last : today };
+  }
+  return { from: today, to: today };
 };
 
 const estimatePayday = async (db, driverId, cityId, rangeFrom, rangeTo) => {

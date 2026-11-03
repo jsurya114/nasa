@@ -302,6 +302,38 @@ test('dashboard period summary: this payday, approved or preview, and what is st
       assert.deepEqual([again.deducted, again.net], ['0.00', null]);
     });
 
+    await t.test('a penalty entered after the week the pay is for is still taken (no dates), the same as the real draft that ends today', async () => {
+      const sc = await freshScenario();
+      const workDay = await sc.day(-20); // the pay is from three weeks ago (an older report)
+      await sc.row(workDay, '100.00');
+      await sc.penalty({ amount: '60', recoveryPlan: 'full_next_payday', effectiveDate: await sc.day(-5) }); // entered much later
+      const noDates = await sc.estimate();
+      assert.deepEqual([noDates.deducted, noDates.net], ['60.00', '40.00'], 'before the fix: 0.00, the penalty looked dated in the future');
+      assert.equal(noDates.flags.some((f) => f.code === 'not_yet_due'), false);
+      const real = await sc.draft(await sc.day(-26), await sc.day(0), 'weekly'); // a run for the last days ends today
+      assert.deepEqual([real.statements[0].recoveries, real.statements[0].net], ['60.00', '40.00'], 'the same as the real draft');
+    });
+
+    await t.test('a record dated in the future is not taken, and the reason is shown instead of a silent zero', async () => {
+      const sc = await freshScenario();
+      await sc.row(await sc.day(-2), '100.00');
+      await sc.penalty({ amount: '60', recoveryPlan: 'full_next_payday', effectiveDate: await sc.day(10) });
+      const estimate = await sc.estimate();
+      assert.equal(estimate.deducted, '0.00');
+      assert.ok(estimate.flags.some((f) => f.code === 'not_yet_due'), 'says why');
+    });
+
+    await t.test('with no recovery limit set, the reason is shown even without dates', async () => {
+      const sc = await freshScenario();
+      await db.query("UPDATE payroll_settings SET value = 'null'::jsonb WHERE key = 'recovery_limit'");
+      await sc.row(await sc.day(-2), '100.00');
+      await sc.penalty({ amount: '60', recoveryPlan: 'full_next_payday', effectiveDate: await sc.day(-1) });
+      const estimate = await sc.estimate();
+      assert.equal(estimate.deducted, '0.00');
+      assert.ok(estimate.flags.some((f) => f.code === 'recovery_limit_not_set'));
+      await setRecoveryLimit(db, superAdmin, { type: 'percent_of_available', value: 100 }, 'Test limit'); // put the limit back for the tests after this one
+    });
+
     await t.test('without dates only what is outstanding is returned, and half a range is refused', async () => {
       const s = await getDriverPeriodSummary(db, cityAdmin, { driverId: d1, cityId: city });
       assert.equal(s.period.status, 'none');
