@@ -6,7 +6,7 @@
 
 import { createHash } from 'node:crypto';
 import { lockCityPayroll } from '../claims/claimsStore.js';
-import { parseNewEntry } from './ledgerRules.js';
+import { entryFingerprint, parseNewEntry, rowFingerprint } from './ledgerRules.js';
 import { assertCityAllowed, createEntry, ENTRY_COLUMNS, LedgerError, voidEntry } from './ledgerStore.js';
 
 // Own request IDs for the void and for the corrected entry, made from the edit's so a retry makes the same ones and
@@ -37,13 +37,17 @@ export const editEntry = async (db, admin, edit) => {
   const found = await db.query(`SELECT ${EDIT_COLUMNS} FROM driver_ledger_edits WHERE request_id = $1`, [edit.requestId]);
   if (found.rows[0]) {
     const row = found.rows[0];
-    if (row.created_by !== Number(admin.id) || String(row.original_entry_id) !== String(edit.entryId) || row.reason !== edit.reason) {
-      throw new LedgerError(409, 'this request ID was already used for a different edit');
-    }
-    // Access can be withdrawn after the first request: a replay is checked like a new one.
+    // Authorize first, like a new request: access can be withdrawn after the first one, and a different admin learns nothing.
     await assertCityAllowed(db, admin, row.city_id);
-    const { rows } = await db.query(`SELECT ${ENTRY_COLUMNS} FROM driver_ledger_entries WHERE id = $1`, [row.replacement_entry_id]);
-    return { entry: rows[0], edit: row, replay: true };
+    const { rows: originals } = await db.query(`SELECT ${ENTRY_COLUMNS} FROM driver_ledger_entries WHERE id = $1`, [row.original_entry_id]);
+    const { rows: saved } = await db.query(`SELECT ${ENTRY_COLUMNS} FROM driver_ledger_entries WHERE id = $1`, [row.replacement_entry_id]);
+    // Same admin, same entry, same reason AND the same requested change: the corrected entry this request would make (from
+    // the original, which never changes) must equal the one saved. Any other payload under this ID is a different edit.
+    const again = parseNewEntry({ ...merged(originals[0], edit), requestId: derivedId(edit.requestId, 'entry') });
+    const same = row.created_by === Number(admin.id) && String(row.original_entry_id) === String(edit.entryId) && row.reason === edit.reason
+      && !again.errors && entryFingerprint(again.entry) === rowFingerprint(saved[0]);
+    if (!same) throw new LedgerError(409, 'this request ID was already used for a different edit');
+    return { entry: saved[0], edit: row, replay: true };
   }
 
   const { rows: where } = await db.query('SELECT city_id FROM driver_ledger_entries WHERE id = $1', [edit.entryId]);

@@ -73,11 +73,20 @@ test('editing a ledger entry keeps the original and links the correction', { ski
       assert.equal(old.amount, '100.00');
     });
 
-    await t.test('the same request again is a replay; the same ID for another edit is refused', async () => {
-      const again = await editEntry(db, cityAdmin, parseEdit({ requestId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', reason: 'Amount was typed wrong', changes: { amount: '80' } }, original.id).edit);
+    await t.test('the same complete request again is a replay; any other change under the same ID is refused', async () => {
+      const same = { amount: '80', intendedPayday: '2026-11-10' };
+      const send = (changes, reason = 'Amount was typed wrong') => editEntry(db, cityAdmin, parseEdit({ requestId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', reason, changes }, original.id).edit);
+      const again = await send(same);
       assert.deepEqual([again.replay, String(again.entry.id)], [true, String(corrected.id)]);
-      await assert.rejects(editEntry(db, cityAdmin, parseEdit({ requestId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', reason: 'Another reason', changes: { amount: '70' } }, original.id).edit), { status: 409 });
-      assert.equal((await standing()).length, 1, 'recorded once');
+      // a different amount, date, arrangement, entry reason, or edit reason with the same ID is a different edit
+      await assert.rejects(send({ ...same, amount: '90' }), { status: 409 });
+      await assert.rejects(send({ ...same, effectiveDate: '2026-11-02' }), { status: 409 });
+      await assert.rejects(send({ ...same, recoveryPlan: 'full_next_payday' }), { status: 409 });
+      await assert.rejects(send({ ...same, entryReason: 'A different reason' }), { status: 409 });
+      await assert.rejects(send({ amount: '80' }), { status: 409 }); // an incomplete resend is not the same request either
+      await assert.rejects(send(same, 'Another reason'), { status: 409 });
+      assert.equal((await standing()).length, 1, 'recorded once, and the saved amount is still 80');
+      assert.equal((await standing())[0].amount, '80.00');
     });
 
     await t.test('the original cannot be edited twice; the correction can, and history shows every version', async () => {
@@ -132,6 +141,8 @@ test('editing a ledger entry keeps the original and links the correction', { ski
       const first = await edit(cityAdmin, e.id, { amount: '55' }, { requestId: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc' });
       await db.query('DELETE FROM admin_city_ref WHERE admin_id = $1', [cityAdmin.id]); // access withdrawn
       await assert.rejects(editEntry(db, cityAdmin, parseEdit({ requestId: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc', reason: 'Amount was typed wrong', changes: { amount: '55' } }, e.id).edit), { status: 403 });
+      // a changed payload under that ID is also refused for someone without access: no 409 that confirms the ID exists
+      await assert.rejects(editEntry(db, cityAdmin, parseEdit({ requestId: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc', reason: 'Amount was typed wrong', changes: { amount: '99' } }, e.id).edit), { status: 403 });
       await db.query('INSERT INTO admin_city_ref (admin_id, city_id) VALUES ($1, $2)', [cityAdmin.id, city]);
       // an entry that happens to use the edit's request ID is left alone: the edit's own IDs are derived
       const other = await entry({ requestId: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd', amount: '70', waybill: 'TESTE007' });

@@ -29,3 +29,10 @@ Not in this part: the Payroll page buttons, per-period amounts and the dashboard
 **Not tested.** The HTTP routes with real tokens; production data.
 
 **Risks and follow-ups.** The page that shows the history and the Edit button come with the Payroll page PR.
+
+## Review fix (Jasil's review on #169, 3 Nov 2026)
+
+- **A changed edit was accepted as a replay.** The replay check compared the admin, the entry and the edit reason but not the requested changes, so resending the same ID and reason with $90 instead of $80 returned the saved $80 as a success. Now a replay is accepted only when the corrected entry this request would make (built from the original entry, which never changes) equals the one saved, field for field: amount, dates, arrangement, claim details, the entry's own reason. Any other payload under that ID is a 409, including an incomplete resend. An identical request still replays.
+- **Order.** The city check now runs before the comparison, so a caller without access gets 403 and not a 409 that confirms the ID exists. The city-access check on replay and the separately derived IDs are kept.
+- **Tests.** The replay case resends the complete payload and then tries a changed amount, date, repayment arrangement, entry reason, an incomplete payload and a changed edit reason: each is refused and the saved amount stays $80. A changed payload under an ID is refused with 403 for an admin without access.
+- Includes the #168 fixes (replay authorization for settlements, test cleanup).
