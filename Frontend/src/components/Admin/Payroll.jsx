@@ -121,7 +121,7 @@ export default function Payroll() {
                           claimType: r.claimType, reason: `Refund: ${r.claimType} ${r.waybill} was deducted more than is now owed`,
                         },
                       });
-                      document.getElementById("record-entry")?.scrollIntoView({ behavior: "smooth", block: "start" });
+                      document.getElementById("record-entry")?.scrollIntoView?.({ behavior: "smooth", block: "start" }); // absent in some test DOMs
                     }} />
                     <BalanceSummary balances={payroll.balances} />
                     <h2 className="mb-2 text-sm font-semibold text-ink">Pay statements</h2>
