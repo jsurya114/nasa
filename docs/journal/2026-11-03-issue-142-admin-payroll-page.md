@@ -69,3 +69,18 @@ Admin pages are English only, like the rest of the admin area. The reused statem
 - Voiding an entry from the page.
 - The pay run screen (draft, finalize, discard, void, recovery limit) for #143.
 - The driver list comes from a dashboard endpoint in Jasil's zone. If it changes shape, this page needs updating.
+
+## Review fix (Jasil's review on #155, 3 Nov 2026)
+
+- **The form could not link a refund to its claim.** A pay run flags a claim that was deducted more than is now owed. Before, the page could only record a generic credit, which neither cleared that flag nor stopped a second refund. Two changes:
+  - **"Refunds due" list.** Above the balances, the page lists the server's `refundsDue` (#153): the claim type, waybill and courier, and how much more was deducted than is now owed. **Record refund** pre-fills the form with a credit correction for that amount, naming the claim's courier, waybill and claim type, and a reason. Saving clears the item.
+  - **Manual claim reference.** A credit correction can name a claim by courier, waybill and claim type (all three or none). A debit correction cannot name a claim: the server refuses it (#149), and the form does not show the fields.
+  - Validation, city and driver checks and the claim exemption all stay on the server. The refund is linked by the claim's own identity, so it counts against that one claim and is paid once.
+- **Tests:** `Payroll.test.jsx` now has 6 tests. New: a refund due is recorded through Record refund, and the body is a credit correction of 10.00 with courier, waybill and claim type; the item clears after saving. Claim fields appear only on a credit correction, and an empty reference sends nothing.
+- **End to end by hand** (390 px), against the #153 backend on `nasa_local`, made-up data only:
+  1. A claim was deducted at 40 on a finalized run, then lowered by the carrier to 30.
+  2. The Payroll page listed "Damaged Item · TESTUI01 (GOFO): $10.00 deducted more than is now owed".
+  3. Record refund filled correction, credit, 10.00, gofo, TESTUI01, Damaged Item. Saving cleared the item.
+  4. The next pay run paid a 10.00 reimbursement with no claim deduction and no flags (net 110.00).
+  5. The later week had no pay rows, so it does not show the refund is never paid twice. The database's one-reimbursement-per-entry rule and the backend tests cover that.
+  6. The local payroll tables and made-up rows were removed afterwards.
