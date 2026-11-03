@@ -13,11 +13,12 @@ const show = (penalty) => render(<MemoryRouter><table><tbody><PenaltyRows penalt
 afterEach(cleanup);
 
 describe("the net", () => {
-  it("a preview takes only this payday's share off the table net, never the whole debt, and never below zero", () => {
-    const debt = ready({ deducted: "50.00", penalties: "250.00" });
-    expect(netFor(80, debt).net).toBe(30);
-    expect(netFor(80, debt).preview).toBe(true);
-    expect(netFor(30, ready({ deducted: "50.00", penalties: "250.00" })).net).toBe(0);
+  it("a preview uses the server's own net, with reimbursements in it, never the whole debt and never one rebuilt here", () => {
+    const debt = ready({ deducted: "50.00", net: "30.00", penalties: "250.00" });
+    expect(netFor(80, debt)).toMatchObject({ net: 30, preview: true });
+    // $100 pay, $20 insurance, $50 reimbursement, $50 instalment: the server says 80, and that is what is shown
+    expect(netFor(80, ready({ deducted: "50.00", net: "80.00", penalties: "250.00" }))).toMatchObject({ net: 80, label: "Net Payment", preview: false });
+    expect(netFor(80, ready({ deducted: "50.00", net: "130.00", penalties: "250.00" })).net).toBe(130);
   });
 
   it("an approved pay run's frozen net is used as it is; a draft's net is a preview", () => {
@@ -26,7 +27,7 @@ describe("the net", () => {
   });
 
   it("with nothing taken, or no dates, the net is the table's own; while loading or failed it is marked not final", () => {
-    expect(netFor(80, ready({ deducted: "0.00", penalties: "100.00" }))).toMatchObject({ net: 80, label: "Net Payment", preview: false });
+    expect(netFor(80, ready({ deducted: "0.00", net: null, penalties: "100.00" }))).toMatchObject({ net: 80, label: "Net Payment", preview: false });
     expect(netFor(80, ready({ source: "none", penalties: "100.00" })).net).toBe(80);
     expect(netFor(80, { status: "loading", expected: true })).toMatchObject({ net: 80, muted: true });
     expect(netFor(80, { status: "error", expected: true }).label).toContain("not loaded, not final");
@@ -36,7 +37,7 @@ describe("the net", () => {
 
 describe("the row and the Summary", () => {
   it("the Summary keeps this payday's deduction and the balance as two lines", () => {
-    const items = summaryItems(ready({ deducted: "50.00", penalties: "250.00" }), 80);
+    const items = summaryItems(ready({ deducted: "50.00", net: "30.00", penalties: "250.00" }), 80);
     expect(items.afterInsurance.map((i) => [i.label, i.text])).toEqual([["Penalty & Others (this payday)", "-$50.00"], ["Still Owed (all)", "$250.00"]]);
     expect(items.net.net).toBe(30);
     expect(summaryItems(ready(), 80).afterInsurance).toEqual([]);

@@ -25,34 +25,53 @@ const totalsOf = (rows) => {
 };
 
 // A read-only run of the pay calculator for this driver and range, for when no pay run exists yet. Nothing is written and no row
-// is locked. A driver with no closed, unpaid pay rows in the range still gets a result, so the reasons (no recovery limit set, no
-// repayment arrangement, ...) are shown instead of a silent zero.
+// is locked. It follows what real drafts do: if the driver has both daily and weekly pay rows in the range, the daily run is
+// worked out first and what it takes (claims, instalments) and pays (reimbursements) is carried into the weekly one, as the
+// reservations of a first draft are for the second, so nothing is counted twice. `net` is the calculator's own net for the
+// same earnings (reimbursements included), or null when the driver has no closed, unpaid pay rows in the range; then nothing can
+// be taken, and the reasons (no recovery limit set, no repayment arrangement, ...) are still returned.
 const estimatePayday = async (db, driverId, cityId, from, to) => {
   const recoveryLimit = await getRecoveryLimit(db);
-  let claims = 0;
-  let recoveries = 0;
+  const base = { id: 0, city_id: cityId, period_start: from, period_end: to, recovery_limit: recoveryLimit };
+  const [claims, ledger, over] = await Promise.all([
+    loadClaims(db, cityId, [driverId], false), loadLedger(db, base, [driverId], false), loadOverRecovered(db, cityId, [driverId]),
+  ]);
+  const takeOff = (row, key, lineAmount) => { row[key] = fromCents(toCents(row[key]) + toCents(lineAmount)); };
+
+  let claimCents = 0;
+  let recoveryCents = 0;
+  let netCents = 0;
+  let any = false;
   const flags = [];
   const seen = new Set();
-  const collect = (result) => {
-    claims += toCents(result.totals.claimDeductions);
-    recoveries += toCents(result.totals.recoveries);
+  const run = (dataType, earnings) => {
+    const result = calculateStatement(inputsFor(driverId, { ...base, data_type: dataType }, earnings, claims, ledger, over));
+    claimCents += toCents(result.totals.claimDeductions);
+    recoveryCents += toCents(result.totals.recoveries);
+    netCents += toCents(result.totals.net);
     for (const f of result.flags) if (!seen.has(f.code)) { seen.add(f.code); flags.push({ code: f.code, message: f.message }); }
+    // What this run takes or pays is spoken for when the next one is worked out.
+    for (const line of result.lines) {
+      if (line.type === 'claim') takeOff(claims.find((c) => String(c.claim_id) === String(line.claimId)), 'outstanding', line.amount);
+      if (line.type === 'recovery') {
+        const e = ledger.find((x) => String(x.id) === String(line.entryId));
+        takeOff(e, 'outstanding', line.amount);
+        e.recovered_in_overlap = true; // the next run covers the same period, so it takes no second instalment
+      }
+      if (line.type === 'reimbursement') ledger.find((x) => String(x.id) === String(line.entryId)).reimbursed = true;
+    }
   };
-  let any = false;
   for (const dataType of ['daily', 'weekly']) {
-    const run = { id: 0, city_id: cityId, period_start: from, period_end: to, data_type: dataType, recovery_limit: recoveryLimit };
-    const earnings = (await loadEarnings(db, run)).filter((e) => e.driver_id === driverId);
+    const earnings = (await loadEarnings(db, { ...base, data_type: dataType })).filter((e) => e.driver_id === driverId);
     if (earnings.length === 0) continue;
     any = true;
-    const [c, l, o] = await Promise.all([loadClaims(db, cityId, [driverId], false), loadLedger(db, run, [driverId], false), loadOverRecovered(db, cityId, [driverId])]);
-    collect(calculateStatement(inputsFor(driverId, run, earnings, c, l, o)));
+    run(dataType, earnings);
   }
-  if (!any) {
-    const run = { id: 0, city_id: cityId, period_start: from, period_end: to, data_type: 'weekly', recovery_limit: recoveryLimit };
-    const [c, l, o] = await Promise.all([loadClaims(db, cityId, [driverId], false), loadLedger(db, run, [driverId], false), loadOverRecovered(db, cityId, [driverId])]);
-    collect(calculateStatement(inputsFor(driverId, run, [], c, l, o)));
-  }
-  return { claimDeductions: fromCents(claims), recoveries: fromCents(recoveries), deducted: fromCents(claims + recoveries), flags };
+  if (!any) run('weekly', []); // nothing earned: only the reasons
+  return {
+    claimDeductions: fromCents(claimCents), recoveries: fromCents(recoveryCents), deducted: fromCents(claimCents + recoveryCents),
+    net: any ? fromCents(netCents) : null, flags,
+  };
 };
 
 // range: { from, to } as YYYY-MM-DD, or both left out. Without dates only what is outstanding is returned (the dashboard
@@ -85,7 +104,7 @@ export const getDriverPeriodSummary = async (db, admin, { driverId, cityId, from
   let payday = { source: 'none', claimDeductions: '0.00', recoveries: '0.00', deducted: '0.00', net: null, flags: [] };
   if (approved.count > 0) payday = { source: 'approved', ...approved, flags: [] };
   else if (draft.count > 0) payday = { source: 'draft', ...draft, flags: [] };
-  else if (hasRange) payday = { source: 'estimate', ...(await estimatePayday(db, driverId, cityId, from, to)), net: null };
+  else if (hasRange) payday = { source: 'estimate', ...(await estimatePayday(db, driverId, cityId, from, to)) };
 
   return {
     driverId, cityId, from: from || null, to: to || null,

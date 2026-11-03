@@ -4,8 +4,9 @@
 //   from the same calculator. It comes off the net.
 // - still owed: the balance in all (penalties, and others), shown beside it. It never comes off the net and never implies the
 //   whole amount is due this payday.
-// Net Payment: the approved pay run's frozen net when there is one; otherwise payment - insurance - this payday's deduction,
-// marked as a preview until a pay run is approved.
+// Net Payment: the approved pay run's frozen net when there is one; a draft's net as a preview; otherwise the server's own
+// calculation of the next pay run (reimbursements and credits included), marked as a preview until a pay run is approved. With no
+// eligible pay rows nothing can be taken, and the table's own net is shown.
 
 const cents = (v) => Math.round(Number(v) * 100);
 const ready = (penalty) => penalty?.status === "ready";
@@ -38,8 +39,10 @@ export const netFor = (baseNet, penalty, baseLabel = "Net Payment") => {
   const { payday } = penalty.data;
   if (payday.source === "approved") return { net: Number(payday.net), label: `${baseLabel} (approved pay run)`, preview: false, muted: false };
   if (payday.source === "draft") return { net: Number(payday.net), label: `${baseLabel} preview (draft pay run, not approved)`, preview: true, muted: false };
-  if (payday.source === "estimate" && info.deducted > 0) {
-    return { net: Math.max(0, (cents(base) - cents(info.deducted)) / 100), label: `${baseLabel} preview (before the pay run is approved)`, preview: true, muted: false };
+  if (payday.source === "estimate" && payday.net !== null && payday.net !== undefined) {
+    // The server's own calculation for the same earnings (reimbursements and credits included), not one rebuilt here.
+    const net = Number(payday.net);
+    return { net, label: cents(net) === cents(base) ? baseLabel : `${baseLabel} preview (before the pay run is approved)`, preview: cents(net) !== cents(base), muted: false };
   }
   return { net: base, label: baseLabel, preview: false, muted: false };
 };

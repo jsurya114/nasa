@@ -71,7 +71,7 @@ afterEach(cleanup);
 
 describe("Dashboard: this payday's Penalty & Others, apart from what is still owed", () => {
   it("a $250 debt paid $50 an instalment takes $50 this payday, not $250: the net is $30, never -$170", async () => {
-    const server = await startServer(reply({ source: "estimate", deducted: "50.00", penalties: "250.00" }));
+    const server = await startServer(reply({ source: "estimate", deducted: "50.00", net: "30.00", penalties: "250.00" }));
     const { container } = await mount();
     await filter(container);
     expect(await screen.findByTestId("penalty-deduction-row")).toBeTruthy();
@@ -94,6 +94,17 @@ describe("Dashboard: this payday's Penalty & Others, apart from what is still ow
     expect(within(screen.getByTestId("summary-owed")).getByRole("textbox").value).toBe("$250.00");
     expect(within(screen.getByTestId("summary-net")).getByRole("textbox").value).toBe("$30.00");
     expect(server.lastParams).toEqual({ cityId: 3, from: "2026-11-01", to: "2026-11-07" });
+  });
+
+  it("a reimbursement is in the preview net: $100 pay, $20 insurance, $50 reimbursement and a $50 instalment is $80, the same as the draft that follows", async () => {
+    // the server's own net, with the reimbursement in it, is shown; the browser does not rebuild it (that gave $30)
+    await startServer(reply({ source: "estimate", deducted: "50.00", net: "80.00", penalties: "250.00" }));
+    const { container } = await mount();
+    await filter(container);
+    expect(await screen.findByTestId("penalty-deduction-row")).toBeTruthy();
+    expect(screen.getByTestId("penalty-deduction-row").textContent).toContain("-$50.00");
+    expect(screen.getByTestId("net-payment-row").textContent).toContain("$80.00");
+    expect(screen.getByTestId("net-payment-row").textContent).not.toContain("$30.00");
   });
 
   it("approved: the pay run's frozen net is the net, and the row says it is already inside it", async () => {
@@ -150,13 +161,13 @@ describe("Dashboard: this payday's Penalty & Others, apart from what is still ow
   });
 
   it("marking a record complete lowers what is owed when the tab is visible again; the deduction follows the server", async () => {
-    let now = reply({ source: "estimate", deducted: "50.00", penalties: "250.00" });
+    let now = reply({ source: "estimate", deducted: "50.00", net: "30.00", penalties: "250.00" });
     await startServer(() => now);
     const { container } = await mount();
     await filter(container);
     expect((await screen.findByTestId("penalty-owed")).textContent).toContain("$250.00");
     expect(screen.getByTestId("net-payment-row").textContent).toContain("$30.00");
-    now = reply({ source: "estimate", deducted: "30.00", penalties: "30.00" }); // $220 was marked complete: only $30 is left to take
+    now = reply({ source: "estimate", deducted: "30.00", net: "50.00", penalties: "30.00" }); // $220 was marked complete: only $30 is left to take
     Object.defineProperty(document, "visibilityState", { configurable: true, get: () => "visible" });
     document.dispatchEvent(new Event("visibilitychange"));
     await waitFor(() => expect(screen.getByTestId("penalty-owed").textContent).toContain("$30.00"));
@@ -168,7 +179,7 @@ describe("Dashboard: this payday's Penalty & Others, apart from what is still ow
     let fail = true;
     let release;
     const gate = new Promise((resolve) => { release = resolve; });
-    const server = await startServer(async () => { await gate; return fail ? { status: 500, data: { message: "could not load" } } : reply({ source: "estimate", deducted: "50.00", penalties: "250.00" }); });
+    const server = await startServer(async () => { await gate; return fail ? { status: 500, data: { message: "could not load" } } : reply({ source: "estimate", deducted: "50.00", net: "30.00", penalties: "250.00" }); });
     const { container } = await mount();
     await filter(container);
     expect((await screen.findByTestId("penalty-loading-row")).textContent).toContain("does not yet include them");
@@ -186,7 +197,7 @@ describe("Dashboard: this payday's Penalty & Others, apart from what is still ow
   });
 
   it("editing the city in the form before Filter Data keeps the applied driver's figures", async () => {
-    const server = await startServer(reply({ source: "estimate", deducted: "50.00", penalties: "250.00" }));
+    const server = await startServer(reply({ source: "estimate", deducted: "50.00", net: "30.00", penalties: "250.00" }));
     const { container } = await mount();
     await filter(container);
     expect(await screen.findByTestId("penalty-deduction-row")).toBeTruthy();
@@ -202,8 +213,8 @@ describe("Dashboard: this payday's Penalty & Others, apart from what is still ow
     let releaseFirst;
     const first = new Promise((resolve) => { releaseFirst = resolve; });
     await startServer(async (_state, driverId) => {
-      if (driverId === 7) { await first; return reply({ source: "estimate", deducted: "50.00", penalties: "250.00" }); }
-      return reply({ source: "estimate", deducted: "5.00", penalties: "5.00" });
+      if (driverId === 7) { await first; return reply({ source: "estimate", deducted: "50.00", net: "30.00", penalties: "250.00" }); }
+      return reply({ source: "estimate", deducted: "5.00", net: "75.00", penalties: "5.00" });
     });
     const { container } = await mount();
     await filter(container);

@@ -163,6 +163,41 @@ test('dashboard period summary: this payday, approved or preview, and what is st
       assert.ok(s.payday.flags.some((f) => f.code === 'needs_review'), 'the entry with no arrangement is flagged');
     });
 
+    await t.test('the estimate equals what real drafts take one after the other: daily and weekly rows, a claim, an instalment and a reimbursement', async () => {
+      // A second city and a clean driver (d2): $100 of daily pay (insurance 20) and $100 of weekly pay in the range, a $25 carrier
+      // claim, a $300 penalty on $50 instalments, and a $50 reimbursement. The same instalment and claim must not be counted twice.
+      const city2 = (await one("INSERT INTO city (job, city_code, city_type) VALUES ('Test Sum City 2', 'TSTS2', 'DAILY') RETURNING id")).id;
+      const route2 = (await one(`INSERT INTO routes (name, job, company_route_price, driver_route_price, company_doublestop_price, driver_doublestop_price, route_code_in_string)
+        VALUES ('TU 2', 'Test Sum City 2', 2, 1.6, 0.5, 0.25, 'TU-2') RETURNING id`)).id;
+      await db.query('UPDATE drivers SET city_id = $1 WHERE id = $2', [city2, d2]);
+      const payRow = async (seqStart, seqEnd, date, gross, insurance) => {
+        const dd = (await one('INSERT INTO dashboard_data (driver_id, route_id, start_seq, end_seq, journey_date, packages) VALUES ($1,$2,$3,$4,$5,10) RETURNING id', [d2, route2, seqStart, seqEnd, date])).id;
+        await one('UPDATE payment_dashboard SET closed = true, paid = false, driver_payment = $2, insurance_deduction = $3 WHERE dashboard_data_id = $1 RETURNING id', [dd, gross, insurance]);
+      };
+      await payRow(9300, 9309, '2026-11-03', '100.00', '20.00'); // daily
+      await payRow(0, 0, '2026-11-04', '100.00', '0');           // weekly
+      const claim = (await one(`INSERT INTO courier_claims (courier, claim_key, version, waybill, claim_type, claim_type_key, claim_at, original_charge, deduction_amount, import_city_id, source_file, source_sheet, source_row)
+        VALUES ('gofo', repeat('e', 64), 1, 'TESTU002', 'Damaged Item', 'damaged item', '2026-10-30 10:00', -25, 25, $1, 'synthetic.xlsx', 'Claims Detail', 2) RETURNING id`, [city2])).id;
+      await db.query(`INSERT INTO courier_claim_matches (claim_id, status, driver_id, city_id, eligible_deduction, reason, rule_version) VALUES ($1, 'chargeable', $2, $3, 25, 'test', 'test')`, [claim, d2, city2]);
+      const add = (o) => createEntry(db, superAdmin, parseNewEntry({ requestId: randomUUID(), driverId: d2, cityId: city2, reason: 'Test entry', effectiveDate: '2026-11-01', ...o }).entry);
+      await add({ type: 'manual_claim', claimType: 'Fake POD', amount: '300', recoveryPlan: 'installments', installmentAmount: '50' });
+      await add({ type: 'reimbursement', amount: '50' });
+
+      const estimate = (await getDriverPeriodSummary(db, superAdmin, { driverId: d2, cityId: city2, from: '2026-11-01', to: '2026-11-07' })).payday;
+      assert.equal(estimate.source, 'estimate');
+      const period = { cityId: city2, periodStart: '2026-11-01', periodEnd: '2026-11-07' };
+      const daily = (await generateRun(db, superAdmin, { requestId: randomUUID(), ...period, dataType: 'daily' })).run;
+      const weekly = (await generateRun(db, superAdmin, { requestId: randomUUID(), ...period, dataType: 'weekly' })).run;
+      const statements = [(await getRun(db, superAdmin, daily.id)).statements[0], (await getRun(db, superAdmin, weekly.id)).statements[0]];
+      const total = (key) => statements.reduce((sum, st) => sum + Number(st[key]), 0).toFixed(2);
+      // real drafts: daily takes the claim (25) and the instalment (50) and pays the reimbursement (50), net 55; weekly takes nothing more, net 100
+      assert.deepEqual([statements[0].claim_deductions, statements[0].recoveries, statements[0].net], ['25.00', '50.00', '55.00']);
+      assert.deepEqual([statements[1].claim_deductions, statements[1].recoveries, statements[1].net], ['0.00', '0.00', '100.00']);
+      assert.deepEqual([estimate.claimDeductions, estimate.recoveries, estimate.deducted], [total('claim_deductions'), total('recoveries'), (Number(total('claim_deductions')) + Number(total('recoveries'))).toFixed(2)],
+        'the estimate takes exactly what the two drafts took, not the instalment and the claim twice');
+      assert.equal(estimate.net, total('net'), 'and its net is the calculator\'s own net, with the reimbursement in it');
+    });
+
     await t.test('without dates only what is outstanding is returned, and half a range is refused', async () => {
       const s = await getDriverPeriodSummary(db, cityAdmin, { driverId: d1, cityId: city });
       assert.equal(s.period.status, 'none');
