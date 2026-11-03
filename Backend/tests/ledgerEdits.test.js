@@ -127,6 +127,20 @@ test('editing a ledger entry keeps the original and links the correction', { ski
       await assert.rejects(edit(cityAdmin, voidRow.id, { amount: '1' }), { status: 400, message: /void cannot be edited/ });
     });
 
+    await t.test('a replay is checked against the admin\'s cities again, and an edit never links to an unrelated entry', async () => {
+      const e = await entry({ amount: '60', waybill: 'TESTE006' });
+      const first = await edit(cityAdmin, e.id, { amount: '55' }, { requestId: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc' });
+      await db.query('DELETE FROM admin_city_ref WHERE admin_id = $1', [cityAdmin.id]); // access withdrawn
+      await assert.rejects(editEntry(db, cityAdmin, parseEdit({ requestId: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc', reason: 'Amount was typed wrong', changes: { amount: '55' } }, e.id).edit), { status: 403 });
+      await db.query('INSERT INTO admin_city_ref (admin_id, city_id) VALUES ($1, $2)', [cityAdmin.id, city]);
+      // an entry that happens to use the edit's request ID is left alone: the edit's own IDs are derived
+      const other = await entry({ requestId: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd', amount: '70', waybill: 'TESTE007' });
+      const result = await edit(cityAdmin, other.id, { amount: '65' }, { requestId: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd' });
+      assert.equal(result.entry.amount, '65.00');
+      assert.notEqual(String(result.entry.id), String(other.id));
+      assert.notEqual(String(first.entry.id), String(result.entry.id));
+    });
+
     await t.test('the database refuses to change or delete an edit link', async () => {
       await savepoint(() => assert.rejects(db.query("UPDATE driver_ledger_edits SET reason = 'changed'"), /cannot be changed or deleted/));
       await savepoint(() => assert.rejects(db.query('DELETE FROM driver_ledger_edits'), /cannot be changed or deleted/));

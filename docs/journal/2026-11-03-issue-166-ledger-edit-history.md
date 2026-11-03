@@ -14,7 +14,7 @@
 - **Edit** is one atomic action: the original entry is voided and a corrected entry is recorded, and a permanent link row ties the two together with the reason, the admin and the time. Other versions are never changed.
 - **What can change:** amount, dates, repayment arrangement, claim type and waybill, the "paid out" flag and the entry's own reason. The type, driver, city and direction cannot; for those, void and record a new entry. The corrected entry is checked by the same rules as a new one (`parseNewEntry`), including the duplicate-claim and exemption rules.
 - **What cannot be edited, by the existing void rules:** an entry already voided, already on a pay run (record a correction instead; a statement is never rewritten), or with a repayment or waiver (reverse that first). A refused edit changes nothing.
-- **Retries:** the same request ID and reason returns the first result; anything else is refused (409). The void gets its own ID, made from the edit's, so a retry makes the same one.
+- **Retries:** the same request ID and reason returns the first result; anything else is refused (409). The void and the corrected entry each get their own request ID, made from the edit's, so a retry makes the same ones and the edit's ID can never match an unrelated entry. A replay is checked against the admin's cities again.
 - **History:** `GET /admin/payroll/ledger/:entryId/history` returns every version of the entry, oldest first, from any version (each with the edit's reason, admin and time and whether it was later voided), plus the settlements and active pay-run lines. City access is checked on the server.
 - `POST /admin/payroll/ledger/:entryId/edit`, admin and super admin; the admin comes from the token.
 

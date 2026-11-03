@@ -9,9 +9,10 @@ import { lockCityPayroll } from '../claims/claimsStore.js';
 import { parseNewEntry } from './ledgerRules.js';
 import { assertCityAllowed, createEntry, ENTRY_COLUMNS, LedgerError, voidEntry } from './ledgerStore.js';
 
-// A second request ID for the void, made from the edit's own so a retry makes the same one.
-const derivedId = (requestId) => {
-  const h = createHash('sha256').update(`void:${requestId}`).digest('hex');
+// Own request IDs for the void and for the corrected entry, made from the edit's so a retry makes the same ones and
+// the edit's ID can never collide with the ID of an unrelated entry.
+const derivedId = (requestId, purpose) => {
+  const h = createHash('sha256').update(`${purpose}:${requestId}`).digest('hex');
   return `${h.slice(0, 8)}-${h.slice(8, 12)}-4${h.slice(13, 16)}-8${h.slice(17, 20)}-${h.slice(20, 32)}`;
 };
 
@@ -22,7 +23,7 @@ const merged = (original, edit) => {
   const c = edit.changes;
   const pick = (key, current) => (Object.hasOwn(c, key) ? c[key] : current);
   return {
-    requestId: edit.requestId, driverId: original.driver_id, cityId: original.city_id, type: original.entry_type, direction: original.direction,
+    driverId: original.driver_id, cityId: original.city_id, type: original.entry_type, direction: original.direction,
     amount: pick('amount', original.amount), reason: pick('entryReason', original.reason),
     effectiveDate: pick('effectiveDate', original.effective_date), intendedPayday: pick('intendedPayday', original.intended_payday),
     disbursedOutsidePayroll: pick('disbursedOutsidePayroll', original.disbursed_outside_payroll),
@@ -39,6 +40,8 @@ export const editEntry = async (db, admin, edit) => {
     if (row.created_by !== Number(admin.id) || String(row.original_entry_id) !== String(edit.entryId) || row.reason !== edit.reason) {
       throw new LedgerError(409, 'this request ID was already used for a different edit');
     }
+    // Access can be withdrawn after the first request: a replay is checked like a new one.
+    await assertCityAllowed(db, admin, row.city_id);
     const { rows } = await db.query(`SELECT ${ENTRY_COLUMNS} FROM driver_ledger_entries WHERE id = $1`, [row.replacement_entry_id]);
     return { entry: rows[0], edit: row, replay: true };
   }
@@ -52,12 +55,14 @@ export const editEntry = async (db, admin, edit) => {
   if (original.entry_type === 'void') throw new LedgerError(400, 'a void cannot be edited');
 
   // Check the corrected entry as a whole before touching anything.
-  const parsed = parseNewEntry(merged(original, edit));
+  const parsed = parseNewEntry({ ...merged(original, edit), requestId: derivedId(edit.requestId, 'entry') });
   if (parsed.errors) throw new LedgerError(400, 'check the highlighted fields', parsed.errors);
 
   // The void checks everything an edit must respect: already voided, already on a pay run, repaid or waived.
-  const voided = await voidEntry(db, admin, { entryId: original.id, requestId: derivedId(edit.requestId), reason: `Edited: ${edit.reason}` });
+  const voided = await voidEntry(db, admin, { entryId: original.id, requestId: derivedId(edit.requestId, 'void'), reason: `Edited: ${edit.reason}` });
   const created = await createEntry(db, admin, parsed.entry);
+  // A new edit always writes a new entry; finding an older one would link the edit to the wrong record.
+  if (created.replay) throw new LedgerError(409, 'this request ID was already used for a different entry');
   const { rows: link } = await db.query(
     `INSERT INTO driver_ledger_edits (request_id, original_entry_id, void_entry_id, replacement_entry_id, driver_id, city_id, reason, created_by)
      VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING ${EDIT_COLUMNS}`,
