@@ -21,15 +21,19 @@ const startServer = async (payroll) => {
   const state = { payrollCalls: 0 };
   await installServer(async (config) => {
     const url = config.url;
-    if (url === "/admin/dashboard/data") return { status: 200, data: { success: true, data: { cities: [{ id: 3, job: "Test City" }], drivers: [{ id: 7, name: "Dee Test" }], routes: [] } } };
-    if (url === "/admin/dashboard/drivers-by-city") return { status: 200, data: { success: true, data: [{ id: 7, name: "Dee Test" }] } };
+    if (url === "/admin/dashboard/data") return { status: 200, data: { success: true, data: { cities: [{ id: 3, job: "Test City" }, { id: 4, job: "Other City" }], drivers: [{ id: 7, name: "Dee Test" }], routes: [] } } };
+    if (url === "/admin/dashboard/drivers-by-city") {
+      const list = config.params?.cityJob === "Other City" ? [{ id: 8, name: "Eli Other" }] : [{ id: 7, name: "Dee Test" }];
+      return { status: 200, data: { success: true, data: list } };
+    }
     if (url === "/admin/dashboard/routes-by-city") return { status: 200, data: { success: true, data: [] } };
-    if (url === "/admin/dashboard/paymentTable") return { status: 200, data: { success: true, data: [ROW], pagination: { total: 1, page: 1, limit: 10, totalPages: 1 } } };
+    if (url === "/admin/dashboard/paymentTable") return { status: 200, data: { success: true, data: [{ ...ROW, driver_name: config.params?.driver && config.params.driver !== "All" ? config.params.driver : "Dee Test" }], pagination: { total: 1, page: 1, limit: 10, totalPages: 1 } } };
     if (url === "/admin/dashboard/summary") return { status: 200, data: { success: true, data: { total_driver_payment: 100, total_insurance_deduction: 20, total_company_earnings: 10 } } };
-    if (url === "/admin/payroll/drivers/7/dashboard-summary") {
+    const driver = url.match(/^\/admin\/payroll\/drivers\/(\d+)\/dashboard-summary$/);
+    if (driver) {
       state.payrollCalls += 1;
       state.lastParams = config.params;
-      return typeof payroll === "function" ? payroll(state) : payroll;
+      return typeof payroll === "function" ? payroll(state, Number(driver[1])) : payroll;
     }
     return { status: 200, data: {} };
   });
@@ -48,12 +52,12 @@ const mount = async () => {
   return render(<Provider store={store}><MemoryRouter><Dashboard /></MemoryRouter></Provider>);
 };
 
-const filter = async (container) => {
+const filter = async (container, city = "Test City", driver = "Dee Test") => {
   const select = (name) => container.querySelector(`select[name="${name}"]`);
-  await waitFor(() => expect(within(select("job")).getByRole("option", { name: "Test City" })).toBeTruthy());
-  fireEvent.change(select("job"), { target: { name: "job", value: "Test City" } });
-  await waitFor(() => expect(within(select("driver")).getByRole("option", { name: "Dee Test" })).toBeTruthy());
-  fireEvent.change(select("driver"), { target: { name: "driver", value: "Dee Test" } });
+  await waitFor(() => expect(within(select("job")).getByRole("option", { name: city })).toBeTruthy());
+  fireEvent.change(select("job"), { target: { name: "job", value: city } });
+  await waitFor(() => expect(within(select("driver")).getByRole("option", { name: driver })).toBeTruthy());
+  fireEvent.change(select("driver"), { target: { name: "driver", value: driver } });
   fireEvent.change(container.querySelector('input[name="startDate"]'), { target: { name: "startDate", value: "2026-11-01" } });
   fireEvent.change(container.querySelector('input[name="endDate"]'), { target: { name: "endDate", value: "2026-11-07" } });
   fireEvent.click(container.querySelector('input[name="companyEarnings"]'));
@@ -146,5 +150,42 @@ describe("Dashboard with payroll figures", () => {
     expect(screen.getByTestId("net-before-row").textContent).toContain("Net Payment");
     expect(server.payrollCalls).toBe(0);
     expect(screen.queryByTestId("penalty-net-row")).toBeNull();
+  });
+
+  it("editing the city in the form, before Filter Data, keeps the applied driver's approved figures (and never restores the unadjusted net)", async () => {
+    const server = await startServer(APPROVED);
+    const { container } = await mount();
+    await filter(container);
+    expect(await screen.findByTestId("penalty-net-row")).toBeTruthy();
+    const callsBefore = server.payrollCalls;
+    // the drivers in the form are now another city's; the table still shows Dee Test
+    fireEvent.change(container.querySelector('select[name="job"]'), { target: { name: "job", value: "Other City" } });
+    await waitFor(() => expect(within(container.querySelector('select[name="driver"]')).queryByRole("option", { name: "Dee Test" })).toBeNull());
+    expect(screen.getByTestId("penalty-net-row").textContent).toContain("Net Payment (approved pay run)");
+    expect(screen.getByTestId("penalty-net-row").textContent).toContain("$40.00");
+    expect(screen.getByTestId("net-before-row").textContent).toContain("Net before claims / recoveries");
+    expect(screen.queryByText("Net Payment", { exact: true })).toBeNull();
+    expect(screen.queryByTestId("penalty-loading-row")).toBeNull();
+    expect(server.payrollCalls).toBe(callsBefore); // nothing re-asked and nothing lost
+  });
+
+  it("applying another driver while the first reply is still in flight: the late reply never replaces the new scope's figures, and a loading state shows meanwhile", async () => {
+    let releaseFirst;
+    const first = new Promise((resolve) => { releaseFirst = resolve; });
+    const OTHER = summaryFor({ status: "approved", approved: { ...run40, deducted: "10.00", net: "90.00" } });
+    await startServer(async (_state, driverId) => {
+      if (driverId === 7) { await first; return APPROVED; }
+      return OTHER;
+    });
+    const { container } = await mount();
+    await filter(container); // driver 7: reply held
+    expect(await screen.findByTestId("penalty-loading-row")).toBeTruthy();
+    await filter(container, "Other City", "Eli Other"); // driver 8: answers at once
+    expect(await screen.findByTestId("penalty-net-row")).toBeTruthy();
+    expect(screen.getByTestId("penalty-net-row").textContent).toContain("$90.00");
+    releaseFirst(); // the first scope's reply arrives late
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    expect(screen.getByTestId("penalty-net-row").textContent).toContain("$90.00");
+    expect(screen.getByTestId("penalty-net-row").textContent).not.toContain("$40.00");
   });
 });

@@ -222,6 +222,7 @@ export default function Dashboard() {
 
   // ✅ UPDATED: Handle Filter Data button - check if filters are applied
   const handleFilterClick = () => {
+    penalty.rememberScope(localFilters); // keep the applied city and driver IDs even if the dropdowns change before the next apply
     setShowExtraFields(localFilters.companyEarnings);
 
     // ✅ NEW: Check if any filters are actually applied
