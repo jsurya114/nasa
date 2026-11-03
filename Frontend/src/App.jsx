@@ -14,6 +14,7 @@ const AddAccessCodePage = lazy(() => import("./components/Admin/AccessCode.jsx")
 const AdminJourney = lazy(() => import("./components/Admin/AdminJorney.jsx"));
 const AdminDriverAvailability = lazy(() => import("./components/Admin/AdminDriverAvailability.jsx"));
 const AdminDriverAgreements = lazy(() => import("./components/Admin/AdminDriverAgreements.jsx"));
+const AdminPayroll = lazy(() => import("./components/Admin/Payroll.jsx"));
 
 import ProtectedRoutes from "./routes/admin/ProtectedRoute.jsx";
 import AdminPublicOnlyRoute from "./routes/admin/PublicOnlyRoute.jsx";
@@ -60,6 +61,7 @@ function App() {
               <Route path="/admin/manage-access-codes" element={<AddAccessCodePage />} />
               <Route path="/admin/journeys" element={<AdminJourney />} />
               <Route path="/admin/driver-availability" element={<AdminDriverAvailability />} />
+              <Route path="/admin/payroll" element={<AdminPayroll />} />
             </Route>
 
             {/* Driver Public Routes */}

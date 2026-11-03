@@ -29,7 +29,8 @@ function Row({ title, detail, amount }) {
 }
 
 // One frozen statement, as the server stored it. Nothing here adds up pay again.
-export default function StatementDetail({ statementId, onBack }) {
+// load: how to fetch it; the driver's own route by default, the admin route on the admin page.
+export default function StatementDetail({ statementId, onBack, load = fetchPayStatement }) {
   const { t, currentLanguage } = useTranslation();
   const money = (v) => formatMoney(v, currentLanguage);
   const [statement, setStatement] = useState(null);
@@ -39,11 +40,11 @@ export default function StatementDetail({ statementId, onBack }) {
   useEffect(() => {
     const controller = new AbortController();
     setStatus("loading");
-    fetchPayStatement(statementId, controller.signal)
+    load(statementId, controller.signal)
       .then((data) => { setStatement(data); setStatus("ready"); })
       .catch(() => { if (!controller.signal.aborted) setStatus("error"); });
     return () => controller.abort();
-  }, [statementId, attempt]);
+  }, [statementId, attempt, load]);
 
   const back = (
     <button type="button" onClick={onBack} className="mb-4 inline-flex min-h-11 items-center gap-2 rounded-xl px-2 text-sm font-semibold text-brand hover:bg-brand-50">
