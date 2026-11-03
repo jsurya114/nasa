@@ -180,3 +180,27 @@ export const parseReversal = (body = {}, settlementIdParam) => {
   if (reason.length < 3) errors.reason = 'give a reason for the reversal (at least 3 characters)';
   return Object.keys(errors).length ? { errors } : { reversal: { settlementId, requestId, reason } };
 };
+
+// The fields an edit may change. The type, driver, city and direction stay: to change those, void the entry and
+// record a new one.
+export const EDITABLE_FIELDS = Object.freeze(['amount', 'effectiveDate', 'intendedPayday', 'recoveryPlan', 'installmentAmount',
+  'claimType', 'waybill', 'disbursedOutsidePayroll', 'entryReason']);
+
+// Checks an edit request: which entry, why, and the fields to change. The changed entry is checked as a whole later
+// (parseNewEntry), so every rule of a new entry applies to the corrected one. Returns { edit } or { errors }.
+export const parseEdit = (body = {}, entryIdParam) => {
+  const errors = {};
+  const entryId = positiveId(entryIdParam);
+  if (!entryId) errors.entryId = 'unknown entry';
+  const requestId = typeof body.requestId === 'string' ? body.requestId.toLowerCase() : '';
+  if (!UUID.test(requestId)) errors.requestId = 'requestId must be a UUID made by the form';
+  const reason = cleanText(body.reason, 480);
+  if (reason.length < 3) errors.reason = 'give a reason for the edit (at least 3 characters)';
+  const changes = body.changes && typeof body.changes === 'object' && !Array.isArray(body.changes) ? body.changes : null;
+  if (!changes || Object.keys(changes).length === 0) errors.changes = 'say what to change';
+  else {
+    const unknown = Object.keys(changes).filter((k) => !EDITABLE_FIELDS.includes(k));
+    if (unknown.length) errors.changes = `these fields cannot be edited: ${unknown.join(', ')}`;
+  }
+  return Object.keys(errors).length ? { errors } : { edit: { entryId, requestId, reason, changes } };
+};
