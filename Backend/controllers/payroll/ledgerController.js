@@ -5,8 +5,9 @@ import pool from '../../config/db.js';
 import HttpStatus from '../../utils/statusCodes.js';
 import logger from '../../utils/logger.js';
 import { withTransaction } from '../../services/payroll/claims/claimsStore.js';
-import { parseNewEntry, parseVoid } from '../../services/payroll/ledger/ledgerRules.js';
+import { parseNewEntry, parseReversal, parseSettlement, parseVoid } from '../../services/payroll/ledger/ledgerRules.js';
 import { createEntry, listEntries, LedgerError, voidEntry } from '../../services/payroll/ledger/ledgerStore.js';
+import { reverseSettlement, settleEntry } from '../../services/payroll/ledger/ledgerSettlements.js';
 
 const optionalId = (value) => {
   if (value === undefined || value === '') return { id: null };
@@ -54,5 +55,31 @@ export const postLedgerVoid = async (req, res) => {
     // Two admins voiding the same entry at once: the database lets only one through.
     if (error.code === '23505') return res.status(HttpStatus.CONFLICT).json({ message: 'this entry is already voided' });
     return fail(res, error, 'void');
+  }
+};
+
+export const postSettlement = async (req, res) => {
+  const { settlement, errors } = parseSettlement(req.body, req.params.entryId);
+  if (errors) return res.status(HttpStatus.BAD_REQUEST).json({ message: 'check the highlighted fields', errors });
+  try {
+    const result = await withTransaction(pool, (db) => settleEntry(db, req.admin, settlement));
+    logger.info('Ledger entry settled', { entryId: settlement.entryId, kind: settlement.kind, settlementId: result.settlement.id, replay: result.replay });
+    return res.status(result.replay ? HttpStatus.OK : HttpStatus.CREATED).json(result);
+  } catch (error) {
+    return fail(res, error, 'settle');
+  }
+};
+
+export const postSettlementReversal = async (req, res) => {
+  const { reversal, errors } = parseReversal(req.body, req.params.settlementId);
+  if (errors) return res.status(HttpStatus.BAD_REQUEST).json({ message: 'check the highlighted fields', errors });
+  try {
+    const result = await withTransaction(pool, (db) => reverseSettlement(db, req.admin, reversal));
+    logger.info('Ledger settlement reversed', { settlementId: reversal.settlementId, reversalId: result.settlement.id, replay: result.replay });
+    return res.status(result.replay ? HttpStatus.OK : HttpStatus.CREATED).json(result);
+  } catch (error) {
+    // Two admins reversing the same settlement at once: the database lets only one through.
+    if (error.code === '23505') return res.status(HttpStatus.CONFLICT).json({ message: 'this settlement was already reversed' });
+    return fail(res, error, 'reverse');
   }
 };

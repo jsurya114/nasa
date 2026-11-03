@@ -3,7 +3,7 @@
 import express from 'express';
 import { sanitizeRouterParams } from '../middlewares/sanitize.js';
 import adminAuth from '../middlewares/adminAuth.js';
-import { getLedger, postLedgerEntry, postLedgerVoid } from '../controllers/payroll/ledgerController.js';
+import { getLedger, postLedgerEntry, postLedgerVoid, postSettlement, postSettlementReversal } from '../controllers/payroll/ledgerController.js';
 import {
   getPayrollSettings, getPayRun, getPayRuns, postDiscard, postFinalize, postPayRun, postVoid, putRecoveryLimit,
 } from '../controllers/payroll/payRunController.js';
@@ -18,6 +18,9 @@ router.use(adminAuth);
 router.get('/ledger', getLedger);
 router.post('/ledger', postLedgerEntry);
 router.post('/ledger/:entryId/void', postLedgerVoid);
+// Repaid outside payroll or waived, in whole or in part, and its reversal (#166).
+router.post('/ledger/:entryId/settlements', postSettlement);
+router.post('/ledger/settlements/:settlementId/reverse', postSettlementReversal);
 
 // Pay runs and the recovery limit (#143). Changing the setting and voiding a finalized run are super admin only,
 // checked in the service.
