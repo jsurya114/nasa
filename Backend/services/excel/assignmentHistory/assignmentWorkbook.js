@@ -41,6 +41,16 @@ const columnIndexes = (sheet) => {
 const readSheet = (sheet, sheetKey, out) => {
   const columns = columnIndexes(sheet);
   const summary = { found: true, rows: 0, kept: 0, duplicates: 0, unreadableDates: 0, missingColumns: [] };
+  // Every route the sheet names, whether or not its row also gives a usable package identity. Which city a report
+  // belongs to must not depend on how many rows had a readable waybill or Delivery ID.
+  if (columns.route) {
+    sheet.eachRow({ includeEmpty: false }, (row, rowNumber) => {
+      if (rowNumber === 1) return;
+      const value = cellValue(row.getCell(columns.route).value);
+      const text = value === null || value === undefined ? '' : String(value).trim();
+      if (text !== '') out.routeCodes.add(text);
+    });
+  }
   if (!columns.waybill) summary.missingColumns.push('Waybill No');
   if (!columns.deliveryId) summary.missingColumns.push('Delivery ID');
   if (summary.missingColumns.length > 0) return summary;
@@ -78,10 +88,11 @@ const readSheet = (sheet, sheetKey, out) => {
 // - rows: one entry per distinct fact per sheet, with the Excel row it was first seen on;
 // - problems: up to 50 { sheet, row, reason } (no cell values), problemCount: the full number.
 export const extractAssignmentEvidence = (workbook) => {
-  const out = { carrier: CARRIER, sheets: {}, rows: [], problems: [], problemCount: 0 };
+  const out = { carrier: CARRIER, sheets: {}, rows: [], problems: [], problemCount: 0, routeCodes: new Set() };
   for (const [sheetKey, name] of Object.entries(SHEETS)) {
     const sheet = findSheet(workbook, name);
     out.sheets[sheetKey] = sheet ? readSheet(sheet, sheetKey, out) : { found: false, rows: 0, kept: 0, duplicates: 0, unreadableDates: 0, missingColumns: [] };
   }
+  out.routeCodes = [...out.routeCodes];
   return out;
 };

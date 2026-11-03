@@ -65,8 +65,11 @@ export const recordWorkbookHistory = async (client, workbook, { buffer, fileName
   } catch (error) {
     if (!bestEffort) throw error;
     logger.error('Assignment history could not be read from the report', error);
-    return { saved: false, reason: 'The report could not be read for assignment history.' };
+    return { saved: false, reason: 'The report could not be read for assignment history.', routeCodes: [] };
   }
+  // Every route the report names on either sheet, even on a row that gives no usable package identity, for callers
+  // that need to know which city the report belongs to.
+  const { routeCodes } = evidence;
 
   if (bestEffort) await client.query(`SAVEPOINT ${SAVEPOINT}`);
   try {
@@ -80,7 +83,7 @@ export const recordWorkbookHistory = async (client, workbook, { buffer, fileName
     if (bestEffort) await client.query(`RELEASE SAVEPOINT ${SAVEPOINT}`);
     const claims = await rematchClaims(client, saved, { limited: allowedJobs !== null });
     logger.info('Assignment history stored', { import: saved.importId, recorded: saved.recorded, known: saved.known, leftOut: saved.skipped, problems: evidence.problemCount });
-    return summarize(evidence, saved, claims);
+    return { ...summarize(evidence, saved, claims), routeCodes };
   } catch (error) {
     if (!bestEffort) throw error;
     await client.query(`ROLLBACK TO SAVEPOINT ${SAVEPOINT}`);
@@ -90,6 +93,7 @@ export const recordWorkbookHistory = async (client, workbook, { buffer, fileName
       reason: error.code === UNDEFINED_TABLE
         ? 'Assignment history is not set up in the database yet.'
         : 'Assignment history could not be saved.',
+      routeCodes,
     };
   }
 };

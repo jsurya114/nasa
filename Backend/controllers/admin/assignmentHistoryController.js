@@ -53,6 +53,7 @@ export const importAssignmentHistory = async (req, res) => {
     let summary;
     try {
       summary = await recordWorkbookHistory(client, workbook, { buffer: file.buffer, fileName: file.originalname, user: req.user, bestEffort: false });
+      delete summary.routeCodes; // for the weekly upload's claims step; not part of this answer
       await client.query('COMMIT');
     } catch (error) {
       await client.query('ROLLBACK');
