@@ -13,10 +13,24 @@ const money = (c) => (c / 100).toFixed(2);
 const findByRequest = async (db, requestId) =>
   (await db.query(`SELECT ${SETTLEMENT_COLUMNS} FROM driver_ledger_settlements WHERE request_id = $1`, [requestId])).rows[0] ?? null;
 
-// Same request again by the same admin for the same thing: return the first result. Anything else: refuse.
+// A settlement the admin may see or repeat: the record's city must be one of theirs now, and a waiver (or the reversal
+// of one) needs a super admin now. This holds for every outcome that returns a record, replays included, so access
+// withdrawn since the first request is not bypassed by sending the request again.
+const authorize = async (db, admin, row) => {
+  await assertCityAllowed(db, admin, row.city_id);
+  let kind = row.kind;
+  if (kind === 'reversal') {
+    kind = (await db.query('SELECT kind FROM driver_ledger_settlements WHERE id = $1', [row.reverses_settlement_id])).rows[0]?.kind;
+  }
+  if (kind === 'waiver' && !isSuperAdmin(admin)) throw new LedgerError(403, 'only a super admin can waive or reverse a waiver');
+};
+
+// Same request again by the same admin for the same thing: return the first result. Anything else: refuse. The record is
+// authorized first, so another admin's request ID tells an unauthorized caller nothing.
 const replayOrConflict = async (db, admin, requestId, matches) => {
   const row = await findByRequest(db, requestId);
   if (!row) return null;
+  await authorize(db, admin, row);
   if (row.created_by === Number(admin.id) && matches(row)) return { settlement: row, replay: true };
   throw new LedgerError(409, 'this request ID was already used for a different settlement');
 };
