@@ -23,7 +23,7 @@ test('pay runs: today\'s totals, exactly-once rows and deductions, frozen histor
   };
   try {
     await db.query('BEGIN');
-    for (const m of ['2026-11-03-issue-141-courier-claims.sql', '2026-11-03-issue-142-driver-ledger.sql', '2026-11-03-issue-143-pay-runs.sql']) await db.query(migration(m));
+    for (const m of ['2026-11-03-issue-141-courier-claims.sql', '2026-11-03-issue-142-driver-ledger.sql', '2026-11-03-issue-143-pay-runs.sql', '2026-11-03-issue-166-ledger-settlements.sql']) await db.query(migration(m));
 
     const one = async (sql, params) => (await db.query(sql, params)).rows[0];
     const city = (await one("INSERT INTO city (job, city_code, city_type) VALUES ('Test Pay City', 'TSTPAY', 'DAILY') RETURNING id")).id;

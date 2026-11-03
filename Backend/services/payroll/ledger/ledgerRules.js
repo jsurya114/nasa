@@ -141,3 +141,42 @@ export const parseVoid = (body = {}, entryIdParam) => {
   if (reason.length < 3) errors.reason = 'give a reason for the void (at least 3 characters)';
   return Object.keys(errors).length ? { errors } : { void: { entryId, requestId, reason } };
 };
+
+export const SETTLEMENT_KINDS = Object.freeze(['outside_repayment', 'waiver']);
+
+// Checks a request to settle part or all of one entry outside payroll (issue #166). Returns { settlement } or { errors }.
+// A repayment needs a payment reference (evidence); a waiver does not, but both need a reason.
+export const parseSettlement = (body = {}, entryIdParam) => {
+  const errors = {};
+  const entryId = positiveId(entryIdParam);
+  if (!entryId) errors.entryId = 'unknown entry';
+  const requestId = typeof body.requestId === 'string' ? body.requestId.toLowerCase() : '';
+  if (!UUID.test(requestId)) errors.requestId = 'requestId must be a UUID made by the form';
+  const kind = SETTLEMENT_KINDS.includes(body.kind) ? body.kind : null;
+  if (!kind) errors.kind = `kind must be one of: ${SETTLEMENT_KINDS.join(', ')}`;
+  const amount = parseCharge(body.amount);
+  if (amount.error) errors.amount = amount.error;
+  else if (Number(amount.charge) <= 0) errors.amount = 'amount must be more than zero';
+  else if (Number(amount.charge) > MAX_AMOUNT) errors.amount = `amount must be at most ${MAX_AMOUNT}`;
+  const settledOn = parseDate(body.settledOn);
+  if (!settledOn) errors.settledOn = 'settledOn must be a real date (YYYY-MM-DD)';
+  const reason = cleanText(body.reason, 500);
+  if (reason.length < 3) errors.reason = 'give a reason (at least 3 characters)';
+  const reference = cleanText(body.reference, 200);
+  if (kind === 'outside_repayment' && reference.length < 3) errors.reference = 'give the payment reference or evidence of the repayment';
+  if (kind === 'waiver' && reference) errors.reference = 'a waiver has no payment reference';
+  if (Object.keys(errors).length) return { errors };
+  return { settlement: { entryId, requestId, kind, amount: amount.charge, settledOn, reason, reference: kind === 'waiver' ? null : reference } };
+};
+
+// Checks a request to reverse one settlement made by mistake.
+export const parseReversal = (body = {}, settlementIdParam) => {
+  const errors = {};
+  const settlementId = positiveId(settlementIdParam);
+  if (!settlementId) errors.settlementId = 'unknown settlement';
+  const requestId = typeof body.requestId === 'string' ? body.requestId.toLowerCase() : '';
+  if (!UUID.test(requestId)) errors.requestId = 'requestId must be a UUID made by the form';
+  const reason = cleanText(body.reason, 500);
+  if (reason.length < 3) errors.reason = 'give a reason for the reversal (at least 3 characters)';
+  return Object.keys(errors).length ? { errors } : { reversal: { settlementId, requestId, reason } };
+};

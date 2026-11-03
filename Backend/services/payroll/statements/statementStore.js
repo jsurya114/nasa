@@ -82,7 +82,9 @@ const sumFinalized = (runs) => runs.filter((r) => r.runStatus === 'finalized').r
 const loadLedgerBalances = async (db, driverId, statuses, cityIds) => {
   const { rows } = await db.query(
     `SELECT e.id, e.city_id, e.entry_type, e.direction, e.amount, e.reason, to_char(e.effective_date, 'YYYY-MM-DD') AS effective_date,
-            e.exempt, e.recovery_plan, e.installment_amount, x.pay_runs
+            e.exempt, e.recovery_plan, e.installment_amount, x.pay_runs,
+            COALESCE((SELECT SUM(CASE WHEN st.kind = 'reversal' THEN -st.amount ELSE st.amount END)
+                        FROM driver_ledger_settlements st WHERE st.entry_id = e.id), 0)::text AS settled_outside
        FROM driver_ledger_entries e
        CROSS JOIN LATERAL (
          SELECT ${RUNS_JSON} AS pay_runs
@@ -97,7 +99,7 @@ const loadLedgerBalances = async (db, driverId, statuses, cityIds) => {
   );
   return rows.map((e) => {
     const applied = e.entry_type === 'advance_repayment' ? toCents(e.amount) : sumFinalized(e.pay_runs);
-    const outstanding = e.exempt || e.entry_type === 'advance_repayment' ? 0 : Math.max(0, toCents(e.amount) - applied);
+    const outstanding = e.exempt || e.entry_type === 'advance_repayment' ? 0 : Math.max(0, toCents(e.amount) - applied - toCents(e.settled_outside));
     return { ...e, applied: fromCents(applied), outstanding: fromCents(outstanding) };
   });
 };

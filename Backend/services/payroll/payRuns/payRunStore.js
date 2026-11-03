@@ -123,7 +123,9 @@ const loadLedger = async (db, run, driverIds) => {
     `SELECT e.id, e.driver_id, e.entry_type, e.direction, e.amount::text AS amount, e.exempt, e.recovery_plan,
             e.installment_amount::text AS installment_amount,
             to_char(e.effective_date, 'YYYY-MM-DD') AS effective_date, to_char(e.intended_payday, 'YYYY-MM-DD') AS intended_payday,
-            (e.amount + COALESCE((SELECT SUM(l.amount) FROM pay_statement_lines l WHERE l.ledger_entry_id = e.id AND l.active AND l.line_type = 'recovery'), 0))::text AS outstanding,
+            (e.amount + COALESCE((SELECT SUM(l.amount) FROM pay_statement_lines l WHERE l.ledger_entry_id = e.id AND l.active AND l.line_type = 'recovery'), 0)
+              - COALESCE((SELECT SUM(CASE WHEN st.kind = 'reversal' THEN -st.amount ELSE st.amount END)
+                            FROM driver_ledger_settlements st WHERE st.entry_id = e.id), 0))::text AS outstanding,
             EXISTS (SELECT 1 FROM pay_statement_lines l WHERE l.ledger_entry_id = e.id AND l.active AND l.line_type = 'reimbursement') AS reimbursed,
             e.disbursed_outside_payroll,
             EXISTS (SELECT 1 FROM pay_statement_lines l

@@ -15,9 +15,9 @@ export class LedgerError extends Error {
   }
 }
 
-const isSuperAdmin = (admin) => admin?.role === 'superadmin';
+export const isSuperAdmin = (admin) => admin?.role === 'superadmin';
 
-const assertCityAllowed = async (db, admin, cityId) => {
+export const assertCityAllowed = async (db, admin, cityId) => {
   if (isSuperAdmin(admin)) return;
   const { rows } = await db.query('SELECT 1 FROM admin_city_ref WHERE admin_id = $1 AND city_id = $2', [admin?.id, cityId]);
   if (rows.length === 0) throw new LedgerError(403, 'you do not have access to this city');
@@ -137,6 +137,9 @@ export const voidEntry = async (db, admin, request) => {
     const { rows: used } = await db.query('SELECT 1 FROM pay_statement_lines WHERE ledger_entry_id = $1 AND active LIMIT 1', [original.id]);
     if (used.length) throw new LedgerError(409, 'this entry is already on a pay run; record a correction instead');
   }
+  const { rows: settledOutside } = await db.query(
+    `SELECT COALESCE(SUM(CASE WHEN kind = 'reversal' THEN -amount ELSE amount END), 0) AS net FROM driver_ledger_settlements WHERE entry_id = $1`, [original.id]);
+  if (Number(settledOutside[0].net) > 0) throw new LedgerError(409, 'part of this entry was repaid or waived; reverse that first, or record a correction');
   // Taken before the void is written, so a carrier import of the same claim waits and then sees this entry voided.
   const heldSubject = original.entry_type === 'manual_claim' && original.waybill ? claimTypeKey(original.claim_type) : null;
   if (heldSubject) await lockClaimSubject(db, original.waybill, heldSubject);
@@ -160,6 +163,8 @@ const RUN_USE_SQL = `
   CROSS JOIN LATERAL (
     SELECT COALESCE(SUM(abs(l.amount)) FILTER (WHERE r.status = 'finalized' AND l.line_type IN ('recovery', 'reimbursement')), 0)::numeric(12,2)::text AS settled,
            COALESCE(SUM(abs(l.amount)) FILTER (WHERE r.status = 'draft' AND l.line_type IN ('recovery', 'reimbursement')), 0)::numeric(12,2)::text AS reserved,
+           COALESCE((SELECT SUM(CASE WHEN st.kind = 'reversal' THEN -st.amount ELSE st.amount END)
+                       FROM driver_ledger_settlements st WHERE st.entry_id = e.id), 0)::numeric(12,2)::text AS settled_outside,
            COALESCE(json_agg(json_build_object('runId', r.id, 'runStatus', r.status, 'lineType', l.line_type, 'amount', l.amount::text,
              'periodStart', to_char(r.period_start, 'YYYY-MM-DD'), 'periodEnd', to_char(r.period_end, 'YYYY-MM-DD')) ORDER BY r.period_end, r.id)
              FILTER (WHERE l.id IS NOT NULL), '[]'::json) AS pay_runs
@@ -175,7 +180,7 @@ const money = (c) => (c / 100).toFixed(2);
 // nothing; a repayment made outside payroll lowers the driver's total instead (see balances).
 const outstandingOf = (e) => {
   if (e.entry_type === 'void' || e.voided_by || e.exempt || e.entry_type === 'advance_repayment') return 0;
-  return Math.max(0, cents(e.amount) - cents(e.settled));
+  return Math.max(0, cents(e.amount) - cents(e.settled) - cents(e.settled_outside));
 };
 
 // Entries for one city (and optionally one driver), newest first, each with what pay runs settled or reserved and
@@ -189,7 +194,7 @@ export const listEntries = async (db, admin, { cityId = null, driverId = null } 
   const { rows } = await db.query(
     `SELECT ${ENTRY_COLUMNS},
             (SELECT v.id FROM driver_ledger_entries v WHERE v.voids_entry_id = e.id) AS voided_by,
-            x.settled, x.reserved, x.pay_runs
+            x.settled, x.reserved, x.settled_outside, x.pay_runs
        FROM driver_ledger_entries e
        ${RUN_USE_SQL}
       WHERE ($1::int IS NULL OR e.city_id = $1) AND ($2::int IS NULL OR e.driver_id = $2)
@@ -201,7 +206,7 @@ export const listEntries = async (db, admin, { cityId = null, driverId = null } 
 
   // Over all standing entries, not only the 500 listed.
   const { rows: standing } = await db.query(
-    `SELECT e.driver_id, e.entry_type, e.direction, e.amount, e.exempt, NULL AS voided_by, x.settled
+    `SELECT e.driver_id, e.entry_type, e.direction, e.amount, e.exempt, NULL AS voided_by, x.settled, x.settled_outside
        FROM driver_ledger_entries e
        ${RUN_USE_SQL}
       WHERE e.entry_type <> 'void'
