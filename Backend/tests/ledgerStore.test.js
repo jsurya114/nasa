@@ -161,6 +161,19 @@ test('the driver ledger: city access, exemption, no double entries, immutable hi
       assert.equal(await status(), 'unresolved', 'released into matching once the hand-entered claim is voided');
     });
 
+    await t.test('a credit correction can name the claim it corrects; the database refuses a claim on other types', async () => {
+      const refund = await createEntry(db, dfwAdmin, entry({ type: 'correction', direction: 'credit', amount: '10', waybill: 'TESTL070', claimType: 'Damaged Item' }));
+      assert.deepEqual([refund.entry.waybill, refund.entry.claim_type], ['TESTL070', 'Damaged Item']);
+      for (const sql of [
+        `INSERT INTO driver_ledger_entries (request_id, driver_id, city_id, entry_type, direction, amount, reason, effective_date, waybill, created_by)
+         VALUES ('${randomUUID()}', ${d1}, ${dfw}, 'expense', 'debit', 5, 'Test entry', '2026-11-03', 'TESTL071', ${dfwAdmin.id})`,
+        `INSERT INTO driver_ledger_entries (request_id, driver_id, city_id, entry_type, direction, amount, reason, effective_date, waybill, created_by)
+         VALUES ('${randomUUID()}', ${d1}, ${dfw}, 'correction', 'credit', 5, 'Test entry', '2026-11-03', 'TESTL072', ${dfwAdmin.id})`,
+      ]) {
+        await savepoint(() => assert.rejects(db.query(sql), /check constraint/));
+      }
+    });
+
     await t.test('while one transaction checks a waybill and claim type, no other connection can check the same one', async () => {
       // The manual ledger and the carrier import share this lock, so their duplicate checks cannot run side by side.
       await lockClaimSubject(db, 'TESTL009', 'damaged item');

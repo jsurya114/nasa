@@ -40,7 +40,10 @@ CREATE TABLE IF NOT EXISTS driver_ledger_entries (
   CHECK (recovery_plan IS NULL OR (direction = 'debit' AND entry_type <> 'void')),
   CHECK ((recovery_plan = 'installments') = (installment_amount IS NOT NULL)),
   CHECK (installment_amount IS NULL OR (installment_amount > 0 AND installment_amount < amount)),
-  CHECK ((entry_type = 'manual_claim') = (claim_type IS NOT NULL)),
+  -- A manual claim names its claim type. A correction may name the claim it corrects (waybill and type together).
+  CHECK (entry_type <> 'manual_claim' OR claim_type IS NOT NULL),
+  CHECK ((claim_type IS NULL AND waybill IS NULL) OR entry_type IN ('manual_claim', 'correction')),
+  CHECK (entry_type <> 'correction' OR (claim_type IS NULL) = (waybill IS NULL)),
   CHECK (exempt = false OR entry_type = 'manual_claim'),
   CHECK ((entry_type = 'void') = (voids_entry_id IS NOT NULL)),
   CHECK (voids_entry_id IS NULL OR voids_entry_id <> id)
