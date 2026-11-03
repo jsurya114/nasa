@@ -7,8 +7,29 @@ import { fetchDeliverySummary, resetDeliveries, setDeliveriesFromCache } from ".
 import { accessDriver } from "../../redux/slice/driver/driverSlice.js";
 import { toast } from "../../utils/toast";
 import useTranslation from "../../hooks/useTranslation.js";
+import { lastDaysRange } from "../../utils/dateRange.js";
 
 const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes cache
+const CACHE_KEYS = ["deliveryData", "deliveryFilters", "deliveryTimestamp", "deliveryDataType", "deliveryDriverId"];
+
+const clearDeliveryCache = () => CACHE_KEYS.forEach((key) => localStorage.removeItem(key));
+
+// The saved result, only if it is recent, not empty and was saved for this driver. Anything else is removed.
+const readDeliveryCache = (driverId) => {
+  try {
+    const savedAt = Number(localStorage.getItem("deliveryTimestamp"));
+    const sameDriver = localStorage.getItem("deliveryDriverId") === String(driverId);
+    const deliveries = JSON.parse(localStorage.getItem("deliveryData") || "null");
+    const filters = JSON.parse(localStorage.getItem("deliveryFilters") || "null");
+    if (sameDriver && savedAt && Date.now() - savedAt < CACHE_DURATION && Array.isArray(deliveries) && deliveries.length > 0 && filters) {
+      return { deliveries, filters, dataType: localStorage.getItem("deliveryDataType") || "all" };
+    }
+  } catch {
+    // unreadable cache: fall through and remove it
+  }
+  clearDeliveryCache();
+  return null;
+};
 
 const Deliveries = () => {
   const { t } = useTranslation();
@@ -17,7 +38,8 @@ const Deliveries = () => {
   const driver = useSelector((state) => state.driver?.driver);
   const isAuthenticated = useSelector((state) => state.driver?.isAuthenticated);
 
-  const [filters, setFilters] = useState({ from_date: "", to_date: "" });
+  // Opens on the last ten calendar days. The driver can still pick any longer range.
+  const [filters, setFilters] = useState(() => lastDaysRange());
   const [hasFiltered, setHasFiltered] = useState(false);
   const [validationError, setValidationError] = useState("");
   const [selectedDataType, setSelectedDataType] = useState("all"); // "all", "daily", "weekly"
@@ -25,7 +47,10 @@ const Deliveries = () => {
   // Use refs to prevent toast spam
   const lastSuccessToast = useRef(0);
   const lastErrorToast = useRef(0);
-  const initialLoadDone = useRef(false);
+  const autoLoadDone = useRef(false);
+  // The automatic load on opening the screen does not announce itself with a toast.
+  const quietSuccess = useRef(false);
+  const handledResult = useRef(null);
 
   // Check if both data types exist in the deliveries
   const availableDataTypes = useMemo(() => {
@@ -76,51 +101,34 @@ const Deliveries = () => {
     return result;
   }, [filteredDeliveries]);
 
-  // Load from localStorage ONCE with cache validation
-  useEffect(() => {
-    if (initialLoadDone.current) return;
-    initialLoadDone.current = true;
-
-    const savedFilters = localStorage.getItem("deliveryFilters");
-    const savedDeliveries = localStorage.getItem("deliveryData");
-    const savedTimestamp = localStorage.getItem("deliveryTimestamp");
-    const savedDataType = localStorage.getItem("deliveryDataType");
-
-    if (savedFilters && savedDeliveries && savedTimestamp) {
-      const cacheAge = Date.now() - parseInt(savedTimestamp);
-      
-      if (cacheAge < CACHE_DURATION) {
-        try {
-          const parsedFilters = JSON.parse(savedFilters);
-          const parsedDeliveries = JSON.parse(savedDeliveries);
-          
-          if (parsedDeliveries.length > 0) {
-            setFilters(parsedFilters);
-            setHasFiltered(true);
-            setSelectedDataType(savedDataType || "all");
-            dispatch(setDeliveriesFromCache(parsedDeliveries));
-          }
-        } catch {
-          localStorage.removeItem("deliveryData");
-          localStorage.removeItem("deliveryFilters");
-          localStorage.removeItem("deliveryTimestamp");
-          localStorage.removeItem("deliveryDataType");
-        }
-      } else {
-        localStorage.removeItem("deliveryData");
-        localStorage.removeItem("deliveryFilters");
-        localStorage.removeItem("deliveryTimestamp");
-        localStorage.removeItem("deliveryDataType");
-      }
-    }
-  }, [dispatch]);
-
   // Fetch driver data once
   useEffect(() => {
     if (!driver && isAuthenticated !== false) {
       dispatch(accessDriver());
     }
   }, [dispatch, driver, isAuthenticated]);
+
+  // Once the driver is known: show this driver's result from the last few minutes if there is one,
+  // otherwise load the default ten days. A result saved by another driver on the same phone is dropped.
+  const driverId = driver?.id;
+  useEffect(() => {
+    if (autoLoadDone.current || !driverId) return;
+    autoLoadDone.current = true;
+
+    const cached = readDeliveryCache(driverId);
+    if (cached) {
+      handledResult.current = cached.deliveries;
+      setFilters(cached.filters);
+      setHasFiltered(true);
+      setSelectedDataType(cached.dataType);
+      dispatch(setDeliveriesFromCache(cached.deliveries));
+      return;
+    }
+
+    quietSuccess.current = true;
+    setHasFiltered(true);
+    dispatch(fetchDeliverySummary({ driverId, ...lastDaysRange() }));
+  }, [dispatch, driverId]);
 
   // Cleanup on unmount
   useEffect(() => {
@@ -129,26 +137,33 @@ const Deliveries = () => {
     };
   }, [dispatch]);
 
-  // Success toast with debouncing
+  // Once per new result from the server: save it for a few minutes and announce it. Editing the dates
+  // afterwards must not announce the old result again or save the new dates with the old rows.
   useEffect(() => {
-    if (status === "succeeded" && hasFiltered && deliveries?.length > 0) {
-      const now = Date.now();
-      
-      if (now - lastSuccessToast.current > 3000) {
-        localStorage.setItem("deliveryData", JSON.stringify(deliveries));
-        localStorage.setItem("deliveryFilters", JSON.stringify(filters));
-        localStorage.setItem("deliveryTimestamp", Date.now().toString());
-        localStorage.setItem("deliveryDataType", selectedDataType);
+    if (status !== "succeeded" || !hasFiltered || !(deliveries?.length > 0) || handledResult.current === deliveries) return;
+    handledResult.current = deliveries;
 
-        const recordText = deliveries.length === 1 ? t('deliveryRecord') : t('deliveryRecords');
-        toast.success(
-          `${t('successfullyFetched')} ${deliveries.length} ${recordText}!`,
-          { position: "top-right", autoClose: 3000, toastId: "delivery-success" }
-        );
-        lastSuccessToast.current = now;
-      }
+    localStorage.setItem("deliveryData", JSON.stringify(deliveries));
+    localStorage.setItem("deliveryFilters", JSON.stringify(filters));
+    localStorage.setItem("deliveryTimestamp", Date.now().toString());
+    localStorage.setItem("deliveryDataType", selectedDataType);
+    localStorage.setItem("deliveryDriverId", String(driverId));
+
+    if (quietSuccess.current) {
+      quietSuccess.current = false;
+      return;
     }
-  }, [status, hasFiltered, deliveries, filters, selectedDataType, t]);
+
+    const now = Date.now();
+    if (now - lastSuccessToast.current > 3000) {
+      const recordText = deliveries.length === 1 ? t('deliveryRecord') : t('deliveryRecords');
+      toast.success(
+        `${t('successfullyFetched')} ${deliveries.length} ${recordText}!`,
+        { position: "top-right", autoClose: 3000, toastId: "delivery-success" }
+      );
+      lastSuccessToast.current = now;
+    }
+  }, [status, hasFiltered, deliveries, filters, selectedDataType, driverId, t]);
 
   // Error toast with debouncing
   useEffect(() => {
@@ -194,22 +209,28 @@ const Deliveries = () => {
     setValidationError("");
     setHasFiltered(true);
     setSelectedDataType("all");
+    quietSuccess.current = false;
     dispatch(fetchDeliverySummary({ driverId: driver.id, ...filters }));
   }, [dispatch, filters, driver, t]);
 
+  // Back to the default last ten days.
   const handleReset = useCallback(() => {
-    setFilters({ from_date: "", to_date: "" });
-    setHasFiltered(false);
+    const range = lastDaysRange();
+    setFilters(range);
     setValidationError("");
     setSelectedDataType("all");
     dispatch(resetDeliveries());
-    localStorage.removeItem("deliveryData");
-    localStorage.removeItem("deliveryFilters");
-    localStorage.removeItem("deliveryTimestamp");
-    localStorage.removeItem("deliveryDataType");
+    clearDeliveryCache();
     lastSuccessToast.current = 0;
     lastErrorToast.current = 0;
-  }, [dispatch]);
+    if (!driverId) {
+      setHasFiltered(false);
+      return;
+    }
+    quietSuccess.current = true;
+    setHasFiltered(true);
+    dispatch(fetchDeliverySummary({ driverId, ...range }));
+  }, [dispatch, driverId]);
 
   const formatDate = useCallback((dateString) => {
     if (!dateString) return "-";
@@ -269,6 +290,7 @@ const Deliveries = () => {
               <div>
                 <h2 className="text-xl font-semibold text-gray-800">{t('deliverySummary')}</h2>
                 <p className="text-sm text-gray-500 mt-1">{t('filterDeliveries')}</p>
+                <p className="text-sm text-gray-500 mt-1">{t('lastTenDaysHint')}</p>
               </div>
             </div>
           </div>
