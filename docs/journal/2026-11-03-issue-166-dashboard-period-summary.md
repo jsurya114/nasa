@@ -26,3 +26,9 @@ Not in this part: the dashboard screen (next PR) and the Payroll page buttons.
 **Not tested.** The HTTP route with real tokens; production data.
 
 **Risks and follow-ups.** A range that cuts across a pay run shows no deduction and `crossingRuns`; the screen should say so.
+
+## Review fix (Jasil's review on #170, 3 Nov 2026)
+
+- **The breakdown did not reconcile with its total.** The penalty figure added up per-entry balances while the total also subtracted repayments made outside payroll, so a $40 penalty with a $20 repayment returned penalties 40, other 0, total 20. The clamp of `total - penalties` hid it.
+- **Now one allocation.** The summary reads `totals.owedPenalties`, `owedOther` and `owedByDriver` from the server's balance code (the `allocateOwed` fix from #167): repayments are spread over what is owed, oldest first (ledger debts, then carrier claims), so the parts add up to the total exactly. Linked settlements and waivers (#168) are already in each entry's balance. There is no clamp and nothing is repaired in the browser. This branch includes the #167 and #168 fixes.
+- **Tests (database, rolled back):** the example above returns penalties 20, other 0, total 20; a full repayment and a repayment larger than the debt return zeros; a linked outside repayment and a waiver on top of pooled repayments; an older expense takes the pooled repayment first; a larger older expense leaves a split by age (90 / 70 / 160) that adds up. The parts are checked against the total in each case.

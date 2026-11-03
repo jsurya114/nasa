@@ -27,8 +27,8 @@ test('dashboard period summary: this payday, approved or preview, and what is st
     const otherCity = (await one("INSERT INTO city (job, city_code, city_type) VALUES ('Test Sum Other', 'TSTSO', 'DAILY') RETURNING id")).id;
     const route = (await one(`INSERT INTO routes (name, job, company_route_price, driver_route_price, company_doublestop_price, driver_doublestop_price, route_code_in_string)
       VALUES ('TU 1', 'Test Sum City', 2, 1.6, 0.5, 0.25, 'TU-1') RETURNING id`)).id;
-    const [d1, d2] = (await db.query('SELECT id FROM drivers ORDER BY id LIMIT 2')).rows.map((r) => r.id);
-    await db.query('UPDATE drivers SET city_id = $1 WHERE id = $2', [city, d1]);
+    const [d1, d2, d3] = (await db.query('SELECT id FROM drivers ORDER BY id LIMIT 3')).rows.map((r) => r.id);
+    await db.query('UPDATE drivers SET city_id = $1 WHERE id = ANY($2::int[])', [city, [d1, d3]]);
     await db.query('UPDATE drivers SET city_id = $1 WHERE id = $2', [otherCity, d2]);
     const admin = async (role) => {
       const tag = randomUUID();
@@ -97,6 +97,42 @@ test('dashboard period summary: this payday, approved or preview, and what is st
       const after = await ask(cityAdmin);
       assert.equal(Number(after.outstanding.penalties), before - 100);
       assert.equal(after.period.status, 'approved', 'the approved payday is unchanged');
+    });
+
+    await t.test('the outstanding parts add up to the total: outside repayments, settlements and waivers (issue #170 review)', async () => {
+      const add = (driverId, o) => createEntry(db, cityAdmin, parseNewEntry({ requestId: randomUUID(), driverId, cityId: city, reason: 'Test entry', effectiveDate: '2026-12-01', ...o }).entry);
+      const outstandingOf = async (driverId) => (await getDriverPeriodSummary(db, cityAdmin, { driverId, cityId: city, from: '2026-11-01', to: '2026-11-07' })).outstanding;
+      const adds = (o) => (Number(o.penalties) + Number(o.other)).toFixed(2) === Number(o.total).toFixed(2);
+
+      // a clean driver: a $40 penalty with $20 repaid outside payroll owes $20, all of it a penalty (never $40 over a $20 debt)
+      const penalty = await add(d3, { type: 'manual_claim', claimType: 'Fake POD', amount: '40' });
+      assert.deepEqual(await outstandingOf(d3), { penalties: '40.00', other: '0.00', total: '40.00' });
+      await add(d3, { type: 'advance_repayment', amount: '20' });
+      assert.deepEqual(await outstandingOf(d3), { penalties: '20.00', other: '0.00', total: '20.00' });
+      // repaid in full, and repaid more than is owed: nothing owed, nothing negative
+      await add(d3, { type: 'advance_repayment', amount: '20' });
+      assert.deepEqual(await outstandingOf(d3), { penalties: '0.00', other: '0.00', total: '0.00' });
+      await add(d3, { type: 'advance_repayment', amount: '15' });
+      assert.deepEqual(await outstandingOf(d3), { penalties: '0.00', other: '0.00', total: '0.00' });
+
+      // a linked partial settlement and a waiver on the penalty, then a pooled repayment on top of an older expense
+      const p = await add(d3, { type: 'manual_claim', claimType: 'Late', amount: '100', effectiveDate: '2026-12-05' });
+      const settle = (kind, amount, who) => settleEntry(db, who, parseSettlement({ requestId: randomUUID(), kind, amount, settledOn: '2026-12-06', reason: 'Test settlement', ...(kind === 'outside_repayment' && { reference: 'RCPT-6' }) }, p.entry.id).settlement);
+      await settle('outside_repayment', '30', cityAdmin);
+      await settle('waiver', '20', superAdmin);
+      const after = await outstandingOf(d3);
+      assert.ok(adds(after));
+      // owed: 40 + (100 - 30 settled - 20 waived) = 90; repaid outside payroll in all: 20 + 20 + 15 = 55; so 35 is owed, all penalties
+      assert.deepEqual(after, { penalties: '35.00', other: '0.00', total: '35.00' });
+      // older debts take the pooled repayment first: a 25 expense dated before the penalties is cleared first (55 - 25 = 30 goes to the
+      // 40 penalty), so what remains is still all penalties
+      await add(d3, { type: 'expense', amount: '25', effectiveDate: '2026-11-01' });
+      assert.deepEqual(await outstandingOf(d3), { penalties: '60.00', other: '0.00', total: '60.00' });
+      // a larger, older expense keeps part of the debt: 215 owed less 55 repaid is 160, split by age
+      await add(d3, { type: 'expense', amount: '100', effectiveDate: '2026-11-02' });
+      const mixed = await outstandingOf(d3);
+      assert.deepEqual(mixed, { penalties: '90.00', other: '70.00', total: '160.00' });
+      assert.ok(adds(mixed));
     });
 
     await t.test('bad dates, the wrong city, a driver of another city and a missing city are refused', async () => {

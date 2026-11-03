@@ -3,8 +3,8 @@
 //
 // - This payday: claim and recovery deductions on the pay runs inside the range. Finalized runs are approved and frozen,
 //   drafts are only a preview. Their net is the pay run's own net, never "old payment minus a penalty total".
-// - Still outstanding: what the driver still owes after pay runs and settlements (the balance cards of the Payroll page),
-//   with the hand-entered penalties shown apart from the rest.
+// - Still outstanding: what the driver still owes after pay runs, settlements and repayments made outside payroll (the balance
+//   cards of the Payroll page), with the hand-entered penalties apart from the rest. The parts add up to the total exactly.
 // A run counts only when its whole period lies inside the range, so a deduction is never counted for two ranges or
 // spread over daily rows. A run that crosses the range edge is reported, not counted.
 
@@ -39,11 +39,9 @@ export const getDriverPeriodSummary = async (db, admin, { driverId, cityId, from
     [driverId, cityId, from, to]
   );
   const inside = rows.filter((r) => r.inside);
-  const balances = await getDriverBalances(db, admin, driverId, cityId);
-  const penalties = balances.entries
-    .filter((e) => e.entry_type === 'manual_claim' && e.direction === 'debit' && !e.exempt)
-    .reduce((total, e) => total + toCents(e.outstanding), 0);
-  const owed = toCents(balances.totals.owedByDriver);
+  // The split comes from the server's own allocation, which spreads repayments made outside payroll over what is owed, so
+  // penalties and other debts always add up to the total. Linked settlements and waivers are already in each entry's balance.
+  const { totals } = await getDriverBalances(db, admin, driverId, cityId);
 
   return {
     driverId, cityId, from, to,
@@ -56,6 +54,6 @@ export const getDriverPeriodSummary = async (db, admin, { driverId, cityId, from
         claimDeductions: r.claim_deductions, recoveries: r.recoveries, net: r.net })),
       crossingRuns: rows.length - inside.length,
     },
-    outstanding: { penalties: fromCents(penalties), other: fromCents(Math.max(0, owed - penalties)), total: fromCents(owed) },
+    outstanding: { penalties: totals.owedPenalties, other: totals.owedOther, total: totals.owedByDriver },
   };
 };
