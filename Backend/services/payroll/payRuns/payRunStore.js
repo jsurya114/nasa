@@ -9,9 +9,9 @@ import { lockCityPayroll } from '../claims/claimsStore.js';
 
 export { PayrollError };
 
-const isSuperAdmin = (admin) => admin?.role === 'superadmin';
+export const isSuperAdmin = (admin) => admin?.role === 'superadmin';
 
-const assertCityAllowed = async (db, admin, cityId) => {
+export const assertCityAllowed = async (db, admin, cityId) => {
   if (isSuperAdmin(admin)) return;
   const { rows } = await db.query('SELECT 1 FROM admin_city_ref WHERE admin_id = $1 AND city_id = $2', [admin?.id, cityId]);
   if (rows.length === 0) throw new PayrollError(403, 'you do not have access to this city');
