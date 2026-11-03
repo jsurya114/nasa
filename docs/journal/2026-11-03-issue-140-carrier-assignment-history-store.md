@@ -56,3 +56,8 @@ Safe to run twice. Rollback: `...-carrier-assignment-history.rollback.sql` drops
 - **City label for the exemption.** `cityName` is `city.city_code`. In the 1 November snapshot the Dallas GOFO city has the code `DFW GOFO` and the display name `Dallas GOFO`, while the separate Dallas SpeedX city has the code `DFW`. Keying the exemption on the code keeps those two apart. #147 currently reads the *display name*, which would not match; it should use `cityCode` (or `cityName` as returned here).
 - Evidence older than the reports already uploaded still has to be imported to resolve the other claims: part 2 adds a history-only import so an older report never touches the weekly staging data.
 - `deliveries.courier_code` is not used. No claim waybill matched it in the snapshot, and its meaning for GOFO is unclear.
+
+**Review round 1 (Jayasoorya, PR #151).**
+
+- `voidImport` now takes the same transaction lock as `recordReport`, so a void and an import of the same file (under another scope) can no longer overlap: whichever comes second sees what the first committed. It must be called inside a transaction on one client. A two-client test (`assignmentVoidRace.test.js`, `ASSIGNMENT_RACE_DB=1`) covers both orders; it fails when the lock is removed. It really commits, so it refuses to run unless the history tables are empty and it removes what it created; run it only on a scratch copy.
+- The migration's guard now also freezes `voided_by` once an import is voided; tests try to change and clear it, and to clear the void itself.

@@ -16,6 +16,10 @@ const chunks = (list, size) => {
   return out;
 };
 
+// Recording and voiding take this one lock, so a void and an import of the same file cannot overlap: whichever comes
+// second sees what the first committed. Held until the transaction ends, so call inside one.
+const lockImports = (db) => db.query('SELECT pg_advisory_xact_lock(hashtextextended($1, $2))', ['carrier-assignments', IMPORT_LOCK_KEY]);
+
 const REPORT_HASH = /^[0-9a-f]{64}$/;
 
 const cleanLabel = (value) => {
@@ -126,7 +130,7 @@ const insertSightings = async (db, rows, importId) => {
 // - Two Delivery IDs for one waybill are both kept.
 export const recordReport = async (db, report, source) => {
   if (!REPORT_HASH.test(source?.reportHash ?? '')) throw new Error('reportHash must be a sha256 hex digest');
-  await db.query('SELECT pg_advisory_xact_lock(hashtextextended($1, $2))', ['carrier-assignments', IMPORT_LOCK_KEY]);
+  await lockImports(db);
 
   // The same bytes recorded with the same scope are already here. The same bytes with a wider scope are not: a city
   // admin's copy left out other cities' rows, and someone who may use every city must still be able to add them.
@@ -184,8 +188,11 @@ export const recordReport = async (db, report, source) => {
 // Marks a report as wrong. Every copy of the same bytes (the same file recorded with another scope) is voided with
 // it, so a wrong file cannot stand through a sibling import. Its facts stop standing unless another, different
 // report also holds them. Nothing is deleted: the imports, facts and sightings stay for the record.
+// Call inside a transaction on one client: it waits for any import in progress, so no copy of the file can be
+// recorded between the check and the void.
 export const voidImport = async (db, importId, { reason, adminId = null }) => {
   if (typeof reason !== 'string' || reason.trim() === '') throw new Error('a reason is required');
+  await lockImports(db);
   const { rowCount } = await db.query(
     `UPDATE carrier_assignment_imports i
         SET voided_at = now(), voided_by = $2, void_reason = $3
