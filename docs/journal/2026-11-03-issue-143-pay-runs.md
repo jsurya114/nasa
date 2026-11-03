@@ -96,3 +96,26 @@ With a 100% limit, driver A:
 - A driver whose only activity in the period is a reimbursement gets no statement until they also have pay rows.
 - Run the golden comparison on a restored copy of production for one real week per data type before relying on it.
 - #145 shows these statements to drivers and admins.
+
+## Review fixes (Jasil's review on #152, 3 Nov 2026)
+
+Each case below is reproduced in the new `Backend/tests/payRunReview.test.js` (7 cases, each in its own rolled-back savepoint). Six of them fail on the code before this fix. The seventh, "a discarded draft frees its instalment", is a guard that passes before and after.
+
+1. **Future repayments lowered today's recovery.** Repayments made outside payroll now count only once they are in effect: effective date and intended payday on or before the run's last day, the same rule reimbursements use. A $100 repayment dated 2027 no longer cuts a November recovery from $200 to $100.
+2. **Repayments are now auditable.** Each repayment a statement relies on gets a `repayment` line with the amount used, oldest repayment first. These lines are audit only and move no money. Because the entry is on a live run, it cannot be voided until that run is discarded or voided. Schema change in this pull request's migration: `pay_statement_lines.line_type` allows `repayment`, which must be positive and name its ledger entry.
+3. **A second run in the same period took another instalment.** An entry is now recovered at most once per pay period: a run skips any entry already recovered on a live run whose period overlaps its own. That covers supplemental runs, a second run of the same week, and daily and weekly runs over the same days. The entry is flagged `already_recovered_this_period` and stays owed. Discarding or voiding the earlier run frees it. Runs of one city are built one at a time, under the city payroll lock, so two runs cannot both pass this check. The same rule covers "all on the next payday".
+4. **A lowered claim disappeared.** When a driver had more deducted for a claim than they now owe, their next statement carries a `claim_over_recovered` flag with the claim and the amount. That happens when the carrier lowered the claim, made it exempt, or it now belongs to another driver. Nothing is refunded automatically: the refund policy is not agreed. The flag stays until an approved **credit correction naming that claim** (waybill and claim type, #149) is recorded. That correction is then paid once, as a reimbursement, to the driver who was charged. A claim whose amended version is still unmatched is not judged yet.
+5. **An advance not marked as paid out was recovered.** Such advances are now held (`advance_not_disbursed`), stay owed, and are counted in the run's "waiting" summary (`advances_not_paid_out`). Only advances already paid out outside payroll are recovered at this stage.
+6. **The ledger list showed the original amount as the debt.** `listEntries` now gives every entry:
+   - `settled`: what finalized runs took or paid;
+   - `reserved`: what a draft holds, released if the draft is discarded;
+   - `outstanding`;
+   - `pay_runs`: each run that used the entry, with its status and amount.
+
+   Each driver's balance counts only settled amounts: positive means the driver owes, negative means NASA owes. The ledger store test now also applies the pay run migration.
+7. **Smaller fixes.**
+   - With no recovery limit set, items are no longer also flagged "limit reached"; the "no recovery limit is set" flag already says why.
+   - Claims held for review (#148) count as waiting in a run's summary.
+
+- **Money impact:** with no adjustments, statements are unchanged: gross − insurance, as before (the existing pay run tests pass unchanged). The changes only stop wrong recoveries: future repayments, a second instalment in one period, and advances not paid out. A lowered claim is flagged; nothing is paid back automatically.
+- **Tests:** full backend suite 99 pass with the database, 58 pass without it (as CI runs), 0 fail. Calculator: 17, with 4 new for holds, repayment lines, over-recovery flags and the limit wording.
