@@ -55,13 +55,27 @@ test('dashboard period summary: this payday, approved or preview, and what is st
       const s = await ask(cityAdmin);
       assert.equal(s.period.status, 'none');
       assert.deepEqual(s.outstanding, { penalties: '340.00', other: '25.00', total: '365.00' }, 'the 25 carrier claim is not a hand-entered penalty');
+      // no recovery limit is set yet, so nothing is deducted automatically, and the page is told why instead of a silent zero
+      assert.equal(s.payday.source, 'estimate');
+      assert.equal(s.payday.deducted, '0.00');
+      assert.ok(s.payday.flags.some((f) => f.code === 'recovery_limit_not_set'));
+      // no dates: only what is owed, and no pay-run figures
+      const noDates = await getDriverPeriodSummary(db, cityAdmin, { driverId: d1, cityId: city });
+      assert.deepEqual([noDates.payday.source, noDates.payday.deducted], ['none', '0.00']);
     });
 
     let run;
     await t.test('a draft run is a preview: this payday only, never the whole debt', async () => {
       await setRecoveryLimit(db, superAdmin, { type: 'percent_of_available', value: 100 }, 'Test limit');
+      // before the run exists, an estimate from the same calculator: by each record's arrangement, under the limit, nothing saved
+      const estimate = (await ask(cityAdmin)).payday;
+      assert.equal(estimate.source, 'estimate');
+      assert.equal(await one('SELECT count(*)::int n FROM pay_runs WHERE city_id = $1', [city]).then((r) => r.n), 0, 'the estimate saves no run');
+      assert.deepEqual([estimate.claimDeductions, estimate.recoveries, estimate.deducted], ['25.00', '75.00', '100.00'], 'claim 25, then the 40 due in full and 35 of the 50 instalment, capped at the 100 earned');
       run = (await generateRun(db, cityAdmin, { requestId: randomUUID(), cityId: city, periodStart: '2026-11-01', periodEnd: '2026-11-07', dataType: 'daily' })).run;
       const s = await ask(cityAdmin);
+      assert.equal(s.payday.source, 'draft');
+      assert.deepEqual([s.payday.claimDeductions, s.payday.recoveries, s.payday.deducted], [estimate.claimDeductions, estimate.recoveries, estimate.deducted], 'the draft run takes exactly what the estimate showed');
       // 25 carrier claim; 40 + 50 instalment recovered; net 100 - 115 would be negative, so the limit caps at 100
       const statement = (await getRun(db, cityAdmin, run.id)).statements[0];
       assert.equal(s.period.status, 'preview');
@@ -73,6 +87,8 @@ test('dashboard period summary: this payday, approved or preview, and what is st
     await t.test('after finalizing it is approved and the net is the frozen statement net', async () => {
       await finalizeRun(db, cityAdmin, run.id);
       const s = await ask(cityAdmin);
+      assert.equal(s.payday.source, 'approved');
+      assert.equal(s.payday.net, (await getRun(db, cityAdmin, run.id)).statements[0].net, 'the approved net is the frozen statement net');
       const statement = (await getRun(db, cityAdmin, run.id)).statements[0];
       assert.equal(s.period.status, 'approved');
       assert.equal(s.period.approved.net, statement.net);
@@ -133,6 +149,18 @@ test('dashboard period summary: this payday, approved or preview, and what is st
       const mixed = await outstandingOf(d3);
       assert.deepEqual(mixed, { penalties: '90.00', other: '70.00', total: '160.00' });
       assert.ok(adds(mixed));
+    });
+
+    await t.test('a driver with no pay rows yet still gets the reasons, and an instalment is a share, never the whole debt', async () => {
+      // d3 has only records: a 300 penalty on 50 instalments, and no earnings in the range
+      const add = (o) => createEntry(db, cityAdmin, parseNewEntry({ requestId: randomUUID(), driverId: d3, cityId: city, reason: 'Test entry', effectiveDate: '2026-11-01', ...o }).entry);
+      const before = Number((await getDriverPeriodSummary(db, cityAdmin, { driverId: d3, cityId: city, from: '2026-11-01', to: '2026-11-07' })).outstanding.total);
+      await add({ type: 'manual_claim', claimType: 'Fake POD', amount: '300', recoveryPlan: 'installments', installmentAmount: '50' });
+      await add({ type: 'expense', amount: '20' }); // no arrangement: held for review
+      const s = await getDriverPeriodSummary(db, cityAdmin, { driverId: d3, cityId: city, from: '2026-11-01', to: '2026-11-07' });
+      assert.equal((Number(s.outstanding.total) - before).toFixed(2), '320.00', 'the whole 300 and the 20 are owed');
+      assert.equal(s.payday.deducted, '0.00', 'nothing earned, so nothing can be taken this payday');
+      assert.ok(s.payday.flags.some((f) => f.code === 'needs_review'), 'the entry with no arrangement is flagged');
     });
 
     await t.test('without dates only what is outstanding is returned, and half a range is refused', async () => {

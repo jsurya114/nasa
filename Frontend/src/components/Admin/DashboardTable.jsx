@@ -4,7 +4,7 @@ import { RefreshCw, Wallet, ShieldCheck, Banknote } from "lucide-react";
 import { useDispatch, useSelector } from "react-redux";
 import { fetchFilteredPaymentData, fetchTodayPaymentData } from "../../redux/slice/admin/dashSlice";
 import PenaltyRows from "./dashboard/PenaltyRows.jsx";
-import { deductions, netAfter, netLine } from "./dashboard/penaltyDisplay.js";
+import { netFor, showRow } from "./dashboard/penaltyDisplay.js";
 
 export default function PaymentDashboardTable({ penalty }) {
   const dispatch = useDispatch();
@@ -367,17 +367,18 @@ export default function PaymentDashboardTable({ penalty }) {
                       </tr>
                     )}
                     <PenaltyRows penalty={penalty} />
-                    {(totals.insuranceDeduction > 0 || deductions(penalty)?.total > 0 || (penalty?.expected && penalty.status !== "ready")) && (() => {
-                      // Net Payment = driver payment - insurance - penalties - others (#166). Not final while those are loading.
-                      const line = netLine(penalty, "Net Payment");
+                    {(totals.insuranceDeduction > 0 || showRow(penalty) || (penalty?.expected && penalty.status !== "ready")) && (() => {
+                      // Net Payment: the approved pay run's frozen net, else payment - insurance - this payday's deduction (a preview).
+                      const line = netFor(totals.netPayment, penalty);
+                      const tone = line.muted ? "bg-gray-50 text-gray-600" : line.preview ? "bg-amber-50 font-bold border-b-2 border-amber-500" : "bg-green-50 font-bold border-b-2 border-green-600";
                       return (
-                        <tr className={line.muted ? "bg-gray-50 text-gray-600" : "bg-green-50 font-bold border-b-2 border-green-600"} data-testid="net-payment-row">
+                        <tr className={tone} data-testid="net-payment-row">
                           <td className="px-3 py-3 border-b border-gray-200 whitespace-nowrap" colSpan="11">
                             <Banknote className="inline h-4 w-4 -mt-0.5 mr-1.5" aria-hidden="true" />
                             {line.label}
                           </td>
-                          <td className={`px-3 py-3 border-b border-gray-200 text-lg whitespace-nowrap ${line.muted ? "text-gray-600" : "text-green-700"}`}>
-                            ${netAfter(totals.netPayment, penalty).toFixed(2)}
+                          <td className={`px-3 py-3 border-b border-gray-200 text-lg whitespace-nowrap ${line.muted ? "text-gray-600" : line.preview ? "text-amber-700" : "text-green-700"}`}>
+                            ${line.net.toFixed(2)}
                           </td>
                           <td className="px-3 py-3 border-b border-gray-200 whitespace-nowrap" colSpan="2">
                           </td>

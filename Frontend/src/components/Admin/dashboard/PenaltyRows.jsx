@@ -1,13 +1,13 @@
 import React from "react";
 import { Link } from "react-router-dom";
 import { Gavel } from "lucide-react";
-import { deductions } from "./penaltyDisplay.js";
+import { rowInfo, showRow, sourceNote } from "./penaltyDisplay.js";
 
 const CELL = "px-3 py-3 border-b border-gray-200 whitespace-nowrap";
 const money = (v) => `$${Number(v).toFixed(2)}`;
 
-// One table row just below the insurance deduction (#166): "Penalty & Others", the driver's outstanding penalties plus their
-// other debts, with the two parts beside it. It comes off the Net Payment line below. While they load, or if they cannot be loaded, a row says so: the net is then not final.
+// One table row just below the insurance deduction (#166): "Penalty & Others" this payday, by how each record was created, with
+// what is still owed in all beside it. Only this payday's amount comes off the Net Payment line below. While they load, or if they cannot be loaded, a row says so: the net is then not final.
 export default function PenaltyRows({ penalty, colSpan = 11 }) {
   if (!penalty?.expected) return null;
   if (penalty.status === "loading") {
@@ -27,20 +27,25 @@ export default function PenaltyRows({ penalty, colSpan = 11 }) {
       </tr>
     );
   }
-  const d = deductions(penalty);
-  if (!d || d.total <= 0) return null;
+  const d = rowInfo(penalty);
+  if (!d || !showRow(penalty)) return null;
   const history = `/admin/payroll?cityId=${penalty.cityId}&driverId=${penalty.driverId}`;
+  const parts = [d.penalties > 0 && `Penalties ${money(d.penalties)}`, d.other > 0 && `Others ${money(d.other)}`].filter(Boolean).join(" · ");
   return (
     <tr className="bg-amber-50 font-bold" data-testid="penalty-deduction-row">
       <td className={CELL} colSpan={colSpan}>
         <Gavel className="inline h-4 w-4 -mt-0.5 mr-1.5" aria-hidden="true" />
         Penalty &amp; Others
-        <span className="ml-2 text-xs font-medium text-gray-600" data-testid="penalty-breakdown">
-          {[d.penalties > 0 && `Penalties ${money(d.penalties)}`, d.other > 0 && `Others ${money(d.other)}`].filter(Boolean).join(" · ")}
-        </span>
+        <span className="ml-2 text-xs font-medium text-gray-600">this payday</span>
         <Link to={history} className="ml-3 text-sm font-medium text-brand-600 underline">View entries and history</Link>
+        <span className="block text-xs font-normal text-gray-700" data-testid="penalty-owed">
+          Still owed in all: {money(d.owed)}{parts && ` (${parts})`}. Not all of it is due this payday.
+        </span>
+        <span className="block text-xs font-normal text-gray-600" data-testid="penalty-note">
+          {sourceNote(d.source)}{d.flags[0] && ` ${d.flags[0].message}.`}
+        </span>
       </td>
-      <td className={`${CELL} text-red-600 text-lg`}>-{money(d.total)}</td>
+      <td className={`${CELL} text-red-600 text-lg`}>{d.source === "none" ? "-" : `-${money(d.deducted)}`}</td>
       <td className={CELL} colSpan="2" />
     </tr>
   );

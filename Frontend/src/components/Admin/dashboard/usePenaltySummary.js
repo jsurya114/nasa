@@ -2,8 +2,9 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useSelector } from "react-redux";
 import axios from "../../../redux/slice/axiosInstance";
 
-// What the driver still owes (penalties, and everything else) for the city and driver the admin applied (#166). The server
-// reads it from the ledger and pay runs; nothing is worked out here. It needs a city and a driver, not dates.
+// What comes off the driver this payday, and what they still owe in all, for the city, driver and dates the admin applied
+// (#166). The server works both out (pay runs, or the pay calculator on a copy); nothing is calculated here. It needs a city
+// and a driver; the dates add this payday's deduction.
 export default function usePenaltySummary() {
   const { cities, drivers, filters } = useSelector((state) => state.dash);
   // The dropdowns change as soon as the admin edits the form, before Filter Data is pressed, while the table still shows the
@@ -21,7 +22,9 @@ export default function usePenaltySummary() {
   }, [lookup]);
   const remembered = applied.current.get(keyOf(filters?.job, filters?.driver));
   const { cityId, driverId } = remembered ?? lookup(filters?.job, filters?.driver);
-  const scopeKey = `${cityId}|${driverId}`;
+  const from = filters?.startDate || undefined;
+  const to = filters?.endDate || undefined;
+  const scopeKey = `${cityId}|${driverId}|${from}|${to}`;
   const [state, setState] = useState({ status: "idle", data: null, scopeKey: null });
   const [attempt, setAttempt] = useState(0);
   // "Expected": the admin applied a city and a driver, so their deductions belong on this page. Until they arrive,
@@ -35,11 +38,11 @@ export default function usePenaltySummary() {
     }
     const controller = new AbortController();
     setState({ status: "loading", data: null, scopeKey });
-    axios.get(`/admin/payroll/drivers/${driverId}/dashboard-summary`, { params: { cityId }, signal: controller.signal })
+    axios.get(`/admin/payroll/drivers/${driverId}/dashboard-summary`, { params: { cityId, ...(from && to && { from, to }) }, signal: controller.signal })
       .then(({ data }) => { if (!controller.signal.aborted) setState({ status: "ready", data, scopeKey }); })
       .catch(() => { if (!controller.signal.aborted) setState({ status: "error", data: null, scopeKey }); });
     return () => controller.abort();
-  }, [expected, scopeKey, cityId, driverId, attempt]);
+  }, [expected, scopeKey, cityId, driverId, from, to, attempt]);
 
   // Figures belong to the scope they were fetched for. For the render between a new scope arriving and its request starting, say
   // "loading" rather than show the previous scope's figures against the new table.

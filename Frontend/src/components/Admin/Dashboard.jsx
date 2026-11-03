@@ -16,7 +16,7 @@ import Header from "../../reuse/Header.jsx";
 import Nav from "../../reuse/Nav.jsx";
 import PaymentDashboardTable from "./DashboardTable.jsx";
 import usePenaltySummary from "./dashboard/usePenaltySummary.js";
-import { netAfter, summaryItems, summaryLook } from "./dashboard/penaltyDisplay.js";
+import { summaryItems, summaryLook } from "./dashboard/penaltyDisplay.js";
 import Loader from "../Loader.jsx"
 import { CalendarDays, CalendarRange, ChevronDown, Gavel, LayoutGrid, ShieldCheck, Banknote } from "lucide-react";
 
@@ -43,7 +43,7 @@ export default function Dashboard() {
 
   const { isSuperAdmin } = useSelector((state) => state.admin);
   const penalty = usePenaltySummary();
-  const penaltyLines = useMemo(() => summaryItems(penalty), [penalty]);
+  const penaltyLines = useMemo(() => summaryItems(penalty, Number(summaryData?.total_driver_payment || 0) - Number(summaryData?.total_insurance_deduction || 0)), [penalty, summaryData]);
 
   const getTodayDate = () => {
     const today = new Date();
@@ -590,11 +590,11 @@ export default function Dashboard() {
                     ...(Number(extraFieldsData.insuranceDeduction) > 0 ? [
                       { field: "insuranceDeduction", label: "Insurance Deduction", icon: ShieldCheck, highlight: false, isNegative: true },
                     ] : []),
-                    // #166: penalties and other debts below the insurance deduction; they come off the net.
+                    // #166: this payday's Penalty & Others and what is still owed, below the insurance deduction; then the net.
                     ...penaltyLines.afterInsurance,
-                    ...((Number(extraFieldsData.insuranceDeduction) > 0 || penaltyLines.hasDeductions || penaltyLines.afterInsurance.some((i) => i.kind === "notice")) ? [
-                      { field: "netDriverPayment", label: penaltyLines.netLabel.label, icon: Banknote, highlight: false, isBold: !penaltyLines.netLabel.muted, isMoney: penaltyLines.netLabel.muted, muted: penaltyLines.netLabel.muted,
-                        text: `$${netAfter(extraFieldsData.netDriverPayment, penalty).toFixed(2)}` },
+                    ...((Number(extraFieldsData.insuranceDeduction) > 0 || penaltyLines.hasRow || penaltyLines.afterInsurance.some((i) => i.kind === "notice")) ? [
+                      { field: "netDriverPayment", kind: "net", preview: penaltyLines.net.preview, muted: penaltyLines.net.muted, icon: Banknote, label: penaltyLines.net.label,
+                        text: `$${penaltyLines.net.net.toFixed(2)}` },
                     ] : []),
                     ...(isSuperAdmin ? [{ field: "companyEarnings", label: "Total Company Earnings", highlight: true }] : []),
                   ].map((item, i) => {
