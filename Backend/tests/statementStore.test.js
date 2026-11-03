@@ -21,6 +21,7 @@ test('statement state keeps pending, approved, submitted and paid apart', () => 
 // Needs a PostgreSQL copy with the app's tables (never production). Run with PAYROLL_TEST_DB=1 and the DB_*
 // variables. Everything, the migrations included, runs in one transaction that is always rolled back.
 const hasDb = process.env.PAYROLL_TEST_DB === '1';
+const PLAN = (o) => (['advance', 'manual_claim'].includes(o.type) && o.recoveryPlan === undefined ? { recoveryPlan: 'full_next_payday' } : {}); // an advance or penalty above the driver's payment must say how it is repaid
 const migration = (name) => readFileSync(fileURLToPath(new URL(`../migrations/${name}`, import.meta.url)), 'utf8');
 
 test('statements: own data only, frozen amounts, source charge next to the applied deduction', { skip: !hasDb && 'set PAYROLL_TEST_DB=1 and the DB_* variables to run' }, async (t) => {
@@ -209,7 +210,7 @@ test('statements: own data only, frozen amounts, source charge next to the appli
       await db.query('SAVEPOINT repaid_case');
       try {
         const before = (await getMyBalances(db, d1)).totals;
-        const add = (o) => createEntry(db, cityAdmin, parseNewEntry({ requestId: randomUUID(), driverId: d1, cityId: city, reason: 'Test entry', effectiveDate: '2026-12-01', ...o }).entry);
+        const add = (o) => createEntry(db, cityAdmin, parseNewEntry({ requestId: randomUUID(), driverId: d1, cityId: city, reason: 'Test entry', effectiveDate: '2026-12-01', ...o, ...PLAN(o) }).entry);
         await add({ type: 'manual_claim', claimType: 'Damaged Item', amount: '40' });
         await add({ type: 'advance_repayment', amount: '20' });
         const after = (await getMyBalances(db, d1)).totals;

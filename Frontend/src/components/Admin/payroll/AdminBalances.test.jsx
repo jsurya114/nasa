@@ -37,9 +37,13 @@ const startServer = async (handlers = {}, history = HISTORY) => {
   return state;
 };
 
+const totalsOf = (entries) => {
+  const owed = (kind) => entries.filter((e) => e.direction === "debit" && !e.exempt && (kind === "penalty") === (e.entry_type === "manual_claim")).reduce((sum, e) => sum + Number(e.outstanding), 0);
+  return { owedByDriver: (owed("penalty") + owed("other")).toFixed(2), owedPenalties: owed("penalty").toFixed(2), owedOther: owed("other").toFixed(2), owedToDriver: "9.00" };
+};
 const mount = async ({ isSuperAdmin = false, onChanged = vi.fn(), entries = ENTRIES } = {}) => {
-  const { default: EntryManager } = await import("./EntryManager.jsx");
-  render(<EntryManager entries={entries} isSuperAdmin={isSuperAdmin} onChanged={onChanged} />);
+  const { default: AdminBalances } = await import("./AdminBalances.jsx");
+  render(<AdminBalances balances={{ entries, claims: [], totals: totalsOf(entries) }} isSuperAdmin={isSuperAdmin} onChanged={onChanged} />);
   return onChanged;
 };
 const fill = (label, value) => fireEvent.change(screen.getByLabelText(label), { target: { value } });
@@ -50,16 +54,38 @@ beforeEach(async () => {
 });
 afterEach(cleanup);
 
-describe("EntryManager", () => {
-  it("lists what the driver owes, calls a hand-entered claim a penalty, and leaves out credits and exempt claims", async () => {
+describe("AdminBalances: the records list", () => {
+  it("shows two cards only (what the driver owes and penalties, no reimbursements card), and lists the records with a Penalty label", async () => {
     await startServer();
     await mount();
+    expect(screen.getByText("Driver owes NASA")).toBeTruthy();
+    expect(screen.getByText("Penalty charges", { selector: "dt" })).toBeTruthy();
+    expect(screen.queryByText(/NASA owes driver/)).toBeNull();
+    expect(screen.queryByText(/reimbursements and adjustments/i)).toBeNull();
+    expect(document.querySelectorAll("dl > div").length).toBe(2);
     expect(screen.getByText("Penalty: Broken parcel")).toBeTruthy();
     expect(screen.getByText("Expense: Lost scanner")).toBeTruthy();
-    expect(screen.queryByText(/Exempt one/)).toBeNull();
-    expect(screen.queryByText(/Fuel/)).toBeNull();
-    // a settled entry offers Edit and History but no Mark complete
+    // a settled record keeps Edit and History but offers no Mark complete; a credit and an exempt claim have no actions
     expect(screen.getAllByRole("button", { name: "Mark complete" })).toHaveLength(1);
+    expect(screen.getAllByRole("button", { name: "Edit" })).toHaveLength(2);
+    expect(screen.getByText(/Reimbursement: Fuel/).closest("li").querySelector("button")).toBeNull();
+    expect(screen.getByText(/Penalty: Exempt one/).closest("li").textContent).toContain("not charged");
+  });
+
+  it("edit, mark complete and history open inside the list, under the record they belong to", async () => {
+    await startServer();
+    await mount();
+    fireEvent.click(screen.getAllByRole("button", { name: "History" })[0]);
+    const item = (await screen.findByText(/Version 2 \(current\)/)).closest("ul.divide-y > li");
+    expect(item.textContent).toContain("Penalty: Broken parcel");
+    expect(document.querySelectorAll('[aria-label="History"]').length).toBe(1);
+    expect(screen.queryByText("Manage entries")).toBeNull();
+  });
+
+  it("an empty list says so", async () => {
+    await startServer();
+    await mount({ entries: [] });
+    expect(screen.getByText("No records yet. Add one on the right.")).toBeTruthy();
   });
 
   it("keeps approved and paid apart: only a confirmed payment, a repayment or a waiver is called settled", async () => {

@@ -12,6 +12,7 @@ import { parseClaimsRows } from '../services/payroll/claims/claimsParser.js';
 // variables. Everything, the migrations included, runs in one transaction that is always rolled back.
 // The admins, the city and the moved drivers are made up inside that transaction.
 const hasDb = process.env.PAYROLL_TEST_DB === '1';
+const PLAN = (o) => (['advance', 'manual_claim'].includes(o.type) && o.recoveryPlan === undefined ? { recoveryPlan: 'full_next_payday' } : {}); // an advance or penalty above the driver's payment must say how it is repaid
 const migration = (name) => readFileSync(fileURLToPath(new URL(`../migrations/${name}`, import.meta.url)), 'utf8');
 
 test('the driver ledger: city access, exemption, no double entries, immutable history', { skip: !hasDb && 'set PAYROLL_TEST_DB=1 and the DB_* variables to run' }, async (t) => {
@@ -44,7 +45,7 @@ test('the driver ledger: city access, exemption, no double entries, immutable hi
     await db.query('INSERT INTO admin_city_ref (admin_id, city_id) VALUES ($1, $2)', [dfwAdmin.id, dfw]);
 
     const entry = (o) => {
-      const parsed = parseNewEntry({ requestId: randomUUID(), driverId: d1, cityId: dfw, type: 'expense', amount: '30', reason: 'Test entry', effectiveDate: '2026-11-03', ...o });
+      const parsed = parseNewEntry({ requestId: randomUUID(), driverId: d1, cityId: dfw, type: 'expense', amount: '30', reason: 'Test entry', effectiveDate: '2026-11-03', ...o, ...PLAN(o) });
       assert.ok(parsed.entry, JSON.stringify(parsed.errors));
       return parsed.entry;
     };
@@ -57,7 +58,7 @@ test('the driver ledger: city access, exemption, no double entries, immutable hi
     });
 
     await t.test('a debit without a repayment arrangement is flagged for review; one with a plan is not', async () => {
-      const noPlan = await createEntry(db, dfwAdmin, entry({ type: 'advance', amount: '200', disbursedOutsidePayroll: true, reason: 'No plan yet' }));
+      const noPlan = await createEntry(db, dfwAdmin, entry({ type: 'expense', amount: '200', reason: 'No plan yet' }));
       const plan = await createEntry(db, dfwAdmin, entry({ type: 'advance', amount: '200', disbursedOutsidePayroll: true, recoveryPlan: 'installments', installmentAmount: '50' }));
       const credit = await createEntry(db, dfwAdmin, entry({ type: 'reimbursement', amount: '1' }));
       assert.deepEqual([noPlan.entry.needs_review, plan.entry.needs_review, credit.entry.needs_review], [true, false, false]);

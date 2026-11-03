@@ -12,6 +12,7 @@ import { getDriverPeriodSummary } from '../services/payroll/statements/periodSum
 // Needs a PostgreSQL copy with the app's tables (never production). Run with PAYROLL_TEST_DB=1 and the DB_*
 // variables. Everything, the migrations included, runs in one transaction that is always rolled back.
 const hasDb = process.env.PAYROLL_TEST_DB === '1';
+const PLAN = (o) => (['advance', 'manual_claim'].includes(o.type) && o.recoveryPlan === undefined ? { recoveryPlan: 'full_next_payday' } : {}); // an advance or penalty above the driver's payment must say how it is repaid
 const migration = (name) => readFileSync(fileURLToPath(new URL(`../migrations/${name}`, import.meta.url)), 'utf8');
 
 test('dashboard period summary: this payday, approved or preview, and what is still outstanding', { skip: !hasDb && 'set PAYROLL_TEST_DB=1 and the DB_* variables to run' }, async (t) => {
@@ -116,7 +117,7 @@ test('dashboard period summary: this payday, approved or preview, and what is st
     });
 
     await t.test('the outstanding parts add up to the total: outside repayments, settlements and waivers (issue #170 review)', async () => {
-      const add = (driverId, o) => createEntry(db, cityAdmin, parseNewEntry({ requestId: randomUUID(), driverId, cityId: city, reason: 'Test entry', effectiveDate: '2026-12-01', ...o }).entry);
+      const add = (driverId, o) => createEntry(db, cityAdmin, parseNewEntry({ requestId: randomUUID(), driverId, cityId: city, reason: 'Test entry', effectiveDate: '2026-12-01', ...o, ...PLAN(o) }).entry);
       const outstandingOf = async (driverId) => (await getDriverPeriodSummary(db, cityAdmin, { driverId, cityId: city, from: '2026-11-01', to: '2026-11-07' })).outstanding;
       const adds = (o) => (Number(o.penalties) + Number(o.other)).toFixed(2) === Number(o.total).toFixed(2);
 
