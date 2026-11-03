@@ -72,3 +72,19 @@ Not decided here, on purpose (owner decisions in #142/#143): installment recover
 - **#143 must refuse to void an entry already applied to a pay run.** Today nothing is applied, so every entry can be voided.
 - The balance a city admin sees covers only their city's entries. A driver who changed city may have entries in the old city.
 - Exempt city name, as in #141: the rule matches "DFW GOFO", and the local copy has "Dallas GOFO".
+
+## Review fixes (Jasil's review on #149, 3 Nov 2026)
+
+- **A changed request was taken as a replay.**
+  - Before: the first check compared only driver, type and amount, and the fallback after a lost insert race compared even less. A 40 debit correction sent again under the same request ID as a 40 credit correction was answered "replay" with the debit, so the credit was never recorded.
+  - Now `entryFingerprint` / `rowFingerprint` (in `ledgerRules.js`) compare every saved field. Both paths use the same function, so an identical form is a replay and any difference is refused with 409. The fields: driver, city, type, direction, amount, reason, date, intended payday, paid-out flag, claim type, waybill, repayment plan and instalment.
+  - A void replay must also match its reason.
+- **Hand-entered and carrier claims, both arrival orders.**
+  - Carrier first: a hand-entered claim is refused (409), as before. The claim type is now compared with the same `claimTypeKey` the import uses. Before, it was `lower()`, which missed differences in spacing.
+  - Hand-entered first: the carrier claim is held as `review` (#148).
+  - Voiding a hand-entered claim takes the subject lock *before* writing the void. It then releases the held carrier claim into matching. An import at the same moment waits and sees the void.
+- **Corrections may name the claim they correct** (waybill and claim type, both or neither), so a refund after a carrier lowers a claim can be traced (#143). Other types that send a claim are now refused, where before the fields were silently dropped.
+- **Tests.**
+  - Ledger store: 12 pass (was 10). New: Jasil's exact debit/credit case, and changed instalment, plan, date, payday, paid-out flag, reason, driver, waybill and claim type all give 409, while an identical form is still a replay. Also: a carrier claim held after a hand-entered one, held again when amended, released by the void. Both new tests fail on the old code.
+  - Ledger rules: 9 pass, including the fingerprint covering every field.
+- **Not reproduced:** two connections racing with different payloads. The test runs inside one transaction that is always rolled back, so a second connection cannot see its tables. That path now uses the same comparison as the first check.

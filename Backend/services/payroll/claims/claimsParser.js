@@ -101,11 +101,41 @@ export const parseClaimsRows = (rows, { courier }) => {
   return { claims: claims.filter((c) => !c.conflict), problems };
 };
 
+// The range the sheet's cells really occupy. A workbook's saved range ("!ref") can say less than it holds (carrier
+// exports have said A1:L2 for 16 rows), and the reader stops at that range, so every claim past it would be lost
+// without a word. Handles both sheet layouts: sparse (cells keyed "A1") and dense (rows in "!data").
+export const occupiedRange = (sheet) => {
+  let maxRow = -1;
+  let maxCol = -1;
+  const see = (r, c) => {
+    if (r > maxRow) maxRow = r;
+    if (c > maxCol) maxCol = c;
+  };
+  if (Array.isArray(sheet['!data'])) {
+    sheet['!data'].forEach((row, r) => row?.forEach((cell, c) => { if (cell) see(r, c); }));
+  } else {
+    for (const key of Object.keys(sheet)) {
+      if (key.startsWith('!')) continue;
+      const { r, c } = XLSX.utils.decode_cell(key);
+      see(r, c);
+    }
+  }
+  if (sheet['!ref']) {
+    const saved = XLSX.utils.decode_range(sheet['!ref']);
+    see(saved.e.r, saved.e.c);
+  }
+  return maxRow < 0 ? null : XLSX.utils.encode_range({ s: { r: 0, c: 0 }, e: { r: maxRow, c: maxCol } });
+};
+
 // Reads the claims sheet from a workbook already loaded with the xlsx library. A workbook without the sheet
-// simply has no claims. Returns { found, claims, problems }.
+// simply has no claims. Every occupied row is read, whatever range the file claims. Returns { found, claims, problems }.
 export const parseClaimsWorkbook = (workbook, { courier }) => {
   const name = (workbook?.SheetNames || []).find((n) => headerKey(n) === headerKey(CLAIMS_SHEET));
   if (!name) return { found: false, claims: [], problems: [] };
-  const rows = XLSX.utils.sheet_to_json(workbook.Sheets[name], { header: 1, defval: null, raw: true, blankrows: true });
+  const sheet = workbook.Sheets[name];
+  const ref = occupiedRange(sheet);
+  if (!ref) return { found: true, sheet: name, claims: [], problems: [] };
+  // A shallow copy with the true range: the caller's workbook object is left as it was.
+  const rows = XLSX.utils.sheet_to_json({ ...sheet, '!ref': ref }, { header: 1, defval: null, raw: true, blankrows: true });
   return { found: true, sheet: name, ...parseClaimsRows(rows, { courier }) };
 };

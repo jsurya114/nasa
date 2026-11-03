@@ -3,7 +3,8 @@
 // that filters by city cannot be bypassed. Call createEntry and voidEntry inside a transaction.
 
 import { claimTypeKey, isExempt } from '../claims/claimRules.js';
-import { lockCityPayroll, lockClaimSubject } from '../claims/claimsStore.js';
+import { entryFingerprint, rowFingerprint } from './ledgerRules.js';
+import { lockCityPayroll, lockClaimSubject, releaseHeldClaims } from '../claims/claimsStore.js';
 
 export class LedgerError extends Error {
   constructor(status, message) {
@@ -38,8 +39,9 @@ const replayOrConflict = async (db, admin, requestId, matches) => {
 export const createEntry = async (db, admin, entry) => {
   // City access first, before anything is read from the ledger.
   await assertCityAllowed(db, admin, entry.cityId);
-  const replay = await replayOrConflict(db, admin, entry.requestId,
-    (row) => row.driver_id === entry.driverId && row.entry_type === entry.type && Number(row.amount).toFixed(2) === entry.amount);
+  // The same comparison here and after a lost insert race below: every saved field must match.
+  const sameEntry = (row) => rowFingerprint(row) === entryFingerprint(entry);
+  const replay = await replayOrConflict(db, admin, entry.requestId, sameEntry);
   if (replay) return replay;
 
   const { rows: found } = await db.query(
@@ -57,15 +59,19 @@ export const createEntry = async (db, admin, entry) => {
       // The lock (shared with the import) stops two submissions, or a submission and an import, from both passing
       // this check at the same moment. It is released when the transaction ends.
       await lockClaimSubject(db, entry.waybill, claimTypeKey(entry.claimType));
-      const { rows: dup } = await db.query(
-        `SELECT 'carrier' AS source FROM courier_claims WHERE waybill = $1 AND claim_type_key = $2 AND superseded_at IS NULL
-         UNION ALL
-         SELECT 'manual' FROM driver_ledger_entries e
-          WHERE e.entry_type = 'manual_claim' AND e.waybill = $1 AND lower(e.claim_type) = $2
-            AND NOT EXISTS (SELECT 1 FROM driver_ledger_entries v WHERE v.voids_entry_id = e.id)
-         LIMIT 1`,
-        [entry.waybill, claimTypeKey(entry.claimType)]
+      // Claim types are compared by the same key the carrier import uses (claimTypeKey), never by a looser rule.
+      const typeKey = claimTypeKey(entry.claimType);
+      const { rows: carrier } = await db.query(
+        "SELECT 'carrier' AS source FROM courier_claims WHERE waybill = $1 AND claim_type_key = $2 AND superseded_at IS NULL LIMIT 1",
+        [entry.waybill, typeKey]
       );
+      const { rows: manual } = await db.query(
+        `SELECT 'manual' AS source, e.claim_type FROM driver_ledger_entries e
+          WHERE e.entry_type = 'manual_claim' AND e.waybill = $1
+            AND NOT EXISTS (SELECT 1 FROM driver_ledger_entries v WHERE v.voids_entry_id = e.id)`,
+        [entry.waybill]
+      );
+      const dup = [...carrier, ...manual.filter((m) => claimTypeKey(m.claim_type) === typeKey)];
       if (dup.length) {
         throw new LedgerError(409, dup[0].source === 'carrier'
           ? 'this claim was already imported from the carrier; it will be applied from there'
@@ -87,12 +93,13 @@ export const createEntry = async (db, admin, entry) => {
   );
   if (rows.length) return { entry: rows[0], replay: false };
   // Another request with the same ID won the race a moment ago.
-  return replayOrConflict(db, admin, entry.requestId, (row) => row.driver_id === entry.driverId && row.entry_type === entry.type);
+  return replayOrConflict(db, admin, entry.requestId, sameEntry);
 };
 
 // Voids an entry with a later reversing entry. Returns { entry, replay }.
 export const voidEntry = async (db, admin, request) => {
-  const replay = await replayOrConflict(db, admin, request.requestId, (row) => String(row.voids_entry_id) === String(request.entryId));
+  const replay = await replayOrConflict(db, admin, request.requestId,
+    (row) => String(row.voids_entry_id) === String(request.entryId) && row.reason === request.reason);
   if (replay) return replay;
 
   // Take the city's payroll lock before anything else, the same one a pay run is built under, so a void and a run
@@ -113,6 +120,9 @@ export const voidEntry = async (db, admin, request) => {
     const { rows: used } = await db.query('SELECT 1 FROM pay_statement_lines WHERE ledger_entry_id = $1 AND active LIMIT 1', [original.id]);
     if (used.length) throw new LedgerError(409, 'this entry is already on a pay run; record a correction instead');
   }
+  // Taken before the void is written, so a carrier import of the same claim waits and then sees this entry voided.
+  const heldSubject = original.entry_type === 'manual_claim' && original.waybill ? claimTypeKey(original.claim_type) : null;
+  if (heldSubject) await lockClaimSubject(db, original.waybill, heldSubject);
 
   const { rows: inserted } = await db.query(
     `INSERT INTO driver_ledger_entries
@@ -122,6 +132,8 @@ export const voidEntry = async (db, admin, request) => {
     [request.requestId, original.driver_id, original.city_id, original.direction === 'debit' ? 'credit' : 'debit',
       original.amount, request.reason, original.id, admin.id]
   );
+  // A carrier claim held because this hand-entered claim covered it can now be matched and applied instead.
+  if (heldSubject) await releaseHeldClaims(db, original.waybill, heldSubject);
   return { entry: inserted[0], replay: false };
 };
 

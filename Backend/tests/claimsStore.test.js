@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { importClaims, rematchOpenClaims } from '../services/payroll/claims/claimsStore.js';
+import { importClaims, rematchAllOpenClaims, rematchOpenClaims } from '../services/payroll/claims/claimsStore.js';
 import { parseClaimsRows } from '../services/payroll/claims/claimsParser.js';
 
 // Needs a PostgreSQL copy that has the app's tables (never production). Run with PAYROLL_TEST_DB=1 and the usual
@@ -65,7 +65,7 @@ test('claims are stored once, amended as versions, and matched only from history
           { driverId: driverB, cityId: cityA, cityName: 'DFW GOFO', carrierDeliveryId: '900002' },
         ],
       };
-      const counts = await rematchOpenClaims(db, async ({ waybill }) => history[waybill] ?? []);
+      const { counts } = await rematchOpenClaims(db, async ({ waybill }) => history[waybill] ?? []);
       assert.deepEqual(counts, { chargeable: 1, exempt: 1, unresolved: 0, ambiguous: 1 });
       const { rows } = await db.query(
         `SELECT c.waybill, m.status, m.eligible_deduction, m.driver_id FROM courier_claim_matches m
@@ -80,10 +80,39 @@ test('claims are stored once, amended as versions, and matched only from history
 
     await t.test('a decided claim is never changed by a later rematch, even if history changes', async () => {
       const moved = async () => [{ driverId: driverB, cityId: cityB, cityName: 'Tyler GOFO', carrierDeliveryId: '900003' }];
-      const counts = await rematchOpenClaims(db, moved);
+      const { counts } = await rematchOpenClaims(db, moved);
       assert.deepEqual(counts, { chargeable: 0, exempt: 0, unresolved: 0, ambiguous: 1 }); // only TESTW003 was open
       const { rows } = await db.query("SELECT m.status, m.driver_id FROM courier_claim_matches m JOIN courier_claims c ON c.id = m.claim_id WHERE c.waybill = 'TESTW002' AND c.superseded_at IS NULL");
       assert.deepEqual(rows[0], { status: 'exempt', driver_id: driverA });
+    });
+
+    await t.test('claims that stay unresolved at the front never stop later claims from being matched', async () => {
+      // Two new claims: the first has no delivery history (it stays unresolved), the second can be matched.
+      await importClaims(db, parse([
+        ['10/01/2026 10:00:00', 'TESTX001', 'Damaged Item', 10, null, -5],
+        ['10/01/2026 11:00:00', 'TESTX002', 'Damaged Item', 10, null, -7],
+      ]), source);
+      const history = async ({ waybill }) => (waybill === 'TESTX002'
+        ? [{ driverId: driverB, cityId: cityA, cityName: 'Tyler GOFO', carrierDeliveryId: '900009' }] : []);
+      const state = async (waybill) => (await db.query(
+        "SELECT m.status FROM courier_claim_matches m JOIN courier_claims c ON c.id = m.claim_id WHERE c.waybill = $1 AND c.superseded_at IS NULL", [waybill])).rows[0].status;
+
+      // One batch of one, three times without a cursor: always the same first open claim, as before the fix.
+      for (let i = 0; i < 3; i += 1) await rematchOpenClaims(db, history, { limit: 1 });
+      assert.equal(await state('TESTX002'), 'unresolved');
+      // With the cursor, the sweep moves on.
+      const first = await rematchOpenClaims(db, history, { limit: 1 });
+      assert.notEqual(first.nextAfterId, null);
+      const total = await rematchAllOpenClaims(db, history, { batch: 1 });
+      assert.equal(total.chargeable, 1);
+      assert.deepEqual([await state('TESTX001'), await state('TESTX002')], ['unresolved', 'chargeable']);
+    });
+
+    await t.test('a sweep can be limited to the waybills an assignment import touched', async () => {
+      await importClaims(db, parse([['10/02/2026 10:00:00', 'TESTX003', 'Damaged Item', 10, null, -9]]), source);
+      const seen = [];
+      await rematchAllOpenClaims(db, async ({ waybill }) => { seen.push(waybill); return []; }, { waybills: ['TESTX003'] });
+      assert.deepEqual(seen, ['TESTX003']);
     });
 
     await t.test('the database itself refuses an exempt claim with money or a chargeable claim without a driver', async () => {

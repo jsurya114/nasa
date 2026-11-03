@@ -46,7 +46,8 @@ Parser (`claimsParser.js`): finds the "Claims Detail" sheet and matches column t
   - a missing column;
   - reading from a workbook with and without the sheet.
 - Whole backend suite: 63 tests, 31 run and pass, 32 database tests skipped as before.
-- Read-only check on the three sample GOFO workbooks on the developer's machine (not in the repository). Only counts and claim types were printed: each has one claim (Driver Violent Delivery, fake pod, Damaged Item), with no problems, the negative charge read as a positive deduction, dates parsed, and the declared value kept separately.
+- Read-only check on the three sample GOFO workbooks on the developer's machine (not in the repository). Only counts and totals were printed. **Correction (review on #147):** the first version of this entry said each workbook held one claim. That was wrong. Each file's saved sheet range says `A1:L2`, but the cells go on, so the reader stopped after one row and dropped 42 claims without a word. The parser now reads every occupied cell (`occupiedRange`, for both sparse and dense sheets). The three workbooks now give 11, 19 and 15 claims (45 in total), with 0 problems. Deductions total 720.00, 673.15 and 491.93 (1,885.08). That matches an independent count of the raw rows with a waybill and the sum of their absolute "total expenses". The negative charge is read as a positive deduction, dates are parsed, and the declared value is kept separately.
+- Regression test: a synthetic workbook whose saved range says 2 rows while 16 are filled. Both sheet layouts give all 15 claims, and the caller's workbook is left unchanged. The test fails on the old code (1 claim instead of 15).
 
 **Not tested.** Offsets and prior-period lookups (they need the waybill history from #140 and part 2). A DFW GOFO workbook (none supplied; covered by synthetic tests only). SpeedX claims (no sample).
 
