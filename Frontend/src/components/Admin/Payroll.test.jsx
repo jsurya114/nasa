@@ -15,17 +15,21 @@ const STATEMENTS = [{ id: 21, city: "Test City", data_type: "daily", period_star
 const DETAIL = { ...STATEMENTS[0], gross: "80.50", insurance: "0.00", reimbursements: "0.00", claim_deductions: "0.00", recoveries: "0.00", carried_forward: "30.00",
   lines: [{ id: 1, line_type: "earning", amount: "80.50", journey_date: "2026-11-03", route_name: "Route T" }] };
 
-const startServer = async ({ ledgerReplies = [] } = {}) => {
-  const state = { requests: [], posts: [] };
+const startServer = async ({ ledgerReplies = [], refundsDue = [] } = {}) => {
+  const state = { requests: [], posts: [], refundsDue };
   await installServer(async (config) => {
     state.requests.push({ url: config.url, params: config.params });
     if (config.method === "post" && config.url === "/admin/payroll/ledger") {
-      state.posts.push(JSON.parse(config.data));
-      return ledgerReplies.shift() ?? { status: 201, data: { entry: { id: 9 }, replay: false } };
+      const body = JSON.parse(config.data);
+      state.posts.push(body);
+      const reply = ledgerReplies.shift() ?? { status: 201, data: { entry: { id: 9 }, replay: false } };
+      // As the server does: a refund linked to the claim clears that claim from the refunds due.
+      if (reply.status === 201 && body.claimCourier) state.refundsDue = state.refundsDue.filter((r) => r.waybill !== body.waybill);
+      return reply;
     }
     if (config.url === "/admin/get-admin-cities") return { status: 200, data: { cities: [{ id: 3, job: "Test City" }] } };
     if (config.url === "/admin/dashboard/drivers-by-city") return { status: 200, data: { data: [{ id: 7, name: "Dee Test" }] } };
-    if (config.url === "/admin/payroll/drivers/7/balances") return { status: 200, data: BALANCES };
+    if (config.url === "/admin/payroll/drivers/7/balances") return { status: 200, data: { ...BALANCES, refundsDue: state.refundsDue } };
     if (config.url === "/admin/payroll/drivers/7/statements") return { status: 200, data: { statements: STATEMENTS } };
     if (config.url === "/admin/payroll/statements/21") return { status: 200, data: DETAIL };
     return { status: 200, data: {} };
@@ -113,5 +117,39 @@ describe("admin Payroll", () => {
     fill("Type", "reimbursement");
     expect(screen.queryByLabelText("Repayment arrangement")).toBeNull();
     expect(screen.queryByLabelText("Already paid out to the driver outside payroll")).toBeNull();
+  });
+
+  it("records a refund linked to the claim from Refunds due, and the item clears", async () => {
+    const server = await startServer({ refundsDue: [{ claimId: 41, courier: "gofo", waybill: "TESTW041", claimType: "Damaged Item", amount: "10.00" }] });
+    await mount();
+    await chooseDriver();
+    expect(screen.getByText(/Damaged Item · TESTW041 \(GOFO\): \$10\.00 deducted more than is now owed/)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Record refund" }));
+    expect(screen.getByLabelText("Type").value).toBe("correction");
+    expect(screen.getByLabelText("Direction").value).toBe("credit");
+    expect(screen.getByLabelText("Claim waybill").value).toBe("TESTW041");
+    fireEvent.click(screen.getByRole("button", { name: "Record entry" }));
+    await waitFor(() => expect(server.posts).toHaveLength(1));
+    expect(server.posts[0]).toMatchObject({
+      cityId: 3, driverId: 7, type: "correction", direction: "credit", amount: "10.00",
+      claimCourier: "gofo", waybill: "TESTW041", claimType: "Damaged Item",
+    });
+    await waitFor(() => expect(screen.queryByText("Refunds due")).toBeNull());
+  });
+
+  it("offers a claim reference only on a refund (credit correction), and sends none when left empty", async () => {
+    const server = await startServer();
+    await mount();
+    await chooseDriver();
+    fill("Type", "correction");
+    expect(screen.queryByLabelText("Claim waybill")).toBeNull(); // a debit correction cannot name a claim
+    fill("Direction", "credit");
+    expect(screen.getByLabelText("Claim waybill")).toBeTruthy();
+    fill("Amount (USD)", "5");
+    fill("Reason", "Goodwill credit");
+    fireEvent.click(screen.getByRole("button", { name: "Record entry" }));
+    await waitFor(() => expect(server.posts).toHaveLength(1));
+    expect(server.posts[0]).not.toHaveProperty("claimCourier");
+    expect(server.posts[0]).not.toHaveProperty("waybill");
   });
 });

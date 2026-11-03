@@ -7,6 +7,7 @@ import BalanceSummary from "../Drivers/pay/BalanceSummary.jsx";
 import StatementList from "../Drivers/pay/StatementList.jsx";
 import StatementDetail from "../Drivers/pay/StatementDetail.jsx";
 import LedgerEntryForm from "./payroll/LedgerEntryForm.jsx";
+import RefundsDue from "./payroll/RefundsDue.jsx";
 
 // Payroll for one driver of one of the admin's cities (#142, #145): what they owe, their statements
 // (drafts show as Pending), and a form to record an advance, expense, claim, repayment or reimbursement.
@@ -44,6 +45,7 @@ export default function Payroll() {
   const [cityId, setCityId] = useState("");
   const [driverId, setDriverId] = useState("");
   const [openId, setOpenId] = useState(null);
+  const [prefill, setPrefill] = useState(null); // a refund chosen from "Refunds due"
   const payroll = useDriverPayroll(cityId, driverId);
   const city = cities.find((c) => String(c.id) === String(cityId));
 
@@ -60,7 +62,10 @@ export default function Payroll() {
       .catch(() => setDrivers([]));
   }, [city]);
 
-  useEffect(() => setOpenId(null), [cityId, driverId]);
+  useEffect(() => {
+    setOpenId(null);
+    setPrefill(null);
+  }, [cityId, driverId]);
 
   const needsReview = (payroll.balances?.entries ?? [])
     .filter((e) => e.direction === "debit" && !e.exempt && !e.recovery_plan && Number(e.outstanding) > 0);
@@ -108,6 +113,16 @@ export default function Payroll() {
                         {needsReview.length} {needsReview.length === 1 ? "entry has" : "entries have"} no repayment arrangement and will not be recovered until one is recorded.
                       </p>
                     )}
+                    <RefundsDue refunds={payroll.balances?.refundsDue ?? []} onRecord={(r) => {
+                      setPrefill({
+                        key: `${r.claimId}-${Date.now()}`,
+                        fields: {
+                          type: "correction", direction: "credit", amount: r.amount, claimCourier: r.courier, waybill: r.waybill,
+                          claimType: r.claimType, reason: `Refund: ${r.claimType} ${r.waybill} was deducted more than is now owed`,
+                        },
+                      });
+                      document.getElementById("record-entry")?.scrollIntoView({ behavior: "smooth", block: "start" });
+                    }} />
                     <BalanceSummary balances={payroll.balances} />
                     <h2 className="mb-2 text-sm font-semibold text-ink">Pay statements</h2>
                     <StatementList statements={payroll.statements} onOpen={setOpenId} />
@@ -116,7 +131,9 @@ export default function Payroll() {
               </section>
               <section className="card-surface p-4" aria-labelledby="record-entry">
                 <h2 id="record-entry" className="mb-4 text-lg font-semibold text-ink">Record an entry</h2>
-                <LedgerEntryForm key={`${cityId}-${driverId}`} cityId={Number(cityId)} driverId={Number(driverId)} onSaved={payroll.reload} />
+                <LedgerEntryForm key={`${cityId}-${driverId}-${prefill?.key ?? "new"}`} cityId={Number(cityId)} driverId={Number(driverId)}
+                  prefill={prefill?.fields}
+                  onSaved={() => { setPrefill(null); payroll.reload(); }} />
               </section>
             </div>
           )}

@@ -15,9 +15,11 @@ const TYPES = [
   { value: "correction", label: "Correction", debit: null },
 ];
 
-const blank = () => ({
+// prefill: fields to start from, for example a refund for a claim listed under "Refunds due".
+const blank = (prefill = {}) => ({
   requestId: newRequestId(), type: "advance", direction: "debit", amount: "", reason: "", effectiveDate: toLocalDateString(new Date()),
-  intendedPayday: "", disbursedOutsidePayroll: false, recoveryPlan: "", installmentAmount: "", claimType: "", waybill: "",
+  intendedPayday: "", disbursedOutsidePayroll: false, recoveryPlan: "", installmentAmount: "", claimType: "", waybill: "", claimCourier: "",
+  ...prefill,
 });
 
 const inputClass = "mt-1 min-h-11 w-full rounded-xl border border-line bg-white px-3 py-2 text-base focus:border-brand-500 focus:outline-none focus:ring-4 focus:ring-brand-500/20";
@@ -36,12 +38,15 @@ function Field({ label, error, children }) {
   );
 }
 
-export default function LedgerEntryForm({ cityId, driverId, onSaved }) {
-  const [form, setForm] = useState(blank);
+export default function LedgerEntryForm({ cityId, driverId, onSaved, prefill }) {
+  const [form, setForm] = useState(() => blank(prefill));
   const [errors, setErrors] = useState({});
   const [saving, setSaving] = useState(false);
   const type = TYPES.find((t) => t.value === form.type);
   const isDebit = type.debit === null ? form.direction === "debit" : type.debit;
+  // Only a refund (a credit correction) may name the claim it refunds: courier, waybill and claim type together (#149).
+  const isRefund = form.type === "correction" && form.direction === "credit";
+  const namesClaim = isRefund && Boolean(form.claimCourier || form.waybill || form.claimType);
   const set = (key) => (e) => setForm((f) => ({ ...f, [key]: e.target.type === "checkbox" ? e.target.checked : e.target.value }));
 
   const submit = async (e) => {
@@ -56,6 +61,7 @@ export default function LedgerEntryForm({ cityId, driverId, onSaved }) {
       ...(isDebit && form.recoveryPlan && { recoveryPlan: form.recoveryPlan }),
       ...(isDebit && form.recoveryPlan === "installments" && { installmentAmount: form.installmentAmount }),
       ...(form.type === "manual_claim" && { claimType: form.claimType, waybill: form.waybill }),
+      ...(namesClaim && { claimType: form.claimType, waybill: form.waybill, claimCourier: form.claimCourier }),
     };
     try {
       await axios.post("/admin/payroll/ledger", body);
@@ -106,6 +112,24 @@ export default function LedgerEntryForm({ cityId, driverId, onSaved }) {
             <input className={inputClass} value={form.waybill} onChange={set("waybill")} maxLength={64} />
           </Field>
         </>
+      )}
+      {isRefund && (
+        <fieldset className="grid grid-cols-1 gap-4 rounded-xl border border-line p-3 sm:col-span-2 sm:grid-cols-3">
+          <legend className="px-1 text-sm font-medium text-gray-700">Refund for a claim (optional: all three, or none)</legend>
+          <Field label="Courier" error={errors.claimCourier}>
+            <select className={inputClass} value={form.claimCourier} onChange={set("claimCourier")}>
+              <option value="">Not for a claim</option>
+              <option value="gofo">GOFO</option>
+              <option value="speedx">SpeedX</option>
+            </select>
+          </Field>
+          <Field label="Claim waybill" error={errors.waybill}>
+            <input className={inputClass} value={form.waybill} onChange={set("waybill")} maxLength={64} />
+          </Field>
+          <Field label="Claim type" error={errors.claimType}>
+            <input className={inputClass} value={form.claimType} onChange={set("claimType")} maxLength={100} />
+          </Field>
+        </fieldset>
       )}
       {form.type === "advance" && (
         <label className="flex min-h-11 items-center gap-2 text-sm font-medium text-gray-700 sm:col-span-2">
