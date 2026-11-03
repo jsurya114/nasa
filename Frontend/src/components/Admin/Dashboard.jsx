@@ -15,8 +15,8 @@ import {
 import Header from "../../reuse/Header.jsx";
 import Nav from "../../reuse/Nav.jsx";
 import PaymentDashboardTable from "./DashboardTable.jsx";
-import usePenaltySummary, { describePenalty } from "./dashboard/usePenaltySummary.js";
-import { summaryItems, summaryLook } from "./dashboard/penaltyDisplay.js";
+import usePenaltySummary from "./dashboard/usePenaltySummary.js";
+import { netAfter, summaryItems, summaryLook } from "./dashboard/penaltyDisplay.js";
 import Loader from "../Loader.jsx"
 import { CalendarDays, CalendarRange, ChevronDown, Gavel, LayoutGrid, ShieldCheck, Banknote } from "lucide-react";
 
@@ -43,8 +43,7 @@ export default function Dashboard() {
 
   const { isSuperAdmin } = useSelector((state) => state.admin);
   const penalty = usePenaltySummary();
-  const penaltyInfo = useMemo(() => describePenalty(penalty), [penalty]);
-  const penaltyLines = useMemo(() => summaryItems(penalty, penaltyInfo), [penalty, penaltyInfo]);
+  const penaltyLines = useMemo(() => summaryItems(penalty), [penalty]);
 
   const getTodayDate = () => {
     const today = new Date();
@@ -223,6 +222,7 @@ export default function Dashboard() {
   // ✅ UPDATED: Handle Filter Data button - check if filters are applied
   const handleFilterClick = () => {
     penalty.rememberScope(localFilters); // keep the applied city and driver IDs even if the dropdowns change before the next apply
+    penalty.retry(); // and ask again, so a record saved or completed since then shows up
     setShowExtraFields(localFilters.companyEarnings);
 
     // ✅ NEW: Check if any filters are actually applied
@@ -590,12 +590,12 @@ export default function Dashboard() {
                     ...(Number(extraFieldsData.insuranceDeduction) > 0 ? [
                       { field: "insuranceDeduction", label: "Insurance Deduction", icon: ShieldCheck, highlight: false, isNegative: true },
                     ] : []),
-                    // #166: this payday's pay-run deductions, the pay run's own net as the one payable net, and what is still owed.
+                    // #166: penalties and other debts below the insurance deduction; they come off the net.
                     ...penaltyLines.afterInsurance,
-                    ...(Number(extraFieldsData.insuranceDeduction) > 0 ? [
-                      { field: "netDriverPayment", label: penaltyLines.netLabel.label, icon: Banknote, highlight: false, isBold: !penaltyLines.netLabel.muted, isMoney: penaltyLines.netLabel.muted, muted: penaltyLines.netLabel.muted },
+                    ...((Number(extraFieldsData.insuranceDeduction) > 0 || penaltyLines.hasDeductions || penaltyLines.afterInsurance.some((i) => i.kind === "notice")) ? [
+                      { field: "netDriverPayment", label: penaltyLines.netLabel.label, icon: Banknote, highlight: false, isBold: !penaltyLines.netLabel.muted, isMoney: penaltyLines.netLabel.muted, muted: penaltyLines.netLabel.muted,
+                        text: `$${netAfter(extraFieldsData.netDriverPayment, penalty).toFixed(2)}` },
                     ] : []),
-                    ...penaltyLines.afterNet,
                     ...(isSuperAdmin ? [{ field: "companyEarnings", label: "Total Company Earnings", highlight: true }] : []),
                   ].map((item, i) => {
                     const look = summaryLook(item);

@@ -21,14 +21,16 @@ const totalsOf = (rows) => {
   return { count: rows.length, claimDeductions: fromCents(claims), recoveries: fromCents(recoveries), deducted: fromCents(claims + recoveries), net: fromCents(sum(rows, 'net')) };
 };
 
-// range: { from, to } as YYYY-MM-DD. Returns the figures, or throws PayrollError (400, 403, 404).
+// range: { from, to } as YYYY-MM-DD, or both left out. Without dates only what is outstanding is returned (the dashboard
+// shows it as soon as a record is saved); the pay-run part is then empty. Returns the figures, or throws PayrollError.
 export const getDriverPeriodSummary = async (db, admin, { driverId, cityId, from, to }) => {
-  if (!parseDate(from) || !parseDate(to) || from > to) throw new PayrollError(400, 'from and to must be real dates (YYYY-MM-DD), from not after to');
+  const hasRange = Boolean(from || to);
+  if (hasRange && (!parseDate(from) || !parseDate(to) || from > to)) throw new PayrollError(400, 'from and to must be real dates (YYYY-MM-DD), from not after to, or both left out');
   await assertCityAllowed(db, admin, cityId);
   const { rows: driver } = await db.query('SELECT 1 FROM drivers WHERE id = $1 AND city_id = $2', [driverId, cityId]);
   if (driver.length === 0) throw new PayrollError(404, 'driver not found in this city');
 
-  const { rows } = await db.query(
+  const { rows } = hasRange ? await db.query(
     `SELECT s.id AS statement_id, r.id AS run_id, r.status AS run_status,
             to_char(r.period_start, 'YYYY-MM-DD') AS period_start, to_char(r.period_end, 'YYYY-MM-DD') AS period_end,
             s.claim_deductions, s.recoveries, s.net, (r.period_start >= $3 AND r.period_end <= $4) AS inside
@@ -37,7 +39,7 @@ export const getDriverPeriodSummary = async (db, admin, { driverId, cityId, from
         AND r.period_start <= $4 AND r.period_end >= $3
       ORDER BY r.period_start, r.id`,
     [driverId, cityId, from, to]
-  );
+  ) : { rows: [] };
   const inside = rows.filter((r) => r.inside);
   // The split comes from the server's own allocation, which spreads repayments made outside payroll over what is owed, so
   // penalties and other debts always add up to the total. Linked settlements and waivers are already in each entry's balance.

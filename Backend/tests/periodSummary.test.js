@@ -135,6 +135,14 @@ test('dashboard period summary: this payday, approved or preview, and what is st
       assert.ok(adds(mixed));
     });
 
+    await t.test('without dates only what is outstanding is returned, and half a range is refused', async () => {
+      const s = await getDriverPeriodSummary(db, cityAdmin, { driverId: d1, cityId: city });
+      assert.equal(s.period.status, 'none');
+      assert.equal(s.period.crossingRuns, 0);
+      assert.equal(s.outstanding.total, (await ask(cityAdmin)).outstanding.total, 'the same outstanding figures as with a range');
+      await assert.rejects(getDriverPeriodSummary(db, cityAdmin, { driverId: d1, cityId: city, from: '2026-11-01' }), { status: 400 });
+    });
+
     await t.test('bad dates, the wrong city, a driver of another city and a missing city are refused', async () => {
       await assert.rejects(ask(cityAdmin, { from: '2026-11-08', to: '2026-11-01' }), { status: 400 });
       await assert.rejects(ask(cityAdmin, { from: 'x', to: '2026-11-01' }), { status: 400 });
