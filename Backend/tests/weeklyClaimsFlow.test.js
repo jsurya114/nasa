@@ -180,6 +180,60 @@ test('the weekly upload stores the Claims Detail sheet, matches it from history,
       assert.equal(Object.keys(await claimState('WCL006')).length, 0);
     });
 
+    await t.test('a report with a known route and an unknown route stores no claim, and names the unknown route', async () => {
+      const file = await fileOf({
+        fee: [fee('WCL020', 'CLFD 01-1', 91000011, '12/13/2030 10:00:00'), fee('WCL021', 'NOSUCH 99-9', 91000011, '12/13/2030 10:00:00')],
+        claims: [['12/13/2030 09:00:00', 'WCL020', 'Damaged Item', 500, null, -7]],
+      });
+      const result = await upload(file, SUPER, 'unknown-route.xlsx');
+      assert.equal(result.status, 200);
+      assert.equal(result.body.data.claims.stored, false);
+      assert.match(result.body.data.claims.reason, /1 route .* not set up \(NOSUCH 99-9\)/);
+      assert.equal(Object.keys(await claimState('WCL020')).length, 0);
+      assert.ok(result.body.data.recordsInserted >= 1, 'the pay upload is unaffected');
+    });
+
+    await t.test('a row with no waybill does not narrow the city check: two cities with an incomplete row store no claim', async () => {
+      const file = await fileOf({
+        fee: [fee('WCL022', 'CLFD 01-1', 91000011, '12/14/2030 10:00:00'), fee('', 'CLFT 01-1', 91000012, '12/14/2030 10:00:00')],
+        claims: [['12/14/2030 09:00:00', 'WCL022', 'Damaged Item', 500, null, -7]],
+      });
+      const result = await upload(file, SUPER, 'two-cities-incomplete.xlsx');
+      assert.equal(result.status, 200);
+      assert.equal(result.body.data.assignmentHistory.problems, 1, 'the row without a waybill is an identity problem');
+      assert.equal(result.body.data.claims.stored, false);
+      assert.match(result.body.data.claims.reason, /more than one city/);
+      assert.equal(Object.keys(await claimState('WCL022')).length, 0);
+    });
+
+    await t.test('a single-city report whose fee row has no waybill still stores its claims, pending without package identity', async () => {
+      const file = await fileOf({
+        fee: [fee('', 'CLFD 01-1', 91000011, '12/15/2030 10:00:00')],
+        claims: [['12/15/2030 09:00:00', 'WCL023', 'Damaged Item', 500, null, -7]],
+      });
+      const result = await upload(file, SUPER, 'single-city-incomplete.xlsx');
+      assert.equal(result.status, 200);
+      assert.equal(result.body.data.claims.stored, true);
+      assert.equal(result.body.data.claims.cityId, dfw.id);
+      assert.equal((await claimState('WCL023')).WCL023[0], 'unresolved', 'no package identity, so it waits');
+    });
+
+    await t.test('an unknown route on the Offset Details sheet also blocks the claims', async () => {
+      const workbook = new ExcelJS.Workbook();
+      const feeSheet = workbook.addWorksheet('Details of Delivery Fees');
+      feeSheet.addRow(FEE_HEADER);
+      feeSheet.addRow(fee('WCL024', 'CLFD 01-1', 91000011, '12/16/2030 10:00:00'));
+      const offset = workbook.addWorksheet('Offset Details');
+      offset.addRow(FEE_HEADER);
+      offset.addRow(['WCL025', 'Sam', 'NOSUCH 98-8', 91000011, '12/16/2030 10:00:00', -1, null]);
+      const claims = workbook.addWorksheet('Claims Detail');
+      claims.addRow(CLAIM_HEADER);
+      claims.addRow(['12/16/2030 09:00:00', 'WCL024', 'Damaged Item', 500, null, -7]);
+      const result = await upload(Buffer.from(await workbook.xlsx.writeBuffer()), SUPER, 'offset-unknown.xlsx');
+      assert.equal(result.body.data.claims.stored, false);
+      assert.match(result.body.data.claims.reason, /NOSUCH 98-8/);
+    });
+
     await t.test('a city admin cannot upload a report of a city that is not theirs, so no claim is stored either', async () => {
       const file = await fileOf({
         fee: [fee('WCL008', 'CLFD 01-1', 91000011, '12/09/2030 10:00:00')],

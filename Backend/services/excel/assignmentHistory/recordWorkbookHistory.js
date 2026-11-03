@@ -67,8 +67,9 @@ export const recordWorkbookHistory = async (client, workbook, { buffer, fileName
     logger.error('Assignment history could not be read from the report', error);
     return { saved: false, reason: 'The report could not be read for assignment history.', routeCodes: [] };
   }
-  // The routes the report names, for callers that need to know which city it belongs to.
-  const routeCodes = [...new Set(evidence.rows.map((r) => r.routeCode).filter(Boolean))];
+  // Every route the report names on either sheet, even on a row that gives no usable package identity, for callers
+  // that need to know which city the report belongs to.
+  const { routeCodes } = evidence;
 
   if (bestEffort) await client.query(`SAVEPOINT ${SAVEPOINT}`);
   try {

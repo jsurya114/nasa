@@ -28,11 +28,15 @@ const readClaimsWorkbook = (buffer) => {
   return XLSX.read(buffer, { type: 'buffer', sheets: name });
 };
 
+// Every route the report names must belong to a known city. Returns { cities, unresolved }: the distinct cities of the
+// routes that are known, and the route codes that are not. A report is only given a city when nothing is unresolved.
 const cityOfRoutes = async (client, routeCodes) => {
-  if (routeCodes.length === 0) return [];
+  if (routeCodes.length === 0) return { cities: [], unresolved: [] };
   const { rows } = await client.query(
-    `SELECT DISTINCT c.id, c.job FROM routes r JOIN city c ON c.job = r.job WHERE r.route_code_in_string = ANY($1::text[])`, [routeCodes]);
-  return rows;
+    `SELECT r.route_code_in_string AS code, c.id, c.job FROM routes r JOIN city c ON c.job = r.job WHERE r.route_code_in_string = ANY($1::text[])`, [routeCodes]);
+  const known = new Set(rows.map((r) => r.code));
+  const cities = [...new Map(rows.map((r) => [r.id, { id: r.id, job: r.job }])).values()];
+  return { cities, unresolved: routeCodes.filter((code) => !known.has(code)) };
 };
 
 const notStored = (found, parsed, reason) => ({ found, stored: false, reason, inFile: parsed.claims.length, problems: parsed.problems.length, problemRows: parsed.problems.slice(0, MAX_PROBLEMS_SHOWN) });
@@ -55,11 +59,16 @@ export const recordWorkbookClaims = async (client, { buffer, fileName, user, rou
       await client.query(`RELEASE SAVEPOINT ${SAVEPOINT}`);
       return notStored(true, parsed, parsed.problems.length ? 'Every claim row has a problem; nothing was stored.' : 'The Claims Detail sheet has no claims.');
     }
-    const cities = await cityOfRoutes(client, routeCodes ?? []);
+    const { cities, unresolved } = await cityOfRoutes(client, routeCodes ?? []);
+    if (unresolved.length > 0) {
+      await client.query(`RELEASE SAVEPOINT ${SAVEPOINT}`);
+      const shown = unresolved.slice(0, 5).join(', ');
+      return notStored(true, parsed, `Claims were not stored: ${unresolved.length} route${unresolved.length === 1 ? '' : 's'} in the report ${unresolved.length === 1 ? 'is' : 'are'} not set up (${shown}${unresolved.length > 5 ? ', ...' : ''}), so the city cannot be confirmed. Add the route${unresolved.length === 1 ? '' : 's'} and upload again.`);
+    }
     if (cities.length !== 1) {
       await client.query(`RELEASE SAVEPOINT ${SAVEPOINT}`);
       return notStored(true, parsed, cities.length === 0
-        ? 'Claims were not stored: the report\'s routes do not identify a city. Upload one city\'s report at a time.'
+        ? 'Claims were not stored: the report names no route, so its city cannot be confirmed. Upload one city\'s report at a time.'
         : 'Claims were not stored: the report\'s routes belong to more than one city. Upload one city\'s report at a time.');
     }
     const [city] = cities;
