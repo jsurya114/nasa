@@ -8,7 +8,6 @@
 // calculation of the next pay run (reimbursements and credits included), marked as a preview until a pay run is approved. With no
 // eligible pay rows nothing can be taken, and the table's own net is shown.
 
-const cents = (v) => Math.round(Number(v) * 100);
 const ready = (penalty) => penalty?.status === "ready";
 
 // What the row shows, or null while the figures are not there.
