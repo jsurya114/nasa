@@ -7,6 +7,7 @@ import { getLedger, postLedgerEntry, postLedgerVoid } from '../controllers/payro
 import {
   getPayrollSettings, getPayRun, getPayRuns, postDiscard, postFinalize, postPayRun, postVoid, putRecoveryLimit,
 } from '../controllers/payroll/payRunController.js';
+import { getAdminStatement, getDriverBalanceList, getDriverStatementList } from '../controllers/payroll/statementController.js';
 
 const router = express.Router();
 sanitizeRouterParams(router);
@@ -27,5 +28,10 @@ router.get('/runs/:runId', getPayRun);
 router.post('/runs/:runId/finalize', postFinalize);
 router.post('/runs/:runId/discard', postDiscard);
 router.post('/runs/:runId/void', postVoid);
+
+// Read-only statements and balances for one driver of the admin's cities (#145).
+router.get('/statements/:statementId', getAdminStatement);
+router.get('/drivers/:driverId/statements', getDriverStatementList);
+router.get('/drivers/:driverId/balances', getDriverBalanceList);
 
 export default router;

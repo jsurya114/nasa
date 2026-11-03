@@ -10,9 +10,9 @@ import { CLAIM_TYPE_KEY_SQL } from '../claims/claimRefunds.js';
 
 export { PayrollError };
 
-const isSuperAdmin = (admin) => admin?.role === 'superadmin';
+export const isSuperAdmin = (admin) => admin?.role === 'superadmin';
 
-const assertCityAllowed = async (db, admin, cityId) => {
+export const assertCityAllowed = async (db, admin, cityId) => {
   if (isSuperAdmin(admin)) return;
   const { rows } = await db.query('SELECT 1 FROM admin_city_ref WHERE admin_id = $1 AND city_id = $2', [admin?.id, cityId]);
   if (rows.length === 0) throw new PayrollError(403, 'you do not have access to this city');
@@ -146,7 +146,7 @@ const loadLedger = async (db, run, driverIds) => {
 // version is still unresolved, nothing is concluded. These are flagged for an approved correction, never refunded here.
 // Only this city's runs and corrections count, so a city's run never reads another city's pay. A claim later matched
 // to another city is still flagged here, where it was deducted.
-const loadOverRecovered = async (db, cityId, driverIds) => {
+export const loadOverRecovered = async (db, cityId, driverIds) => {
   const { rows } = await db.query(
     `WITH taken AS (
        SELECT cv.claim_key, s.driver_id, SUM(-l.amount) AS taken
@@ -156,7 +156,7 @@ const loadOverRecovered = async (db, cityId, driverIds) => {
          JOIN pay_runs r ON r.id = s.pay_run_id
         WHERE l.active AND l.line_type = 'claim' AND s.driver_id = ANY($1::int[]) AND r.city_id = $2 AND r.status = 'finalized'
         GROUP BY cv.claim_key, s.driver_id)
-     SELECT t.driver_id, c.id AS claim_id,
+     SELECT t.driver_id, c.id AS claim_id, c.courier, c.waybill, c.claim_type,
             (t.taken
               - CASE WHEN m.status = 'chargeable' AND m.driver_id = t.driver_id AND m.city_id = $2 THEN m.eligible_deduction ELSE 0 END
               - COALESCE((SELECT SUM(e.amount) FROM driver_ledger_entries e
