@@ -2,16 +2,22 @@ import HttpStatus from '../../utils/statusCodes.js';
 import { dbService } from '../../services/admin/dbQueries.js';
 import { canAccessJob, canAccessDriver } from '../../services/admin/cityAccess.js';
 import logger from '../../utils/logger.js';
+import { findDriverByName, isNameConflict, NAME_TAKEN, parseDriverName } from '../../services/admin/driverName.js';
+import pool from '../../config/db.js';
 
 const CITY_FORBIDDEN = { message: "You can only manage drivers in your assigned cities" };
 
 export const createUsers = async (req, res) => {
     try {
-        const { email, password, name, driver_code, city, enabled, phoneNumber } = req.body;
+        const { email, password, driver_code, city, enabled, phoneNumber } = req.body;
 
         if (!email || !password || !city || !driver_code) {
             return res.status(HttpStatus.UNAUTHORIZED).json({ message: "Email, password, city & driver code is required" })
         }
+        // One name, one driver (#177): claims are matched to drivers by name, ignoring case and extra spaces.
+        const parsedName = parseDriverName(req.body.name);
+        if (parsedName.error) return res.status(HttpStatus.BAD_REQUEST).json({ message: parsedName.error });
+        const name = parsedName.name;
 
         if (!(await canAccessJob(req.user, city)))
             return res.status(HttpStatus.FORBIDDEN).json(CITY_FORBIDDEN);
@@ -24,10 +30,14 @@ export const createUsers = async (req, res) => {
         if (driverCodeExists)
             return res.status(HttpStatus.CONFLICT).json({ message: "Driver Code already used" });
 
+        if (await findDriverByName(pool, name)) return res.status(HttpStatus.CONFLICT).json({ message: NAME_TAKEN });
+
         const insertUser = await dbService.insertUser({ name, email, driver_code, password, city, enabled, phoneNumber });
 
         return res.status(HttpStatus.OK).json({ message: "User Added Successfully!!", insertUser });
     } catch (err) {
+        // Two admins saving the same name at the same moment: the database index lets only one through.
+        if (isNameConflict(err)) return res.status(HttpStatus.CONFLICT).json({ message: NAME_TAKEN });
         logger.error("Error while inserting driver", err)
         return res.status(HttpStatus.INTERNAL_SERVER_ERROR).json({ message: "Server error" })
     }
@@ -89,7 +99,10 @@ export const changeStatusUser = async (req, res) => {
 export const updateUser = async (req, res) => {
     try {
         const id = req.params.id;
-        const { name, email, city, enabled, phoneNumber, password, driver_code } = req.body;
+        const { email, city, enabled, phoneNumber, password, driver_code } = req.body;
+        const parsedName = parseDriverName(req.body.name);
+        if (parsedName.error) return res.status(HttpStatus.BAD_REQUEST).json({ message: parsedName.error });
+        const name = parsedName.name;
 
         const existing = await dbService.getDriverById(id);
         if (!existing)
@@ -109,6 +122,9 @@ export const updateUser = async (req, res) => {
                 });
             }
         }
+
+        // A driver may keep their own name; any other driver's name, ignoring case and spaces, is taken (#177).
+        if (await findDriverByName(pool, name, Number(id))) return res.status(HttpStatus.CONFLICT).json({ message: NAME_TAKEN });
 
         const updateData = {
             name,
@@ -131,6 +147,7 @@ export const updateUser = async (req, res) => {
             updatedUser,
         });
     } catch (err) {
+        if (isNameConflict(err)) return res.status(HttpStatus.CONFLICT).json({ message: NAME_TAKEN });
         logger.error("Update user error", err);
         res.status(500).json({ message: "Server error" });
     }
