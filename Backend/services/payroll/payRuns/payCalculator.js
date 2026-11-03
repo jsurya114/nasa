@@ -34,16 +34,31 @@ export const recoveryCap = (limit, availableCents) => {
   throw new Error(`unknown recovery limit type: ${limit.type}`);
 };
 
-// Spreads repayments made outside payroll over the oldest debits first, so they lower what is still owed.
+// Spreads repayments made outside payroll over the oldest debits first, so they lower what is still owed, and records
+// how much of each repayment was used, so the run can keep an audit line for it.
 const applyRepayments = (debits, repayments) => {
-  let left = repayments.reduce((sum, r) => sum + toCents(r.amount), 0);
-  return debits.map((d) => {
-    const owed = toCents(d.outstanding);
-    const used = Math.min(owed, left);
-    left -= used;
-    return { ...d, owedCents: owed - used, repaidOutsideCents: used };
+  const pool = [...repayments].sort((a, b) => String(a.entryId).localeCompare(String(b.entryId), undefined, { numeric: true }))
+    .map((r) => ({ entryId: r.entryId, left: toCents(r.amount), used: 0 }));
+  const allocated = debits.map((d) => {
+    let owed = toCents(d.outstanding);
+    let repaid = 0;
+    for (const r of pool) {
+      const use = Math.min(owed, r.left);
+      r.left -= use;
+      r.used += use;
+      owed -= use;
+      repaid += use;
+    }
+    return { ...d, owedCents: owed, repaidOutsideCents: repaid };
   });
+  return { debits: allocated, used: pool.filter((r) => r.used > 0) };
 };
+
+// Why a debit is not recovered on this run even though it is owed. The run decides; the calculator only obeys.
+export const HOLD_MESSAGES = Object.freeze({
+  advance_not_disbursed: 'this advance is not marked as paid out to the driver; nothing is recovered until it is',
+  already_recovered_this_period: 'already recovered on a run for an overlapping period; the next amount waits for the next pay period',
+});
 
 const byDateThenId = (dateKey) => (a, b) => (a[dateKey] < b[dateKey] ? -1 : a[dateKey] > b[dateKey] ? 1 : String(a.id).localeCompare(String(b.id), undefined, { numeric: true }));
 
@@ -53,8 +68,10 @@ const byDateThenId = (dateKey) => (a, b) => (a[dateKey] < b[dateKey] ? -1 : a[da
 //   earnings        [{ paymentId, journeyDate, routeId, gross, insurance }]   closed, unpaid pay rows
 //   reimbursements  [{ entryId, amount }]                                     credits paid to the driver
 //   claims          [{ claimId, claimAt, outstanding }]                       matched chargeable claims, still owed
-//   debits          [{ entryId, effectiveDate, intendedPayday, plan, installmentAmount, outstanding }]
-//   repayments      [{ entryId, amount }]                                     repaid outside payroll, not yet allocated
+//   debits          [{ entryId, effectiveDate, intendedPayday, plan, installmentAmount, outstanding, hold? }]
+//                   hold: a HOLD_MESSAGES code; the debit stays owed and is not recovered on this run
+//   repayments      [{ entryId, amount }]                                     repaid outside payroll and already due
+//   overRecovered   [{ claimId, amount }]  claims the carrier lowered after more was deducted; flagged, never refunded here
 // Returns { lines, totals, flags }. Line amounts are signed: money to the driver is positive.
 export const calculateStatement = (input) => {
   const flags = [];
@@ -88,12 +105,14 @@ export const calculateStatement = (input) => {
     const owed = toCents(c.outstanding);
     if (owed > 0) due.push({ kind: 'claim', id: c.claimId, owed, want: owed });
   }
-  const debits = applyRepayments([...(input.debits ?? [])].sort(byDateThenId('effectiveDate')), input.repayments ?? []);
+  const { debits, used } = applyRepayments([...(input.debits ?? [])].sort(byDateThenId('effectiveDate')), input.repayments ?? []);
+  for (const r of used) lines.push({ type: 'repayment', entryId: r.entryId, amount: fromCents(r.used) });
   for (const d of debits) {
     if (d.owedCents <= 0) continue;
     const notYet = d.effectiveDate > input.periodEnd || (d.intendedPayday && d.intendedPayday > input.periodEnd);
     let want = 0;
-    if (notYet) want = 0;
+    if (d.hold) flags.push({ code: d.hold, entryId: d.entryId, message: HOLD_MESSAGES[d.hold] ?? 'held for review; not recovered' });
+    else if (notYet) want = 0;
     else if (d.plan === 'full_next_payday') want = d.owedCents;
     else if (d.plan === 'installments') want = Math.min(toCents(d.installmentAmount), d.owedCents);
     else flags.push({ code: 'needs_review', entryId: d.entryId, message: 'no repayment arrangement recorded; not recovered' });
@@ -121,7 +140,13 @@ export const calculateStatement = (input) => {
       }
     }
     carriedCents += item.owed - take;
-    if (take < item.want) flags.push({ code: 'carried_forward', [item.kind === 'claim' ? 'claimId' : 'entryId']: item.id, message: `${fromCents(item.want - take)} of this payday's amount carried forward (limit reached)` });
+    // With no limit set, the recovery_limit_not_set flag already says why nothing was taken.
+    if (take < item.want && cap !== null) flags.push({ code: 'carried_forward', [item.kind === 'claim' ? 'claimId' : 'entryId']: item.id, message: `${fromCents(item.want - take)} of this payday's amount carried forward (limit reached)` });
+  }
+
+  for (const o of input.overRecovered ?? []) {
+    flags.push({ code: 'claim_over_recovered', claimId: o.claimId, amount: o.amount,
+      message: `the carrier lowered this claim after it was deducted: ${o.amount} more was taken than is now owed; record an approved correction` });
   }
 
   const netCents = availableCents - claimCents - recoveryCents;

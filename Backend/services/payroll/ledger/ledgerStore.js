@@ -4,7 +4,8 @@
 
 import { claimTypeKey, isExempt } from '../claims/claimRules.js';
 import { entryFingerprint, rowFingerprint } from './ledgerRules.js';
-import { lockClaimSubject, releaseHeldClaims } from '../claims/claimsStore.js';
+import { refundableForClaim } from '../claims/claimRefunds.js';
+import { lockCityPayroll, lockClaimSubject, releaseHeldClaims } from '../claims/claimsStore.js';
 
 export class LedgerError extends Error {
   constructor(status, message) {
@@ -80,6 +81,22 @@ export const createEntry = async (db, admin, entry) => {
     }
   }
 
+  // A refund for a claim may not exceed what is still refundable to this driver for it. Checked under the city's
+  // payroll lock and then the claim's lock (the order pay runs and voids use), so two admins or two stale forms cannot
+  // both refund the same over-recovery, and a refund cannot be recorded while the run that made the charge is being
+  // voided: whichever comes second sees the other.
+  if (entry.type === 'correction' && entry.claimType) {
+    const typeKey = claimTypeKey(entry.claimType);
+    await lockCityPayroll(db, entry.cityId);
+    await lockClaimSubject(db, entry.waybill, typeKey);
+    const { refundable, reason } = await refundableForClaim(db, {
+      driverId: entry.driverId, cityId: entry.cityId, courier: entry.claimCourier, waybill: entry.waybill, typeKey,
+    });
+    if (Number(entry.amount) > Number(refundable)) {
+      throw new LedgerError(409, Number(refundable) > 0 ? `only ${refundable} is still refundable to this driver for this claim` : reason);
+    }
+  }
+
   const { rows } = await db.query(
     `INSERT INTO driver_ledger_entries
        (request_id, driver_id, city_id, entry_type, direction, amount, reason, effective_date, intended_payday,
@@ -102,13 +119,24 @@ export const voidEntry = async (db, admin, request) => {
     (row) => String(row.voids_entry_id) === String(request.entryId) && row.reason === request.reason);
   if (replay) return replay;
 
+  // Take the city's payroll lock before anything else, the same one a pay run is built under, so a void and a run
+  // being built cannot pass each other: the run either sees the void, or the void sees the run's lines.
+  const { rows: where } = await db.query('SELECT city_id FROM driver_ledger_entries WHERE id = $1', [request.entryId]);
+  if (!where[0]) throw new LedgerError(404, 'entry not found');
+  await assertCityAllowed(db, admin, where[0].city_id);
+  await lockCityPayroll(db, where[0].city_id);
   const { rows } = await db.query(`SELECT ${ENTRY_COLUMNS} FROM driver_ledger_entries WHERE id = $1 FOR UPDATE`, [request.entryId]);
   const original = rows[0];
-  if (!original) throw new LedgerError(404, 'entry not found');
-  await assertCityAllowed(db, admin, original.city_id);
   if (original.entry_type === 'void') throw new LedgerError(400, 'a void cannot be voided; record a correction instead');
   const { rows: already } = await db.query('SELECT id FROM driver_ledger_entries WHERE voids_entry_id = $1', [original.id]);
   if (already.length) throw new LedgerError(409, 'this entry is already voided');
+  // Once a pay run has used an entry, it stays; fix it with a correction entry (or discard/void that run first).
+  // (The pay run tables arrive with the #143 migration; until then no entry can be on a run.)
+  const { rows: tables } = await db.query("SELECT to_regclass('pay_statement_lines') IS NOT NULL AS ready");
+  if (tables[0].ready) {
+    const { rows: used } = await db.query('SELECT 1 FROM pay_statement_lines WHERE ledger_entry_id = $1 AND active LIMIT 1', [original.id]);
+    if (used.length) throw new LedgerError(409, 'this entry is already on a pay run; record a correction instead');
+  }
   // Taken before the void is written, so a carrier import of the same claim waits and then sees this entry voided.
   const heldSubject = original.entry_type === 'manual_claim' && original.waybill ? claimTypeKey(original.claim_type) : null;
   if (heldSubject) await lockClaimSubject(db, original.waybill, heldSubject);
@@ -126,33 +154,68 @@ export const voidEntry = async (db, admin, request) => {
   return { entry: inserted[0], replay: false };
 };
 
-// Entries for one city (and optionally one driver), newest first, with each driver's balance.
-// A city admin must name one of their cities; a super admin may leave it out.
+// What pay runs did with each entry: settled by finalized runs, reserved by drafts (released if a draft is discarded),
+// and the runs themselves. Recovery and reimbursement lines move money; repayment lines are audit only.
+const RUN_USE_SQL = `
+  CROSS JOIN LATERAL (
+    SELECT COALESCE(SUM(abs(l.amount)) FILTER (WHERE r.status = 'finalized' AND l.line_type IN ('recovery', 'reimbursement')), 0)::numeric(12,2)::text AS settled,
+           COALESCE(SUM(abs(l.amount)) FILTER (WHERE r.status = 'draft' AND l.line_type IN ('recovery', 'reimbursement')), 0)::numeric(12,2)::text AS reserved,
+           COALESCE(json_agg(json_build_object('runId', r.id, 'runStatus', r.status, 'lineType', l.line_type, 'amount', l.amount::text,
+             'periodStart', to_char(r.period_start, 'YYYY-MM-DD'), 'periodEnd', to_char(r.period_end, 'YYYY-MM-DD')) ORDER BY r.period_end, r.id)
+             FILTER (WHERE l.id IS NOT NULL), '[]'::json) AS pay_runs
+      FROM pay_statement_lines l
+      JOIN pay_statements s ON s.id = l.statement_id
+      JOIN pay_runs r ON r.id = s.pay_run_id
+     WHERE l.ledger_entry_id = e.id AND l.active) x`;
+
+const cents = (v) => Math.round(Number(v) * 100);
+const money = (c) => (c / 100).toFixed(2);
+
+// What is still to settle on one entry, from the driver's side. A void, a voided entry and an exempt claim settle
+// nothing; a repayment made outside payroll lowers the driver's total instead (see balances).
+const outstandingOf = (e) => {
+  if (e.entry_type === 'void' || e.voided_by || e.exempt || e.entry_type === 'advance_repayment') return 0;
+  return Math.max(0, cents(e.amount) - cents(e.settled));
+};
+
+// Entries for one city (and optionally one driver), newest first, each with what pay runs settled or reserved and
+// what is still outstanding, plus each driver's balance. A city admin must name one of their cities; a super admin
+// may leave it out. Balance: positive, the driver owes NASA; negative, NASA owes the driver. It counts only what
+// finalized runs settled, never what a draft merely reserved.
 export const listEntries = async (db, admin, { cityId = null, driverId = null } = {}) => {
   if (cityId === null && !isSuperAdmin(admin)) throw new LedgerError(400, 'choose a city');
   if (cityId !== null) await assertCityAllowed(db, admin, cityId);
 
   const { rows } = await db.query(
     `SELECT ${ENTRY_COLUMNS},
-            (SELECT v.id FROM driver_ledger_entries v WHERE v.voids_entry_id = e.id) AS voided_by
+            (SELECT v.id FROM driver_ledger_entries v WHERE v.voids_entry_id = e.id) AS voided_by,
+            x.settled, x.reserved, x.pay_runs
        FROM driver_ledger_entries e
+       ${RUN_USE_SQL}
       WHERE ($1::int IS NULL OR e.city_id = $1) AND ($2::int IS NULL OR e.driver_id = $2)
       ORDER BY e.created_at DESC, e.id DESC
       LIMIT 500`,
     [cityId, driverId]
   );
+  const entries = rows.map((e) => ({ ...e, outstanding: money(outstandingOf(e)) }));
 
-  // Over all entries, not only the listed ones. A voided entry and its void cancel out, so only entries that still
-  // stand count; an exempt claim counts as zero. Positive: the driver owes NASA. Negative: NASA owes the driver.
-  const { rows: totals } = await db.query(
-    `SELECT e.driver_id,
-            SUM(CASE WHEN e.exempt THEN 0 WHEN e.direction = 'debit' THEN e.amount ELSE -e.amount END)::numeric(12,2)::text AS balance
+  // Over all standing entries, not only the 500 listed.
+  const { rows: standing } = await db.query(
+    `SELECT e.driver_id, e.entry_type, e.direction, e.amount, e.exempt, NULL AS voided_by, x.settled
        FROM driver_ledger_entries e
+       ${RUN_USE_SQL}
       WHERE e.entry_type <> 'void'
         AND NOT EXISTS (SELECT 1 FROM driver_ledger_entries v WHERE v.voids_entry_id = e.id)
-        AND ($1::int IS NULL OR e.city_id = $1) AND ($2::int IS NULL OR e.driver_id = $2)
-      GROUP BY e.driver_id`,
+        AND ($1::int IS NULL OR e.city_id = $1) AND ($2::int IS NULL OR e.driver_id = $2)`,
     [cityId, driverId]
   );
-  return { entries: rows, balances: Object.fromEntries(totals.map((t) => [t.driver_id, t.balance])) };
+  const totals = {};
+  for (const e of standing) {
+    let change = 0;
+    if (e.entry_type === 'advance_repayment') change = -cents(e.amount);
+    else if (e.direction === 'debit') change = outstandingOf(e);
+    else change = -outstandingOf(e);
+    totals[e.driver_id] = (totals[e.driver_id] ?? 0) + change;
+  }
+  return { entries, balances: Object.fromEntries(Object.entries(totals).map(([id, c]) => [id, money(c)])) };
 };

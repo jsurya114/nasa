@@ -4,6 +4,9 @@ import express from 'express';
 import { sanitizeRouterParams } from '../middlewares/sanitize.js';
 import adminAuth from '../middlewares/adminAuth.js';
 import { getLedger, postLedgerEntry, postLedgerVoid } from '../controllers/payroll/ledgerController.js';
+import {
+  getPayrollSettings, getPayRun, getPayRuns, postDiscard, postFinalize, postPayRun, postVoid, putRecoveryLimit,
+} from '../controllers/payroll/payRunController.js';
 
 const router = express.Router();
 sanitizeRouterParams(router);
@@ -13,5 +16,16 @@ router.use(adminAuth);
 router.get('/ledger', getLedger);
 router.post('/ledger', postLedgerEntry);
 router.post('/ledger/:entryId/void', postLedgerVoid);
+
+// Pay runs and the recovery limit (#143). Changing the setting and voiding a finalized run are super admin only,
+// checked in the service.
+router.get('/settings', getPayrollSettings);
+router.put('/settings/recovery-limit', putRecoveryLimit);
+router.get('/runs', getPayRuns);
+router.post('/runs', postPayRun);
+router.get('/runs/:runId', getPayRun);
+router.post('/runs/:runId/finalize', postFinalize);
+router.post('/runs/:runId/discard', postDiscard);
+router.post('/runs/:runId/void', postVoid);
 
 export default router;
