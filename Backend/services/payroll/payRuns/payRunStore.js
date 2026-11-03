@@ -50,7 +50,7 @@ export const setRecoveryLimit = async (db, admin, value, reason) => {
 const DATA_TYPE_SQL = `CASE WHEN pd.start_seq IS NULL OR pd.end_seq IS NULL OR pd.start_seq = 0 OR pd.end_seq = 0 THEN 'weekly' ELSE 'daily' END`;
 
 // Closed, unpaid pay rows of the city (by the route's city, as the dashboard does) not already on a live statement.
-const loadEarnings = async (db, run) => {
+export const loadEarnings = async (db, run) => {
   const { rows } = await db.query(
     `SELECT pd.id, pd.driver_id, to_char(pd.journey_date, 'YYYY-MM-DD') AS journey_date, pd.route_id,
             COALESCE(pd.driver_payment, 0)::text AS gross, COALESCE(pd.insurance_deduction, 0)::text AS insurance
@@ -99,7 +99,8 @@ export const NET_COLLECTED_SQL = (alias = 'c') => `(
 
 // Matched, chargeable claims of these drivers in this city with something still owed. Locked so two runs cannot
 // both take the same claim.
-const loadClaims = async (db, cityId, driverIds) => {
+// lock: false for a read-only preview (the dashboard), which must not hold rows that a real run takes.
+export const loadClaims = async (db, cityId, driverIds, lock = true) => {
   const { rows } = await db.query(
     `SELECT m.claim_id, m.driver_id, to_char(c.claim_at, 'YYYY-MM-DD HH24:MI:SS') AS claim_at,
             -- What is still owed: the eligible amount less what has really been collected for any version from anyone.
@@ -108,7 +109,7 @@ const loadClaims = async (db, cityId, driverIds) => {
        JOIN courier_claims c ON c.id = m.claim_id
       WHERE m.status = 'chargeable' AND m.city_id = $1 AND m.driver_id = ANY($2::int[]) AND c.superseded_at IS NULL
       ORDER BY m.claim_id
-      FOR UPDATE OF m`,
+      ${lock ? 'FOR UPDATE OF m' : ''}`,
     [cityId, driverIds]
   );
   return rows.filter((r) => toCents(r.outstanding) > 0);
@@ -118,7 +119,7 @@ const loadClaims = async (db, cityId, driverIds) => {
 // recovered_in_overlap: a live run whose period overlaps this one already recovered from the entry. Recovery is at most
 // once per pay period, so a supplemental or overlapping run (daily and weekly, or a second run of the same week)
 // never takes a second instalment. Runs of one city are built one at a time (lockCityPayroll), so this holds.
-const loadLedger = async (db, run, driverIds) => {
+export const loadLedger = async (db, run, driverIds, lock = true) => {
   const { rows } = await db.query(
     `SELECT e.id, e.driver_id, e.entry_type, e.direction, e.amount::text AS amount, e.exempt, e.recovery_plan,
             e.installment_amount::text AS installment_amount,
@@ -136,7 +137,7 @@ const loadLedger = async (db, run, driverIds) => {
       WHERE e.city_id = $1 AND e.driver_id = ANY($2::int[]) AND e.entry_type <> 'void'
         AND NOT EXISTS (SELECT 1 FROM driver_ledger_entries v WHERE v.voids_entry_id = e.id)
       ORDER BY e.id
-      FOR UPDATE OF e`,
+      ${lock ? 'FOR UPDATE OF e' : ''}`,
     [run.city_id, driverIds, run.id, run.period_start, run.period_end]
   );
   return rows;
@@ -181,7 +182,7 @@ const holdFor = (e) => {
   return undefined;
 };
 
-const inputsFor = (driverId, run, earnings, claims, ledger, overRecovered) => {
+export const inputsFor = (driverId, run, earnings, claims, ledger, overRecovered) => {
   const mine = ledger.filter((e) => e.driver_id === driverId);
   const dueBy = (e) => e.effective_date <= run.period_end && (!e.intended_payday || e.intended_payday <= run.period_end);
   return {

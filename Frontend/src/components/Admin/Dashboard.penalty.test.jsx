@@ -4,16 +4,13 @@ import { installServer, removeShell, resetBrowser } from "../../test/fakeShell";
 
 vi.mock("../../utils/toast", () => ({ toast: { success: vi.fn(), error: vi.fn(), info: vi.fn(), warn: vi.fn() } }));
 
-// The real Dashboard with made-up data: a driver with $100 of earnings and $20 of insurance. Payroll figures come from the
-// summary endpoint (#170) in the shapes it returns (#166).
-const none = { deducted: "0.00", claimDeductions: "0.00", recoveries: "0.00", net: "0.00", count: 0 };
-const run40 = { deducted: "40.00", claimDeductions: "40.00", recoveries: "0.00", net: "40.00", count: 1 };
-const summaryFor = (period) => ({ status: 200, data: {
-  period: { status: "none", approved: none, preview: none, statements: [], crossingRuns: 0, ...period },
-  outstanding: { penalties: "250.00", other: "0.00", total: "250.00" },
+// The real Dashboard with made-up data: a driver with $100 of earnings and $20 of insurance (table net $80). The server gives
+// this payday's deduction (by how each record was created) apart from what is still owed in all (#166).
+const reply = ({ source = "none", deducted = "0.00", net = null, flags = [], penalties = "0.00", other = "0.00" } = {}) => ({ status: 200, data: {
+  payday: { source, claimDeductions: deducted, recoveries: "0.00", deducted, net, flags },
+  period: { status: "none", approved: {}, preview: {}, statements: [], crossingRuns: 0 },
+  outstanding: { penalties, other, total: (Number(penalties) + Number(other)).toFixed(2) },
 } });
-const APPROVED = summaryFor({ status: "approved", approved: run40 });
-const PREVIEW = summaryFor({ status: "preview", preview: run40 });
 const ROW = { id: 1, driver_name: "Dee Test", job_date: "2026-11-03", route_name: "R1", packages: 10, no_scanned: 0, failed_attempt: 0, fs: 0, ds: 0, delivered: 10,
   driver_payment: "100.00", insurance_deduction: "20.00", closed: true, paid: false, data_type: "daily" };
 
@@ -52,14 +49,16 @@ const mount = async () => {
   return render(<Provider store={store}><MemoryRouter><Dashboard /></MemoryRouter></Provider>);
 };
 
-const filter = async (container, city = "Test City", driver = "Dee Test") => {
+const filter = async (container, city = "Test City", driver = "Dee Test", { dates = true } = {}) => {
   const select = (name) => container.querySelector(`select[name="${name}"]`);
   await waitFor(() => expect(within(select("job")).getByRole("option", { name: city })).toBeTruthy());
   fireEvent.change(select("job"), { target: { name: "job", value: city } });
   await waitFor(() => expect(within(select("driver")).getByRole("option", { name: driver })).toBeTruthy());
   fireEvent.change(select("driver"), { target: { name: "driver", value: driver } });
-  fireEvent.change(container.querySelector('input[name="startDate"]'), { target: { name: "startDate", value: "2026-11-01" } });
-  fireEvent.change(container.querySelector('input[name="endDate"]'), { target: { name: "endDate", value: "2026-11-07" } });
+  if (dates) {
+    fireEvent.change(container.querySelector('input[name="startDate"]'), { target: { name: "startDate", value: "2026-11-01" } });
+    fireEvent.change(container.querySelector('input[name="endDate"]'), { target: { name: "endDate", value: "2026-11-07" } });
+  }
   fireEvent.click(container.querySelector('input[name="companyEarnings"]'));
   fireEvent.click(screen.getByRole("button", { name: "Filter Data" }));
 };
@@ -70,122 +69,164 @@ beforeEach(async () => {
 });
 afterEach(cleanup);
 
-describe("Dashboard with payroll figures", () => {
-  it("approved: the pay run's net is the one payable net, in the table and in the Summary; the older net is only an explanation", async () => {
-    const server = await startServer(APPROVED);
+describe("Dashboard: this payday's Penalty & Others, apart from what is still owed", () => {
+  it("a $250 debt paid $50 an instalment takes $50 this payday, not $250: the net is $30, never -$170", async () => {
+    const server = await startServer(reply({ source: "estimate", deducted: "50.00", net: "30.00", penalties: "250.00" }));
     const { container } = await mount();
     await filter(container);
-    expect(await screen.findByTestId("penalty-net-row")).toBeTruthy();
-    // table
-    expect(screen.getByTestId("penalty-net-row").textContent).toContain("Net Payment (approved pay run)");
-    expect(screen.getByTestId("penalty-net-row").textContent).toContain("$40.00");
-    expect(screen.getByTestId("net-before-row").textContent).toContain("Net before claims / recoveries");
-    expect(screen.getByTestId("net-before-row").textContent).toContain("$80.00");
-    expect(screen.queryByText("Net Payment", { exact: true })).toBeNull(); // no second row simply called Net Payment
-    expect(screen.getByTestId("penalty-deduction-row").textContent).toContain("-$40.00");
-    expect(screen.getByTestId("penalty-deduction-row").textContent).toContain("not subtracted again");
-    // summary
-    await waitFor(() => expect(screen.getByTestId("summary-net")).toBeTruthy());
-    expect(within(screen.getByTestId("summary-net")).getByRole("textbox").value).toBe("$40.00");
-    expect(screen.getByTestId("summary-net").textContent).toContain("Net Payment (approved pay run)");
-    expect(within(screen.getByTestId("summary-deducted")).getByRole("textbox").value).toBe("-$40.00");
-    expect(screen.queryByDisplayValue("$80.00")).not.toBeNull();
-    expect(screen.getByText(/Net before claims \/ recoveries/, { selector: "label" })).toBeTruthy();
-    expect(screen.queryByText(/Net Driver Payment/)).toBeNull();
+    expect(await screen.findByTestId("penalty-deduction-row")).toBeTruthy();
+    const row = screen.getByTestId("penalty-deduction-row");
+    expect(row.textContent).toContain("Penalty & Others");
+    expect(row.textContent).toContain("-$50.00");
+    expect(screen.getByTestId("penalty-owed").textContent).toContain("Still owed in all: $250.00 (Penalties $250.00). Not all of it is due this payday.");
+    expect(screen.getByTestId("penalty-note").textContent).toContain("Preview: what the next pay run would take");
+    // order: insurance, Penalty & Others, net
+    const rows = [...container.querySelectorAll("tr")].map((r) => r.textContent);
+    const at = (text) => rows.findIndex((r) => r.includes(text));
+    expect(at("Penalty & Others")).toBe(at("Insurance Payment Deduction") + 1);
+    expect(at("Net Payment")).toBe(at("Penalty & Others") + 1);
+    expect(screen.getByTestId("net-payment-row").textContent).toContain("$30.00");
+    expect(screen.getByTestId("net-payment-row").textContent).toContain("preview (before the pay run is approved)");
+    expect(screen.getByTestId("net-payment-row").textContent).not.toContain("-$");
+    // summary: this payday and the balance are separate lines, and the net is the same
+    await waitFor(() => expect(screen.getByTestId("summary-deducted")).toBeTruthy());
+    expect(within(screen.getByTestId("summary-deducted")).getByRole("textbox").value).toBe("-$50.00");
+    expect(within(screen.getByTestId("summary-owed")).getByRole("textbox").value).toBe("$250.00");
+    expect(within(screen.getByTestId("summary-net")).getByRole("textbox").value).toBe("$30.00");
     expect(server.lastParams).toEqual({ cityId: 3, from: "2026-11-01", to: "2026-11-07" });
   });
 
-  it("preview: a draft is visibly a preview, never approved", async () => {
-    await startServer(PREVIEW);
+  it("a reimbursement is in the preview net: $100 pay, $20 insurance, $50 reimbursement and a $50 instalment is $80, the same as the draft that follows", async () => {
+    // the server's own net, with the reimbursement in it, is shown; the browser does not rebuild it (that gave $30)
+    await startServer(reply({ source: "estimate", deducted: "50.00", net: "80.00", penalties: "250.00" }));
     const { container } = await mount();
     await filter(container);
-    expect(await screen.findByTestId("penalty-net-row")).toBeTruthy();
-    expect(screen.getByTestId("penalty-net-row").textContent).toContain("Net Payment preview (draft pay run, not approved)");
-    expect(screen.getByTestId("penalty-net-row").textContent).not.toContain("approved pay run)");
-    expect(screen.getByTestId("penalty-deduction-row").textContent).toContain("Preview");
-    expect(screen.getByTestId("net-before-row").textContent).toContain("Net before claims / recoveries");
+    expect(await screen.findByTestId("penalty-deduction-row")).toBeTruthy();
+    expect(screen.getByTestId("penalty-deduction-row").textContent).toContain("-$50.00");
+    expect(screen.getByTestId("net-payment-row").textContent).toContain("$80.00");
+    expect(screen.getByTestId("net-payment-row").textContent).not.toContain("$30.00");
+    // the same as the table's $80, but still an unapproved estimate: it keeps the preview label
+    expect(screen.getByTestId("net-payment-row").textContent).toContain("preview (before the pay run is approved)");
+    await waitFor(() => expect(screen.getByTestId("summary-net").textContent).toContain("preview (before the pay run is approved)"));
   });
 
-  it("while loading, and when the payroll summary fails, the page says so and the unadjusted net is not shown as the payable net", async () => {
+  it("approved: the pay run's frozen net is the net, and the row says it is already inside it", async () => {
+    await startServer(reply({ source: "approved", deducted: "40.00", net: "40.00", penalties: "250.00" }));
+    const { container } = await mount();
+    await filter(container);
+    expect(await screen.findByTestId("penalty-deduction-row")).toBeTruthy();
+    expect(screen.getByTestId("net-payment-row").textContent).toContain("Net Payment (approved pay run)");
+    expect(screen.getByTestId("net-payment-row").textContent).toContain("$40.00");
+    expect(screen.getByTestId("penalty-note").textContent).toContain("already in the pay run net below");
+    expect(screen.getByTestId("penalty-owed").textContent).toContain("$250.00");
+    await waitFor(() => expect(within(screen.getByTestId("summary-net")).getByRole("textbox").value).toBe("$40.00"));
+  });
+
+  it("a draft pay run is a preview, never approved", async () => {
+    await startServer(reply({ source: "draft", deducted: "40.00", net: "40.00", penalties: "250.00" }));
+    const { container } = await mount();
+    await filter(container);
+    expect(await screen.findByTestId("penalty-deduction-row")).toBeTruthy();
+    expect(screen.getByTestId("net-payment-row").textContent).toContain("preview (draft pay run, not approved)");
+    expect(screen.getByTestId("net-payment-row").textContent).not.toContain("approved pay run)");
+    expect(screen.getByTestId("penalty-note").textContent).toContain("Draft pay run: a preview");
+  });
+
+  it("with no recovery limit set nothing is taken, the reason is shown, and the net keeps its usual name", async () => {
+    await startServer(reply({ source: "estimate", deducted: "0.00", net: null, penalties: "100.00", flags: [{ code: "recovery_limit_not_set", message: "no recovery limit is set; nothing was recovered automatically" }] }));
+    const { container } = await mount();
+    await filter(container);
+    expect(await screen.findByTestId("penalty-deduction-row")).toBeTruthy();
+    expect(screen.getByTestId("penalty-deduction-row").textContent).toContain("-$0.00");
+    expect(screen.getByTestId("penalty-note").textContent).toContain("no recovery limit is set");
+    expect(screen.getByTestId("net-payment-row").textContent).toContain("$80.00");
+    expect(screen.getByTestId("net-payment-row").textContent).not.toContain("preview");
+  });
+
+  it("with no dates the balance is still shown, the deduction asks for dates, and the net is the usual one", async () => {
+    const server = await startServer(reply({ source: "none", penalties: "250.00" }));
+    const { container } = await mount();
+    await filter(container, "Test City", "Dee Test", { dates: false });
+    expect(await screen.findByTestId("penalty-deduction-row")).toBeTruthy();
+    expect(screen.getByTestId("penalty-note").textContent).toContain("Choose a start and an end date");
+    expect(screen.getByTestId("penalty-owed").textContent).toContain("$250.00");
+    expect(screen.getByTestId("net-payment-row").textContent).toContain("$80.00");
+    expect(server.lastParams).toEqual({ cityId: 3 });
+  });
+
+  it("nothing owed and nothing taken: no row, and the net is unchanged", async () => {
+    await startServer(reply({ source: "estimate" }));
+    const { container } = await mount();
+    await filter(container);
+    await waitFor(() => expect(screen.getByTestId("net-payment-row")).toBeTruthy());
+    expect(screen.queryByTestId("penalty-deduction-row")).toBeNull();
+    expect(screen.getByTestId("net-payment-row").textContent).toContain("$80.00");
+  });
+
+  it("marking a record complete lowers what is owed when the tab is visible again; the deduction follows the server", async () => {
+    let now = reply({ source: "estimate", deducted: "50.00", net: "30.00", penalties: "250.00" });
+    await startServer(() => now);
+    const { container } = await mount();
+    await filter(container);
+    expect((await screen.findByTestId("penalty-owed")).textContent).toContain("$250.00");
+    expect(screen.getByTestId("net-payment-row").textContent).toContain("$30.00");
+    now = reply({ source: "estimate", deducted: "30.00", net: "50.00", penalties: "30.00" }); // $220 was marked complete: only $30 is left to take
+    Object.defineProperty(document, "visibilityState", { configurable: true, get: () => "visible" });
+    document.dispatchEvent(new Event("visibilitychange"));
+    await waitFor(() => expect(screen.getByTestId("penalty-owed").textContent).toContain("$30.00"));
+    expect(screen.getByTestId("penalty-deduction-row").textContent).toContain("-$30.00");
+    expect(screen.getByTestId("net-payment-row").textContent).toContain("$50.00");
+  });
+
+  it("while the figures load, and when they fail, the net is marked not final, with a retry that recovers", async () => {
+    let fail = true;
     let release;
     const gate = new Promise((resolve) => { release = resolve; });
-    await startServer(async () => { await gate; return APPROVED; });
+    const server = await startServer(async () => { await gate; return fail ? { status: 500, data: { message: "could not load" } } : reply({ source: "estimate", deducted: "50.00", net: "30.00", penalties: "250.00" }); });
     const { container } = await mount();
     await filter(container);
-    expect((await screen.findByTestId("penalty-loading-row")).textContent).toContain("does not yet include claims or recoveries");
-    expect(screen.getByTestId("net-before-row").textContent).toContain("not final");
-    expect(screen.queryByText("Net Payment", { exact: true })).toBeNull();
-    expect(within(screen.getByTestId("summary-notice")).getByRole("textbox").value).toContain("Loading");
+    expect((await screen.findByTestId("penalty-loading-row")).textContent).toContain("does not yet include them");
+    expect(screen.getByTestId("net-payment-row").textContent).toContain("deductions loading, not final");
     release();
-    expect(await screen.findByTestId("penalty-net-row")).toBeTruthy();
-  });
-
-  it("a failed payroll summary shows an error with Try again, and the older net is marked not final", async () => {
-    let fail = true;
-    const server = await startServer(() => (fail ? { status: 500, data: { message: "could not load" } } : APPROVED));
-    const { container } = await mount();
-    await filter(container);
     const alert = await screen.findByTestId("penalty-error-row");
-    expect(alert.textContent).toContain("could not be loaded");
     expect(alert.textContent).toContain("do not treat it as the amount to pay");
-    expect(screen.getByTestId("net-before-row").textContent).toContain("not loaded, not final");
+    expect(screen.getByTestId("net-payment-row").textContent).toContain("deductions not loaded, not final");
     expect(within(screen.getByTestId("summary-notice")).getByRole("textbox").value).toContain("Could not be loaded");
-    expect(screen.queryByTestId("penalty-net-row")).toBeNull();
     fail = false;
     fireEvent.click(within(alert).getByRole("button", { name: "Try again" }));
-    expect(await screen.findByTestId("penalty-net-row")).toBeTruthy();
+    expect(await screen.findByTestId("penalty-deduction-row")).toBeTruthy();
+    expect(screen.getByTestId("net-payment-row").textContent).not.toContain("not final");
     expect(server.payrollCalls).toBe(2);
   });
 
-  it("with no dates chosen nothing is asked of payroll and the net keeps its usual name", async () => {
-    const server = await startServer(APPROVED);
-    const { container } = await mount();
-    const select = (name) => container.querySelector(`select[name="${name}"]`);
-    await waitFor(() => expect(within(select("job")).getByRole("option", { name: "Test City" })).toBeTruthy());
-    fireEvent.change(select("job"), { target: { name: "job", value: "Test City" } });
-    await waitFor(() => expect(within(select("driver")).getByRole("option", { name: "Dee Test" })).toBeTruthy());
-    fireEvent.change(select("driver"), { target: { name: "driver", value: "Dee Test" } });
-    fireEvent.click(screen.getByRole("button", { name: "Filter Data" }));
-    await waitFor(() => expect(screen.getByTestId("net-before-row")).toBeTruthy());
-    expect(screen.getByTestId("net-before-row").textContent).toContain("Net Payment");
-    expect(server.payrollCalls).toBe(0);
-    expect(screen.queryByTestId("penalty-net-row")).toBeNull();
-  });
-
-  it("editing the city in the form, before Filter Data, keeps the applied driver's approved figures (and never restores the unadjusted net)", async () => {
-    const server = await startServer(APPROVED);
+  it("editing the city in the form before Filter Data keeps the applied driver's figures", async () => {
+    const server = await startServer(reply({ source: "estimate", deducted: "50.00", net: "30.00", penalties: "250.00" }));
     const { container } = await mount();
     await filter(container);
-    expect(await screen.findByTestId("penalty-net-row")).toBeTruthy();
+    expect(await screen.findByTestId("penalty-deduction-row")).toBeTruthy();
     const callsBefore = server.payrollCalls;
-    // the drivers in the form are now another city's; the table still shows Dee Test
     fireEvent.change(container.querySelector('select[name="job"]'), { target: { name: "job", value: "Other City" } });
     await waitFor(() => expect(within(container.querySelector('select[name="driver"]')).queryByRole("option", { name: "Dee Test" })).toBeNull());
-    expect(screen.getByTestId("penalty-net-row").textContent).toContain("Net Payment (approved pay run)");
-    expect(screen.getByTestId("penalty-net-row").textContent).toContain("$40.00");
-    expect(screen.getByTestId("net-before-row").textContent).toContain("Net before claims / recoveries");
-    expect(screen.queryByText("Net Payment", { exact: true })).toBeNull();
-    expect(screen.queryByTestId("penalty-loading-row")).toBeNull();
-    expect(server.payrollCalls).toBe(callsBefore); // nothing re-asked and nothing lost
+    expect(screen.getByTestId("penalty-deduction-row").textContent).toContain("-$50.00");
+    expect(screen.getByTestId("net-payment-row").textContent).toContain("$30.00");
+    expect(server.payrollCalls).toBe(callsBefore);
   });
 
-  it("applying another driver while the first reply is still in flight: the late reply never replaces the new scope's figures, and a loading state shows meanwhile", async () => {
+  it("applying another driver while the first reply is held: loading, then the new driver's figures; the late reply is ignored", async () => {
     let releaseFirst;
     const first = new Promise((resolve) => { releaseFirst = resolve; });
-    const OTHER = summaryFor({ status: "approved", approved: { ...run40, deducted: "10.00", net: "90.00" } });
     await startServer(async (_state, driverId) => {
-      if (driverId === 7) { await first; return APPROVED; }
-      return OTHER;
+      if (driverId === 7) { await first; return reply({ source: "estimate", deducted: "50.00", net: "30.00", penalties: "250.00" }); }
+      return reply({ source: "estimate", deducted: "5.00", net: "75.00", penalties: "5.00" });
     });
     const { container } = await mount();
-    await filter(container); // driver 7: reply held
+    await filter(container);
     expect(await screen.findByTestId("penalty-loading-row")).toBeTruthy();
-    await filter(container, "Other City", "Eli Other"); // driver 8: answers at once
-    expect(await screen.findByTestId("penalty-net-row")).toBeTruthy();
-    expect(screen.getByTestId("penalty-net-row").textContent).toContain("$90.00");
-    releaseFirst(); // the first scope's reply arrives late
+    await filter(container, "Other City", "Eli Other");
+    expect((await screen.findByTestId("penalty-deduction-row")).textContent).toContain("-$5.00");
+    releaseFirst();
     await new Promise((resolve) => setTimeout(resolve, 30));
-    expect(screen.getByTestId("penalty-net-row").textContent).toContain("$90.00");
-    expect(screen.getByTestId("penalty-net-row").textContent).not.toContain("$40.00");
+    expect(screen.getByTestId("penalty-deduction-row").textContent).toContain("-$5.00");
+    expect(screen.queryByText("-$50.00")).toBeNull();
   });
 });

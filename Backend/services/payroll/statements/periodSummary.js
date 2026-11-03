@@ -1,15 +1,18 @@
-// What the admin dashboard shows for one driver, one city and one date range (issue #166). Read-only: every figure is
-// read from pay statements and ledger balances that already exist; nothing is calculated or recalculated here.
+// What the admin dashboard shows for one driver, one city and one date range (issue #166). Read-only.
 //
-// - This payday: claim and recovery deductions on the pay runs inside the range. Finalized runs are approved and frozen,
-//   drafts are only a preview. Their net is the pay run's own net, never "old payment minus a penalty total".
+// - This payday (`payday`): what comes off the driver this payday, by how each record was created (all on the next payday, or
+//   its instalment), under the recovery limit and the review holds. If a pay run inside the range exists, its own figures are
+//   used: finalized runs are approved and frozen, drafts are previews. If none exists, the same pay calculator that builds a
+//   run is run on a copy and nothing is saved (`estimate`), so the dashboard agrees with the run that will follow.
 // - Still outstanding: what the driver still owes after pay runs, settlements and repayments made outside payroll (the balance
 //   cards of the Payroll page), with the hand-entered penalties apart from the rest. The parts add up to the total exactly.
 // A run counts only when its whole period lies inside the range, so a deduction is never counted for two ranges or
 // spread over daily rows. A run that crosses the range edge is reported, not counted.
 
-import { fromCents, toCents } from '../payRuns/payCalculator.js';
-import { assertCityAllowed, PayrollError } from '../payRuns/payRunStore.js';
+import { calculateStatement, fromCents, toCents } from '../payRuns/payCalculator.js';
+import {
+  assertCityAllowed, getRecoveryLimit, inputsFor, loadClaims, loadEarnings, loadLedger, loadOverRecovered, PayrollError,
+} from '../payRuns/payRunStore.js';
 import { parseDate } from '../ledger/ledgerRules.js';
 import { getDriverBalances } from './statementStore.js';
 
@@ -21,14 +24,79 @@ const totalsOf = (rows) => {
   return { count: rows.length, claimDeductions: fromCents(claims), recoveries: fromCents(recoveries), deducted: fromCents(claims + recoveries), net: fromCents(sum(rows, 'net')) };
 };
 
-// range: { from, to } as YYYY-MM-DD. Returns the figures, or throws PayrollError (400, 403, 404).
+// A read-only run of the pay calculator for this driver and range, for when no pay run exists yet. Nothing is written and no row
+// is locked. It follows what real drafts do: if the driver has both daily and weekly pay rows in the range, the daily run is
+// worked out first and what it takes (claims, instalments) and pays (reimbursements) is carried into the weekly one, as the
+// reservations of a first draft are for the second, so nothing is counted twice. `net` is the calculator's own net for the
+// same earnings (reimbursements included). When the driver has no closed, unpaid pay rows in the range a real run creates no
+// statement, so nothing is taken and `net` is null; the reasons (no recovery limit set, no repayment arrangement, ...) are still
+// returned.
+const estimatePayday = async (db, driverId, cityId, from, to) => {
+  const recoveryLimit = await getRecoveryLimit(db);
+  const base = { id: 0, city_id: cityId, period_start: from, period_end: to, recovery_limit: recoveryLimit };
+  const [claims, ledger, over] = await Promise.all([
+    loadClaims(db, cityId, [driverId], false), loadLedger(db, base, [driverId], false), loadOverRecovered(db, cityId, [driverId]),
+  ]);
+  const takeOff = (row, key, lineAmount) => { row[key] = fromCents(toCents(row[key]) + toCents(lineAmount)); };
+
+  let claimCents = 0;
+  let recoveryCents = 0;
+  let netCents = 0;
+  let any = false;
+  const flags = [];
+  const seen = new Set();
+  const run = (dataType, earnings) => {
+    const result = calculateStatement(inputsFor(driverId, { ...base, data_type: dataType }, earnings, claims, ledger, over));
+    claimCents += toCents(result.totals.claimDeductions);
+    recoveryCents += toCents(result.totals.recoveries);
+    netCents += toCents(result.totals.net);
+    for (const f of result.flags) if (!seen.has(f.code)) { seen.add(f.code); flags.push({ code: f.code, message: f.message }); }
+    // What this run takes or pays is spoken for when the next one is worked out.
+    for (const line of result.lines) {
+      if (line.type === 'claim') takeOff(claims.find((c) => String(c.claim_id) === String(line.claimId)), 'outstanding', line.amount);
+      if (line.type === 'recovery') {
+        const e = ledger.find((x) => String(x.id) === String(line.entryId));
+        takeOff(e, 'outstanding', line.amount);
+        e.recovered_in_overlap = true; // the next run covers the same period, so it takes no second instalment
+      }
+      if (line.type === 'reimbursement') ledger.find((x) => String(x.id) === String(line.entryId)).reimbursed = true;
+    }
+  };
+  for (const dataType of ['daily', 'weekly']) {
+    const earnings = (await loadEarnings(db, { ...base, data_type: dataType })).filter((e) => e.driver_id === driverId);
+    if (earnings.length === 0) continue;
+    any = true;
+    run(dataType, earnings);
+  }
+  if (!any) {
+    // No closed, unpaid pay rows in the range (none, already paid, or already on a run), so a real run creates no statement for
+    // this driver and takes nothing. Nothing is estimated: a reimbursement or credit is not money paid by a statement that cannot
+    // exist, so it must not fund a deduction. The calculator is run without credits only to collect the reasons.
+    const debitsOnly = ledger.filter((e) => e.direction === 'debit');
+    const result = calculateStatement(inputsFor(driverId, { ...base, data_type: 'weekly' }, [], claims, debitsOnly, over));
+    for (const f of result.flags) {
+      if (f.code === 'carried_forward') continue; // "limit reached" would mislead: the limit is not the reason
+      if (!seen.has(f.code)) { seen.add(f.code); flags.push({ code: f.code, message: f.message }); }
+    }
+    flags.push({ code: 'no_eligible_earnings', message: 'no closed, unpaid pay rows in these dates, so nothing can be taken' });
+    return { claimDeductions: '0.00', recoveries: '0.00', deducted: '0.00', net: null, flags };
+  }
+  return {
+    claimDeductions: fromCents(claimCents), recoveries: fromCents(recoveryCents), deducted: fromCents(claimCents + recoveryCents),
+    net: fromCents(netCents), flags,
+  };
+};
+
+// range: { from, to } as YYYY-MM-DD, or both left out. Without dates only what is outstanding is returned (the dashboard
+// shows it as soon as a record is saved); the pay-run part is then empty. Returns the figures, or throws PayrollError.
 export const getDriverPeriodSummary = async (db, admin, { driverId, cityId, from, to }) => {
-  if (!parseDate(from) || !parseDate(to) || from > to) throw new PayrollError(400, 'from and to must be real dates (YYYY-MM-DD), from not after to');
+  const hasRange = Boolean(from || to);
+  if (hasRange && (!parseDate(from) || !parseDate(to) || from > to)) throw new PayrollError(400, 'from and to must be real dates (YYYY-MM-DD), from not after to, or both left out');
   await assertCityAllowed(db, admin, cityId);
   const { rows: driver } = await db.query('SELECT 1 FROM drivers WHERE id = $1 AND city_id = $2', [driverId, cityId]);
   if (driver.length === 0) throw new PayrollError(404, 'driver not found in this city');
 
-  const { rows } = await db.query(
+  const { rows } = hasRange ? await db.query(
     `SELECT s.id AS statement_id, r.id AS run_id, r.status AS run_status,
             to_char(r.period_start, 'YYYY-MM-DD') AS period_start, to_char(r.period_end, 'YYYY-MM-DD') AS period_end,
             s.claim_deductions, s.recoveries, s.net, (r.period_start >= $3 AND r.period_end <= $4) AS inside
@@ -37,23 +105,34 @@ export const getDriverPeriodSummary = async (db, admin, { driverId, cityId, from
         AND r.period_start <= $4 AND r.period_end >= $3
       ORDER BY r.period_start, r.id`,
     [driverId, cityId, from, to]
-  );
+  ) : { rows: [] };
   const inside = rows.filter((r) => r.inside);
   // The split comes from the server's own allocation, which spreads repayments made outside payroll over what is owed, so
   // penalties and other debts always add up to the total. Linked settlements and waivers are already in each entry's balance.
   const { totals } = await getDriverBalances(db, admin, driverId, cityId);
 
+  // This payday: an approved run's frozen figures, else a draft's, else an estimate from the calculator, else nothing (no dates).
+  const approved = totalsOf(inside.filter((r) => r.run_status === 'finalized'));
+  const draft = totalsOf(inside.filter((r) => r.run_status === 'draft'));
+  let payday = { source: 'none', claimDeductions: '0.00', recoveries: '0.00', deducted: '0.00', net: null, flags: [] };
+  if (approved.count > 0) payday = { source: 'approved', ...approved, flags: [] };
+  else if (draft.count > 0) payday = { source: 'draft', ...draft, flags: [] };
+  else if (hasRange) payday = { source: 'estimate', ...(await estimatePayday(db, driverId, cityId, from, to)) };
+
   return {
-    driverId, cityId, from, to,
+    driverId, cityId, from: from || null, to: to || null,
+    // This payday's deduction, by how each record was created. `net` is the pay run's own net when a run exists, else null.
+    payday,
     // approved: finalized runs, frozen. preview: drafts, not yet approved. Show approved when there is any.
     period: {
       status: inside.some((r) => r.run_status === 'finalized') ? 'approved' : inside.length ? 'preview' : 'none',
-      approved: totalsOf(inside.filter((r) => r.run_status === 'finalized')),
-      preview: totalsOf(inside.filter((r) => r.run_status === 'draft')),
+      approved,
+      preview: draft,
       statements: inside.map((r) => ({ statementId: r.statement_id, runId: r.run_id, runStatus: r.run_status, periodStart: r.period_start, periodEnd: r.period_end,
         claimDeductions: r.claim_deductions, recoveries: r.recoveries, net: r.net })),
       crossingRuns: rows.length - inside.length,
     },
+    // What is still owed in all, apart from this payday's share: never implies the whole amount is due now.
     outstanding: { penalties: totals.owedPenalties, other: totals.owedOther, total: totals.owedByDriver },
   };
 };

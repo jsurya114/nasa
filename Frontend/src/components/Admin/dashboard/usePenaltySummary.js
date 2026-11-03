@@ -2,9 +2,9 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useSelector } from "react-redux";
 import axios from "../../../redux/slice/axiosInstance";
 
-// The dashboard's penalty figures for the driver, city and dates the admin applied (#166). The server reads them from
-// pay statements and ledger balances; nothing is calculated here. Nothing is asked until a city, a driver and both
-// dates are chosen, because "this payday" only means something for a date range. Any error simply hides the rows.
+// What comes off the driver this payday, and what they still owe in all, for the city, driver and dates the admin applied
+// (#166). The server works both out (pay runs, or the pay calculator on a copy); nothing is calculated here. It needs a city
+// and a driver; the dates add this payday's deduction.
 export default function usePenaltySummary() {
   const { cities, drivers, filters } = useSelector((state) => state.dash);
   // The dropdowns change as soon as the admin edits the form, before Filter Data is pressed, while the table still shows the
@@ -22,14 +22,14 @@ export default function usePenaltySummary() {
   }, [lookup]);
   const remembered = applied.current.get(keyOf(filters?.job, filters?.driver));
   const { cityId, driverId } = remembered ?? lookup(filters?.job, filters?.driver);
-  const from = filters?.startDate;
-  const to = filters?.endDate;
+  const from = filters?.startDate || undefined;
+  const to = filters?.endDate || undefined;
   const scopeKey = `${cityId}|${driverId}|${from}|${to}`;
   const [state, setState] = useState({ status: "idle", data: null, scopeKey: null });
   const [attempt, setAttempt] = useState(0);
-  // "Expected": the admin chose a city, a driver and both dates, so payroll figures belong on this page. Until they arrive,
+  // "Expected": the admin applied a city and a driver, so their deductions belong on this page. Until they arrive,
   // or if they fail, the page must say so rather than leave an unadjusted amount looking payable.
-  const expected = Boolean(cityId && driverId && from && to);
+  const expected = Boolean(cityId && driverId);
 
   useEffect(() => {
     if (!expected) {
@@ -38,7 +38,7 @@ export default function usePenaltySummary() {
     }
     const controller = new AbortController();
     setState({ status: "loading", data: null, scopeKey });
-    axios.get(`/admin/payroll/drivers/${driverId}/dashboard-summary`, { params: { cityId, from, to }, signal: controller.signal })
+    axios.get(`/admin/payroll/drivers/${driverId}/dashboard-summary`, { params: { cityId, ...(from && to && { from, to }) }, signal: controller.signal })
       .then(({ data }) => { if (!controller.signal.aborted) setState({ status: "ready", data, scopeKey }); })
       .catch(() => { if (!controller.signal.aborted) setState({ status: "error", data: null, scopeKey }); });
     return () => controller.abort();
@@ -46,25 +46,15 @@ export default function usePenaltySummary() {
 
   // Figures belong to the scope they were fetched for. For the render between a new scope arriving and its request starting, say
   // "loading" rather than show the previous scope's figures against the new table.
+  // Coming back to this tab (for example from the Payroll page, after marking an entry complete) asks again.
+  useEffect(() => {
+    if (!expected) return undefined;
+    const onVisible = () => { if (document.visibilityState === "visible") setAttempt((n) => n + 1); };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => document.removeEventListener("visibilitychange", onVisible);
+  }, [expected]);
+
   const current = state.scopeKey === scopeKey ? state : { status: expected ? "loading" : "idle", data: null };
 
   return { status: current.status, data: current.data, cityId, driverId, expected, rememberScope, retry: () => setAttempt((n) => n + 1) };
 }
-
-// What to show, or null when there is nothing to show. "approved" figures come from finalized pay runs and the run's
-// own net; "preview" figures are drafts that nobody has approved yet.
-export const describePenalty = (penalty) => {
-  if (penalty?.status !== "ready") return null;
-  const { period, outstanding } = penalty.data;
-  if (period.status === "none" && Number(outstanding.total) <= 0) return null;
-  const run = period.status === "approved" ? period.approved : period.preview;
-  return {
-    status: period.status,
-    deducted: period.status === "none" ? null : run.deducted,
-    net: period.status === "none" ? null : run.net,
-    crossingRuns: period.crossingRuns,
-    penalties: outstanding.penalties,
-    other: outstanding.other,
-    total: outstanding.total,
-  };
-};
