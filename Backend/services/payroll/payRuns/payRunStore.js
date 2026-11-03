@@ -152,7 +152,7 @@ export const loadOverRecovered = async (db, cityId, driverIds) => {
          JOIN pay_runs r ON r.id = s.pay_run_id
         WHERE l.active AND l.line_type = 'claim' AND s.driver_id = ANY($1::int[]) AND r.city_id = $2
         GROUP BY cv.claim_key, s.driver_id)
-     SELECT t.driver_id, c.id AS claim_id, c.waybill, c.claim_type,
+     SELECT t.driver_id, c.id AS claim_id, c.courier, c.waybill, c.claim_type,
             (t.taken
               - CASE WHEN m.status = 'chargeable' AND m.driver_id = t.driver_id AND m.city_id = $2 THEN m.eligible_deduction ELSE 0 END
               - COALESCE((SELECT SUM(e.amount) FROM driver_ledger_entries e

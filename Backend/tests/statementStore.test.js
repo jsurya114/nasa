@@ -140,13 +140,13 @@ test('statements: own data only, frozen amounts, source charge next to the appli
         const owed = async () => (await getMyBalances(db, d1)).claims.find((c) => c.waybill === 'TESTS003').outstanding;
         assert.equal(await owed(), '0.00');
         const due = (await getDriverBalances(db, cityAdmin, d2, city)).refundsDue;
-        assert.deepEqual(due.map((r) => [r.waybill, r.claimType, r.amount]), [['TESTS003', 'Damaged Item', '10.00']]);
+        assert.deepEqual(due.map((r) => [r.courier, r.waybill, r.claimType, r.amount]), [['gofo', 'TESTS003', 'Damaged Item', '10.00']]);
         assert.equal((await getMyBalances(db, d2)).refundsDue, undefined, 'drivers do not get the admin work list');
 
         const refundAndDeduct = async (amount, weekStart, weekEnd) => {
           await createEntry(db, cityAdmin, parseNewEntry({
             requestId: randomUUID(), driverId: d2, cityId: city, type: 'correction', direction: 'credit', amount,
-            waybill: 'TESTS003', claimType: 'Damaged Item', reason: 'Claim belongs to another driver', effectiveDate: weekStart,
+            waybill: 'TESTS003', claimType: 'Damaged Item', claimCourier: 'gofo', reason: 'Claim belongs to another driver', effectiveDate: weekStart,
           }).entry);
           await payRow(d2, weekStart, '50.00', '0');
           await payRow(d1, weekEnd, '50.00', '0');

@@ -132,7 +132,7 @@ const loadClaimBalances = async (db, driverId, statuses, cityIds) => {
 
 // owedByDriver: still to be recovered, after repayments made outside payroll. owedToDriver: reimbursements not yet paid.
 // refundsDue (admin, one city): claims this driver paid more for than they now owe, in that city, with what a linked
-// credit correction needs (waybill, claim type, amount). The same list pay runs flag as claim_over_recovered.
+// credit correction needs (courier, waybill, claim type, amount). The same list pay runs flag as claim_over_recovered.
 const balances = async (db, driverId, statuses, cityIds, { withRefunds = false } = {}) => {
   const entries = await loadLedgerBalances(db, driverId, statuses, cityIds);
   const claims = await loadClaimBalances(db, driverId, statuses, cityIds);
@@ -142,7 +142,7 @@ const balances = async (db, driverId, statuses, cityIds, { withRefunds = false }
   const creditCents = entries.filter((e) => e.direction === 'credit' && e.entry_type !== 'advance_repayment')
     .reduce((sum, e) => sum + toCents(e.outstanding), 0);
   const refundsDue = withRefunds && cityIds?.length === 1
-    ? (await loadOverRecovered(db, cityIds[0], [driverId])).map((r) => ({ claimId: r.claim_id, waybill: r.waybill, claimType: r.claim_type, amount: fromCents(toCents(r.over)) }))
+    ? (await loadOverRecovered(db, cityIds[0], [driverId])).map((r) => ({ claimId: r.claim_id, courier: r.courier, waybill: r.waybill, claimType: r.claim_type, amount: fromCents(toCents(r.over)) }))
     : undefined;
   return {
     ...(refundsDue && { refundsDue }),
