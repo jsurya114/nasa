@@ -8,6 +8,7 @@ import {
   KeyRound,
   CalendarDays,
   FileText,
+  Wallet,
 } from "lucide-react";
 import GlassTabBar from "./GlassTabBar.jsx";
 
@@ -21,6 +22,7 @@ function Nav() {
     { to: "/admin/manage-access-codes", Icon: KeyRound, label: "Access Codes" },
     { to: "/admin/driver-availability", Icon: CalendarDays, label: "Availability" },
     { to: "/admin/agreements", Icon: FileText, label: "Agreements" },
+    { to: "/admin/payroll", Icon: Wallet, label: "Payroll" },
   ];
 
   return <GlassTabBar items={links} primaryCount={4} moreLabel="More" navLabel="Admin navigation" lang="en" />;
