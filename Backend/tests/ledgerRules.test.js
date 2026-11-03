@@ -19,7 +19,7 @@ test('a valid entry is cleaned and keeps the amount positive, to the cent', () =
   const { entry } = parseNewEntry(base({ reason: '  Lost   scanner  ', amount: 25.5, intendedPayday: '2026-11-07' }));
   assert.deepEqual(entry, {
     requestId: REQ, driverId: 7, cityId: 2, type: 'expense', direction: 'debit', amount: '25.50', reason: 'Lost scanner',
-    effectiveDate: '2026-11-03', intendedPayday: '2026-11-07', disbursedOutsidePayroll: false, claimType: null, waybill: null,
+    effectiveDate: '2026-11-03', intendedPayday: '2026-11-07', disbursedOutsidePayroll: false, claimType: null, waybill: null, claimCourier: null,
     recoveryPlan: null, installmentAmount: null,
   });
 });
@@ -72,7 +72,7 @@ test('dates must be real; voids need an entry, a request ID and a reason', () =>
 
 test('only a credit correction may name the claim it refunds, with both waybill and claim type; other types may not', () => {
   const base = { requestId: '7b0f8c1e-3c1a-4d2b-9a55-1f2e3d4c5b6a', driverId: 3, cityId: 2, amount: '10', reason: 'Carrier lowered the claim', effectiveDate: '2026-11-03' };
-  const ok = parseNewEntry({ ...base, type: 'correction', direction: 'credit', waybill: ' testw001 ', claimType: 'Damaged Item' });
+  const ok = parseNewEntry({ ...base, type: 'correction', direction: 'credit', waybill: ' testw001 ', claimType: 'Damaged Item', claimCourier: 'gofo' });
   assert.deepEqual([ok.entry.waybill, ok.entry.claimType], ['TESTW001', 'Damaged Item']);
   assert.ok(parseNewEntry({ ...base, type: 'correction', direction: 'credit', waybill: 'TESTW001' }).errors.waybill);
   assert.ok(parseNewEntry({ ...base, type: 'expense', waybill: 'TESTW001' }).errors.claimType);
@@ -82,21 +82,25 @@ test('only a credit correction may name the claim it refunds, with both waybill 
     assert.ok(parseNewEntry({ ...base, type: 'correction', direction: 'debit', waybill: 'TESTW001', claimType }).errors.direction, claimType);
   }
   assert.equal(parseNewEntry({ ...base, type: 'correction', direction: 'debit' }).errors, undefined, 'a plain debit correction is still allowed');
+  // The courier completes the claim's identity, so one refund can only ever count against one claim.
+  assert.ok(parseNewEntry({ ...base, type: 'correction', direction: 'credit', waybill: 'TESTW001', claimType: 'Damaged Item' }).errors.claimCourier);
+  assert.ok(parseNewEntry({ ...base, type: 'correction', direction: 'credit', waybill: 'TESTW001', claimType: 'Damaged Item', claimCourier: 'ups' }).errors.claimCourier);
+  assert.ok(parseNewEntry({ ...base, type: 'expense', claimCourier: 'gofo' }).errors.claimCourier);
 });
 
 test('the replay fingerprint covers every saved field and reads a database row the same way as the form', () => {
   const entry = {
     driverId: 3, cityId: 2, type: 'advance', direction: 'debit', amount: '200.00', reason: 'Fuel', effectiveDate: '2026-11-01',
-    intendedPayday: null, disbursedOutsidePayroll: true, claimType: null, waybill: null, recoveryPlan: 'installments', installmentAmount: '50.00',
+    intendedPayday: null, disbursedOutsidePayroll: true, claimType: null, waybill: null, claimCourier: null, recoveryPlan: 'installments', installmentAmount: '50.00',
   };
   const row = {
     driver_id: 3, city_id: 2, entry_type: 'advance', direction: 'debit', amount: '200.00', reason: 'Fuel', effective_date: '2026-11-01',
-    intended_payday: null, disbursed_outside_payroll: true, claim_type: null, waybill: null, recovery_plan: 'installments', installment_amount: '50.00',
+    intended_payday: null, disbursed_outside_payroll: true, claim_type: null, waybill: null, claim_courier: null, recovery_plan: 'installments', installment_amount: '50.00',
   };
   assert.equal(rowFingerprint(row), entryFingerprint(entry));
   for (const [key, value] of Object.entries({
     driverId: 4, cityId: 9, type: 'expense', direction: 'credit', amount: '200.01', reason: 'Other', effectiveDate: '2026-11-02',
-    intendedPayday: '2026-11-14', disbursedOutsidePayroll: false, claimType: 'X', waybill: 'W', recoveryPlan: 'full_next_payday', installmentAmount: '25.00',
+    intendedPayday: '2026-11-14', disbursedOutsidePayroll: false, claimType: 'X', waybill: 'W', claimCourier: 'gofo', recoveryPlan: 'full_next_payday', installmentAmount: '25.00',
   })) {
     assert.notEqual(entryFingerprint({ ...entry, [key]: value }), rowFingerprint(row), key);
   }

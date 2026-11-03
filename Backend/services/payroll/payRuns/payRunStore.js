@@ -89,7 +89,8 @@ export const NET_COLLECTED_SQL = (alias = 'c') => `(
                  JOIN pay_runs r ON r.id = s.pay_run_id
                 WHERE l.active AND l.line_type = 'reimbursement' AND r.status = 'finalized'
                   AND e.entry_type = 'correction' AND e.direction = 'credit'
-                  AND e.waybill = ${alias}.waybill AND ${CLAIM_TYPE_KEY_SQL('e.claim_type')} = ${alias}.claim_type_key
+                  AND e.claim_courier = ${alias}.courier AND e.waybill = ${alias}.waybill
+                  AND ${CLAIM_TYPE_KEY_SQL('e.claim_type')} = ${alias}.claim_type_key
                 GROUP BY e.driver_id) rf ON rf.driver_id = t.driver_id)`;
 
 // Matched, chargeable claims of these drivers in this city with something still owed. Locked so two runs cannot
@@ -156,7 +157,7 @@ export const loadOverRecovered = async (db, cityId, driverIds) => {
               - CASE WHEN m.status = 'chargeable' AND m.driver_id = t.driver_id AND m.city_id = $2 THEN m.eligible_deduction ELSE 0 END
               - COALESCE((SELECT SUM(e.amount) FROM driver_ledger_entries e
                            WHERE e.entry_type = 'correction' AND e.direction = 'credit' AND e.driver_id = t.driver_id AND e.city_id = $2
-                             AND e.waybill = c.waybill
+                             AND e.claim_courier = c.courier AND e.waybill = c.waybill
                              AND ${CLAIM_TYPE_KEY_SQL('e.claim_type')} = c.claim_type_key
                              AND NOT EXISTS (SELECT 1 FROM driver_ledger_entries v WHERE v.voids_entry_id = e.id)), 0))::text AS over
        FROM taken t
@@ -333,6 +334,22 @@ export const voidRun = async (db, admin, runId, reason) => {
   const { rows: moving } = await db.query(
     "SELECT count(*)::int AS n FROM pay_statements WHERE pay_run_id = $1 AND payout_status NOT IN ('not_submitted', 'failed')", [runId]);
   if (moving[0].n > 0) throw new PayrollError(409, 'some payouts are submitted, paid or unconfirmed; reconcile them before voiding');
+  // Serialised with pay runs: a run builds under its city's payroll lock and locks the claim matches it reads, so take
+  // the same city lock and lock the matches of every claim this run refunds before checking. A run building at this
+  // moment (in any city) either finishes first, so its deduction is seen below, or waits and then sees no refund.
+  await lockCityPayroll(db, run.city_id);
+  await db.query(
+    `SELECT m.claim_id
+       FROM pay_statement_lines rl
+       JOIN pay_statements rs ON rs.id = rl.statement_id
+       JOIN driver_ledger_entries e ON e.id = rl.ledger_entry_id
+       JOIN courier_claims cv ON cv.courier = e.claim_courier AND cv.waybill = e.waybill AND cv.claim_type_key = ${CLAIM_TYPE_KEY_SQL('e.claim_type')}
+       JOIN courier_claim_matches m ON m.claim_id = cv.id
+      WHERE rs.pay_run_id = $1 AND rl.active AND rl.line_type = 'reimbursement' AND e.claim_type IS NOT NULL
+      ORDER BY m.claim_id
+      FOR UPDATE OF m`,
+    [runId]
+  );
   // A claim refund paid on this run may already have let a later run charge the driver now liable for that claim.
   // Voiding would take the refund back while that charge stands, so the claim would be collected twice.
   const { rows: relied } = await db.query(
@@ -340,7 +357,7 @@ export const voidRun = async (db, admin, runId, reason) => {
        FROM pay_statement_lines rl
        JOIN pay_statements rs ON rs.id = rl.statement_id
        JOIN driver_ledger_entries e ON e.id = rl.ledger_entry_id
-       JOIN courier_claims cv ON cv.waybill = e.waybill AND cv.claim_type_key = ${CLAIM_TYPE_KEY_SQL('e.claim_type')}
+       JOIN courier_claims cv ON cv.courier = e.claim_courier AND cv.waybill = e.waybill AND cv.claim_type_key = ${CLAIM_TYPE_KEY_SQL('e.claim_type')}
        JOIN pay_statement_lines cl ON cl.claim_id = cv.id AND cl.active AND cl.line_type = 'claim'
        JOIN pay_statements cs ON cs.id = cl.statement_id
        JOIN pay_runs cr ON cr.id = cs.pay_run_id

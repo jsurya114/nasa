@@ -15,6 +15,7 @@ export const ENTRY_DIRECTIONS = Object.freeze({
 });
 export const ENTRY_TYPES = Object.freeze(Object.keys(ENTRY_DIRECTIONS));
 export const RECOVERY_PLANS = Object.freeze(['full_next_payday', 'installments']);
+export const COURIERS = Object.freeze(['gofo', 'speedx']);
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const MAX_AMOUNT = 10000;
@@ -101,13 +102,17 @@ export const parseNewEntry = (body = {}) => {
   // Only a refund (credit) may name a claim. A charge for a claim comes from the carrier import or a manual claim, where
   // the agreed exemption is applied; a claim-linked debit correction would bypass it, so it is refused.
   if (type === 'correction' && claimType && direction === 'debit') errors.direction = 'a correction that names a claim can only be a credit (a refund)';
+  // The courier completes the claim's identity (courier, waybill, claim type), so a refund counts against one claim only.
+  const claimCourier = type === 'correction' && claimType ? (COURIERS.includes(body.claimCourier) ? body.claimCourier : null) : null;
+  if (type === 'correction' && claimType && !claimCourier) errors.claimCourier = `a refund for a claim names its courier: ${COURIERS.join(' or ')}`;
+  if (!(type === 'correction' && claimType) && body.claimCourier) errors.claimCourier = 'only a refund that names a claim has a courier';
   if (!claimRef && (body.claimType || body.waybill)) errors.claimType = 'only a manual claim or a correction can name a claim';
 
   if (Object.keys(errors).length) return { errors };
   return {
     entry: {
       requestId, driverId, cityId, type, direction, amount: amount.charge, reason, effectiveDate, intendedPayday,
-      disbursedOutsidePayroll: disbursed, claimType, waybill, recoveryPlan, installmentAmount,
+      disbursedOutsidePayroll: disbursed, claimType, waybill, claimCourier, recoveryPlan, installmentAmount,
     },
   };
 };
@@ -117,12 +122,12 @@ export const parseNewEntry = (body = {}) => {
 const money = (v) => (v === null || v === undefined ? null : Number(v).toFixed(2));
 export const entryFingerprint = (e) => JSON.stringify([
   Number(e.driverId), Number(e.cityId), e.type, e.direction, money(e.amount), e.reason, e.effectiveDate, e.intendedPayday ?? null,
-  e.disbursedOutsidePayroll === true, e.claimType ?? null, e.waybill ?? null, e.recoveryPlan ?? null, money(e.installmentAmount),
+  e.disbursedOutsidePayroll === true, e.claimType ?? null, e.waybill ?? null, e.claimCourier ?? null, e.recoveryPlan ?? null, money(e.installmentAmount),
 ]);
 export const rowFingerprint = (row) => entryFingerprint({
   driverId: row.driver_id, cityId: row.city_id, type: row.entry_type, direction: row.direction, amount: row.amount, reason: row.reason,
   effectiveDate: row.effective_date, intendedPayday: row.intended_payday, disbursedOutsidePayroll: row.disbursed_outside_payroll,
-  claimType: row.claim_type, waybill: row.waybill, recoveryPlan: row.recovery_plan, installmentAmount: row.installment_amount,
+  claimType: row.claim_type, waybill: row.waybill, claimCourier: row.claim_courier, recoveryPlan: row.recovery_plan, installmentAmount: row.installment_amount,
 });
 
 // Checks a void request. Returns { void } or { errors }.

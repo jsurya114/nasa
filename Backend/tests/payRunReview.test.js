@@ -5,7 +5,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { createEntry, listEntries, voidEntry } from '../services/payroll/ledger/ledgerStore.js';
 import { parseNewEntry } from '../services/payroll/ledger/ledgerRules.js';
-import { discardRun, finalizeRun, generateRun, getRun, setRecoveryLimit, voidRun } from '../services/payroll/payRuns/payRunStore.js';
+import { discardRun, finalizeRun, generateRun, getRun, NET_COLLECTED_SQL, setRecoveryLimit, voidRun } from '../services/payroll/payRuns/payRunStore.js';
 
 // The cases from Jasil's review of #152, each reproduced and then fixed. Needs a PostgreSQL copy with the app's
 // tables (never production): PAYROLL_TEST_DB=1 and the DB_* variables. Everything runs in one transaction that is
@@ -116,7 +116,7 @@ test('pay run review cases: dates, one recovery per period, lowered claims, undi
       assert.equal((await statement(draft)).claim_deductions, '0.00');
       await discardRun(db, admin, draft.id, 'Record the refund first');
       // The approved refund: a credit correction naming the claim. It is paid once and the flag goes away.
-      await ledger({ type: 'correction', direction: 'credit', amount: '10', waybill: 'TESTR001', claimType: 'Damaged Item', reason: 'Carrier lowered claim' });
+      await ledger({ type: 'correction', direction: 'credit', amount: '10', waybill: 'TESTR001', claimType: 'Damaged Item', claimCourier: 'gofo', reason: 'Carrier lowered claim' });
       const settled = await statement(await run(nextWeek));
       assert.equal(codes(settled).includes('claim_over_recovered'), false);
       assert.equal(settled.reimbursements, '10.00');
@@ -173,7 +173,7 @@ test('pay run review cases: dates, one recovery per period, lowered claims, undi
       assert.ok(codes(await statement(draft)).includes('claim_over_recovered'));
       await discardRun(db, admin, draft.id, 'Record the refund first');
       // The refund to A, linked to the claim. While it is only in a draft, B is still not charged.
-      await ledger({ type: 'correction', direction: 'credit', amount: '40', waybill: 'TESTR003', claimType: 'Damaged Item', reason: 'Claim was not this driver' });
+      await ledger({ type: 'correction', direction: 'credit', amount: '40', waybill: 'TESTR003', claimType: 'Damaged Item', claimCourier: 'gofo', reason: 'Claim was not this driver' });
       draft = await run(week(1));
       assert.deepEqual([(await statement(draft)).reimbursements, (await statement(draft, d2)).claim_deductions], ['40.00', '0.00']);
       await finalizeRun(db, admin, draft.id);
@@ -190,7 +190,7 @@ test('pay run review cases: dates, one recovery per period, lowered claims, undi
 
     await isolated('a partial refund to A lets B be charged only the refunded part', async () => {
       await reassignedClaim('2', 'TESTR004');
-      await ledger({ type: 'correction', direction: 'credit', amount: '25', waybill: 'TESTR004', claimType: 'Damaged Item', reason: 'Part refund' });
+      await ledger({ type: 'correction', direction: 'credit', amount: '25', waybill: 'TESTR004', claimType: 'Damaged Item', claimCourier: 'gofo', reason: 'Part refund' });
       const refundRun = await run(week(1));
       assert.equal((await statement(refundRun)).reimbursements, '25.00');
       await finalizeRun(db, admin, refundRun.id);
@@ -198,6 +198,22 @@ test('pay run review cases: dates, one recovery per period, lowered claims, undi
       assert.equal((await statement(next, d2)).claim_deductions, '25.00', '15 still sits with A, so B owes 25');
       const flag = (await statement(next)).flags.find((f) => f.code === 'claim_over_recovered');
       assert.equal(flag?.amount, '15.00', 'A is still owed the other 15');
+    });
+
+    await isolated('a refund counts against its own claim only, never a same-waybill claim from another courier', async () => {
+      for (const [courier, key] of [['gofo', '3'], ['speedx', '4']]) {
+        const id = (await one(`INSERT INTO courier_claims (courier, claim_key, version, waybill, claim_type, claim_type_key, claim_at, original_charge, deduction_amount, import_city_id, source_file, source_sheet, source_row)
+          VALUES ($1, repeat($2, 64), 1, 'TESTR005', 'Damaged Item', 'damaged item', '2026-10-30 10:00', -40, 40, $3, 'synthetic.xlsx', 'Claims Detail', 2) RETURNING id`, [courier, key, city])).id;
+        await db.query(`INSERT INTO courier_claim_matches (claim_id, status, driver_id, city_id, eligible_deduction, reason, rule_version) VALUES ($1, 'chargeable', $2, $3, 40, 'test', 'test')`, [id, d1, city]);
+      }
+      const first = await run();
+      assert.equal((await statement(first)).claim_deductions, '80.00');
+      await finalizeRun(db, admin, first.id);
+      await ledger({ type: 'correction', direction: 'credit', amount: '40', waybill: 'TESTR005', claimType: 'Damaged Item', claimCourier: 'gofo', reason: 'Refund the GOFO claim' });
+      await payRow('2026-11-10');
+      await finalizeRun(db, admin, (await run({ periodStart: '2026-11-08', periodEnd: '2026-11-14' })).id);
+      const { rows } = await db.query(`SELECT c.courier, ${NET_COLLECTED_SQL('c')}::text AS net FROM courier_claims c WHERE c.waybill = 'TESTR005' ORDER BY c.courier`);
+      assert.deepEqual(rows.map((r) => [r.courier, Number(r.net).toFixed(2)]), [['gofo', '0.00'], ['speedx', '40.00']]);
     });
 
     await isolated('an advance not marked as paid out is never recovered and is counted as waiting', async () => {

@@ -106,3 +106,7 @@ Not decided here, on purpose (owner decisions in #142/#143): installment recover
   - Rules: debit corrections naming a Tracking interruption or a Damaged Item claim are refused, and a plain debit correction is accepted.
   - Store: a direct database insert of a debit correction naming a tracking-interruption claim in DFW GOFO is refused by the check.
   - Full suite: 63 pass with the database.
+- **A refund names exactly one claim** (found by an automated security review). A refund correction now also names the claim's courier (`claim_courier`: `gofo` or `speedx`), so courier, waybill and claim type, the claim's own identity, point to a single claim. Before, one refund could have counted against two claims with the same waybill and type from different couriers.
+  - Schema: a new nullable column, allowed only on a correction that names a claim, and required there.
+  - The courier is part of the replay fingerprint.
+  - Tests: the form rules refuse a missing or unknown courier, and a courier on an expense; the database refuses a refund naming a claim without its courier.
