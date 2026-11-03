@@ -81,10 +81,13 @@ export const createEntry = async (db, admin, entry) => {
     }
   }
 
-  // A refund for a claim may not exceed what is still refundable to this driver for it. Checked under the claim's
-  // lock, so two admins (or two stale forms) cannot both refund the same over-recovery.
+  // A refund for a claim may not exceed what is still refundable to this driver for it. Checked under the city's
+  // payroll lock and then the claim's lock (the order pay runs and voids use), so two admins or two stale forms cannot
+  // both refund the same over-recovery, and a refund cannot be recorded while the run that made the charge is being
+  // voided: whichever comes second sees the other.
   if (entry.type === 'correction' && entry.claimType) {
     const typeKey = claimTypeKey(entry.claimType);
+    await lockCityPayroll(db, entry.cityId);
     await lockClaimSubject(db, entry.waybill, typeKey);
     const { refundable, reason } = await refundableForClaim(db, {
       driverId: entry.driverId, cityId: entry.cityId, courier: entry.claimCourier, waybill: entry.waybill, typeKey,
