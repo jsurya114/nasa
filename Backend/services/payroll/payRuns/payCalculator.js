@@ -112,7 +112,10 @@ export const calculateStatement = (input) => {
     const notYet = d.effectiveDate > input.periodEnd || (d.intendedPayday && d.intendedPayday > input.periodEnd);
     let want = 0;
     if (d.hold) flags.push({ code: d.hold, entryId: d.entryId, message: HOLD_MESSAGES[d.hold] ?? 'held for review; not recovered' });
-    else if (notYet) want = 0;
+    else if (notYet) {
+      want = 0;
+      flags.push({ code: 'not_yet_due', entryId: d.entryId, message: 'dated after this payday, so it is taken on a later payday' });
+    }
     else if (d.plan === 'full_next_payday') want = d.owedCents;
     else if (d.plan === 'installments') want = Math.min(toCents(d.installmentAmount), d.owedCents);
     else flags.push({ code: 'needs_review', entryId: d.entryId, message: 'no repayment arrangement recorded; not recovered' });
