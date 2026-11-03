@@ -3,6 +3,8 @@ import useTranslation from "../../../hooks/useTranslation.js";
 import { formatMoney } from "../../../utils/money.js";
 import { entryKey } from "./payLabels.js";
 
+const toCents = (v) => Math.round(Number(v) * 100);
+
 function Item({ title, lines, amount, note }) {
   return (
     <li className="px-4 py-3">
@@ -29,9 +31,9 @@ export default function BalanceSummary({ balances, adminView = false }) {
   const debits = balances.entries.filter((e) => e.direction === "debit" && Number(e.outstanding) > 0);
   const credits = balances.entries.filter((e) => e.direction === "credit" && e.entry_type !== "advance_repayment" && Number(e.outstanding) > 0);
   const claims = balances.claims.filter((c) => c.status === "exempt" || Number(c.outstanding) > 0);
-  const penaltyCents = debits.filter((e) => e.entry_type === "manual_claim" && !e.exempt).reduce((sum, e) => sum + Math.round(Number(e.outstanding) * 100), 0);
-  // "You still owe" leaves penalties out: they have their own total, so nothing is counted twice.
-  const owedCents = Math.max(0, Math.round(Number(balances.totals.owedByDriver) * 100) - penaltyCents);
+  // The server splits what is owed by kind, after repayments made outside payroll, so the two always add up to the total.
+  const owedCents = toCents(balances.totals.owedOther ?? balances.totals.owedByDriver);
+  const penaltyCents = toCents(balances.totals.owedPenalties ?? 0);
   const empty = debits.length + credits.length + claims.length === 0;
 
   return (
@@ -52,6 +54,12 @@ export default function BalanceSummary({ balances, adminView = false }) {
           <dd className="mt-1 text-lg font-semibold tabular-nums text-ink">{money(balances.totals.owedToDriver)}</dd>
         </div>
       </dl>
+
+      {penaltyCents > 0 && (
+        <p className="mt-2 text-xs text-ink-muted">
+          {t("totalOwed")}: <span className="font-semibold tabular-nums">{money((owedCents + penaltyCents) / 100)}</span>
+        </p>
+      )}
 
       <h3 id="pay-balances" className="mb-2 mt-5 text-sm font-semibold text-ink">{t("openBalances")}</h3>
       {empty ? (

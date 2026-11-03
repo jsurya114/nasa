@@ -360,6 +360,7 @@ const translations = {
     entryReimbursement: 'Reimbursement',
     entryManualClaim: 'Penalty charges',
     penaltyCharges: 'Penalty charges',
+    totalOwed: 'Total owed',
     entryCorrection: 'Correction',
   },
   es: {
@@ -721,6 +722,7 @@ const translations = {
     entryReimbursement: 'Reembolso',
     entryManualClaim: 'Cargos por penalización',
     penaltyCharges: 'Cargos por penalización',
+    totalOwed: 'Total que debes',
     entryCorrection: 'Corrección',
   },
 };
