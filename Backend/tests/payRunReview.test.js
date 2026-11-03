@@ -36,7 +36,7 @@ test('pay run review cases: dates, one recovery per period, lowered claims, undi
 
     let seq = 9500;
     const payRow = async (date, gross = '100.00', insurance = '1.92', driver = d1) => {
-      const dd = (await one('INSERT INTO dashboard_data (driver_id, route_id, start_seq, end_seq, journey_date, packages) VALUES ($1,$2,$3,$4,$5,10) RETURNING id', [driver, route, seq, seq + 9, date])).id;
+      const dd = (await one('INSERT INTO dashboard_data (driver_id, route_id, start_seq, end_seq, journey_date, packages) VALUES ($1,$2,$3,$4,$5,10) RETURNING id', [driver, route, 0, 0, date])).id;
       seq += 10;
       await db.query('UPDATE payment_dashboard SET closed = true, paid = false, driver_payment = $2, insurance_deduction = $3 WHERE dashboard_data_id = $1', [dd, gross, insurance]);
     };
@@ -46,7 +46,7 @@ test('pay run review cases: dates, one recovery per period, lowered claims, undi
       assert.ok(parsed.entry, JSON.stringify(parsed.errors));
       return (await createEntry(db, admin, parsed.entry)).entry;
     };
-    const run = async (o = {}) => (await generateRun(db, admin, { requestId: randomUUID(), cityId: city, periodStart: '2026-11-01', periodEnd: '2026-11-07', dataType: 'daily', ...o })).run;
+    const run = async (o = {}) => (await generateRun(db, admin, { requestId: randomUUID(), cityId: city, periodStart: '2026-11-01', periodEnd: '2026-11-07', dataType: 'weekly', ...o })).run;
     const statement = async (r, driver = d1) => (await getRun(db, admin, r.id)).statements.find((s) => s.driver_id === driver);
     const codes = (s) => s.flags.map((f) => f.code);
     // Payouts are #31's; here the test records what the payout system would report for one driver's statement.
@@ -82,11 +82,11 @@ test('pay run review cases: dates, one recovery per period, lowered claims, undi
       const s = await statement(supplemental);
       assert.equal(s.recoveries, '0.00', 'before the fix: another 50');
       assert.ok(codes(s).includes('already_recovered_this_period'));
-      // A weekly run over the same days overlaps too.
+      // A run of the other kind over the same days overlaps too.
       await discardRun(db, admin, supplemental.id, 'Test');
-      const weekly = await run({ dataType: 'weekly' });
-      assert.equal((await getRun(db, admin, weekly.id)).statements.length, 0, 'no weekly rows here, but nothing is taken either');
-      await discardRun(db, admin, weekly.id, 'Test');
+      const other = await run({ dataType: 'daily' });
+      assert.equal((await getRun(db, admin, other.id)).statements.length, 0, 'no daily rows here, but nothing is taken either');
+      await discardRun(db, admin, other.id, 'Test');
       // Next week is a new pay period.
       await payRow('2026-11-10');
       assert.equal((await statement(await run({ periodStart: '2026-11-08', periodEnd: '2026-11-14' }))).recoveries, '50.00');
@@ -130,7 +130,7 @@ test('pay run review cases: dates, one recovery per period, lowered claims, undi
       const cityB = (await one("INSERT INTO city (job, city_code, city_type) VALUES ('Test Review B', 'TSTRB', 'DAILY') RETURNING id")).id;
       const routeB = (await one(`INSERT INTO routes (name, job, company_route_price, driver_route_price, company_doublestop_price, driver_doublestop_price, route_code_in_string)
         VALUES ('TRB 1', 'Test Review B', 2, 1.6, 0.5, 0.25, 'TRB-1') RETURNING id`)).id;
-      const dd = (await one('INSERT INTO dashboard_data (driver_id, route_id, start_seq, end_seq, journey_date, packages) VALUES ($1,$2,9900,9909,$3,10) RETURNING id', [d1, routeB, '2026-11-05'])).id;
+      const dd = (await one('INSERT INTO dashboard_data (driver_id, route_id, start_seq, end_seq, journey_date, packages) VALUES ($1,$2,0,0,$3,10) RETURNING id', [d1, routeB, '2026-11-05'])).id;
       await db.query('UPDATE payment_dashboard SET closed = true, paid = false, driver_payment = 100, insurance_deduction = 0 WHERE dashboard_data_id = $1', [dd]);
       const claimIn = async (version, charge) => {
         const id = (await one(`INSERT INTO courier_claims (courier, claim_key, version, waybill, claim_type, claim_type_key, claim_at, original_charge, deduction_amount, import_city_id, source_file, source_sheet, source_row)

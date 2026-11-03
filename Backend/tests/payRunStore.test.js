@@ -44,7 +44,7 @@ test('pay runs: today\'s totals, exactly-once rows and deductions, frozen histor
     // Closed pay rows, as the upload and calculation would leave them: d1 three days, d2 one day.
     let seq = 7000;
     const payRow = async (driver, date, gross, insurance) => {
-      const dd = (await one('INSERT INTO dashboard_data (driver_id, route_id, start_seq, end_seq, journey_date, packages) VALUES ($1,$2,$3,$4,$5,10) RETURNING id', [driver, route, seq, seq + 9, date])).id;
+      const dd = (await one('INSERT INTO dashboard_data (driver_id, route_id, start_seq, end_seq, journey_date, packages) VALUES ($1,$2,$3,$4,$5,10) RETURNING id', [driver, route, 0, 0, date])).id;
       seq += 10;
       return (await one('UPDATE payment_dashboard SET closed = true, paid = false, driver_payment = $2, insurance_deduction = $3 WHERE dashboard_data_id = $1 RETURNING id', [dd, gross, insurance])).id;
     };
@@ -60,7 +60,7 @@ test('pay runs: today\'s totals, exactly-once rows and deductions, frozen histor
     const advance = await ledger({ type: 'advance', amount: '200', disbursedOutsidePayroll: true, recoveryPlan: 'installments', installmentAmount: '50' });
     const unplanned = await ledger({ type: 'expense', amount: '30' });
     const reimbursement = await ledger({ type: 'reimbursement', amount: '12.25' });
-    const period = { cityId: city, periodStart: '2026-11-01', periodEnd: '2026-11-07', dataType: 'daily' };
+    const period = { cityId: city, periodStart: '2026-11-01', periodEnd: '2026-11-07', dataType: 'weekly' };
     const statementOf = (detail, driver) => detail.statements.find((s) => s.driver_id === driver);
 
     let firstRun;
@@ -124,7 +124,7 @@ test('pay runs: today\'s totals, exactly-once rows and deductions, frozen histor
       const v2 = (await one(`INSERT INTO courier_claims (courier, claim_key, version, waybill, claim_type, claim_type_key, claim_at, original_charge, deduction_amount, import_city_id, source_file, source_sheet, source_row)
         VALUES ('gofo', repeat('c', 64), 2, 'TESTP001', 'Damaged Item', 'damaged item', '2026-10-30 10:00', -45, 45, $1, 'synthetic-2.xlsx', 'Claims Detail', 2) RETURNING id`, [city])).id;
       await db.query(`INSERT INTO courier_claim_matches (claim_id, status, driver_id, city_id, eligible_deduction, reason, rule_version) VALUES ($1, 'chargeable', $2, $3, 45, 'test', 'test')`, [v2, d1, city]);
-      const next = (await generateRun(db, cityAdmin, { requestId: randomUUID(), cityId: city, periodStart: '2026-11-08', periodEnd: '2026-11-14', dataType: 'daily' })).run;
+      const next = (await generateRun(db, cityAdmin, { requestId: randomUUID(), cityId: city, periodStart: '2026-11-08', periodEnd: '2026-11-14', dataType: 'weekly' })).run;
       const s1 = statementOf(await getRun(db, cityAdmin, next.id), d1);
       // rows 9 Nov (999.00) and 10 Nov: 5 more for the amended claim, reimbursement already paid, instalment 2 of 4
       assert.deepEqual([s1.gross, s1.claim_deductions, s1.recoveries, s1.reimbursements, s1.carried_forward], ['1099.00', '5.00', '50.00', '0.00', '130.00']);

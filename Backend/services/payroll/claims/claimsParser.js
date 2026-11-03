@@ -1,9 +1,11 @@
 // Reads the carrier's "Claims Detail" sheet into claim records (issue #141). No database work here.
 // Every row that is not blank becomes either a claim or a reported problem: nothing is skipped silently,
-// turned into zero, or assigned to anyone. Who owes a claim is decided later, from delivery history only.
+// turned into zero, or assigned to anyone. Who owes a claim is decided later, by matching the Courier name (the driver's name)
+// with the same name in Details of Delivery Fees, whose Delivery ID is the driver code (issue #180).
 
 import XLSX from 'xlsx';
 import { claimKey, claimTypeKey, normalizeWaybill, parseCarrierDateTime, parseCharge } from './claimRules.js';
+import { cleanDriverName, driverNameKey } from '../../admin/driverName.js';
 
 export const CLAIMS_SHEET = 'Claims Detail';
 
@@ -14,6 +16,7 @@ const COLUMNS = Object.freeze({
   claimType: 'Claim Type',
   charge: 'The total expenses-exclusive of taxes',
   declaredValue: 'Declared value (USD)',
+  courierName: 'Courier', // the driver's name: how a claim is matched to a driver (issue #180)
   confirmDate: 'Confirm date.',
   remarks: 'Remarks',
 });
@@ -23,6 +26,9 @@ const headerKey = (text) => (typeof text === 'string' ? text.toLowerCase().repla
 const isBlank = (v) => v === null || v === undefined || (typeof v === 'string' && v.trim() === '');
 const MAX_TEXT = 500;
 const text = (v) => (isBlank(v) ? null : String(v).trim().slice(0, MAX_TEXT));
+
+// Two rows name different drivers only when both give a name and the names differ (case and spacing do not count).
+const namesDiffer = (a, b) => Boolean(a.courierNameKey && b.courierNameKey && a.courierNameKey !== b.courierNameKey);
 
 // rows: the sheet as an array of arrays (first non-blank row is the header).
 // Returns { claims, problems }. A problem is { row, message } with the Excel row number.
@@ -83,17 +89,27 @@ export const parseClaimsRows = (rows, { courier }) => {
       // Kept only as evidence. Never used for the deduction.
       declaredValue: declared && !declared.error ? declared.charge : null,
       remarks: text(cell('remarks')),
+      // The driver's name as the carrier wrote it, and the key it is compared by. Blank when the column is empty or missing.
+      courierName: isBlank(cell('courierName')) ? null : cleanDriverName(String(cell('courierName'))).slice(0, 100) || null,
+      courierNameKey: isBlank(cell('courierName')) ? null : driverNameKey(String(cell('courierName'))).slice(0, 100) || null,
     };
 
     const earlier = byKey.get(claim.key);
     if (!earlier) {
       byKey.set(claim.key, claim);
       claims.push(claim);
-    } else if (earlier.charge !== claim.charge || earlier.claimAt !== claim.claimAt) {
-      // Same waybill and claim type twice with different facts: neither row is trusted until a person checks.
-      problems.push({ row: excelRow, message: `conflicts with row ${earlier.sourceRow} for the same waybill and claim type; neither is imported` });
+    } else if (earlier.charge !== claim.charge || earlier.claimAt !== claim.claimAt || namesDiffer(earlier, claim)) {
+      // Same waybill and claim type twice with different facts: neither row is trusted until a person checks. The driver's name is a
+      // fact: it decides who is charged, so two rows naming different drivers must not pick one of them by position (#180).
+      const what = namesDiffer(earlier, claim) ? 'a different driver name' : 'different facts';
+      problems.push({ row: excelRow, message: `conflicts with row ${earlier.sourceRow} for the same waybill and claim type (${what}); neither is imported` });
       earlier.conflict = true;
     } else {
+      // A repeat may carry the name the first row lacked; keep it, so the claim can be matched.
+      if (!earlier.courierNameKey && claim.courierNameKey) {
+        earlier.courierName = claim.courierName;
+        earlier.courierNameKey = claim.courierNameKey;
+      }
       problems.push({ row: excelRow, message: `repeats row ${earlier.sourceRow}; imported once` });
     }
   }

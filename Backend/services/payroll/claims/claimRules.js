@@ -90,15 +90,23 @@ export const claimKey = ({ courier, waybill, claimType }) =>
 // importCityId: the city the claims file was uploaded for.
 // Returns { status, driverId, cityId, carrierDeliveryId, routeId, journeyDate, eligibleDeduction, reason }.
 // status is "chargeable", "exempt", "unresolved" or "ambiguous". Only "chargeable" carries a deduction.
-export const resolveClaim = (claim, candidates, importCityId) => {
+// by: how the candidates were found, for the reason text. 'name' (issue #180): the claim's Courier name was found in Details of
+// Delivery Fees and its Delivery ID is the driver code. 'waybill': the older match from waybill history.
+const REASONS = {
+  waybill: { none: 'no delivery history for this waybill yet', drivers: 'the waybill is linked to more than one driver', cities: 'the waybill is linked to more than one city', matched: 'matched by waybill and delivery history' },
+  name: { none: 'the courier name was not found in Details of Delivery Fees', drivers: 'the courier name is linked to more than one driver', cities: 'the courier name is linked to more than one city', matched: 'matched by courier name and Delivery ID' },
+};
+
+export const resolveClaim = (claim, candidates, importCityId, { by = 'waybill' } = {}) => {
+  const why = REASONS[by] ?? REASONS.waybill;
   const open = (status, reason) => ({ status, driverId: null, cityId: null, carrierDeliveryId: null, routeId: null, journeyDate: null, eligibleDeduction: null, reason });
   const list = Array.isArray(candidates) ? candidates : [];
-  if (list.length === 0) return open('unresolved', 'no delivery history for this waybill yet');
+  if (list.length === 0) return open('unresolved', why.none);
 
   const drivers = new Set(list.map((c) => c.driverId ?? null));
   const cities = new Set(list.map((c) => c.cityId ?? null));
-  if (drivers.size > 1) return open('ambiguous', 'the waybill is linked to more than one driver');
-  if (cities.size > 1) return open('ambiguous', 'the waybill is linked to more than one city');
+  if (drivers.size > 1) return open('ambiguous', why.drivers);
+  if (cities.size > 1) return open('ambiguous', why.cities);
 
   const [match] = list;
   if (match.driverId == null) return open('unresolved', 'the carrier delivery ID is not linked to a NASA driver');
@@ -114,6 +122,6 @@ export const resolveClaim = (claim, candidates, importCityId) => {
     routeId: match.routeId ?? null,
     journeyDate: match.journeyDate ?? null,
     eligibleDeduction: exempt ? '0.00' : claim.deduction,
-    reason: exempt ? 'exempt: DFW GOFO and Tracking interruption' : 'matched by waybill and delivery history',
+    reason: exempt ? 'exempt: DFW GOFO and Tracking interruption' : why.matched,
   };
 };

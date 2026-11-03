@@ -237,7 +237,9 @@ export const generateRun = async (db, admin, request) => {
 
   const earnings = await loadEarnings(db, run);
   const driverIds = [...new Set(earnings.map((e) => e.driver_id))];
-  const claims = driverIds.length ? await loadClaims(db, run.city_id, driverIds) : [];
+  // Imported GOFO carrier claims come only from the weekly report, so only a weekly run takes them (client decision, 4 Nov 2026). A
+  // daily (SpeedX) run uses manual advances and penalties and never consumes a carrier claim. The dashboard estimate follows the same rule.
+  const claims = driverIds.length && run.data_type === 'weekly' ? await loadClaims(db, run.city_id, driverIds) : [];
   const ledger = driverIds.length ? await loadLedger(db, run, driverIds) : [];
   const overRecovered = driverIds.length ? await loadOverRecovered(db, run.city_id, driverIds) : [];
 

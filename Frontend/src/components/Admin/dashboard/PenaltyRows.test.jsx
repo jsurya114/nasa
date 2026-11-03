@@ -39,9 +39,9 @@ describe("the net", () => {
 });
 
 describe("the row and the Summary", () => {
-  it("the Summary keeps this payday's deduction and the balance as two lines", () => {
+  it("the Summary has one Penalty & Others line with what comes off, and no still-owed line", () => {
     const items = summaryItems(ready({ deducted: "50.00", net: "30.00", penalties: "250.00" }), 80);
-    expect(items.afterInsurance.map((i) => [i.label, i.text])).toEqual([["Penalty & Others (this payday)", "-$50.00"], ["Still Owed (all)", "$250.00"]]);
+    expect(items.afterInsurance.map((i) => [i.label, i.text])).toEqual([["Penalty & Others", "-$50.00"]]);
     expect(items.net.net).toBe(30);
     expect(summaryItems(ready(), 80).afterInsurance).toEqual([]);
     expect(summaryItems({ status: "error", expected: true }, 80).afterInsurance[0].kind).toBe("notice");

@@ -135,7 +135,7 @@ test('the weekly upload keeps assignment history without changing what it stages
       const imported = await callHandler(importAssignmentHistory, { file: { buffer: mixed, originalname: 'mixed.xlsx' }, user: { id: cityAdmin, role: 'admin' } });
       assert.equal(imported.status, 200);
       assert.deepEqual([imported.body.data.recorded, imported.body.data.leftOut], [1, 1]);
-      assert.deepEqual(imported.body.data.claimsRematched, { ran: true }, 'a city admin is not shown claim counts of other cities');
+      assert.equal(imported.body.data.claimsRematched, null, 'claims are matched by the driver name when the weekly report is uploaded, not from waybill history (issue #180)');
       const own = (await client.query("SELECT count(*) n FROM carrier_package_assignments WHERE waybill_key IN ('FW0200','FW0201')")).rows[0].n;
       assert.equal(Number(own), 1);
     });
@@ -170,7 +170,7 @@ test('the weekly upload keeps assignment history without changing what it stages
       assert.equal(after.body.data.some((c) => c.waybillKey === 'FW0300'), false);
     });
 
-    await t.test('new history settles claims that were waiting for it, and leaves the unproven and the conflicting open', async () => {
+    await t.test('new waybill history no longer settles claims: they are matched by the driver name (issue #180), so they stay waiting', async () => {
       const { importClaims } = await import('../services/payroll/claims/claimsStore.js');
       const { parseClaimsRows } = await import('../services/payroll/claims/claimsParser.js');
       const claimsHeader = ['date', 'Waybill No.', 'Claim Type', 'Declared value (USD)', 'Confirm date.', 'The total expenses-exclusive of taxes'];
@@ -194,25 +194,19 @@ test('the weekly upload keeps assignment history without changing what it stages
         user: SUPER,
       });
       assert.equal(result.status, 200);
-      assert.deepEqual(result.body.data.claimsRematched, { chargeable: 1, exempt: 0, unresolved: 1, ambiguous: 1 });
-      assert.deepEqual(await state(), {
-        FWC001: ['chargeable', '12.50', driverA],
-        FWC002: ['ambiguous', null, null],
-        FWC003: ['unresolved', null, null],
-      });
-
-      const again = await callHandler(importAssignmentHistory, { file: { buffer: await fileOf([['FWC001', 'Sam', 'FLWA 01-1', 90000011, '10/07/2026 09:00:00', 4.5, '1']]), originalname: 'claims-history-2.xlsx' }, user: SUPER });
-      assert.equal(again.body.data.claimsRematched, null, 'nothing new, so no claim is looked at');
+      // The history is saved as evidence, but no claim is looked at: the waybill is not how a claim finds its driver any more.
+      assert.equal(result.body.data.claimsRematched, null);
+      assert.deepEqual(Object.values(await state()).map((v) => v[0]), ['unresolved', 'unresolved', 'unresolved']);
     });
 
-    await t.test('if the claims tables are missing, the history is still kept and the answer says the claims were not rematched', async () => {
+    await t.test('if the claims tables are missing, the history is still kept and the answer is unaffected', async () => {
       // Hide the table instead of running the rollback script: later migrations (ledger, pay runs) depend on it, and
       // this works whichever of them exist in the test database. The transaction is rolled back at the end.
       await client.query('ALTER TABLE courier_claims RENAME TO courier_claims_hidden_by_test');
       const before = await facts();
       const result = await callHandler(importAssignmentHistory, { file: { buffer: await fileOf([['FWD001', 'Sam', 'FLWA 01-1', 90000011, '10/08/2026 09:00:00', 4.5, '1']]), originalname: 'no-claims.xlsx' }, user: SUPER });
       assert.equal(result.status, 200);
-      assert.deepEqual([result.body.data.saved, result.body.data.recorded, result.body.data.claimsRematched], [true, 1, { failed: true }]);
+      assert.deepEqual([result.body.data.saved, result.body.data.recorded, result.body.data.claimsRematched], [true, 1, null]);
       assert.equal(await facts(), before + 1);
     });
 

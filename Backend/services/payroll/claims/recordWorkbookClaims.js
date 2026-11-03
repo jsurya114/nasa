@@ -1,5 +1,6 @@
-// Stores the carrier's Claims Detail sheet from an uploaded report (issue #141) and matches the new claims against
-// the waybill history (issue #140). The weekly upload calls it after the history is saved, inside the same transaction.
+// Stores the carrier's Claims Detail sheet from an uploaded report (issue #141) and matches the claims to drivers by name
+// (issue #180): the claim's Courier (the driver's name) is looked up in the Courier column of Details of Delivery Fees, and that
+// row's Delivery ID is the driver code. The weekly upload calls it after the history is saved, inside the same transaction.
 //
 // The claims sheet has no city, and a claim only counts for the city the file was uploaded for. So the city is taken
 // from the report's own routes, and only when every route belongs to one city. If that cannot be settled the claims
@@ -11,7 +12,7 @@ import XLSX from 'xlsx';
 import logger from '../../../utils/logger.js';
 import { CLAIMS_SHEET, parseClaimsWorkbook } from './claimsParser.js';
 import { importClaims, rematchAllOpenClaims } from './claimsStore.js';
-import { candidateFinderFor } from '../../excel/assignmentHistory/assignmentStore.js';
+import { FEES_SHEET, parseFeeNames } from './courierNames.js';
 import { getAllowedJobs, isCityLimited } from '../../admin/adminCityAccess.js';
 
 const SAVEPOINT = 'weekly_claims';
@@ -20,12 +21,37 @@ const COURIER = 'gofo'; // the same spelling the waybill history uses
 const MAX_PROBLEMS_SHOWN = 20;
 const sheetKey = (name) => String(name).toLowerCase().replace(/[^a-z0-9]/g, '');
 
-// Reads only the claims sheet with the xlsx library (the upload itself is read with ExcelJS).
-const readClaimsWorkbook = (buffer) => {
+// Reads only one sheet with the xlsx library (the upload itself is read with ExcelJS).
+const readSheetWorkbook = (buffer, title) => {
   const names = XLSX.read(buffer, { type: 'buffer', bookSheets: true }).SheetNames ?? [];
-  const name = names.find((n) => sheetKey(n) === sheetKey(CLAIMS_SHEET));
+  const name = names.find((n) => sheetKey(n) === sheetKey(title));
   if (!name) return { SheetNames: [], Sheets: {} };
   return XLSX.read(buffer, { type: 'buffer', sheets: name });
+};
+const readClaimsWorkbook = (buffer) => readSheetWorkbook(buffer, CLAIMS_SHEET);
+
+// Finds the drivers a claim's name points to: every Delivery ID seen with that name in Details of Delivery Fees is a driver code.
+// A Delivery ID with no NASA driver comes back with driverId null (the claim then waits: "not linked to a NASA driver"). The city
+// is given by its code, which is what the Dallas GOFO exemption keys on.
+const nameFinderFor = (client, names) => {
+  const cache = new Map();
+  const driverOf = async (code) => {
+    if (!cache.has(code)) {
+      const { rows } = await client.query(
+        'SELECT d.id, d.city_id, c.city_code AS city_name FROM drivers d LEFT JOIN city c ON c.id = d.city_id WHERE d.driver_code = $1', [Number(code)]);
+      cache.set(code, rows[0] ?? null);
+    }
+    return cache.get(code);
+  };
+  return async ({ nameKey }) => {
+    const codes = nameKey ? [...(names.get(nameKey) ?? [])] : [];
+    const found = [];
+    for (const code of codes) {
+      const driver = await driverOf(code);
+      found.push({ driverId: driver?.id ?? null, cityId: driver?.city_id ?? null, cityName: driver?.city_name ?? null, carrierDeliveryId: code, routeId: null, journeyDate: null });
+    }
+    return found;
+  };
 };
 
 // Every route the report names must belong to a known city. Returns { cities, unresolved }: the distinct cities of the
@@ -55,18 +81,21 @@ export const recordWorkbookClaims = async (client, { buffer, fileName, user, rou
 
   await client.query(`SAVEPOINT ${SAVEPOINT}`);
   try {
-    if (parsed.claims.length === 0) {
-      await client.query(`RELEASE SAVEPOINT ${SAVEPOINT}`);
-      return notStored(true, parsed, parsed.problems.length ? 'Every claim row has a problem; nothing was stored.' : 'The Claims Detail sheet has no claims.');
-    }
+    // A present Claims Detail sheet with no new claims still counts: the report's fee sheet may name a driver whose earlier claim is
+    // waiting, so after the same city and access checks the open claims are matched (issue #180 review). The answer for a sheet with
+    // no claims is unchanged, apart from the counts of what was matched.
+    const empty = parsed.claims.length === 0;
+    const emptyReason = parsed.problems.length ? 'Every claim row has a problem; nothing was stored.' : 'The Claims Detail sheet has no claims.';
     const { cities, unresolved } = await cityOfRoutes(client, routeCodes ?? []);
     if (unresolved.length > 0) {
       await client.query(`RELEASE SAVEPOINT ${SAVEPOINT}`);
+      if (empty) return notStored(true, parsed, emptyReason);
       const shown = unresolved.slice(0, 5).join(', ');
       return notStored(true, parsed, `Claims were not stored: ${unresolved.length} route${unresolved.length === 1 ? '' : 's'} in the report ${unresolved.length === 1 ? 'is' : 'are'} not set up (${shown}${unresolved.length > 5 ? ', ...' : ''}), so the city cannot be confirmed. Add the route${unresolved.length === 1 ? '' : 's'} and upload again.`);
     }
     if (cities.length !== 1) {
       await client.query(`RELEASE SAVEPOINT ${SAVEPOINT}`);
+      if (empty) return notStored(true, parsed, emptyReason);
       return notStored(true, parsed, cities.length === 0
         ? 'Claims were not stored: the report names no route, so its city cannot be confirmed. Upload one city\'s report at a time.'
         : 'Claims were not stored: the report\'s routes belong to more than one city. Upload one city\'s report at a time.');
@@ -75,7 +104,13 @@ export const recordWorkbookClaims = async (client, { buffer, fileName, user, rou
     const limited = isCityLimited(user?.role);
     if (limited && !(await getAllowedJobs(user.id, client)).includes(city.job)) {
       await client.query(`RELEASE SAVEPOINT ${SAVEPOINT}`);
-      return notStored(true, parsed, 'Claims were not stored: the report is for a city you do not have access to.');
+      return notStored(true, parsed, empty ? emptyReason : 'Claims were not stored: the report is for a city you do not have access to.');
+    }
+    if (empty) {
+      const fees = parseFeeNames(readSheetWorkbook(buffer, FEES_SHEET));
+      const rematched = await rematchAllOpenClaims(client, nameFinderFor(client, fees.names), { cityId: city.id, by: 'name' });
+      await client.query(`RELEASE SAVEPOINT ${SAVEPOINT}`);
+      return { ...notStored(true, parsed, emptyReason), cityId: city.id, rematched, names: { sheetFound: fees.found, drivers: fees.names.size, missingColumns: fees.missingColumns } };
     }
 
     // A claim is stored for one city. importClaims finds the current version by courier, waybill and type alone, so a
@@ -95,9 +130,10 @@ export const recordWorkbookClaims = async (client, { buffer, fileName, user, rou
     const stored = await importClaims(client, claimsHere, {
       importCityId: city.id, sourceFile: fileName, sourceSheet: parsed.sheet, importedBy: user?.id ?? null,
     });
-    // Only this upload's waybills are looked at. importClaims stores; it does not match.
-    const waybills = [...new Set(claimsHere.map((c) => c.waybill))];
-    await rematchAllOpenClaims(client, candidateFinderFor(client), { waybills });
+    // Matching: the names in this report's Details of Delivery Fees. Every open claim of this city is looked at, so a claim an
+    // earlier report could not match is matched now if its driver delivered this week. importClaims stores; it does not match.
+    const fees = parseFeeNames(readSheetWorkbook(buffer, FEES_SHEET));
+    await rematchAllOpenClaims(client, nameFinderFor(client, fees.names), { cityId: city.id, by: 'name' });
 
     const touched = [...stored.inserted, ...stored.amended].map((c) => c.claimId);
     const { rows } = touched.length
@@ -121,6 +157,9 @@ export const recordWorkbookClaims = async (client, { buffer, fileName, user, rou
       matched: { chargeable: by.chargeable ?? 0, exempt: by.exempt ?? 0 },
       waiting: { unresolved: by.unresolved ?? 0, ambiguous: by.ambiguous ?? 0 },
       onHold: by.review ?? 0,
+      // What the matching had to work with: the driver names in Details of Delivery Fees, and any column that was missing.
+      names: { sheetFound: fees.found, drivers: fees.names.size, missingColumns: fees.missingColumns },
+      claimsWithoutName: claimsHere.filter((c) => !c.courierNameKey).length,
       problems: parsed.problems.length,
       problemRows: parsed.problems.slice(0, MAX_PROBLEMS_SHOWN),
     };
