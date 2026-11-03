@@ -206,7 +206,9 @@ test('the weekly upload keeps assignment history without changing what it stages
     });
 
     await t.test('if the claims tables are missing, the history is still kept and the answer says the claims were not rematched', async () => {
-      await client.query(migration('2026-11-03-issue-141-courier-claims.rollback.sql'));
+      // Hide the table instead of running the rollback script: later migrations (ledger, pay runs) depend on it, and
+      // this works whichever of them exist in the test database. The transaction is rolled back at the end.
+      await client.query('ALTER TABLE courier_claims RENAME TO courier_claims_hidden_by_test');
       const before = await facts();
       const result = await callHandler(importAssignmentHistory, { file: { buffer: await fileOf([['FWD001', 'Sam', 'FLWA 01-1', 90000011, '10/08/2026 09:00:00', 4.5, '1']]), originalname: 'no-claims.xlsx' }, user: SUPER });
       assert.equal(result.status, 200);
@@ -215,7 +217,7 @@ test('the weekly upload keeps assignment history without changing what it stages
     });
 
     await t.test('if the history tables are missing, the weekly upload still stages exactly the same and says so', async () => {
-      await client.query(migration('2026-11-03-issue-140-carrier-assignment-history.rollback.sql'));
+      await client.query('ALTER TABLE carrier_assignment_imports RENAME TO carrier_assignment_imports_hidden_by_test');
       const result = await upload(weekly, SUPER, 'weekly again.xlsx');
       assert.equal(result.status, 200);
       assert.deepEqual([result.body.data.recordsProcessed, result.body.data.recordsInserted], [3, 1]);

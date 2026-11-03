@@ -6,6 +6,7 @@ import { claimTypeKey, isExempt } from '../claims/claimRules.js';
 import { entryFingerprint, rowFingerprint } from './ledgerRules.js';
 import { refundableForClaim } from '../claims/claimRefunds.js';
 import { lockCityPayroll, lockClaimSubject, releaseHeldClaims } from '../claims/claimsStore.js';
+import { ARRANGEMENT_MESSAGE, driverPayable, NEEDS_ARRANGEMENT_TYPES } from './driverPayable.js';
 
 export class LedgerError extends Error {
   constructor(status, message, errors) {
@@ -79,6 +80,15 @@ export const createEntry = async (db, admin, entry) => {
           ? 'this claim was already imported from the carrier; it will be applied from there'
           : 'this claim is already recorded; void the earlier entry first if it was wrong');
       }
+    }
+  }
+
+  // More than the driver's payment: it must say how it is repaid, on the next payday or by instalments. Not for an exempt claim,
+  // which owes nothing, and not when an arrangement is already given.
+  if (NEEDS_ARRANGEMENT_TYPES.includes(entry.type) && !exempt && !entry.recoveryPlan) {
+    const payable = await driverPayable(db, entry.driverId, entry.cityId);
+    if (Number(entry.amount) > Number(payable)) {
+      throw new LedgerError(400, 'check the highlighted fields', { recoveryPlan: ARRANGEMENT_MESSAGE(payable) });
     }
   }
 
