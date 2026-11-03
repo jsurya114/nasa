@@ -135,6 +135,7 @@ test('the weekly upload keeps assignment history without changing what it stages
       const imported = await callHandler(importAssignmentHistory, { file: { buffer: mixed, originalname: 'mixed.xlsx' }, user: { id: cityAdmin, role: 'admin' } });
       assert.equal(imported.status, 200);
       assert.deepEqual([imported.body.data.recorded, imported.body.data.leftOut], [1, 1]);
+      assert.deepEqual(imported.body.data.claimsRematched, { ran: true }, 'a city admin is not shown claim counts of other cities');
       const own = (await client.query("SELECT count(*) n FROM carrier_package_assignments WHERE waybill_key IN ('FW0200','FW0201')")).rows[0].n;
       assert.equal(Number(own), 1);
     });
