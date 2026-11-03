@@ -15,8 +15,10 @@ import {
 import Header from "../../reuse/Header.jsx";
 import Nav from "../../reuse/Nav.jsx";
 import PaymentDashboardTable from "./DashboardTable.jsx";
+import usePenaltySummary, { describePenalty } from "./dashboard/usePenaltySummary.js";
+import { summaryItems, summaryLook } from "./dashboard/penaltyDisplay.js";
 import Loader from "../Loader.jsx"
-import { CalendarDays, CalendarRange, ChevronDown, LayoutGrid, ShieldCheck, Banknote } from "lucide-react";
+import { CalendarDays, CalendarRange, ChevronDown, Gavel, LayoutGrid, ShieldCheck, Banknote } from "lucide-react";
 
 export default function Dashboard() {
   const dispatch = useDispatch();
@@ -40,6 +42,9 @@ export default function Dashboard() {
   } = useSelector((state) => state.dash);
 
   const { isSuperAdmin } = useSelector((state) => state.admin);
+  const penalty = usePenaltySummary();
+  const penaltyInfo = useMemo(() => describePenalty(penalty), [penalty]);
+  const penaltyLines = useMemo(() => summaryItems(penalty, penaltyInfo), [penalty, penaltyInfo]);
 
   const getTodayDate = () => {
     const today = new Date();
@@ -217,6 +222,7 @@ export default function Dashboard() {
 
   // ✅ UPDATED: Handle Filter Data button - check if filters are applied
   const handleFilterClick = () => {
+    penalty.rememberScope(localFilters); // keep the applied city and driver IDs even if the dropdowns change before the next apply
     setShowExtraFields(localFilters.companyEarnings);
 
     // ✅ NEW: Check if any filters are actually applied
@@ -583,24 +589,33 @@ export default function Dashboard() {
                     { field: "driversPayment", label: "Total Drivers Payment" },
                     ...(Number(extraFieldsData.insuranceDeduction) > 0 ? [
                       { field: "insuranceDeduction", label: "Insurance Deduction", icon: ShieldCheck, highlight: false, isNegative: true },
-                      { field: "netDriverPayment", label: "Net Driver Payment", icon: Banknote, highlight: false, isBold: true },
                     ] : []),
+                    // #166: this payday's pay-run deductions, the pay run's own net as the one payable net, and what is still owed.
+                    ...penaltyLines.afterInsurance,
+                    ...(Number(extraFieldsData.insuranceDeduction) > 0 ? [
+                      { field: "netDriverPayment", label: penaltyLines.netLabel.label, icon: Banknote, highlight: false, isBold: !penaltyLines.netLabel.muted, isMoney: penaltyLines.netLabel.muted, muted: penaltyLines.netLabel.muted },
+                    ] : []),
+                    ...penaltyLines.afterNet,
                     ...(isSuperAdmin ? [{ field: "companyEarnings", label: "Total Company Earnings", highlight: true }] : []),
-                  ].map((item, i) => (
-                    <div key={i} className="flex items-center gap-3">
-                      <label className={`w-48 inline-flex items-center gap-1.5 ${item.isNegative ? 'text-red-600' : item.isBold ? 'text-green-700 font-bold' : 'text-gray-600'}`}>
-                        {item.icon && <item.icon className="h-4 w-4 shrink-0" aria-hidden="true" />}
-                        {item.label}:
-                      </label>
-                      <input
-                        type="text"
-                        name={item.field}
-                        value={item.isNegative ? `-$${extraFieldsData[item.field]}` : item.isBold ? `$${extraFieldsData[item.field]}` : extraFieldsData[item.field]}
-                        readOnly
-                        className={`placeholder:text-ink-muted/70 focus:outline-none transition-shadow focus:ring-4 focus:ring-brand-500/20 focus:border-brand-500 min-h-11 flex-1 border border-line rounded-xl px-3 py-2 bg-white font-semibold ${item.isNegative ? 'text-red-600' : item.isBold ? 'text-green-700' : 'text-gray-700'}`}
-                      />
-                    </div>
-                  ))}
+                  ].map((item, i) => {
+                    const look = summaryLook(item);
+                    const Icon = item.icon ?? (item.kind === "deducted" || item.kind === "notice" ? Gavel : item.kind === "net" ? Banknote : null);
+                    return (
+                      <div key={i} className="flex items-center gap-3" data-testid={item.kind ? `summary-${item.kind}` : undefined}>
+                        <label className={`w-48 inline-flex items-center gap-1.5 ${look.label}`}>
+                          {Icon && <Icon className="h-4 w-4 shrink-0" aria-hidden="true" />}
+                          {item.label}:
+                        </label>
+                        <input
+                          type="text"
+                          name={item.field ?? item.kind}
+                          value={item.text ?? (item.isNegative ? `-$${extraFieldsData[item.field]}` : item.isBold || item.isMoney ? `$${extraFieldsData[item.field]}` : extraFieldsData[item.field])}
+                          readOnly
+                          className={`placeholder:text-ink-muted/70 focus:outline-none transition-shadow focus:ring-4 focus:ring-brand-500/20 focus:border-brand-500 min-h-11 flex-1 border border-line rounded-xl px-3 py-2 bg-white font-semibold ${look.input}`}
+                        />
+                      </div>
+                    );
+                  })}
                 </div>
               )}
             </div>
@@ -651,7 +666,7 @@ export default function Dashboard() {
               <div className="font-bold text-ink bg-brand-50/60 border-b border-line px-4 py-3">
                 Driver Jobs
               </div>
-              <PaymentDashboardTable showExtraFields={showExtraFields} />
+              <PaymentDashboardTable showExtraFields={showExtraFields} penalty={penalty} />
             </section>
           )}
         </main>

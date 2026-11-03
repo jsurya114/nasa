@@ -37,7 +37,7 @@ const startServer = async ({ ledgerReplies = [], refundsDue = [], balances = BAL
   return state;
 };
 
-const mount = async () => {
+const mount = async (route = "/") => {
   const [{ configureStore }, { Provider }, { MemoryRouter }] = await Promise.all([
     import("@reduxjs/toolkit"), import("react-redux"), import("react-router-dom"),
   ]);
@@ -45,7 +45,7 @@ const mount = async () => {
   const languageReducer = (await import("../../redux/slice/languageSlice.js")).default;
   const { default: Payroll } = await import("./Payroll.jsx");
   const store = configureStore({ reducer: { admin: adminReducer, language: languageReducer } });
-  return render(<Provider store={store}><MemoryRouter><Payroll /></MemoryRouter></Provider>);
+  return render(<Provider store={store}><MemoryRouter initialEntries={[route]}><Payroll /></MemoryRouter></Provider>);
 };
 
 const chooseDriver = async () => {
@@ -75,6 +75,17 @@ describe("admin Payroll", () => {
     fireEvent.click(screen.getByRole("button", { name: /View statement\s*2026-11-01/ }));
     expect(await screen.findByText("Route T")).toBeTruthy();
     expect(server.requests.some((r) => r.url === "/admin/payroll/statements/21")).toBe(true);
+  });
+
+  it("opens on the city and driver named in the dashboard's link, and ignores a bad link", async () => {
+    const server = await startServer();
+    await mount("/admin/payroll?cityId=3&driverId=7");
+    expect(await screen.findByText("Record an entry")).toBeTruthy();
+    expect(screen.getByLabelText("Driver").value).toBe("7");
+    expect(server.requests.some((r) => r.url === "/admin/payroll/drivers/7/balances" && r.params?.cityId === "3")).toBe(true);
+    cleanup();
+    await mount("/admin/payroll?cityId=3;DROP&driverId=abc");
+    expect(await screen.findByText("Choose a city and a driver.")).toBeTruthy();
   });
 
   it("shows a hand-entered claim as Penalty charges, apart from other debts", async () => {
