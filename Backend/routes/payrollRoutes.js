@@ -3,7 +3,7 @@
 import express from 'express';
 import { sanitizeRouterParams } from '../middlewares/sanitize.js';
 import adminAuth from '../middlewares/adminAuth.js';
-import { getLedger, postLedgerEntry, postLedgerVoid, postSettlement, postSettlementReversal } from '../controllers/payroll/ledgerController.js';
+import { getLedger, getLedgerHistory, postLedgerEdit, postLedgerEntry, postLedgerVoid, postSettlement, postSettlementReversal } from '../controllers/payroll/ledgerController.js';
 import {
   getPayrollSettings, getPayRun, getPayRuns, postDiscard, postFinalize, postPayRun, postVoid, putRecoveryLimit,
 } from '../controllers/payroll/payRunController.js';
@@ -18,6 +18,9 @@ router.use(adminAuth);
 router.get('/ledger', getLedger);
 router.post('/ledger', postLedgerEntry);
 router.post('/ledger/:entryId/void', postLedgerVoid);
+// Edit keeps the original and links the corrected entry; history shows every version and settlement (#166).
+router.post('/ledger/:entryId/edit', postLedgerEdit);
+router.get('/ledger/:entryId/history', getLedgerHistory);
 // Repaid outside payroll or waived, in whole or in part, and its reversal (#166).
 router.post('/ledger/:entryId/settlements', postSettlement);
 router.post('/ledger/settlements/:settlementId/reverse', postSettlementReversal);

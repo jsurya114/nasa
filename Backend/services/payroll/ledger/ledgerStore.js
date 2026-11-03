@@ -8,10 +8,11 @@ import { refundableForClaim } from '../claims/claimRefunds.js';
 import { lockCityPayroll, lockClaimSubject, releaseHeldClaims } from '../claims/claimsStore.js';
 
 export class LedgerError extends Error {
-  constructor(status, message) {
+  constructor(status, message, errors) {
     super(message);
     this.name = 'LedgerError';
     this.status = status;
+    if (errors) this.errors = errors; // field -> message, for a form
   }
 }
 
@@ -23,7 +24,7 @@ export const assertCityAllowed = async (db, admin, cityId) => {
   if (rows.length === 0) throw new LedgerError(403, 'you do not have access to this city');
 };
 
-const ENTRY_COLUMNS = `id, request_id, driver_id, city_id, entry_type, direction, amount, reason,
+export const ENTRY_COLUMNS = `id, request_id, driver_id, city_id, entry_type, direction, amount, reason,
   to_char(effective_date, 'YYYY-MM-DD') AS effective_date, to_char(intended_payday, 'YYYY-MM-DD') AS intended_payday,
   disbursed_outside_payroll, claim_type, waybill, claim_courier, exempt, recovery_plan, installment_amount, voids_entry_id, created_by, created_at,
   (direction = 'debit' AND entry_type <> 'void' AND NOT exempt AND recovery_plan IS NULL) AS needs_review`;

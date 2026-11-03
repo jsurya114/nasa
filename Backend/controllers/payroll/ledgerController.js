@@ -5,8 +5,9 @@ import pool from '../../config/db.js';
 import HttpStatus from '../../utils/statusCodes.js';
 import logger from '../../utils/logger.js';
 import { withTransaction } from '../../services/payroll/claims/claimsStore.js';
-import { parseNewEntry, parseReversal, parseSettlement, parseVoid } from '../../services/payroll/ledger/ledgerRules.js';
+import { parseEdit, parseNewEntry, parseReversal, parseSettlement, parseVoid } from '../../services/payroll/ledger/ledgerRules.js';
 import { createEntry, listEntries, LedgerError, voidEntry } from '../../services/payroll/ledger/ledgerStore.js';
+import { editEntry, getEntryHistory } from '../../services/payroll/ledger/ledgerEdits.js';
 import { reverseSettlement, settleEntry } from '../../services/payroll/ledger/ledgerSettlements.js';
 
 const optionalId = (value) => {
@@ -15,7 +16,7 @@ const optionalId = (value) => {
 };
 
 const fail = (res, error, action) => {
-  if (error instanceof LedgerError) return res.status(error.status).json({ message: error.message });
+  if (error instanceof LedgerError) return res.status(error.status).json({ message: error.message, ...(error.errors && { errors: error.errors }) });
   // Short message only: never the request body or SQL.
   logger.error(`Ledger ${action} failed`, { code: error.code, message: error.message });
   return res.status(HttpStatus.INTERNAL_SERVER_ERROR).json({ message: 'the ledger could not be updated; try again' });
@@ -81,5 +82,28 @@ export const postSettlementReversal = async (req, res) => {
     // Two admins reversing the same settlement at once: the database lets only one through.
     if (error.code === '23505') return res.status(HttpStatus.CONFLICT).json({ message: 'this settlement was already reversed' });
     return fail(res, error, 'reverse');
+  }
+};
+
+export const postLedgerEdit = async (req, res) => {
+  const { edit, errors } = parseEdit(req.body, req.params.entryId);
+  if (errors) return res.status(HttpStatus.BAD_REQUEST).json({ message: 'check the highlighted fields', errors });
+  try {
+    const result = await withTransaction(pool, (db) => editEntry(db, req.admin, edit));
+    logger.info('Ledger entry edited', { entryId: edit.entryId, replacementId: result.entry.id, replay: result.replay });
+    return res.status(result.replay ? HttpStatus.OK : HttpStatus.CREATED).json(result);
+  } catch (error) {
+    if (error.code === '23505') return res.status(HttpStatus.CONFLICT).json({ message: 'this entry was already edited or voided' });
+    return fail(res, error, 'edit');
+  }
+};
+
+export const getLedgerHistory = async (req, res) => {
+  const id = optionalId(req.params.entryId);
+  if (id.error || id.id === null) return res.status(HttpStatus.BAD_REQUEST).json({ message: 'unknown entry' });
+  try {
+    return res.status(HttpStatus.OK).json(await getEntryHistory(pool, req.admin, id.id));
+  } catch (error) {
+    return fail(res, error, 'history');
   }
 };
