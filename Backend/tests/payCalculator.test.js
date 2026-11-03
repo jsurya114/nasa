@@ -124,3 +124,35 @@ test('the same input always gives the same statement (a retry recalculates ident
   assert.deepEqual(calculateStatement(input), calculateStatement(structuredClone(input)));
   assert.deepEqual(calculateStatement(input).lines.filter((l) => l.type === 'claim').map((l) => l.claimId), [1, 2], 'oldest claim first');
 });
+
+const advance = (o = {}) => ({ entryId: 1, effectiveDate: '2026-11-01', intendedPayday: null, plan: 'installments', installmentAmount: '50.00', outstanding: '200.00', ...o });
+
+test('a held debit is not recovered, stays owed, and says why', () => {
+  for (const hold of ['advance_not_disbursed', 'already_recovered_this_period']) {
+    const { totals, flags } = calculateStatement(base({ recoveryLimit: FULL, debits: [advance({ hold })] }));
+    assert.deepEqual([totals.recoveries, totals.carriedForward, totals.net], ['0.00', '200.00', '294.24'], hold);
+    assert.ok(flags.some((f) => f.code === hold && f.entryId === 1));
+  }
+});
+
+test('each repayment used is recorded as an audit line with the amount used, oldest first', () => {
+  const { lines, totals } = calculateStatement(base({
+    recoveryLimit: FULL,
+    debits: [advance({ outstanding: '100.00', plan: 'full_next_payday' })],
+    repayments: [{ entryId: 7, amount: '30.00' }, { entryId: 5, amount: '90.00' }],
+  }));
+  // entry 5 is older: it covers the whole 100 and entry 7 is not needed
+  assert.deepEqual(lines.filter((l) => l.type === 'repayment'), [{ type: 'repayment', entryId: 5, amount: '90.00' }, { type: 'repayment', entryId: 7, amount: '10.00' }]);
+  assert.deepEqual([totals.recoveries, totals.net], ['0.00', '294.24']);
+});
+
+test('a claim the carrier lowered after deduction is flagged for an approved correction, never refunded silently', () => {
+  const { totals, flags } = calculateStatement(base({ overRecovered: [{ claimId: 9, amount: '10.00' }] }));
+  assert.equal(totals.net, '294.24', 'nothing is paid back automatically');
+  assert.deepEqual(flags.map((f) => [f.code, f.claimId, f.amount]), [['claim_over_recovered', 9, '10.00']]);
+});
+
+test('with no limit set, items are not also flagged as "limit reached"', () => {
+  const { flags } = calculateStatement(base({ debits: [advance()] }));
+  assert.deepEqual(flags.map((f) => f.code), ['recovery_limit_not_set']);
+});
