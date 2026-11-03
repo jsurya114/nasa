@@ -288,10 +288,9 @@ test('the weekly upload stores the Claims Detail sheet, matches it from history,
     });
 
     await t.test('if the claims tables are missing, the pay upload and the history still go through and the answer says so', async () => {
-      await client.query(migration('2026-11-03-issue-143-pay-runs.rollback.sql'));
-      await client.query(migration('2026-11-03-issue-166-ledger-settlements.rollback.sql')); // it references the ledger table
-      await client.query(migration('2026-11-03-issue-142-driver-ledger.rollback.sql'));
-      await client.query(migration('2026-11-03-issue-141-courier-claims.rollback.sql'));
+      // Hide the table instead of running rollback scripts: the ledger, pay-run and later migrations depend on it, and
+      // this works whichever of them exist in the test database. The transaction is rolled back at the end.
+      await client.query('ALTER TABLE courier_claims RENAME TO courier_claims_hidden_by_test');
       const result = await upload(await fileOf({
         fee: [fee('WCL010', 'CLFD 01-1', 91000011, '12/11/2030 10:00:00')],
         claims: [['12/11/2030 09:00:00', 'WCL010', 'Damaged Item', 500, null, -3]],
