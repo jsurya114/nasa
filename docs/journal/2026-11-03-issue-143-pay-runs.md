@@ -139,3 +139,7 @@ Each case below is reproduced in the new `Backend/tests/payRunReview.test.js` (8
   2. Partial refund: B 25, and A still flagged for 15.
 - Full backend suite: 102 pass with the database.
 - **Not covered:** reassignment to a driver in another city. Collections and refunds are counted across cities by the same rule, but only same-city reassignment is tested.
+- **Two more fixes from an automated security review.**
+  1. *Refunds match one claim.* Refunds are now matched to a claim by courier, waybill and claim type (#149 `claim_courier`), in the net-collected figure, the over-recovery flag and the void guard. Tested: a GOFO refund leaves a SpeedX claim with the same waybill and type untouched (GOFO 0.00 collected, SpeedX 40.00).
+  2. *Void versus a run being built.* Voiding now takes the run's city payroll lock, then locks the match rows of every claim the run refunds before the "relied on" check. A pay run building at that moment, in any city, locks the same rows while it reads claims, so the two are serialised: either the run finishes first and the void sees its deduction, or the run waits and then sees no refund. The locks are taken city first, then claims, in claim order, so they cannot deadlock. A true two-connection race is not reproduced in the rolled-back tests, which cannot share their tables with a second connection.
+- Full backend suite: 103 pass with the database.
