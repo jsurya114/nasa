@@ -17,7 +17,10 @@ function Item({ title, lines, amount, note }) {
 }
 
 // What is still open: totals, then each claim, advance or expense with what was taken and when.
-export default function BalanceSummary({ balances }) {
+// adminView: an admin reads another person's account, so the cards say who owes whom (admin pages are English only).
+const ADMIN_LABELS = { owe: "Driver owes NASA", owed: "NASA owes driver — reimbursements and adjustments" };
+
+export default function BalanceSummary({ balances, adminView = false }) {
   const { t, currentLanguage } = useTranslation();
   const money = (v) => formatMoney(v, currentLanguage);
   if (!balances) return null;
@@ -35,7 +38,7 @@ export default function BalanceSummary({ balances }) {
     <section aria-labelledby="pay-balances" className="mb-6">
       <dl className="grid grid-cols-2 gap-3">
         <div className="rounded-2xl border border-line bg-white px-3 py-3">
-          <dt className="text-xs font-medium text-ink-muted">{t("youStillOwe")}</dt>
+          <dt className="text-xs font-medium text-ink-muted">{adminView ? ADMIN_LABELS.owe : t("youStillOwe")}</dt>
           <dd className="mt-1 text-lg font-semibold tabular-nums text-ink">{money(owedCents / 100)}</dd>
         </div>
         {penaltyCents > 0 && (
@@ -45,7 +48,7 @@ export default function BalanceSummary({ balances }) {
           </div>
         )}
         <div className="rounded-2xl border border-line bg-white px-3 py-3">
-          <dt className="text-xs font-medium text-ink-muted">{t("owedToYou")}</dt>
+          <dt className="text-xs font-medium text-ink-muted">{adminView ? ADMIN_LABELS.owed : t("owedToYou")}</dt>
           <dd className="mt-1 text-lg font-semibold tabular-nums text-ink">{money(balances.totals.owedToDriver)}</dd>
         </div>
       </dl>
