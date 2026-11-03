@@ -144,6 +144,7 @@ test('statements: own data only, frozen amounts, source charge next to the appli
         assert.equal((await getMyBalances(db, d2)).refundsDue, undefined, 'drivers do not get the admin work list');
 
         const refundAndDeduct = async (amount, weekStart, weekEnd) => {
+          const before = await owed();
           await createEntry(db, cityAdmin, parseNewEntry({
             requestId: randomUUID(), driverId: d2, cityId: city, type: 'correction', direction: 'credit', amount,
             waybill: 'TESTS003', claimType: 'Damaged Item', claimCourier: 'gofo', reason: 'Claim belongs to another driver', effectiveDate: weekStart,
@@ -152,6 +153,9 @@ test('statements: own data only, frozen amounts, source charge next to the appli
           await payRow(d1, weekEnd, '50.00', '0');
           const r = (await generateRun(db, cityAdmin, { requestId: randomUUID(), cityId: city, periodStart: weekStart, periodEnd: weekEnd, dataType: 'daily' })).run;
           await finalizeRun(db, cityAdmin, r.id);
+          // Finalized is not paid: until the refund's payout is confirmed, nothing moves to d1.
+          assert.equal(await owed(), before, 'unchanged while the refund payout is not confirmed');
+          await db.query("UPDATE pay_statements SET payout_status = 'paid', paid_at = now() WHERE pay_run_id = $1 AND driver_id = $2", [r.id, d2]);
           return r;
         };
         // A partial refund of 4, finalized: d1 now shows 4 owed, and the next run deducts exactly 4.

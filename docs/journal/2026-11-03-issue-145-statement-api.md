@@ -79,3 +79,4 @@ Balances show, per ledger entry and per matched claim, the original amount, what
   - After the remaining refund of 6, d1 shows 6.
   - None of d2's statements are linked under d1.
 - Full backend suite: 111 pass with the database.
+- **Follow-up for #152's third review:** a refund counts only once its payout is `paid`. The statement test now checks that d1's balance stays the same after the refund run is finalized, while its payout is unconfirmed, and moves only after the payout is recorded as paid (partial 4, then 6). The balance and the next deduction still agree. Full backend suite: 131 pass with the database.
