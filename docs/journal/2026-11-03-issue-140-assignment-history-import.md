@@ -14,7 +14,7 @@
 
 - **The weekly GOFO upload now also keeps assignment history.** After it has staged the pay data, in the same transaction and under the same upload lock, it records both sheets' evidence. The pay code path is not changed: nothing about the staging rows, the counts or the dashboard insert is edited.
 - **The history is written inside a savepoint.** If it cannot be saved (for example the migration has not been run on that database yet), the savepoint is rolled back and the pay upload carries on exactly as before. The response says `assignmentHistory: { saved: false, reason }` and the server logs it. So the backend can be deployed before the migration without breaking the weekly upload; the history simply is not kept until the migration is run.
-- **The response gains one key**, `data.assignmentHistory`: whether it was saved, the import id, how many facts were new / already known / left out for a city admin, the number of unreadable rows with up to 10 `{ sheet, row, reason }` entries (never cell values), and per-sheet row counts. Existing keys are unchanged.
+- **The response gains one key**, `data.assignmentHistory`: whether it was saved, the import id, how many facts were new / already known / left out for a city admin, facts brought back from a voided report (`reassertedAfterVoid`), the number of unreadable rows with up to 10 `{ sheet, row, reason }` entries (never cell values), and per-sheet row counts. Existing keys are unchanged.
 - **Older reports have their own door.** `POST /admin/assignment-history/import` (any admin; multipart field `file`) reads a report and keeps its evidence **without touching the weekly staging table or any pay table**, so an older report can be uploaded to resolve old claims without disturbing the current week. It refuses a file that cannot be read or has neither sheet (400), and answers 503 "not set up" if the tables are missing.
 - **Review and correction.** `GET /admin/assignment-history/conflicts` (super admin) lists waybills whose standing history names more than one Delivery ID, driver or city. `POST /admin/assignment-history/imports/:importId/void` (super admin, a reason is required) marks a wrong import as void; nothing is deleted.
 - **City admins** keep only the routes of their own cities in both entry points; the rest is counted as `leftOut`, and no file that uploaded before is refused now.
@@ -28,12 +28,7 @@
 
 **Money impact.** None, measured. The real weekly upload and the real "add staged data to the dashboard" handlers were run against a private scratch copy of a snapshot of the production database, once with the code from before this change and once with the code from this branch, on two real GOFO reports (Lafayette and Tyler, 28 Sep to 4 Oct, the week deleted in both copies so the import has rows to insert):
 
-| Step | Staged rows / deliveries / first stops / double stops | Dashboard rows inserted | Payment rows | Driver pay total | Company earnings total | Insurance total | Staged data hash | Payment data hash |
-|---|---|---|---|---|---|---|---|---|
-| Lafayette, before | 108 / 12,454 / 10,032 / 2,422 | 108 | 28,258 | 4,855,167.96 | 745,666.21 | 16,485.12 | same | same |
-| Lafayette, after | identical | identical | identical | identical | identical | identical | same | same |
-| Tyler, before | 147 / 17,535 / 14,489 / 3,046 | 145 | 28,403 | 4,881,845.86 | 749,588.28 | 16,757.76 | same | same |
-| Tyler, after | identical | identical | identical | identical | identical | identical | same | same |
+For both reports, the staged rows (count, deliveries, first stops, double stops), the dashboard rows inserted, the payment rows, the driver pay, company earnings and insurance totals, and a hash over every staged row and every payment row, field by field, were **identical to the cent** before and after. The amounts are not written here because they come from real data.
 
 (The hashes cover every staged row and every payment row, field by field.) The STOP Point Details counting is untouched: only the value `1` is a first stop and every other value, including those above 2, counts as it did.
 

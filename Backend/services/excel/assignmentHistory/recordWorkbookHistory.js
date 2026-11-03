@@ -20,6 +20,7 @@ const summarize = (evidence, saved) => ({
   voided: saved.voided,
   recorded: saved.recorded,
   alreadyKnown: saved.known,
+  reassertedAfterVoid: saved.revived,
   leftOut: saved.skipped,
   linkedNow: saved.resolved,
   problems: evidence.problemCount,
