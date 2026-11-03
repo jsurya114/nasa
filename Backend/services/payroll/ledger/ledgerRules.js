@@ -91,9 +91,14 @@ export const parseNewEntry = (body = {}) => {
     errors.installmentAmount = 'an instalment amount needs recoveryPlan "installments"';
   }
 
-  const claimType = type === 'manual_claim' ? cleanText(body.claimType, 100) : null;
+  // A manual claim names its claim type (and the waybill when known). A correction may name the claim it corrects,
+  // for example a refund after the carrier lowered a claim (#143), so the over-recovery it settles can be traced.
+  const claimRef = type === 'manual_claim' || type === 'correction';
+  const claimType = claimRef && cleanText(body.claimType, 100) ? cleanText(body.claimType, 100) : null;
+  const waybill = claimRef && body.waybill ? normalizeWaybill(body.waybill).slice(0, 64) || null : null;
   if (type === 'manual_claim' && !claimTypeKey(claimType)) errors.claimType = 'a manual claim needs its claim type';
-  const waybill = type === 'manual_claim' && body.waybill ? normalizeWaybill(body.waybill).slice(0, 64) : null;
+  if (type === 'correction' && Boolean(claimType) !== Boolean(waybill)) errors.waybill = 'a correction names both the waybill and the claim type of the claim it corrects, or neither';
+  if (!claimRef && (body.claimType || body.waybill)) errors.claimType = 'only a manual claim or a correction can name a claim';
 
   if (Object.keys(errors).length) return { errors };
   return {
@@ -103,6 +108,19 @@ export const parseNewEntry = (body = {}) => {
     },
   };
 };
+
+// Every field an entry is saved with, in one comparable form. A request ID sent again is a replay only when all of
+// them match; any difference is a different operation under a reused ID and must be refused (409).
+const money = (v) => (v === null || v === undefined ? null : Number(v).toFixed(2));
+export const entryFingerprint = (e) => JSON.stringify([
+  Number(e.driverId), Number(e.cityId), e.type, e.direction, money(e.amount), e.reason, e.effectiveDate, e.intendedPayday ?? null,
+  e.disbursedOutsidePayroll === true, e.claimType ?? null, e.waybill ?? null, e.recoveryPlan ?? null, money(e.installmentAmount),
+]);
+export const rowFingerprint = (row) => entryFingerprint({
+  driverId: row.driver_id, cityId: row.city_id, type: row.entry_type, direction: row.direction, amount: row.amount, reason: row.reason,
+  effectiveDate: row.effective_date, intendedPayday: row.intended_payday, disbursedOutsidePayroll: row.disbursed_outside_payroll,
+  claimType: row.claim_type, waybill: row.waybill, recoveryPlan: row.recovery_plan, installmentAmount: row.installment_amount,
+});
 
 // Checks a void request. Returns { void } or { errors }.
 export const parseVoid = (body = {}, entryIdParam) => {

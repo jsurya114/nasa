@@ -5,7 +5,8 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { createEntry, listEntries, voidEntry } from '../services/payroll/ledger/ledgerStore.js';
 import { parseNewEntry } from '../services/payroll/ledger/ledgerRules.js';
-import { lockClaimSubject } from '../services/payroll/claims/claimsStore.js';
+import { importClaims, lockClaimSubject } from '../services/payroll/claims/claimsStore.js';
+import { parseClaimsRows } from '../services/payroll/claims/claimsParser.js';
 
 // Needs a PostgreSQL copy with the app's tables (never production). Run with PAYROLL_TEST_DB=1 and the DB_*
 // variables. Everything, the migrations included, runs in one transaction that is always rolled back.
@@ -119,6 +120,45 @@ test('the driver ledger: city access, exemption, no double entries, immutable hi
       const { balances, entries } = await listEntries(db, superAdmin, { cityId: dfw, driverId: d1 });
       assert.equal(balances[d1], '157.75', 'the voided entry no longer counts');
       assert.equal(entries.find((e) => e.id === target.entry.id).voided_by, voided.entry.id);
+    });
+
+    await t.test('a reused request ID is a replay only when every saved field matches; any other change is refused', async () => {
+      // The case from the review: a 40 debit correction, then the same request ID as a 40 credit correction.
+      const debit = entry({ type: 'correction', direction: 'debit', amount: '40' });
+      await createEntry(db, dfwAdmin, debit);
+      await assert.rejects(createEntry(db, dfwAdmin, { ...debit, direction: 'credit' }), { status: 409 });
+      const advance = entry({ type: 'advance', amount: '200', disbursedOutsidePayroll: true, recoveryPlan: 'installments', installmentAmount: '50.00' });
+      await createEntry(db, dfwAdmin, advance);
+      for (const change of [
+        { installmentAmount: '25.00' }, { recoveryPlan: 'full_next_payday', installmentAmount: null }, { effectiveDate: '2026-11-04' },
+        { intendedPayday: '2026-11-14' }, { disbursedOutsidePayroll: false }, { reason: 'Other reason' }, { driverId: d2 },
+      ]) {
+        await assert.rejects(createEntry(db, dfwAdmin, { ...advance, ...change }), { status: 409 }, JSON.stringify(change));
+      }
+      const claim = entry({ type: 'manual_claim', claimType: 'Lost Item', amount: '20', waybill: 'TESTL050' });
+      await createEntry(db, dfwAdmin, claim);
+      await assert.rejects(createEntry(db, dfwAdmin, { ...claim, waybill: 'TESTL051' }), { status: 409 });
+      await assert.rejects(createEntry(db, dfwAdmin, { ...claim, claimType: 'Damaged Item' }), { status: 409 });
+      assert.equal((await createEntry(db, dfwAdmin, { ...advance })).replay, true, 'the identical form is still a replay');
+    });
+
+    await t.test('a carrier claim arriving after a hand-entered one is held; voiding the hand-entered one releases it', async () => {
+      const handEntered = await createEntry(db, dfwAdmin, entry({ type: 'manual_claim', claimType: 'Damaged Item', amount: '40', waybill: 'TESTL060' }));
+      const HEADER = ['date', 'Waybill No.', 'Claim Type', 'Declared value (USD)', 'Confirm date.', 'The total expenses-exclusive of taxes'];
+      const carrier = (charge) => parseClaimsRows([HEADER, ['10/01/2026 10:00:00', 'TESTL060', 'damaged  item', 0, null, charge]], { courier: 'gofo' }).claims;
+      const source = { importCityId: dfw, sourceFile: 'synthetic.xlsx', sourceSheet: 'Claims Detail' };
+      const status = async () => (await one(
+        "SELECT m.status FROM courier_claim_matches m JOIN courier_claims c ON c.id = m.claim_id WHERE c.waybill = 'TESTL060' AND c.superseded_at IS NULL")).status;
+
+      const first = await importClaims(db, carrier(-40), source);
+      assert.deepEqual([first.inserted.length, first.held.length, String(first.held[0].ledgerEntryId)], [1, 1, String(handEntered.entry.id)]);
+      assert.equal(await status(), 'review', 'kept as evidence, never deducted while the hand-entered claim stands');
+      const amended = await importClaims(db, carrier(-45), source);
+      assert.equal(amended.held.length, 1, 'an amended version is held too');
+      assert.equal(await status(), 'review');
+
+      await voidEntry(db, dfwAdmin, { entryId: handEntered.entry.id, requestId: randomUUID(), reason: 'Carrier sent it' });
+      assert.equal(await status(), 'unresolved', 'released into matching once the hand-entered claim is voided');
     });
 
     await t.test('while one transaction checks a waybill and claim type, no other connection can check the same one', async () => {
