@@ -1,5 +1,5 @@
 import React from "react";
-import { LayoutDashboard, KeyRound, Truck, CalendarDays, FileText, Lock } from "lucide-react";
+import { LayoutDashboard, KeyRound, Truck, CalendarDays, Wallet, FileText, Lock } from "lucide-react";
 import useTranslation from "../../hooks/useTranslation.js";
 import GlassTabBar from "../GlassTabBar.jsx";
 
@@ -11,6 +11,7 @@ function Nav() {
     { to: "/driver/access-codes", Icon: KeyRound, label: t('Access codes') },
     { to: "/driver/delivery", Icon: Truck, label: t('deliveries') },
     { to: "/driver/availability", Icon: CalendarDays, label: t('Availability') },
+    { to: "/driver/pay", Icon: Wallet, label: t('payTab') },
     { to: "/driver/view-agreement", Icon: FileText, label: t('agreementTab') },
     { to: "/driver/update-password", Icon: Lock, label: t('password') },
   ];
