@@ -23,6 +23,7 @@ test('edit rules: what must be given', () => {
 // Needs a PostgreSQL copy with the app's tables (never production). Run with PAYROLL_TEST_DB=1 and the DB_*
 // variables. Everything, the migrations included, runs in one transaction that is always rolled back.
 const hasDb = process.env.PAYROLL_TEST_DB === '1';
+const PLAN = (o) => (['advance', 'manual_claim'].includes(o.type) && o.recoveryPlan === undefined ? { recoveryPlan: 'full_next_payday' } : {}); // an advance or penalty above the driver's payment must say how it is repaid
 const migration = (name) => readFileSync(fileURLToPath(new URL(`../migrations/${name}`, import.meta.url)), 'utf8');
 
 test('editing a ledger entry keeps the original and links the correction', { skip: !hasDb && 'set PAYROLL_TEST_DB=1 and the DB_* variables to run' }, async (t) => {
@@ -53,7 +54,7 @@ test('editing a ledger entry keeps the original and links the correction', { ski
     const otherAdmin = await admin('admin');
     await db.query('INSERT INTO admin_city_ref (admin_id, city_id) VALUES ($1, $2), ($3, $4)', [cityAdmin.id, city, otherAdmin.id, otherCity]);
 
-    const entry = async (o) => (await createEntry(db, cityAdmin, parseNewEntry({ requestId: randomUUID(), driverId: d1, cityId: city, type: 'manual_claim', claimType: 'Damaged Item', amount: '100', reason: 'Broken parcel', effectiveDate: '2026-11-01', ...o }).entry)).entry;
+    const entry = async (o) => (await createEntry(db, cityAdmin, parseNewEntry({ requestId: randomUUID(), driverId: d1, cityId: city, type: 'manual_claim', claimType: 'Damaged Item', amount: '100', reason: 'Broken parcel', effectiveDate: '2026-11-01', ...o, ...PLAN({ type: 'manual_claim', ...o }) }).entry)).entry;
     const edit = (who, entryId, changes, o = {}) => editEntry(db, who, parseEdit({ requestId: randomUUID(), reason: 'Amount was typed wrong', changes, ...o }, entryId).edit);
     const standing = async () => (await listEntries(db, cityAdmin, { cityId: city, driverId: d1 })).entries.filter((e) => e.entry_type !== 'void' && !e.voided_by);
 
@@ -81,7 +82,7 @@ test('editing a ledger entry keeps the original and links the correction', { ski
       // a different amount, date, arrangement, entry reason, or edit reason with the same ID is a different edit
       await assert.rejects(send({ ...same, amount: '90' }), { status: 409 });
       await assert.rejects(send({ ...same, effectiveDate: '2026-11-02' }), { status: 409 });
-      await assert.rejects(send({ ...same, recoveryPlan: 'full_next_payday' }), { status: 409 });
+      await assert.rejects(send({ ...same, recoveryPlan: 'installments', installmentAmount: '20' }), { status: 409 });
       await assert.rejects(send({ ...same, entryReason: 'A different reason' }), { status: 409 });
       await assert.rejects(send({ amount: '80' }), { status: 409 }); // an incomplete resend is not the same request either
       await assert.rejects(send(same, 'Another reason'), { status: 409 });

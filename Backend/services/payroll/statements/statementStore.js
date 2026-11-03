@@ -6,6 +6,7 @@
 // city check, never from trust in the request.
 
 import { fromCents, toCents } from '../payRuns/payCalculator.js';
+import { driverPayable } from '../ledger/driverPayable.js';
 import { assertCityAllowed, isSuperAdmin, loadOverRecovered, NET_COLLECTED_SQL, PayrollError } from '../payRuns/payRunStore.js';
 
 export const DRIVER_RUN_STATUSES = Object.freeze(['finalized', 'voided']);
@@ -187,6 +188,8 @@ const balances = async (db, driverId, statuses, cityIds, { withRefunds = false }
     : undefined;
   return {
     ...(refundsDue && { refundsDue }),
+    // The driver's payment right now (admin, one city): a penalty or advance above it must say how it is repaid.
+    ...(withRefunds && cityIds?.length === 1 && { payable: await driverPayable(db, driverId, cityIds[0]) }),
     entries,
     claims,
     // owedPenalties + owedOther always equals owedByDriver (hand-entered penalties apart from everything else owed).
