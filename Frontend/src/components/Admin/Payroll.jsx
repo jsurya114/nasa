@@ -5,15 +5,16 @@ import axios from "../../redux/slice/axiosInstance";
 import Header from "../../reuse/Header";
 import Nav from "../../reuse/Nav";
 import { SkeletonList } from "../../reuse/Skeleton.jsx";
-import BalanceSummary from "../Drivers/pay/BalanceSummary.jsx";
 import StatementList from "../Drivers/pay/StatementList.jsx";
 import StatementDetail from "../Drivers/pay/StatementDetail.jsx";
 import LedgerEntryForm from "./payroll/LedgerEntryForm.jsx";
 import RefundsDue from "./payroll/RefundsDue.jsx";
-import EntryManager from "./payroll/EntryManager.jsx";
+import AdminBalances from "./payroll/AdminBalances.jsx";
+import SearchSelect from "./payroll/SearchSelect.jsx";
+import InfoTip from "../../reuse/InfoTip.jsx";
 
-// Payroll for one driver of one of the admin's cities (#142, #145): what they owe, their statements
-// (drafts show as Pending), and a form to record an advance, expense, claim, repayment or reimbursement.
+// Payroll for one driver of one of the admin's cities (#142, #145): what they owe and their records (with Edit, Mark complete and
+// History in the list), their statements (drafts show as Pending), and a form to add an advance or a penalty.
 // The server checks the admin's cities on every request.
 
 const loadAdminStatement = async (statementId, signal) =>
@@ -89,21 +90,29 @@ export default function Payroll() {
       <div className="mt-14 min-h-dvh bg-canvas p-4 pb-28">
         <div className="mx-auto max-w-5xl">
           <h1 className="text-2xl font-bold tracking-tight text-ink">Payroll</h1>
-          <p className="mt-1 text-sm text-gray-500">A driver's statements and balances, and manual advances, expenses and reimbursements.</p>
+          <p className="mt-1 text-sm text-gray-500">A driver's statements, what they owe, and manual advances and penalties.</p>
 
           <div className="mt-5 grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <label className="block text-sm font-medium text-gray-700">City
-              <select className={selectClass} value={cityId} onChange={(e) => setCityId(e.target.value)}>
+            <div>
+              <div className="flex items-center">
+                <label htmlFor="payroll-city" className="block text-sm font-medium text-gray-700">City</label>
+                <InfoTip label="city" text="The city the driver works in. You only see the cities you manage." />
+              </div>
+              <select id="payroll-city" className={selectClass} value={cityId} onChange={(e) => setCityId(e.target.value)}>
                 <option value="">Choose a city</option>
                 {cities.map((c) => <option key={c.id} value={c.id}>{c.job}</option>)}
               </select>
-            </label>
-            <label className="block text-sm font-medium text-gray-700">Driver
-              <select className={selectClass} value={driverId} onChange={(e) => setDriverId(e.target.value)} disabled={!cityId}>
-                <option value="">{cityId && drivers.length === 0 ? "No drivers in this city" : "Choose a driver"}</option>
-                {drivers.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
-              </select>
-            </label>
+            </div>
+            <SearchSelect
+              label="Driver"
+              info="Type part of a name to find the driver. Their records, balances and statements show below."
+              options={drivers}
+              value={driverId}
+              onChange={setDriverId}
+              disabled={!cityId}
+              placeholder={cityId ? (drivers.length === 0 ? "No drivers in this city" : "Search for a driver") : "Choose a city first"}
+              emptyText="No driver matches"
+            />
           </div>
 
           {!driverId && <p className="mt-6 rounded-2xl border border-line bg-white p-4 text-sm text-ink-muted">Choose a city and a driver.</p>}
@@ -136,17 +145,16 @@ export default function Payroll() {
                       });
                       document.getElementById("record-entry")?.scrollIntoView?.({ behavior: "smooth", block: "start" }); // absent in some test DOMs
                     }} />
-                    <BalanceSummary balances={payroll.balances} adminView />
-                    <EntryManager entries={payroll.balances?.entries ?? []} isSuperAdmin={isSuperAdmin} onChanged={payroll.reload} />
+                    <AdminBalances balances={payroll.balances} isSuperAdmin={isSuperAdmin} onChanged={payroll.reload} />
                     <h2 className="mb-2 text-sm font-semibold text-ink">Pay statements</h2>
                     <StatementList statements={payroll.statements} onOpen={setOpenId} />
                   </>
                 )}
               </section>
               <section className="card-surface p-4" aria-labelledby="record-entry">
-                <h2 id="record-entry" className="mb-4 text-lg font-semibold text-ink">Record an entry</h2>
+                <h2 id="record-entry" className="mb-4 text-lg font-semibold text-ink">Add a record</h2>
                 <LedgerEntryForm key={`${cityId}-${driverId}-${prefill?.key ?? "new"}`} cityId={Number(cityId)} driverId={Number(driverId)}
-                  prefill={prefill?.fields}
+                  prefill={prefill?.fields} payable={payroll.balances?.payable}
                   onSaved={() => { setPrefill(null); payroll.reload(); }} />
               </section>
             </div>
