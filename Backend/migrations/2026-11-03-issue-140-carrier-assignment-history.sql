@@ -132,7 +132,7 @@ BEGIN
   IF TG_OP = 'DELETE' THEN
     RAISE EXCEPTION 'carrier assignment imports cannot be deleted; void the import instead';
   END IF;
-  IF OLD.voided_at IS NOT NULL AND (NEW.voided_at IS DISTINCT FROM OLD.voided_at OR NEW.void_reason IS DISTINCT FROM OLD.void_reason) THEN
+  IF OLD.voided_at IS NOT NULL AND (NEW.voided_at IS DISTINCT FROM OLD.voided_at OR NEW.void_reason IS DISTINCT FROM OLD.void_reason OR NEW.voided_by IS DISTINCT FROM OLD.voided_by) THEN
     RAISE EXCEPTION 'a voided carrier assignment import cannot be changed';
   END IF;
   IF NEW.id <> OLD.id OR NEW.carrier <> OLD.carrier OR NEW.report_hash <> OLD.report_hash OR NEW.scope_key <> OLD.scope_key

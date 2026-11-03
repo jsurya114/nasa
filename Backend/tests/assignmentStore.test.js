@@ -204,6 +204,11 @@ test('assignment history keeps, resolves and looks up carrier evidence without g
       await guarded('DELETE FROM carrier_assignment_sightings', /cannot be changed or deleted/);
       await guarded('UPDATE carrier_assignment_sightings SET source_row = 99', /cannot be changed or deleted/);
       await guarded('DELETE FROM carrier_assignment_imports', /cannot be deleted/);
+      const doomed = await recordReport(db, reportOf(row('fee_details', 2, 'TW0090', 90000001, 'TSTA 01-1')), { reportHash: hashOf('doomed'), sourceLabel: 'doomed.xlsx', importedBy: 1, allowedJobs: null });
+      await voidImport(db, doomed.importId, { reason: 'test', adminId: 7 });
+      await guarded("UPDATE carrier_assignment_imports SET voided_by = 8 WHERE report_hash = '" + hashOf('doomed') + "'", /voided/);
+      await guarded("UPDATE carrier_assignment_imports SET voided_by = NULL WHERE report_hash = '" + hashOf('doomed') + "'", /voided/);
+      await guarded("UPDATE carrier_assignment_imports SET voided_at = NULL, void_reason = NULL, voided_by = NULL WHERE report_hash = '" + hashOf('doomed') + "'", /voided/);
       await guarded("UPDATE carrier_assignment_imports SET report_hash = repeat('a', 64)", /cannot be changed/);
     });
 
