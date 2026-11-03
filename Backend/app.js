@@ -6,6 +6,7 @@ import pool from './config/db.js';
 import adminRoutes from './routes/adminRoutes.js'
 import driverRoutes from "./routes/driverRoutes.js"
 import payrollRoutes from "./routes/payrollRoutes.js"
+import assignmentHistoryRoutes from "./routes/assignmentHistoryRoutes.js"
 import cookieParser from 'cookie-parser';
 import sanitizeMiddleware from './middlewares/sanitize.js';
 import { notFound, errorHandler } from './middlewares/errorHandler.js';
@@ -55,6 +56,12 @@ app.use('/admin/payroll', (req, _, next) => {
   logger.info(`${req.method} ${req.originalUrl.split('?')[0]}`)
   next()
 }, payrollRoutes);
+
+// Before /admin so these requests are handled here and checked once.
+app.use('/admin/assignment-history', (req, _, next) => {
+  logger.info(`${req.method} ${req.originalUrl.split('?')[0]}`)
+  next()
+}, assignmentHistoryRoutes);
 
 app.use('/admin', (req, _, next) => {
   // Log method and path only. Never the Authorization header or the query string.

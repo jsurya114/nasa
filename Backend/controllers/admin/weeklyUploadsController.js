@@ -318,6 +318,7 @@ import {
 } from "../../services/admin/uploadSafety.js";
 
 import { unlink } from "fs";
+import { recordWorkbookHistory } from "../../services/excel/assignmentHistory/recordWorkbookHistory.js";
 
 
 export const getWeeklyTempData=async(req,res)=>{
@@ -373,7 +374,7 @@ export const weeklyExcelUpload = async (req, res) => {
 
     // console.log(`[${Date.now() - startTime}ms] File received, size: ${file.buffer.length} bytes`);
 
-    const result = await processExcelFromBuffer(file.buffer, client, startTime, req.user);
+    const result = await processExcelFromBuffer(file.buffer, client, startTime, req.user, file.originalname);
 
     const totalTime = Date.now() - startTime;
     // console.log(`[${totalTime}ms] ✅ Total processing completed`);
@@ -575,7 +576,7 @@ export const weeklyExcelUpload = async (req, res) => {
 // }
 
 
-async function processExcelFromBuffer(buffer, client, startTime, user) {
+async function processExcelFromBuffer(buffer, client, startTime, user, fileName) {
 
   const workbook = new ExcelJS.Workbook();
   try {
@@ -778,6 +779,10 @@ async function processExcelFromBuffer(buffer, client, startTime, user) {
       totalInserted += batch.length;
     }
 
+    // Keep who carried which package (issue #140). Inside this transaction, but in a savepoint: if the history
+    // cannot be saved, the pay data above is stored exactly as it always was.
+    const assignmentHistory = await recordWorkbookHistory(client, workbook, { buffer, fileName, user, bestEffort: true });
+
     await client.query('COMMIT');
     logger.info('Weekly upload stored', { processed: totalProcessed, skipped: totalSkipped, groups: totalInserted });
 
@@ -787,7 +792,8 @@ async function processExcelFromBuffer(buffer, client, startTime, user) {
       recordsSkipped: totalSkipped,
       recordsInserted: totalInserted,
       batchSize: BATCH_SIZE,
-      numberOfBatches: Math.ceil(dataArray.length / BATCH_SIZE)
+      numberOfBatches: Math.ceil(dataArray.length / BATCH_SIZE),
+      assignmentHistory
     };
 
   } catch (dbError) {
