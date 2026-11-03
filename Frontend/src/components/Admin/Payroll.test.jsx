@@ -15,7 +15,7 @@ const STATEMENTS = [{ id: 21, city: "Test City", data_type: "daily", period_star
 const DETAIL = { ...STATEMENTS[0], gross: "80.50", insurance: "0.00", reimbursements: "0.00", claim_deductions: "0.00", recoveries: "0.00", carried_forward: "30.00",
   lines: [{ id: 1, line_type: "earning", amount: "80.50", journey_date: "2026-11-03", route_name: "Route T" }] };
 
-const startServer = async ({ ledgerReplies = [], refundsDue = [] } = {}) => {
+const startServer = async ({ ledgerReplies = [], refundsDue = [], balances = BALANCES } = {}) => {
   const state = { requests: [], posts: [], refundsDue };
   await installServer(async (config) => {
     state.requests.push({ url: config.url, params: config.params });
@@ -29,7 +29,7 @@ const startServer = async ({ ledgerReplies = [], refundsDue = [] } = {}) => {
     }
     if (config.url === "/admin/get-admin-cities") return { status: 200, data: { cities: [{ id: 3, job: "Test City" }] } };
     if (config.url === "/admin/dashboard/drivers-by-city") return { status: 200, data: { data: [{ id: 7, name: "Dee Test" }] } };
-    if (config.url === "/admin/payroll/drivers/7/balances") return { status: 200, data: { ...BALANCES, refundsDue: state.refundsDue } };
+    if (config.url === "/admin/payroll/drivers/7/balances") return { status: 200, data: { ...balances, refundsDue: state.refundsDue } };
     if (config.url === "/admin/payroll/drivers/7/statements") return { status: 200, data: { statements: STATEMENTS } };
     if (config.url === "/admin/payroll/statements/21") return { status: 200, data: DETAIL };
     return { status: 200, data: {} };
@@ -75,6 +75,16 @@ describe("admin Payroll", () => {
     fireEvent.click(screen.getByRole("button", { name: /View statement\s*2026-11-01/ }));
     expect(await screen.findByText("Route T")).toBeTruthy();
     expect(server.requests.some((r) => r.url === "/admin/payroll/statements/21")).toBe(true);
+  });
+
+  it("shows a hand-entered claim as Penalty charges, apart from other debts", async () => {
+    const penalty = { ...BALANCES.entries[0], id: 6, entry_type: "manual_claim", amount: "40.00", outstanding: "40.00", reason: "Damaged parcel" };
+    await startServer({ balances: { ...BALANCES, entries: [...BALANCES.entries, penalty], totals: { owedByDriver: "70.00", owedToDriver: "0.00" } } });
+    await mount();
+    await chooseDriver();
+    expect(screen.getAllByText("Penalty charges").length).toBeGreaterThan(0);
+    expect(screen.getByText("Penalty charges: Damaged parcel")).toBeTruthy();
+    expect(screen.getByRole("option", { name: "Penalty (entered by hand)" })).toBeTruthy();
   });
 
   it("records an advance with its instalment plan, then reloads the driver's payroll", async () => {

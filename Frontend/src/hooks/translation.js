@@ -358,7 +358,8 @@ const translations = {
     entryAdvanceRepayment: 'Advance repayment',
     entryExpense: 'Expense',
     entryReimbursement: 'Reimbursement',
-    entryManualClaim: 'Claim',
+    entryManualClaim: 'Penalty charges',
+    penaltyCharges: 'Penalty charges',
     entryCorrection: 'Correction',
   },
   es: {
@@ -718,7 +719,8 @@ const translations = {
     entryAdvanceRepayment: 'Pago de anticipo',
     entryExpense: 'Gasto',
     entryReimbursement: 'Reembolso',
-    entryManualClaim: 'Reclamo',
+    entryManualClaim: 'Cargos por penalización',
+    penaltyCharges: 'Cargos por penalización',
     entryCorrection: 'Corrección',
   },
 };

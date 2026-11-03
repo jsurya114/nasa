@@ -26,6 +26,7 @@ export default function BalanceSummary({ balances }) {
   const debits = balances.entries.filter((e) => e.direction === "debit" && Number(e.outstanding) > 0);
   const credits = balances.entries.filter((e) => e.direction === "credit" && e.entry_type !== "advance_repayment" && Number(e.outstanding) > 0);
   const claims = balances.claims.filter((c) => c.status === "exempt" || Number(c.outstanding) > 0);
+  const penaltyTotal = debits.filter((e) => e.entry_type === "manual_claim" && !e.exempt).reduce((sum, e) => sum + Math.round(Number(e.outstanding) * 100), 0) / 100;
   const empty = debits.length + credits.length + claims.length === 0;
 
   return (
@@ -35,6 +36,12 @@ export default function BalanceSummary({ balances }) {
           <dt className="text-xs font-medium text-ink-muted">{t("youStillOwe")}</dt>
           <dd className="mt-1 text-lg font-semibold tabular-nums text-ink">{money(balances.totals.owedByDriver)}</dd>
         </div>
+        {penaltyTotal > 0 && (
+          <div className="rounded-2xl border border-line bg-white px-3 py-3">
+            <dt className="text-xs font-medium text-ink-muted">{t("penaltyCharges")}</dt>
+            <dd className="mt-1 text-lg font-semibold tabular-nums text-ink">{money(penaltyTotal)}</dd>
+          </div>
+        )}
         <div className="rounded-2xl border border-line bg-white px-3 py-3">
           <dt className="text-xs font-medium text-ink-muted">{t("owedToYou")}</dt>
           <dd className="mt-1 text-lg font-semibold tabular-nums text-ink">{money(balances.totals.owedToDriver)}</dd>
