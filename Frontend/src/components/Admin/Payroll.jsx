@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useState } from "react";
+import { useSelector } from "react-redux";
 import axios from "../../redux/slice/axiosInstance";
 import Header from "../../reuse/Header";
 import Nav from "../../reuse/Nav";
@@ -8,6 +9,7 @@ import StatementList from "../Drivers/pay/StatementList.jsx";
 import StatementDetail from "../Drivers/pay/StatementDetail.jsx";
 import LedgerEntryForm from "./payroll/LedgerEntryForm.jsx";
 import RefundsDue from "./payroll/RefundsDue.jsx";
+import EntryManager from "./payroll/EntryManager.jsx";
 
 // Payroll for one driver of one of the admin's cities (#142, #145): what they owe, their statements
 // (drafts show as Pending), and a form to record an advance, expense, claim, repayment or reimbursement.
@@ -46,6 +48,7 @@ export default function Payroll() {
   const [driverId, setDriverId] = useState("");
   const [openId, setOpenId] = useState(null);
   const [prefill, setPrefill] = useState(null); // a refund chosen from "Refunds due"
+  const { isSuperAdmin } = useSelector((state) => state.admin);
   const payroll = useDriverPayroll(cityId, driverId);
   const city = cities.find((c) => String(c.id) === String(cityId));
 
@@ -124,6 +127,7 @@ export default function Payroll() {
                       document.getElementById("record-entry")?.scrollIntoView?.({ behavior: "smooth", block: "start" }); // absent in some test DOMs
                     }} />
                     <BalanceSummary balances={payroll.balances} adminView />
+                    <EntryManager entries={payroll.balances?.entries ?? []} isSuperAdmin={isSuperAdmin} onChanged={payroll.reload} />
                     <h2 className="mb-2 text-sm font-semibold text-ink">Pay statements</h2>
                     <StatementList statements={payroll.statements} onOpen={setOpenId} />
                   </>
