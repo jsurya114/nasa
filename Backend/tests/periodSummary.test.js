@@ -161,6 +161,23 @@ test('dashboard period summary: this payday, approved or preview, and what is st
       assert.equal((Number(s.outstanding.total) - before).toFixed(2), '320.00', 'the whole 300 and the 20 are owed');
       assert.equal(s.payday.deducted, '0.00', 'nothing earned, so nothing can be taken this payday');
       assert.ok(s.payday.flags.some((f) => f.code === 'needs_review'), 'the entry with no arrangement is flagged');
+      assert.ok(s.payday.flags.some((f) => f.code === 'no_eligible_earnings'));
+      assert.equal(s.payday.net, null);
+    });
+
+    await t.test('no eligible pay rows and a due reimbursement: nothing is estimated, because no real run creates a statement', async () => {
+      // d3 has a 300 penalty on 50 instalments and no closed, unpaid pay rows. A 50 reimbursement must not fund a deduction.
+      await createEntry(db, cityAdmin, parseNewEntry({ requestId: randomUUID(), driverId: d3, cityId: city, type: 'reimbursement', amount: '50', reason: 'Fuel', effectiveDate: '2026-11-01' }).entry);
+      const range = { driverId: d3, cityId: city, from: '2026-11-01', to: '2026-11-07' };
+      const s = await getDriverPeriodSummary(db, cityAdmin, range);
+      assert.deepEqual([s.payday.source, s.payday.deducted, s.payday.claimDeductions, s.payday.recoveries, s.payday.net], ['estimate', '0.00', '0.00', '0.00', null]);
+      // the following real runs, daily and weekly, create no statement for this driver, so nothing would be taken
+      const before = await one('SELECT count(*)::int n FROM pay_statements WHERE driver_id = $1', [d3]);
+      for (const dataType of ['daily', 'weekly']) {
+        const { run } = await generateRun(db, cityAdmin, { requestId: randomUUID(), cityId: city, periodStart: '2026-11-01', periodEnd: '2026-11-07', dataType });
+        assert.equal((await getRun(db, cityAdmin, run.id)).statements.some((st) => st.driver_id === d3), false, `${dataType}: no statement for this driver`);
+      }
+      assert.equal((await one('SELECT count(*)::int n FROM pay_statements WHERE driver_id = $1', [d3])).n, before.n);
     });
 
     await t.test('the estimate equals what real drafts take one after the other: daily and weekly rows, a claim, an instalment and a reimbursement', async () => {

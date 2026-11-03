@@ -17,7 +17,8 @@ describe("the net", () => {
     const debt = ready({ deducted: "50.00", net: "30.00", penalties: "250.00" });
     expect(netFor(80, debt)).toMatchObject({ net: 30, preview: true });
     // $100 pay, $20 insurance, $50 reimbursement, $50 instalment: the server says 80, and that is what is shown
-    expect(netFor(80, ready({ deducted: "50.00", net: "80.00", penalties: "250.00" }))).toMatchObject({ net: 80, label: "Net Payment", preview: false });
+    // equal to the table's own net, it is still an unapproved estimate and keeps its label
+    expect(netFor(80, ready({ deducted: "50.00", net: "80.00", penalties: "250.00" }))).toMatchObject({ net: 80, label: "Net Payment preview (before the pay run is approved)", preview: true });
     expect(netFor(80, ready({ deducted: "50.00", net: "130.00", penalties: "250.00" })).net).toBe(130);
   });
 
@@ -29,6 +30,8 @@ describe("the net", () => {
   it("with nothing taken, or no dates, the net is the table's own; while loading or failed it is marked not final", () => {
     expect(netFor(80, ready({ deducted: "0.00", net: null, penalties: "100.00" }))).toMatchObject({ net: 80, label: "Net Payment", preview: false });
     expect(netFor(80, ready({ source: "none", penalties: "100.00" })).net).toBe(80);
+    // no eligible pay rows: the server returns no net, nothing can be taken, and the table's own net keeps its usual name
+    expect(netFor(80, ready({ deducted: "0.00", net: null, penalties: "100.00", flags: [{ code: "no_eligible_earnings", message: "x" }] }))).toMatchObject({ net: 80, label: "Net Payment", preview: false });
     expect(netFor(80, { status: "loading", expected: true })).toMatchObject({ net: 80, muted: true });
     expect(netFor(80, { status: "error", expected: true }).label).toContain("not loaded, not final");
     expect(netFor(80, { status: "idle", expected: false })).toMatchObject({ net: 80, label: "Net Payment" });

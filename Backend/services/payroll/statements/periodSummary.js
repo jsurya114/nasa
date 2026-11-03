@@ -28,8 +28,9 @@ const totalsOf = (rows) => {
 // is locked. It follows what real drafts do: if the driver has both daily and weekly pay rows in the range, the daily run is
 // worked out first and what it takes (claims, instalments) and pays (reimbursements) is carried into the weekly one, as the
 // reservations of a first draft are for the second, so nothing is counted twice. `net` is the calculator's own net for the
-// same earnings (reimbursements included), or null when the driver has no closed, unpaid pay rows in the range; then nothing can
-// be taken, and the reasons (no recovery limit set, no repayment arrangement, ...) are still returned.
+// same earnings (reimbursements included). When the driver has no closed, unpaid pay rows in the range a real run creates no
+// statement, so nothing is taken and `net` is null; the reasons (no recovery limit set, no repayment arrangement, ...) are still
+// returned.
 const estimatePayday = async (db, driverId, cityId, from, to) => {
   const recoveryLimit = await getRecoveryLimit(db);
   const base = { id: 0, city_id: cityId, period_start: from, period_end: to, recovery_limit: recoveryLimit };
@@ -67,10 +68,22 @@ const estimatePayday = async (db, driverId, cityId, from, to) => {
     any = true;
     run(dataType, earnings);
   }
-  if (!any) run('weekly', []); // nothing earned: only the reasons
+  if (!any) {
+    // No closed, unpaid pay rows in the range (none, already paid, or already on a run), so a real run creates no statement for
+    // this driver and takes nothing. Nothing is estimated: a reimbursement or credit is not money paid by a statement that cannot
+    // exist, so it must not fund a deduction. The calculator is run without credits only to collect the reasons.
+    const debitsOnly = ledger.filter((e) => e.direction === 'debit');
+    const result = calculateStatement(inputsFor(driverId, { ...base, data_type: 'weekly' }, [], claims, debitsOnly, over));
+    for (const f of result.flags) {
+      if (f.code === 'carried_forward') continue; // "limit reached" would mislead: the limit is not the reason
+      if (!seen.has(f.code)) { seen.add(f.code); flags.push({ code: f.code, message: f.message }); }
+    }
+    flags.push({ code: 'no_eligible_earnings', message: 'no closed, unpaid pay rows in these dates, so nothing can be taken' });
+    return { claimDeductions: '0.00', recoveries: '0.00', deducted: '0.00', net: null, flags };
+  }
   return {
     claimDeductions: fromCents(claimCents), recoveries: fromCents(recoveryCents), deducted: fromCents(claimCents + recoveryCents),
-    net: any ? fromCents(netCents) : null, flags,
+    net: fromCents(netCents), flags,
   };
 };
 

@@ -40,9 +40,9 @@ export const netFor = (baseNet, penalty, baseLabel = "Net Payment") => {
   if (payday.source === "approved") return { net: Number(payday.net), label: `${baseLabel} (approved pay run)`, preview: false, muted: false };
   if (payday.source === "draft") return { net: Number(payday.net), label: `${baseLabel} preview (draft pay run, not approved)`, preview: true, muted: false };
   if (payday.source === "estimate" && payday.net !== null && payday.net !== undefined) {
-    // The server's own calculation for the same earnings (reimbursements and credits included), not one rebuilt here.
-    const net = Number(payday.net);
-    return { net, label: cents(net) === cents(base) ? baseLabel : `${baseLabel} preview (before the pay run is approved)`, preview: cents(net) !== cents(base), muted: false };
+    // The server's own calculation for the same earnings (reimbursements and credits included), not one rebuilt here. It is
+    // an estimate whatever its value: it keeps the preview label even when it happens to equal the table's net.
+    return { net: Number(payday.net), label: `${baseLabel} preview (before the pay run is approved)`, preview: true, muted: false };
   }
   return { net: base, label: baseLabel, preview: false, muted: false };
 };

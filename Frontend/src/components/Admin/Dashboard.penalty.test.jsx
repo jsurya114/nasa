@@ -105,6 +105,9 @@ describe("Dashboard: this payday's Penalty & Others, apart from what is still ow
     expect(screen.getByTestId("penalty-deduction-row").textContent).toContain("-$50.00");
     expect(screen.getByTestId("net-payment-row").textContent).toContain("$80.00");
     expect(screen.getByTestId("net-payment-row").textContent).not.toContain("$30.00");
+    // the same as the table's $80, but still an unapproved estimate: it keeps the preview label
+    expect(screen.getByTestId("net-payment-row").textContent).toContain("preview (before the pay run is approved)");
+    await waitFor(() => expect(screen.getByTestId("summary-net").textContent).toContain("preview (before the pay run is approved)"));
   });
 
   it("approved: the pay run's frozen net is the net, and the row says it is already inside it", async () => {
@@ -130,7 +133,7 @@ describe("Dashboard: this payday's Penalty & Others, apart from what is still ow
   });
 
   it("with no recovery limit set nothing is taken, the reason is shown, and the net keeps its usual name", async () => {
-    await startServer(reply({ source: "estimate", deducted: "0.00", penalties: "100.00", flags: [{ code: "recovery_limit_not_set", message: "no recovery limit is set; nothing was recovered automatically" }] }));
+    await startServer(reply({ source: "estimate", deducted: "0.00", net: null, penalties: "100.00", flags: [{ code: "recovery_limit_not_set", message: "no recovery limit is set; nothing was recovered automatically" }] }));
     const { container } = await mount();
     await filter(container);
     expect(await screen.findByTestId("penalty-deduction-row")).toBeTruthy();
