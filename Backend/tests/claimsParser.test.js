@@ -88,3 +88,20 @@ test('reads the Claims Detail sheet from a workbook, and a workbook without it h
   XLSX.utils.book_append_sheet(none, XLSX.utils.aoa_to_sheet([['x']]), 'Driver Summary');
   assert.deepEqual(parseClaimsWorkbook(none, { courier: 'gofo' }), { found: false, claims: [], problems: [] });
 });
+
+test('every occupied row is read even when the file\'s saved range says fewer rows (sparse and dense sheets)', () => {
+  const rows = [HEADER];
+  for (let i = 1; i <= 15; i += 1) rows.push(row({ waybill: `TEST${String(i).padStart(4, '0')}` }));
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(rows), 'Claims Detail');
+  const buffer = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+  for (const dense of [false, true]) {
+    const read = XLSX.read(buffer, { dense });
+    // As carrier exports have it: the saved range covers the header and one row, the cells go on.
+    read.Sheets['Claims Detail']['!ref'] = 'A1:L2';
+    const out = parseClaimsWorkbook(read, { courier: 'gofo' });
+    assert.equal(out.claims.length, 15, dense ? 'dense sheet' : 'sparse sheet');
+    assert.deepEqual(out.problems, []);
+    assert.equal(read.Sheets['Claims Detail']['!ref'], 'A1:L2', 'the caller\'s workbook is not changed');
+  }
+});

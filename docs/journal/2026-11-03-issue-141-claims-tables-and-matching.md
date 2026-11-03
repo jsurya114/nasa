@@ -42,3 +42,18 @@
 - **Exempt city name**, as in part 1: the rule matches "DFW GOFO", and the local copy has "Dallas GOFO". This needs the owner's confirmation before any claim is matched for real.
 - If an amended claim's old version was already applied to a pay run, #143 must add a correcting entry. This part only reports it in `amended`.
 - Jasil's side: call `parseClaimsWorkbook` and `importClaims` from the weekly upload, and supply `findCandidates` from the waybill history (#140).
+
+## Review fixes (Jasil's review on #148, 3 Nov 2026)
+
+- **A hand-entered claim and the carrier's claim could both be recovered.** The import took the shared lock but only looked at `courier_claims`. Now, under the same lock, it also looks for a live hand-entered claim (#142, `driver_ledger_entries`, when that table exists) with the same waybill and claim type.
+  - If one exists, the carrier's claim is stored (its evidence is kept) with the new status **`review`**, which is never deducted and never rematched. The reason names the ledger entry.
+  - Voiding that hand-entered claim calls `releaseHeldClaims`, which puts the carrier's claim back into matching.
+  - An amended carrier version is checked the same way.
+  - Schema change in this pull request's migration: `courier_claim_matches.status` now allows `review`, with no driver, city or deduction, like the other open states.
+  - Both arrival orders, amendment and release are tested on #149, where the ledger table exists.
+- **Rematching could stall.** Each call took the same lowest IDs, so claims that stay unresolved at the front blocked every later claim.
+  - `rematchOpenClaims` now takes a cursor (`afterId`) and returns `{ counts, nextAfterId }`.
+  - `rematchAllOpenClaims` makes one fair pass batch by batch.
+  - Both take an optional `waybills` list, so the waybill history import (#140) can rematch only what it touched.
+  - Tests: one claim with no history ahead of a matchable one, batch size 1. Three cursor-less calls leave the second claim open (the old behaviour); the sweep matches it. A scoped sweep visits only the given waybill.
+- Claims store database test: 9 pass (was 7).
