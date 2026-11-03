@@ -65,14 +65,40 @@ const loadEarnings = async (db, run) => {
   return rows;
 };
 
+// The claim-type key in SQL, the same rule as claimTypeKey(): trimmed, single spaces, lower case.
+export const CLAIM_TYPE_KEY_SQL = (column) => `lower(regexp_replace(btrim(${column}), '\\s+', ' ', 'g'))`;
+
+// What has really been collected for one claim, all versions and every driver, for SQL where the current claim row is
+// `alias`. It is each driver's live deductions less the refunds paid to that driver for this claim (a credit correction
+// naming it, #142) on a finalized run, never below zero per driver. Deductions held by drafts count, so nothing is
+// taken twice. Refunds count only once finalized, so the liable driver is not charged while a refund is still open.
+// Example: A was wrongly charged 40 and the claim now belongs to B. B owes nothing until A's 40 refund is finalized,
+// then B owes 40, exactly once. Shared with the statement view (#145) so both show the same figure.
+export const NET_COLLECTED_SQL = (alias = 'c') => `(
+  SELECT COALESCE(SUM(GREATEST(t.taken - COALESCE(rf.refunded, 0), 0)), 0)
+    FROM (SELECT s.driver_id, SUM(-l.amount) AS taken
+            FROM pay_statement_lines l
+            JOIN courier_claims cv ON cv.id = l.claim_id
+            JOIN pay_statements s ON s.id = l.statement_id
+           WHERE cv.claim_key = ${alias}.claim_key AND l.active AND l.line_type = 'claim'
+           GROUP BY s.driver_id) t
+    LEFT JOIN (SELECT e.driver_id, SUM(l.amount) AS refunded
+                 FROM pay_statement_lines l
+                 JOIN driver_ledger_entries e ON e.id = l.ledger_entry_id
+                 JOIN pay_statements s ON s.id = l.statement_id
+                 JOIN pay_runs r ON r.id = s.pay_run_id
+                WHERE l.active AND l.line_type = 'reimbursement' AND r.status = 'finalized'
+                  AND e.entry_type = 'correction' AND e.direction = 'credit'
+                  AND e.waybill = ${alias}.waybill AND ${CLAIM_TYPE_KEY_SQL('e.claim_type')} = ${alias}.claim_type_key
+                GROUP BY e.driver_id) rf ON rf.driver_id = t.driver_id)`;
+
 // Matched, chargeable claims of these drivers in this city with something still owed. Locked so two runs cannot
 // both take the same claim.
 const loadClaims = async (db, cityId, driverIds) => {
   const { rows } = await db.query(
     `SELECT m.claim_id, m.driver_id, to_char(c.claim_at, 'YYYY-MM-DD HH24:MI:SS') AS claim_at,
-            -- Deductions already taken for ANY version of this claim count, so an amended claim is never charged twice.
-            (m.eligible_deduction + COALESCE((SELECT SUM(l.amount) FROM pay_statement_lines l JOIN courier_claims cv ON cv.id = l.claim_id
-                                               WHERE cv.claim_key = c.claim_key AND l.active), 0))::text AS outstanding
+            -- What is still owed: the eligible amount less what has really been collected for any version from anyone.
+            (m.eligible_deduction - ${NET_COLLECTED_SQL('c')})::text AS outstanding
        FROM courier_claim_matches m
        JOIN courier_claims c ON c.id = m.claim_id
       WHERE m.status = 'chargeable' AND m.city_id = $1 AND m.driver_id = ANY($2::int[]) AND c.superseded_at IS NULL
@@ -131,7 +157,7 @@ const loadOverRecovered = async (db, cityId, driverIds) => {
               - COALESCE((SELECT SUM(e.amount) FROM driver_ledger_entries e
                            WHERE e.entry_type = 'correction' AND e.direction = 'credit' AND e.driver_id = t.driver_id AND e.city_id = $2
                              AND e.waybill = c.waybill
-                             AND lower(regexp_replace(btrim(e.claim_type), '\\s+', ' ', 'g')) = c.claim_type_key
+                             AND ${CLAIM_TYPE_KEY_SQL('e.claim_type')} = c.claim_type_key
                              AND NOT EXISTS (SELECT 1 FROM driver_ledger_entries v WHERE v.voids_entry_id = e.id)), 0))::text AS over
        FROM taken t
        JOIN courier_claims c ON c.claim_key = t.claim_key AND c.superseded_at IS NULL
@@ -307,6 +333,24 @@ export const voidRun = async (db, admin, runId, reason) => {
   const { rows: moving } = await db.query(
     "SELECT count(*)::int AS n FROM pay_statements WHERE pay_run_id = $1 AND payout_status NOT IN ('not_submitted', 'failed')", [runId]);
   if (moving[0].n > 0) throw new PayrollError(409, 'some payouts are submitted, paid or unconfirmed; reconcile them before voiding');
+  // A claim refund paid on this run may already have let a later run charge the driver now liable for that claim.
+  // Voiding would take the refund back while that charge stands, so the claim would be collected twice.
+  const { rows: relied } = await db.query(
+    `SELECT 1
+       FROM pay_statement_lines rl
+       JOIN pay_statements rs ON rs.id = rl.statement_id
+       JOIN driver_ledger_entries e ON e.id = rl.ledger_entry_id
+       JOIN courier_claims cv ON cv.waybill = e.waybill AND cv.claim_type_key = ${CLAIM_TYPE_KEY_SQL('e.claim_type')}
+       JOIN pay_statement_lines cl ON cl.claim_id = cv.id AND cl.active AND cl.line_type = 'claim'
+       JOIN pay_statements cs ON cs.id = cl.statement_id
+       JOIN pay_runs cr ON cr.id = cs.pay_run_id
+      WHERE rs.pay_run_id = $1 AND rl.active AND rl.line_type = 'reimbursement'
+        AND e.entry_type = 'correction' AND e.claim_type IS NOT NULL
+        AND cr.id > $1 -- any run made after this one: stricter than "after it was finalized", never looser
+      LIMIT 1`,
+    [runId]
+  );
+  if (relied.length) throw new PayrollError(409, 'a later pay run relied on a claim refund in this run; reconcile that claim before voiding');
   await releaseLines(db, runId);
   const { rows } = await db.query(
     `UPDATE pay_runs SET status = 'voided', closed_by = $2, closed_at = now(), close_reason = $3 WHERE id = $1 RETURNING ${RUN_COLUMNS}`,

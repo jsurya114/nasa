@@ -119,3 +119,23 @@ Each case below is reproduced in the new `Backend/tests/payRunReview.test.js` (8
 
 - **Money impact:** with no adjustments, statements are unchanged: gross − insurance, as before (the existing pay run tests pass unchanged). The changes only stop wrong recoveries: future repayments, a second instalment in one period, and advances not paid out. A lowered claim is flagged; nothing is paid back automatically.
 - **Tests:** full backend suite 100 pass with the database, 58 pass without it (as CI runs), 0 fail. Calculator: 17, with 4 new for holds, repayment lines, over-recovery flags and the limit wording.
+
+## Second review fix (Jasil's re-review on #152, 3 Nov 2026)
+
+- **A refunded charge still counted as recovery.**
+  - Before: what was still owed on a claim subtracted every deduction for any version from any driver. If A was wrongly charged 40, the claim moved to B, and A was refunded, A's deduction still cleared B's claim. B was never charged.
+  - Now the amount owed is the eligible amount less what has **really been collected**: for each driver, live deductions minus refunds paid to that driver for this claim on a finalized run, never below zero per driver. The SQL is `NET_COLLECTED_SQL`, which the statement view (#153) shares, so both show the same figure.
+  - Deductions held by drafts count, so nothing is taken twice. Refunds count only once finalized, so B is never charged while A's refund is still open.
+  - Results: A unrefunded, B owes 0. A's refund finalized, B owes 40, once. A refunded 25 of 40, B owes 25, and A is still flagged for the other 15.
+  - A's statements are never changed.
+- **Void guard.** A finalized run that paid a claim refund cannot be voided once any later run has a deduction for that claim. The later run may have charged B because of the refund, and voiding would take the refund back while B's charge stands. The message asks for the claim to be reconciled first. "Later" means any run made after this one: stricter than "after it was finalized", never looser.
+- **Payout states.** A refund paid on a finalized statement counts whatever its payout state: submitted, failed or unconfirmed are #31's to reconcile. A failed refund payout must be retried, not voided, while a later run relies on it, which the guard enforces.
+- **Tests:** two new cases in `payRunReview.test.js`, both failing on the code before this fix.
+  1. Full refund:
+     - while A is unrefunded, B 0 and A flagged;
+     - with the refund only in a draft, B still 0;
+     - after it is finalized, B 40, and the next run 0;
+     - the refund run then cannot be voided.
+  2. Partial refund: B 25, and A still flagged for 15.
+- Full backend suite: 102 pass with the database.
+- **Not covered:** reassignment to a driver in another city. Collections and refunds are counted across cities by the same rule, but only same-city reassignment is tested.
