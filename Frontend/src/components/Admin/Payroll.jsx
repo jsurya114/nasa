@@ -126,7 +126,7 @@ export default function Payroll() {
                       });
                       document.getElementById("record-entry")?.scrollIntoView?.({ behavior: "smooth", block: "start" }); // absent in some test DOMs
                     }} />
-                    <BalanceSummary balances={payroll.balances} />
+                    <BalanceSummary balances={payroll.balances} adminView />
                     <EntryManager entries={payroll.balances?.entries ?? []} isSuperAdmin={isSuperAdmin} onChanged={payroll.reload} />
                     <h2 className="mb-2 text-sm font-semibold text-ink">Pay statements</h2>
                     <StatementList statements={payroll.statements} onOpen={setOpenId} />

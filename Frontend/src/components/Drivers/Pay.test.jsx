@@ -24,17 +24,17 @@ const BALANCES = {
     recovery_plan: "installments", installment_amount: "50.00", applied: "50.00", outstanding: "150.00", pay_runs: [{ runId: 4, periodEnd: "2026-11-07", amount: "-50.00" }] }],
   claims: [{ id: 8, waybill: "TESTW002", claim_type: "Tracking interruption", claim_at: "2026-10-29 09:00", source_charge: "-25.00", status: "exempt",
     applied: "0.00", outstanding: "0.00", pay_runs: [] }],
-  totals: { owedByDriver: "150.00", owedToDriver: "0.00" },
+  totals: { owedByDriver: "150.00", owedPenalties: "0.00", owedOther: "150.00", owedToDriver: "0.00" },
 };
 
-const startServer = async ({ fail = false, statements = STATEMENTS, language = "en" } = {}) => {
+const startServer = async ({ fail = false, statements = STATEMENTS, language = "en", balances = BALANCES } = {}) => {
   const state = { urls: [], fail };
   await installServer(async (config) => {
     state.urls.push(config.url);
     if (config.url.startsWith("/driver/payroll/")) {
       if (state.fail) return { status: 500, data: { message: "statements could not be loaded; try again" } };
       if (config.url === "/driver/payroll/statements") return { status: 200, data: { statements } };
-      if (config.url === "/driver/payroll/balances") return { status: 200, data: BALANCES };
+      if (config.url === "/driver/payroll/balances") return { status: 200, data: balances };
       if (config.url === "/driver/payroll/statements/12") return { status: 200, data: DETAIL };
       return { status: 404, data: { message: "statement not found" } };
     }
@@ -84,6 +84,21 @@ describe("driver My pay", () => {
     // No driver ID in any pay request: the server takes it from the token.
     const payUrls = server.urls.filter((u) => u.startsWith("/driver/payroll/"));
     expect(payUrls.sort()).toEqual(["/driver/payroll/balances", "/driver/payroll/statements"]);
+  });
+
+  it("splits penalties from other debts after a repayment outside payroll, adding up to the server's total, and shows nothing when fully repaid", async () => {
+    await startServer({ balances: { ...BALANCES, entries: [], claims: [], totals: { owedByDriver: "20.00", owedPenalties: "20.00", owedOther: "0.00", owedToDriver: "0.00" } } });
+    await mount();
+    await screen.findByText("Approved");
+    expect(screen.getByText("You still owe").nextSibling.textContent).toBe("$0.00");
+    expect(screen.getByText("Penalty charges", { selector: "dt" }).nextSibling.textContent).toBe("$20.00");
+    expect(screen.getByText(/Total owed:/).textContent).toContain("$20.00");
+    cleanup();
+    await startServer({ balances: { ...BALANCES, entries: [], claims: [], totals: { owedByDriver: "0.00", owedPenalties: "0.00", owedOther: "0.00", owedToDriver: "0.00" } } });
+    await mount();
+    await screen.findByText("Approved");
+    expect(screen.getByText("You still owe").nextSibling.textContent).toBe("$0.00");
+    expect(screen.queryByText("Penalty charges", { selector: "dt" })).toBeNull();
   });
 
   it("marks an exempt claim as not charged and lists the payday that took an instalment", async () => {

@@ -3,6 +3,7 @@ import { useDispatch, useSelector } from "react-redux";
 import {
   excelDailyFileUpload,
   excelWeeklyFileUpload,
+  selectWeeklyResult,
 } from "../../redux/slice/admin/excelSlice";
 import { fetchDashboardData, fetchWeeklyTempData } from "../../redux/slice/admin/doublestopSlice";
 import { fetchDriverPayment, updateWeeklyExcelToDashboard } from "../../redux/slice/admin/dashboardUpdateSlice";
@@ -14,6 +15,7 @@ import DriverPaymentSection from "./DriverPaymentUpdate";
 import TempUploadedData from "../../reuse/TempUploadedData";
 import { toast } from "react-toastify";
 import Analystic from "./Analystic";
+import UploadResultSummary from "./UploadResultSummary";
 
 const DoubleStop = () => {
   const dispatch = useDispatch();
@@ -28,6 +30,7 @@ const DoubleStop = () => {
   // Get loading states from Redux
   const weeklyLoading = useSelector((state) => state.excel?.weekly?.loading);
   const dailyLoading = useSelector((state) => state.excel?.daily?.loading);
+  const weeklyResult = useSelector(selectWeeklyResult);
 
   // Daily form state
   const [dailyForm, setDailyForm] = useState({
@@ -231,6 +234,8 @@ const DoubleStop = () => {
             </form>
           </section>
         )}
+
+        {activeView === "weekly" && <UploadResultSummary result={weeklyResult} />}
 
         {/* Daily Form */}
         {activeView === "daily" && (
