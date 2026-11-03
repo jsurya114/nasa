@@ -24,7 +24,7 @@ const assertCityAllowed = async (db, admin, cityId) => {
 
 const ENTRY_COLUMNS = `id, request_id, driver_id, city_id, entry_type, direction, amount, reason,
   to_char(effective_date, 'YYYY-MM-DD') AS effective_date, to_char(intended_payday, 'YYYY-MM-DD') AS intended_payday,
-  disbursed_outside_payroll, claim_type, waybill, exempt, recovery_plan, installment_amount, voids_entry_id, created_by, created_at,
+  disbursed_outside_payroll, claim_type, waybill, claim_courier, exempt, recovery_plan, installment_amount, voids_entry_id, created_by, created_at,
   (direction = 'debit' AND entry_type <> 'void' AND NOT exempt AND recovery_plan IS NULL) AS needs_review`;
 
 // Same form sent twice: return the first result. Same request ID for something else: refuse.
@@ -83,12 +83,12 @@ export const createEntry = async (db, admin, entry) => {
   const { rows } = await db.query(
     `INSERT INTO driver_ledger_entries
        (request_id, driver_id, city_id, entry_type, direction, amount, reason, effective_date, intended_payday,
-        disbursed_outside_payroll, claim_type, waybill, exempt, recovery_plan, installment_amount, created_by)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
+        disbursed_outside_payroll, claim_type, waybill, claim_courier, exempt, recovery_plan, installment_amount, created_by)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)
      ON CONFLICT (request_id) DO NOTHING
      RETURNING ${ENTRY_COLUMNS}`,
     [entry.requestId, entry.driverId, entry.cityId, entry.type, entry.direction, entry.amount, entry.reason,
-      entry.effectiveDate, entry.intendedPayday, entry.disbursedOutsidePayroll, entry.claimType, entry.waybill, exempt,
+      entry.effectiveDate, entry.intendedPayday, entry.disbursedOutsidePayroll, entry.claimType, entry.waybill, entry.claimCourier ?? null, exempt,
       entry.recoveryPlan ?? null, entry.installmentAmount ?? null, admin.id]
   );
   if (rows.length) return { entry: rows[0], replay: false };

@@ -32,6 +32,7 @@ CREATE TABLE IF NOT EXISTS driver_ledger_entries (
   installment_amount         numeric(12,2),
   claim_type                 text,
   waybill                    text,
+  claim_courier              text          CHECK (claim_courier IN ('gofo', 'speedx')), -- a refund names the claim's courier too
   exempt                     boolean       NOT NULL DEFAULT false,
   voids_entry_id             bigint        UNIQUE REFERENCES driver_ledger_entries(id),
   created_by                 integer       NOT NULL REFERENCES admin(id),
@@ -46,6 +47,9 @@ CREATE TABLE IF NOT EXISTS driver_ledger_entries (
   CHECK (entry_type <> 'correction' OR (claim_type IS NULL) = (waybill IS NULL)),
   -- A correction that names a claim is a refund: never a charge, which would bypass the claim exemption.
   CHECK (entry_type <> 'correction' OR claim_type IS NULL OR direction = 'credit'),
+  -- A refund names exactly one claim: courier, waybill and claim type, the claim's own identity.
+  CHECK (claim_courier IS NULL OR (entry_type = 'correction' AND claim_type IS NOT NULL)),
+  CHECK (entry_type <> 'correction' OR claim_type IS NULL OR claim_courier IS NOT NULL),
   CHECK (exempt = false OR entry_type = 'manual_claim'),
   CHECK ((entry_type = 'void') = (voids_entry_id IS NOT NULL)),
   CHECK (voids_entry_id IS NULL OR voids_entry_id <> id)
