@@ -70,12 +70,18 @@ test('dates must be real; voids need an entry, a request ID and a reason', () =>
   assert.deepEqual(Object.keys(parseVoid({ requestId: 'nope', reason: '' }, '0').errors).sort(), ['entryId', 'reason', 'requestId']);
 });
 
-test('a correction may name the claim it corrects, with both waybill and claim type; other types may not', () => {
+test('only a credit correction may name the claim it refunds, with both waybill and claim type; other types may not', () => {
   const base = { requestId: '7b0f8c1e-3c1a-4d2b-9a55-1f2e3d4c5b6a', driverId: 3, cityId: 2, amount: '10', reason: 'Carrier lowered the claim', effectiveDate: '2026-11-03' };
   const ok = parseNewEntry({ ...base, type: 'correction', direction: 'credit', waybill: ' testw001 ', claimType: 'Damaged Item' });
   assert.deepEqual([ok.entry.waybill, ok.entry.claimType], ['TESTW001', 'Damaged Item']);
   assert.ok(parseNewEntry({ ...base, type: 'correction', direction: 'credit', waybill: 'TESTW001' }).errors.waybill);
   assert.ok(parseNewEntry({ ...base, type: 'expense', waybill: 'TESTW001' }).errors.claimType);
+  // A claim-linked debit would charge a claim outside the import and its exemption (for example DFW GOFO tracking
+  // interruption), so only a refund may name a claim.
+  for (const claimType of ['Tracking interruption', 'Damaged Item']) {
+    assert.ok(parseNewEntry({ ...base, type: 'correction', direction: 'debit', waybill: 'TESTW001', claimType }).errors.direction, claimType);
+  }
+  assert.equal(parseNewEntry({ ...base, type: 'correction', direction: 'debit' }).errors, undefined, 'a plain debit correction is still allowed');
 });
 
 test('the replay fingerprint covers every saved field and reads a database row the same way as the form', () => {

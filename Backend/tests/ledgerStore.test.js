@@ -162,7 +162,7 @@ test('the driver ledger: city access, exemption, no double entries, immutable hi
       assert.equal(await status(), 'unresolved', 'released into matching once the hand-entered claim is voided');
     });
 
-    await t.test('a credit correction can name the claim it corrects; the database refuses a claim on other types', async () => {
+    await t.test('a credit correction can name the claim it refunds; the database refuses a claim on debits and other types', async () => {
       const refund = await createEntry(db, dfwAdmin, entry({ type: 'correction', direction: 'credit', amount: '10', waybill: 'TESTL070', claimType: 'Damaged Item' }));
       assert.deepEqual([refund.entry.waybill, refund.entry.claim_type], ['TESTL070', 'Damaged Item']);
       for (const sql of [
@@ -170,6 +170,9 @@ test('the driver ledger: city access, exemption, no double entries, immutable hi
          VALUES ('${randomUUID()}', ${d1}, ${dfw}, 'expense', 'debit', 5, 'Test entry', '2026-11-03', 'TESTL071', ${dfwAdmin.id})`,
         `INSERT INTO driver_ledger_entries (request_id, driver_id, city_id, entry_type, direction, amount, reason, effective_date, waybill, created_by)
          VALUES ('${randomUUID()}', ${d1}, ${dfw}, 'correction', 'credit', 5, 'Test entry', '2026-11-03', 'TESTL072', ${dfwAdmin.id})`,
+        // A charge naming an exempt DFW GOFO tracking interruption claim, bypassing the form: refused by the database too.
+        `INSERT INTO driver_ledger_entries (request_id, driver_id, city_id, entry_type, direction, amount, reason, effective_date, waybill, claim_type, created_by)
+         VALUES ('${randomUUID()}', ${d1}, ${dfw}, 'correction', 'debit', 40, 'Test entry', '2026-11-03', 'TESTL073', 'Tracking interruption', ${dfwAdmin.id})`,
       ]) {
         await savepoint(() => assert.rejects(db.query(sql), /check constraint/));
       }
