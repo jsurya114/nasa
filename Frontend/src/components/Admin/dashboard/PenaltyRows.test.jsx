@@ -45,10 +45,16 @@ describe("PenaltyRows", () => {
     expect(screen.getByTestId("penalty-deduction-row").textContent).toContain("1 pay run crosses these dates and is not counted");
   });
 
-  it("shows nothing while loading, on an error, or when there is no penalty and no deduction", () => {
+  it("says so when there is nothing to show, asks for dates when they are missing, and is silent only while idle, loading or on an error row", () => {
     expect(describePenalty({ status: "loading", expected: true, data: null })).toBeNull();
     expect(describePenalty({ status: "error", expected: true, data: null })).toBeNull();
     expect(describePenalty(summary({}, { penalties: "0.00", other: "0.00", total: "0.00" }))).toBeNull();
+    show(summary({}, { penalties: "0.00", other: "0.00", total: "0.00" }));
+    expect(screen.getByTestId("penalty-none-row").textContent).toContain("none for this driver in these dates");
+    cleanup();
+    show({ status: "idle", expected: false, needsDates: true, data: null });
+    expect(screen.getByTestId("penalty-dates-row").textContent).toContain("choose a start and an end date");
+    cleanup();
     const { container } = show({ status: "idle", expected: false, data: null });
     expect(container.querySelectorAll("tr").length).toBe(0);
   });

@@ -150,6 +150,7 @@ describe("Dashboard with payroll figures", () => {
     expect(screen.getByTestId("net-before-row").textContent).toContain("Net Payment");
     expect(server.payrollCalls).toBe(0);
     expect(screen.queryByTestId("penalty-net-row")).toBeNull();
+    expect(screen.getByTestId("penalty-dates-row").textContent).toContain("choose a start and an end date");
   });
 
   it("editing the city in the form, before Filter Data, keeps the applied driver's approved figures (and never restores the unadjusted net)", async () => {
@@ -187,5 +188,13 @@ describe("Dashboard with payroll figures", () => {
     await new Promise((resolve) => setTimeout(resolve, 30));
     expect(screen.getByTestId("penalty-net-row").textContent).toContain("$90.00");
     expect(screen.getByTestId("penalty-net-row").textContent).not.toContain("$40.00");
+  });
+
+  it("with dates chosen but no penalty and no pay run, a row says there is nothing, instead of showing nothing", async () => {
+    await startServer({ status: 200, data: { period: { status: "none", approved: none, preview: none, statements: [], crossingRuns: 0 }, outstanding: { penalties: "0.00", other: "0.00", total: "0.00" } } });
+    const { container } = await mount();
+    await filter(container);
+    expect((await screen.findByTestId("penalty-none-row")).textContent).toContain("none for this driver in these dates");
+    expect(screen.getByTestId("net-before-row").textContent).toContain("Net Payment");
   });
 });

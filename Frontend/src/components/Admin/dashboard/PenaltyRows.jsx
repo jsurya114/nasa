@@ -12,6 +12,13 @@ const STATUS_LABEL = { approved: "Approved", preview: "Preview: draft pay run, n
 // the chosen dates took, never the whole debt; "still outstanding" is what is left after them. While the figures load, or if
 // they cannot be loaded, a row says so: the net shown below then does not include claims or recoveries.
 export default function PenaltyRows({ penalty, colSpan = 11 }) {
+  if (penalty?.needsDates) {
+    return (
+      <tr className="bg-gray-50" data-testid="penalty-dates-row">
+        <td className={CELL} colSpan={colSpan + 3}>Claims / deductions and penalties: choose a start and an end date, then Filter Data, to see them for this driver.</td>
+      </tr>
+    );
+  }
   if (!penalty?.expected) return null;
   if (penalty.status === "loading") {
     return (
@@ -31,7 +38,15 @@ export default function PenaltyRows({ penalty, colSpan = 11 }) {
     );
   }
   const d = describePenalty(penalty);
-  if (!d) return null;
+  if (!d) {
+    // Ready, but nothing to show: say so, so a missing row is never a mystery.
+    if (penalty.status !== "ready") return null;
+    return (
+      <tr className="bg-gray-50" data-testid="penalty-none-row">
+        <td className={CELL} colSpan={colSpan + 3}>Claims / deductions: none for this driver in these dates (no pay run covers them and no penalty is outstanding).</td>
+      </tr>
+    );
+  }
   const history = `/admin/payroll?cityId=${penalty.cityId}&driverId=${penalty.driverId}`;
   return (
     <>

@@ -30,6 +30,8 @@ export default function usePenaltySummary() {
   // "Expected": the admin chose a city, a driver and both dates, so payroll figures belong on this page. Until they arrive,
   // or if they fail, the page must say so rather than leave an unadjusted amount looking payable.
   const expected = Boolean(cityId && driverId && from && to);
+  // A city and a driver are applied but the dates are not: say what is needed instead of showing nothing.
+  const needsDates = Boolean(cityId && driverId && !(from && to));
 
   useEffect(() => {
     if (!expected) {
@@ -48,7 +50,7 @@ export default function usePenaltySummary() {
   // "loading" rather than show the previous scope's figures against the new table.
   const current = state.scopeKey === scopeKey ? state : { status: expected ? "loading" : "idle", data: null };
 
-  return { status: current.status, data: current.data, cityId, driverId, expected, rememberScope, retry: () => setAttempt((n) => n + 1) };
+  return { status: current.status, data: current.data, cityId, driverId, expected, needsDates, rememberScope, retry: () => setAttempt((n) => n + 1) };
 }
 
 // What to show, or null when there is nothing to show. "approved" figures come from finalized pay runs and the run's
