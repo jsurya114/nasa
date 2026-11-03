@@ -35,3 +35,10 @@ Not in this part: linked edit and the history view (next PR), the dashboard row,
 **Not tested.** The HTTP routes with real tokens (they load and mirror the existing void route); production data; a settlement racing a pay run from two sessions at once (the same lock is used, not exercised here).
 
 **Risks and follow-ups.** The statement balances count only finalized pay-run recoveries as taken, as before. Separating "reserved" from "settled" labels is part of the later dashboard work.
+
+## Review fix (Jasil's review on #168, 3 Nov 2026)
+
+- **A repeated request skipped the current permission checks.** Before, a settlement or reversal sent again returned the stored record before any city or role check. Now every outcome that returns a record is authorized first: the record's city must be one of the admin's cities now, and a waiver, or the reversal of one, needs a super admin now. This covers the early replay and the replay after a lost insert race (one shared function), and it runs before the "different request" refusal, so another city's admin learns nothing from a guessed request ID. The exact-content comparison and the append-only records are unchanged.
+- **Tests.** A new case: a plain admin repeating a waiver or its reversal is refused (403); an admin whose city access was withdrawn is refused even for an exact repayment replay; with access back, the exact replays still work and nothing is recorded twice; another city's admin is refused.
+- **Test cleanup.** `weeklyClaimsFlow.test.js` removed the ledger table while the settlements table still referenced it; its missing-tables case now rolls the settlements migration back first. Passes with both database flags.
+- **Known, not caused here.** `assignmentHistoryFlow.test.js` fails 3 subtests on a clean `develop` too, on a database that already has the pay-run tables (it cannot drop `courier_claims`).
