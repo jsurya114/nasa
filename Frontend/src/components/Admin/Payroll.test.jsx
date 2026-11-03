@@ -83,6 +83,9 @@ describe("admin Payroll", () => {
     await mount();
     await chooseDriver();
     expect(screen.getAllByText("Penalty charges").length).toBeGreaterThan(0);
+    // The two totals are separate: $70 in all is $30 owed plus $40 of penalties.
+    expect(screen.getByText("You still owe").nextSibling.textContent).toBe("$30.00");
+    expect(screen.getByText("Penalty charges", { selector: "dt" }).nextSibling.textContent).toBe("$40.00");
     expect(screen.getByText("Penalty charges: Damaged parcel")).toBeTruthy();
     expect(screen.getByRole("option", { name: "Penalty (entered by hand)" })).toBeTruthy();
   });

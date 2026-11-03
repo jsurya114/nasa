@@ -10,7 +10,7 @@
 **What and why.** The owner asked that a claim entered by hand reads as a penalty.
 - The record form's type is now "Penalty (entered by hand)".
 - The open-balances list titles such an entry "Penalty charges: <reason>" (English and Spanish).
-- A separate "Penalty charges" tile shows the open total of hand-entered penalties, next to "You still owe" (which stays the whole total). It appears only when a penalty is open, and exempt penalties count zero.
+- A separate "Penalty charges" tile shows the open total of hand-entered penalties, next to "You still owe". The two are separate: "You still owe" leaves penalties out, so nothing is counted twice (both are worked out in the browser from the amounts the API sends). It appears only when a penalty is open, and exempt penalties count zero.
 
 Wording and one displayed sum only. The stored type is still `manual_claim`.
 
