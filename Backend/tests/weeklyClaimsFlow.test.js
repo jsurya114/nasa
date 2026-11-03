@@ -60,7 +60,7 @@ test('the weekly upload stores the Claims Detail sheet, matches it from history,
 
   try {
     await client.query('BEGIN');
-    for (const m of ['2026-11-03-issue-140-carrier-assignment-history.sql', '2026-11-03-issue-141-courier-claims.sql', '2026-11-03-issue-142-driver-ledger.sql', '2026-11-03-issue-143-pay-runs.sql']) await client.query(migration(m));
+    for (const m of ['2026-11-03-issue-140-carrier-assignment-history.sql', '2026-11-03-issue-141-courier-claims.sql', '2026-11-03-issue-142-driver-ledger.sql', '2026-11-03-issue-143-pay-runs.sql', '2026-11-03-issue-166-ledger-settlements.sql']) await client.query(migration(m));
 
     const one = async (sql, params) => (await client.query(sql, params)).rows[0];
     // The Dallas GOFO city has the code "DFW GOFO" (the exemption keys on the code). A test copy of it keeps the data made up.
