@@ -157,8 +157,11 @@ test('everee submit: reserve, send, payout request, replay, partial failure, ret
       assert.deepEqual(attempts.map((r) => [r.outcome, r.http_status, r.everee_request_id, r.done]), [['accepted', 201, 'req-ok', true], ['accepted', 201, 'req-ok', true]]);
       assert.equal(happyBatch.payoutRequests[0].outcome, 'requested');
       // Submitting is not paying: the earning rows are untouched and nothing is "paid".
-      assert.equal((await one('SELECT count(*)::int n FROM payment_dashboard WHERE paid')).n, 0);
-      assert.equal((await one("SELECT count(*)::int n FROM pay_statements WHERE payout_status = 'paid'")).n, 0);
+      // Scoped to this run, so a copy of real data that already has paid history does not fail it.
+      assert.equal((await one(
+        `SELECT count(*)::int n FROM payment_dashboard pd JOIN pay_statement_lines l ON l.payment_dashboard_id = pd.id JOIN pay_statements s ON s.id = l.statement_id
+          WHERE s.pay_run_id = $1 AND pd.paid`, [happy.run.id])).n, 0);
+      assert.equal((await one("SELECT count(*)::int n FROM pay_statements WHERE pay_run_id = $1 AND payout_status = 'paid'", [happy.run.id])).n, 0);
     });
 
     await t.test('the same confirmation again returns the same batch and sends nothing; the same ID for something else is refused', async () => {

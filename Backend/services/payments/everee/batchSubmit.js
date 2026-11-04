@@ -219,12 +219,12 @@ const requestPayout = async (db, batchId, deps, client) => {
   const { rows: [request] } = await db.query('INSERT INTO everee_payout_requests (batch_id, asked_count) VALUES ($1, $2) RETURNING id', [batchId, waiting.length]);
   const asked = waiting.map((w) => w.external_id);
 
-  let outcome; let taken = null; let status = null; let requestId = null; let message = null;
+  let outcome; let taken = null; let status = null; let requestId = null; let message = null; let named = [];
   try {
     const answer = await withRateLimitRetry(() => client.requestPayout(asked), deps);
     status = answer.status;
     requestId = answer.requestId;
-    const named = Array.isArray(answer.data?.payableExternalIds) ? answer.data.payableExternalIds.filter((id) => asked.includes(id)) : [];
+    named = Array.isArray(answer.data?.payableExternalIds) ? answer.data.payableExternalIds.filter((id) => asked.includes(id)) : [];
     taken = named.length;
     outcome = taken > 0 ? 'requested' : 'nothing_to_process';
     if (taken > 0) {
@@ -242,7 +242,7 @@ const requestPayout = async (db, batchId, deps, client) => {
     [request.id, outcome, taken, status, requestId, message ? clip(message) : null]);
   // The request ran but did not take everything: look at what Everee says about the payables it left.
   if (outcome === 'requested' || outcome === 'nothing_to_process') {
-    const takenIds = new Set(Array.isArray(taken) ? taken : []);
+    const takenIds = new Set(named);
     const { rows: left } = await db.query(
       `SELECT id, external_id, pay_statement_id FROM everee_payment_items WHERE batch_id = $1 AND external_id = ANY($2::text[]) AND payout_requested_at IS NULL AND status = 'submitted' ORDER BY id`, [batchId, asked]);
     await inspectUntaken(db, left.filter((i) => !takenIds.has(i.external_id)), deps, client);

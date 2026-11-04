@@ -21,7 +21,7 @@ test('everee batch preview: who can be paid and why not, one hash for what would
   try {
     await db.query('BEGIN');
     for (const m of ['2026-11-03-issue-141-courier-claims.sql', '2026-11-03-issue-142-driver-ledger.sql', '2026-11-03-issue-143-pay-runs.sql',
-      '2026-11-03-issue-166-ledger-settlements.sql', '2026-11-04-issue-031-everee-workers.sql']) await db.query(migration(m));
+      '2026-11-03-issue-166-ledger-settlements.sql', '2026-11-04-approved-run-payment-records.sql', '2026-11-04-issue-031-everee-workers.sql', '2026-11-04-issue-031-everee-payments.sql']) await db.query(migration(m));
 
     const mkCity = async (tag) => {
       const job = `Test Preview ${tag}`;
