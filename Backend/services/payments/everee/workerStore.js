@@ -167,6 +167,25 @@ export const linkDriver = async (db, admin, { cityId, driverId, workerId }, deps
 
 // ---------- refresh what Everee says about a linked worker ----------
 
+// Re-reads one linked worker from Everee and stores what it says. Used by the Refresh button and by the webhook (issue #31, part 2), so
+// both do exactly the same. Throws the Everee error as it is; the callers decide how to answer.
+export const refreshLinkRow = async (db, row, client) => {
+  const { data: worker } = await client.getWorker(row.external_worker_id ?? row.everee_worker_id);
+  const state = stateOfWorker(worker);
+  const { rows } = await db.query(
+    `UPDATE everee_workers SET onboarding_complete = $2, tin_status = $3, terminated = $4, last_checked_at = now() WHERE id = $1 RETURNING ${LINK_COLUMNS}`,
+    [row.id, state.onboardingComplete, state.tinStatus, state.terminated]
+  );
+  return viewOfLink(rows[0]);
+};
+
+// A worker Everee says is gone can no longer be paid: they are marked as having left.
+export const markLinkTerminated = async (db, row) => {
+  const { rows } = await db.query(
+    `UPDATE everee_workers SET terminated = true, last_checked_at = now() WHERE id = $1 RETURNING ${LINK_COLUMNS}`, [row.id]);
+  return viewOfLink(rows[0]);
+};
+
 export const refreshWorker = async (db, admin, { cityId, driverId }, deps = {}) => {
   requireSuperAdmin(admin);
   await assertCityAllowed(db, admin, cityId);
@@ -176,13 +195,7 @@ export const refreshWorker = async (db, admin, { cityId, driverId }, deps = {}) 
     `SELECT ${LINK_COLUMNS} FROM everee_workers WHERE driver_id = $1 AND environment = $2 AND unlinked_at IS NULL`, [driverId, config.environment]);
   if (rows.length === 0) throw new PayrollError(404, 'this driver is not linked to an Everee worker');
   const client = deps.client ?? createEvereeClient(config);
-  const { data: worker } = await viaEveree(() => client.getWorker(rows[0].external_worker_id ?? rows[0].everee_worker_id));
-  const state = stateOfWorker(worker);
-  const { rows: updated } = await db.query(
-    `UPDATE everee_workers SET onboarding_complete = $2, tin_status = $3, terminated = $4, last_checked_at = now() WHERE id = $1 RETURNING ${LINK_COLUMNS}`,
-    [rows[0].id, state.onboardingComplete, state.tinStatus, state.terminated]
-  );
-  return { link: viewOfLink(updated[0]) };
+  return { link: await viaEveree(() => refreshLinkRow(db, rows[0], client)) };
 };
 
 // ---------- unlink (kept as history, with a reason) ----------
