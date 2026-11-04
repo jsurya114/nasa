@@ -1,3 +1,4 @@
+import usePersistentState from "../../hooks/usePersistentState.js";
 import { useEffect, useMemo, useState, useCallback } from "react";
 import { SkeletonList } from "../../reuse/Skeleton.jsx";
 import { RefreshCw, Wallet, ShieldCheck, Banknote } from "lucide-react";
@@ -23,7 +24,8 @@ export default function PaymentDashboardTable({ penalty }) {
   const { isSuperAdmin } = useSelector((state) => state.admin);
 
   const [currentPage, setCurrentPage] = useState(1);
-  const [itemsPerPage, setItemsPerPage] = useState(10);
+  // Rows per page is kept for when the admin comes back to this page (the dashboard reads the same value when it asks for the table).
+  const [itemsPerPage, setItemsPerPage] = usePersistentState("admin", "dashboard", "perPage", 10);
 
   useEffect(() => {
     if (pagination && pagination.page) {
@@ -122,7 +124,7 @@ export default function PaymentDashboardTable({ penalty }) {
         limit: newLimit
       }));
     }
-  }, [dispatch, filters, showTodayOnly]);
+  }, [dispatch, filters, showTodayOnly, setItemsPerPage]);
 
   const getPageNumbers = () => {
     const totalPages = pagination.totalPages;
