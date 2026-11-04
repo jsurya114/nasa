@@ -27,7 +27,8 @@ export const checkEvereeConnection = async (admin, { env = process.env, fetchImp
 
   try {
     const { data, requestId } = await createEvereeClient(config, fetchImpl ? { fetchImpl } : {}).listPayCodes();
-    const items = Array.isArray(data?.items) ? data.items : [];
+    // The sandbox answers with a plain list; Everee's reference page shows a page object with `items`. Both are read.
+    const items = Array.isArray(data) ? data : Array.isArray(data?.items) ? data.items : [];
     const payCodes = items.slice(0, MAX_PAY_CODES_SHOWN).map((p) => ({
       code: String(p.apiKey ?? ''), label: String(p.displayLabel ?? p.name ?? p.apiKey ?? ''), type: p.payCodeType ? String(p.payCodeType) : null,
     }));
