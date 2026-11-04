@@ -11,10 +11,14 @@
 
 import { calculateStatement, fromCents, toCents } from '../payRuns/payCalculator.js';
 import {
-  assertCityAllowed, getRecoveryLimit, inputsFor, loadClaims, loadEarnings, loadLedger, loadOverRecovered, PayrollError,
+  assertCityAllowed, inputsFor, loadClaims, loadEarnings, loadLedger, loadOverRecovered, PayrollError,
 } from '../payRuns/payRunStore.js';
 import { parseDate } from '../ledger/ledgerRules.js';
 import { getDriverBalances } from './statementStore.js';
+
+// The dashboard's estimate shows what each record asks for this payday, capped only by the pay available, whatever recovery limit the
+// pay runs use. Saved pay runs (draft or approved) keep applying the limit; their own figures are shown once they exist.
+const ESTIMATE_LIMIT = Object.freeze({ type: 'percent_of_available', value: 100 });
 
 const sum = (rows, key) => rows.reduce((total, r) => total + toCents(r[key]), 0);
 
@@ -52,7 +56,7 @@ const workSpan = async (db, driverId, cityId, recoveryLimit) => {
 };
 
 const estimatePayday = async (db, driverId, cityId, rangeFrom, rangeTo) => {
-  const recoveryLimit = await getRecoveryLimit(db);
+  const recoveryLimit = ESTIMATE_LIMIT;
   const { from, to } = rangeFrom && rangeTo ? { from: rangeFrom, to: rangeTo } : await workSpan(db, driverId, cityId, recoveryLimit);
   const base = { id: 0, city_id: cityId, period_start: from, period_end: to, recovery_limit: recoveryLimit };
   const [claims, ledger, over] = await Promise.all([

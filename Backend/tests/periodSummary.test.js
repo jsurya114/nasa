@@ -56,14 +56,13 @@ test('dashboard period summary: this payday, approved or preview, and what is st
       const s = await ask(cityAdmin);
       assert.equal(s.period.status, 'none');
       assert.deepEqual(s.outstanding, { penalties: '340.00', other: '25.00', total: '365.00' }, 'the 25 carrier claim is not a hand-entered penalty');
-      // no recovery limit is set yet, so nothing is deducted automatically, and the page is told why instead of a silent zero
+      // no recovery limit is set, yet the dashboard still shows what each record asks for this payday: 25 claim, 40 in full, 35 of the 50 instalment, capped at the 100 earned
       assert.equal(s.payday.source, 'estimate');
-      assert.equal(s.payday.deducted, '0.00');
-      assert.ok(s.payday.flags.some((f) => f.code === 'recovery_limit_not_set'));
+      assert.deepEqual([s.payday.claimDeductions, s.payday.recoveries, s.payday.deducted], ['25.00', '75.00', '100.00']);
+      assert.ok(!s.payday.flags.some((f) => f.code === 'recovery_limit_not_set'));
       // no dates: the same estimate, over all the driver's closed, unpaid pay up to today
       const noDates = await getDriverPeriodSummary(db, cityAdmin, { driverId: d1, cityId: city });
-      assert.deepEqual([noDates.payday.source, noDates.payday.deducted], ['estimate', '0.00']);
-      assert.ok(noDates.payday.flags.some((f) => f.code === 'recovery_limit_not_set'));
+      assert.deepEqual([noDates.payday.source, noDates.payday.deducted], ['estimate', '100.00']);
     });
 
     let run;
@@ -323,14 +322,17 @@ test('dashboard period summary: this payday, approved or preview, and what is st
       assert.ok(estimate.flags.some((f) => f.code === 'not_yet_due'), 'says why');
     });
 
-    await t.test('with no recovery limit set, the reason is shown even without dates', async () => {
+    await t.test('the estimate does not depend on the recovery limit, set or not', async () => {
       const sc = await freshScenario();
-      await db.query("UPDATE payroll_settings SET value = 'null'::jsonb WHERE key = 'recovery_limit'");
       await sc.row(await sc.day(-2), '100.00');
       await sc.penalty({ amount: '60', recoveryPlan: 'full_next_payday', effectiveDate: await sc.day(-1) });
-      const estimate = await sc.estimate();
-      assert.equal(estimate.deducted, '0.00');
-      assert.ok(estimate.flags.some((f) => f.code === 'recovery_limit_not_set'));
+      for (const limit of [{ type: 'percent_of_available', value: 10 }, null]) {
+        await db.query("UPDATE payroll_settings SET value = $1::jsonb WHERE key = 'recovery_limit'", [JSON.stringify(limit)]);
+        const estimate = await sc.estimate();
+        assert.equal(estimate.deducted, '60.00');
+        assert.equal(estimate.net, '40.00');
+        assert.ok(!estimate.flags.some((f) => f.code === 'recovery_limit_not_set'));
+      }
       await setRecoveryLimit(db, superAdmin, { type: 'percent_of_available', value: 100 }, 'Test limit'); // put the limit back for the tests after this one
     });
 
