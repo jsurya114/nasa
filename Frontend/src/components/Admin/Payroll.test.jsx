@@ -16,8 +16,8 @@ const DETAIL = { ...STATEMENTS[0], gross: "80.50", insurance: "0.00", reimbursem
   lines: [{ id: 1, line_type: "earning", amount: "80.50", journey_date: "2026-11-03", route_name: "Route T" }] };
 
 const DRIVERS = [{ id: 7, name: "Dee Test" }];
-const startServer = async ({ ledgerReplies = [], refundsDue = [], balances = BALANCES, drivers = DRIVERS, payable } = {}) => {
-  const state = { requests: [], posts: [], refundsDue, balances: { ...balances, entries: [...balances.entries], ...(payable !== undefined && { payable }) } };
+const startServer = async ({ ledgerReplies = [], refundsDue = [], balances = BALANCES, drivers = DRIVERS, payable, cityEntries = [] } = {}) => {
+  const state = { requests: [], posts: [], refundsDue, cityEntries: [...cityEntries], balances: { ...balances, entries: [...balances.entries], ...(payable !== undefined && { payable }) } };
   await installServer(async (config) => {
     state.requests.push({ url: config.url, params: config.params });
     if (config.method === "post" && config.url === "/admin/payroll/ledger") {
@@ -30,9 +30,13 @@ const startServer = async ({ ledgerReplies = [], refundsDue = [], balances = BAL
       if (reply.status === 201 && ["advance", "manual_claim"].includes(body.type)) {
         state.balances.entries.unshift({ id: 90 + state.posts.length, entry_type: body.type, direction: "debit", amount: body.amount, reason: body.reason, effective_date: body.effectiveDate,
           exempt: false, recovery_plan: body.recoveryPlan ?? null, installment_amount: body.installmentAmount ?? null, outstanding: body.amount, pay_runs: [] });
+        const who = drivers.find((d) => d.id === body.driverId);
+        state.cityEntries.unshift({ id: 900 + state.posts.length, driver_id: body.driverId, driver_name: who?.name ?? null, entered_by: "Admin Test", entry_type: body.type, direction: "debit",
+          amount: body.amount, outstanding: body.amount, reason: body.reason, claim_type: body.claimType ?? null, effective_date: body.effectiveDate, exempt: false, voided_by: null });
       }
       return reply;
     }
+    if (config.method === "get" && config.url === "/admin/payroll/ledger") return { status: 200, data: { entries: [...state.cityEntries], balances: {} } };
     if (config.url === "/admin/get-admin-cities") return { status: 200, data: { cities: [{ id: 3, job: "Test City" }] } };
     if (config.url === "/admin/dashboard/drivers-by-city") return { status: 200, data: { data: drivers } };
     if (/^\/admin\/payroll\/drivers\/\d+\/balances$/.test(config.url)) return { status: 200, data: { ...state.balances, refundsDue: state.refundsDue } };
@@ -111,6 +115,67 @@ describe("admin Payroll", () => {
     await mount("/admin/payroll?cityId=3&driverId=8");
     expect(await screen.findByText("Add a record")).toBeTruthy();
     expect(screen.getByRole("combobox", { name: "Driver" }).value).toBe("Eli Stone");
+  });
+
+  it("lists the records of every driver of the city with the driver and who entered each, and choosing a driver opens that driver", async () => {
+    const entry = (o) => ({ direction: "debit", exempt: false, voided_by: null, claim_type: null, effective_date: "2026-11-03", ...o });
+    const cityEntries = [
+      entry({ id: 12, driver_id: 8, driver_name: "Eli Stone", entered_by: "Ben Boss", entry_type: "manual_claim", claim_type: "Lost", reason: "Parcel gone", amount: "40.00", outstanding: "40.00" }),
+      entry({ id: 11, driver_id: 7, driver_name: "Dee Test", entered_by: "Asha Admin", entry_type: "advance", reason: "Cash in hand", amount: "100.00", outstanding: "60.00" }),
+      entry({ id: 10, driver_id: 7, driver_name: "Dee Test", entered_by: "Asha Admin", entry_type: "expense", reason: "Voided one", amount: "5.00", outstanding: "5.00", voided_by: 99 }),
+    ];
+    await startServer({ drivers: [{ id: 7, name: "Dee Test" }, { id: 8, name: "Eli Stone" }], cityEntries });
+    await mount();
+    fireEvent.change(await screen.findByLabelText("City"), { target: { name: "city", value: "3" } });
+    const rows = await screen.findAllByTestId("city-record");
+    expect(rows).toHaveLength(2); // the voided entry is not listed
+    expect(rows[0].textContent).toContain("Eli Stone");
+    expect(rows[0].textContent).toContain("Penalty");
+    expect(rows[0].textContent).toContain("Lost · Parcel gone");
+    expect(rows[0].textContent).toContain("Ben Boss");
+    expect(rows[1].textContent).toContain("Dee Test");
+    expect(rows[1].textContent).toContain("Asha Admin");
+    expect(rows[1].textContent).toContain("$100.00");
+    expect(rows[1].textContent).toContain("$60.00");
+    expect(screen.getByText("Choose a city and a driver.")).toBeTruthy(); // no driver chosen yet, but the table is already there
+    fireEvent.click(within(rows[0]).getByRole("button", { name: "Eli Stone" }));
+    expect(await screen.findByText("Add a record")).toBeTruthy();
+    expect(screen.getByRole("combobox", { name: "Driver" }).value).toBe("Eli Stone");
+  });
+
+  it("the city's table can be searched by driver, and says so when nothing matches or nothing was entered", async () => {
+    const entry = (o) => ({ direction: "debit", exempt: false, voided_by: null, claim_type: null, effective_date: "2026-11-03", entry_type: "advance", amount: "10.00", outstanding: "10.00", ...o });
+    await startServer({ cityEntries: [entry({ id: 1, driver_id: 7, driver_name: "Dee Test", entered_by: "Asha", reason: "a" }), entry({ id: 2, driver_id: 8, driver_name: "Eli Stone", entered_by: "Ben", reason: "b" })] });
+    await mount();
+    fireEvent.change(await screen.findByLabelText("City"), { target: { name: "city", value: "3" } });
+    expect(await screen.findAllByTestId("city-record")).toHaveLength(2);
+    fireEvent.change(screen.getByLabelText("Search driver"), { target: { value: "eli" } });
+    await waitFor(() => expect(screen.getAllByTestId("city-record")).toHaveLength(1));
+    fireEvent.change(screen.getByLabelText("Search driver"), { target: { value: "zzz" } });
+    expect(await screen.findByText("No record matches that driver.")).toBeTruthy();
+    cleanup();
+    await startServer();
+    await mount();
+    fireEvent.change(await screen.findByLabelText("City"), { target: { name: "city", value: "3" } });
+    expect(await screen.findByText("No records have been entered for this city yet.")).toBeTruthy();
+  });
+
+  it("a record added for a driver shows in the city's table straight away, with the admin who entered it", async () => {
+    const server = await startServer({ payable: "500.00" });
+    await mount();
+    await chooseDriver();
+    expect(screen.queryAllByTestId("city-record")).toHaveLength(0);
+    fill("Type", "advance");
+    fill("Amount (USD)", "50");
+    fill("Reason", "Cash in hand");
+    fireEvent.click(screen.getByLabelText(/Already paid out/));
+    fireEvent.click(screen.getByRole("button", { name: "Add record" }));
+    await waitFor(() => expect(server.posts).toHaveLength(1));
+    const [row] = await screen.findAllByTestId("city-record");
+    expect(row.textContent).toContain("Dee Test");
+    expect(row.textContent).toContain("Advance");
+    expect(row.textContent).toContain("Cash in hand");
+    expect(row.textContent).toContain("Admin Test");
   });
 
   it("shows two cards only, with penalties apart from other debts, and a saved record listed on the left", async () => {
