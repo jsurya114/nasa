@@ -110,6 +110,22 @@ describe("driver My pay", () => {
     expect(screen.getByText("Instalments of $50.00")).toBeTruthy();
   });
 
+  it("brings the driver back to the statement they had open, and Back clears it", async () => {
+    await startServer();
+    await mount();
+    fireEvent.click(await screen.findByRole("button", { name: /View statement\s*2026-11-01/ }));
+    expect(await screen.findByText("Still owed after this payday")).toBeTruthy();
+    cleanup(); // the driver opens another page and returns
+    await mount();
+    expect(await screen.findByText("Still owed after this payday")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /Back to pay statements/ }));
+    expect(await screen.findByText("Pay statements")).toBeTruthy();
+    cleanup();
+    await mount();
+    expect(await screen.findByText("Pay statements")).toBeTruthy();
+    expect(screen.queryByText("Still owed after this payday")).toBeNull();
+  });
+
   it("opens a statement with each source: the carrier's charge next to what was deducted, and the advance's reason", async () => {
     await startServer();
     await mount();
