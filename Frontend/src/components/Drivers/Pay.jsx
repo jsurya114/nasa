@@ -1,4 +1,5 @@
-import React, { useState } from "react";
+import usePersistentState from "../../hooks/usePersistentState.js";
+import React from "react";
 import Header from "../../reuse/driver/Header";
 import Nav from "../../reuse/driver/Nav";
 import { SkeletonList } from "../../reuse/Skeleton.jsx";
@@ -12,7 +13,8 @@ import BalanceSummary from "./pay/BalanceSummary.jsx";
 export default function Pay() {
   const { t } = useTranslation();
   const { statements, balances, status, reload } = usePayStatements();
-  const [openId, setOpenId] = useState(null);
+  // The statement the driver had open is still open when they come back.
+  const [openId, setOpenId] = usePersistentState("driver", "pay", "openId", null);
 
   let body;
   if (openId) {

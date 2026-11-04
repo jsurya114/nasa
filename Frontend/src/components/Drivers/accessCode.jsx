@@ -40,8 +40,9 @@ export default function DriverAccessCodePage() {
   const [zipCode, setZipCode] = useState("");
   const [errors, setErrors] = useState({});
   const [touched, setTouched] = useState({});
-  const [localSearch, setLocalSearch] = useState("");
-  const [localZipCodeFilter, setLocalZipCodeFilter] = useState("");
+  // What was searched stays in Redux while the driver is on other pages; the boxes start from it.
+  const [localSearch, setLocalSearch] = useState(searchTerm ?? "");
+  const [localZipCodeFilter, setLocalZipCodeFilter] = useState(zipCodeFilter ?? "");
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [selectedAccessCode, setSelectedAccessCode] = useState(null);
   const [newImages, setNewImages] = useState([]);
