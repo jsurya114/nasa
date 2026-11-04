@@ -136,6 +136,7 @@ export const lookupDriver = async (db, admin, { cityId, driverId }, deps = {}) =
 const NOT_LINKABLE = {
   no_match: 'no existing Everee worker has this driver\'s email or phone; nothing was linked',
   ambiguous: 'more than one Everee worker matches this driver; nothing was linked',
+  conflict: 'a worker matches on one of email or phone but the other is different; it needs to be confirmed with the client; nothing was linked',
   blocked: 'this driver is blocked; nothing was linked',
 };
 

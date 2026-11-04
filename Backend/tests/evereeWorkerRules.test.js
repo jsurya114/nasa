@@ -77,3 +77,26 @@ test('a worker is ready to be paid only when onboarding is complete, the tax ID 
   assert.equal(readyToPay({ onboardingComplete: true, tinStatus: 'VERIFICATION_FAILED', terminated: false }), false);
   assert.equal(readyToPay({ onboardingComplete: true, tinStatus: 'VERIFIED', terminated: true }), false);
 });
+
+test('one field matching while the other differs is a conflict, never a clean match', () => {
+  const samePhoneOtherEmail = worker({ email: 'relative@example.com' });
+  const asked = matchWorkers(driver, [samePhoneOtherEmail]);
+  assert.equal(asked.result, 'conflict');
+  assert.deepEqual([asked.matches[0].matchedOn, asked.matches[0].conflicts], [['phone'], ['email']]);
+  const sameEmailOtherPhone = worker({ phoneNumber: '5550000000' });
+  assert.equal(matchWorkers(driver, [sameEmailOtherPhone]).result, 'conflict');
+  assert.deepEqual(matchWorkers(driver, [sameEmailOtherPhone]).matches[0].conflicts, ['phone']);
+});
+
+test('a field that is missing on one side is not a conflict', () => {
+  assert.equal(matchWorkers(driver, [worker({ phoneNumber: null })]).result, 'match'); // the worker has no phone
+  assert.equal(matchWorkers(driver, [worker({ email: null })]).result, 'match'); // the worker has no email
+  assert.equal(matchWorkers({ email: null, phone: '5551230001' }, [worker({ email: 'any@example.com' })]).result, 'match'); // the driver has no email
+  assert.equal(matchWorkers({ email: 'alice@example.com', phone: null }, [worker({ phoneNumber: '5550000000' })]).result, 'match'); // the driver has no phone
+});
+
+test('a conflict next to another match is ambiguous', () => {
+  const clean = worker({ workerId: 'WA' });
+  const conflicting = worker({ workerId: 'WB', email: 'relative@example.com' });
+  assert.equal(matchWorkers(driver, [clean, conflicting]).result, 'ambiguous');
+});

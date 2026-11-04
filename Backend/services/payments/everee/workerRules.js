@@ -55,14 +55,20 @@ export const maskPhone = (phone) => {
 
 // Everee's search is a loose text search over names, email, phone and IDs. Only a worker whose email or phone equals the driver's
 // counts; the name is never looked at. found: the search results (all searches for this driver together).
-// Returns { result: 'no_match' | 'match' | 'ambiguous', matches: [...] }. A worker found twice (by email and by phone) is one match.
-// If a search returned the most Everee gives, the list may be incomplete, so it is never called a clean match.
+// Returns { result: 'no_match' | 'match' | 'ambiguous' | 'conflict', matches: [...] }. A worker found twice (by email and by phone) is one match.
+// - 'conflict': one worker matches on one field but the other field is present on both sides and different (the same phone with another
+//   email could be a relative; the same email with another phone could be an old number). It is shown for a person to confirm, but it is
+//   never linked automatically.
+// - If a search returned the most Everee gives, the list may be incomplete, so it is never called a clean match.
 export const matchWorkers = ({ email, phone }, found, { truncated = false } = {}) => {
   const byWorker = new Map();
   for (const worker of found) {
+    const workerEmail = normalizeEmail(worker.email);
+    const workerPhone = normalizePhone(worker.phoneNumber);
     const matchedOn = [];
-    if (email && normalizeEmail(worker.email) === email) matchedOn.push('email');
-    if (phone && normalizePhone(worker.phoneNumber) === phone) matchedOn.push('phone');
+    const conflicts = [];
+    if (email && workerEmail) (workerEmail === email ? matchedOn : conflicts).push('email');
+    if (phone && workerPhone) (workerPhone === phone ? matchedOn : conflicts).push('phone');
     if (matchedOn.length === 0 || worker.workerId === undefined || worker.workerId === null) continue;
     const key = String(worker.workerId);
     const seen = byWorker.get(key);
@@ -74,11 +80,13 @@ export const matchWorkers = ({ email, phone }, found, { truncated = false } = {}
       maskedEmail: maskEmail(worker.email),
       maskedPhone: maskPhone(worker.phoneNumber),
       matchedOn: [...new Set([...(seen?.matchedOn ?? []), ...matchedOn])],
+      conflicts: [...new Set([...(seen?.conflicts ?? []), ...conflicts])],
     });
   }
   const matches = [...byWorker.values()];
   if (matches.length === 0) return { result: truncated ? 'ambiguous' : 'no_match', matches };
-  return { result: matches.length === 1 && !truncated ? 'match' : 'ambiguous', matches };
+  if (matches.length > 1 || truncated) return { result: 'ambiguous', matches };
+  return { result: matches[0].conflicts.length > 0 ? 'conflict' : 'match', matches };
 };
 
 export const linkSourceOf = (matchedOn) => (matchedOn.includes('email') && matchedOn.includes('phone') ? 'matched_email_and_phone' : matchedOn.includes('email') ? 'matched_email' : 'matched_phone');

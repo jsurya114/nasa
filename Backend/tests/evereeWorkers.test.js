@@ -125,6 +125,14 @@ test('everee workers: lookup by email or phone only, link only from one exact ma
       assert.deepEqual(everee.state.searches, [], 'no call to Everee for a driver with a data problem');
     });
 
+    await t.test('a worker that matches on the phone but has another email is a conflict: shown, never linked', async () => {
+      const result = await ask(superAdmin, sharesPhone); // Frank has Alice's phone but his own email
+      assert.equal(result.result, 'conflict');
+      assert.deepEqual([result.matches[0].workerId, result.matches[0].matchedOn, result.matches[0].conflicts], ['W-ALICE', ['phone'], ['email']]);
+      await assert.rejects(linkDriver(db, superAdmin, { cityId: city, driverId: sharesPhone, workerId: 'W-ALICE' }, deps()), { status: 409, message: /needs to be confirmed/ });
+      assert.deepEqual(await linkRows(), []);
+    });
+
     await t.test('a link is saved only from one exact match with the worker\'s ID, by a super admin', async () => {
       await assert.rejects(linkDriver(db, cityAdmin, { cityId: city, driverId: match, workerId: 'W-ALICE' }, deps()), { status: 403 });
       await assert.rejects(linkDriver(db, superAdmin, { cityId: city, driverId: match, workerId: 'W-DAN-1' }, deps()), { status: 409, message: /not the worker found/ });

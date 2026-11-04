@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readEvereeConfig } from '../services/payments/everee/evereeConfig.js';
 import { createEvereeClient } from '../services/payments/everee/evereeClient.js';
+import logger from '../utils/logger.js';
 
 const config = readEvereeConfig({ EVEREE_API_TOKEN: 'tsk_test_ABCDEF123456', EVEREE_TENANT_ID: '4321' });
 const fakeFetch = () => {
@@ -26,5 +27,26 @@ test('the worker calls use the documented paths, encode what is sent, and add th
   for (const call of f.calls) {
     assert.equal(call.options.headers['x-everee-tenant-id'], '4321');
     assert.ok(call.options.headers.Authorization.startsWith('Basic '));
+  }
+});
+
+test('a failed worker search never writes the driver\'s email or phone to the log', async () => {
+  const logged = [];
+  const original = logger.warn;
+  logger.warn = (...args) => logged.push(JSON.stringify(args));
+  try {
+    const refused = async () => ({ ok: false, status: 422, headers: { get: () => 'req-9' }, json: async () => ({ errorMessage: 'no' }) });
+    const down = async () => { throw new TypeError('fetch failed'); };
+    for (const fetchImpl of [refused, down]) {
+      await assert.rejects(createEvereeClient(config, { fetchImpl }).searchWorkers('someone@example.com'));
+      await assert.rejects(createEvereeClient(config, { fetchImpl }).searchWorkers('5551230001'));
+    }
+  } finally {
+    logger.warn = original;
+  }
+  assert.equal(logged.length, 4);
+  for (const line of logged) {
+    assert.ok(!line.includes('someone@example.com') && !line.includes('5551230001') && !line.includes('term='), `the query string is not logged: ${line}`);
+    assert.ok(line.includes('/integration/v1/workers/search'), 'the path without the query is');
   }
 });
