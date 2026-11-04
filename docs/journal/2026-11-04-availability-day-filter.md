@@ -13,4 +13,6 @@
 
 **Tested.** Vitest with a fake server that filters like the real one (1 test): the whole week shows with no day; choosing Tuesday lists only the drivers available on Tuesday and shows only Tue; Edit shows all days, Cancel returns to Tue; Monday lists only Monday's drivers; All Days restores everyone and the week. Showing all days always fails it, and showing one day while editing fails it (checked). Frontend suite passes (232 tests), the changed files are lint-clean.
 
-**Not tested.** Not looked at in a browser; the phone cards were not looked at either. The "Unavailable on <day>" status choice combined with a day still returns nothing (the server only returns that day's available drivers); that is how it already worked.
+**Alignment check (real browser, made-up data).** With one day shown, the day button sat at the left of the wide column instead of under the centred day heading (a flex button is not centred by `text-center`). Both the desktop cell and the phone card button now have `mx-auto`. Measured after the change: at 1440 px the button centres equal the heading centre for one day and for all seven days, and at 390 px the phone card button is centred with no sideways scroll.
+
+**Not tested.** Not looked at on the real data or the live page (the preview used a made-up list with the real component and styles); Edit mode was not looked at in the browser. The "Unavailable on <day>" status choice combined with a day still returns nothing (the server only returns that day's available drivers); that is how it already worked.

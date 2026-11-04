@@ -762,7 +762,7 @@ export default function AdminDriverAvailability() {
                                   <button
                                     onClick={() => isEditing && toggleDay(day)}
                                     disabled={!isEditing || isLocked}
-                                    className={`w-10 h-10 rounded-full flex items-center justify-center font-bold transition-all ${isAvailable
+                                    className={`w-10 h-10 mx-auto rounded-full flex items-center justify-center font-bold transition-all ${isAvailable
                                       ? 'bg-green-500 text-white hover:bg-green-600'
                                       : 'bg-gray-200 text-gray-500 hover:bg-gray-300'
                                       } ${!isEditing || isLocked
@@ -887,7 +887,7 @@ export default function AdminDriverAvailability() {
                               <button
                                 onClick={() => isEditing && toggleDay(day)}
                                 disabled={!isEditing || isLocked}
-                                className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm transition-all ${isAvailable
+                                className={`w-10 h-10 mx-auto rounded-full flex items-center justify-center font-bold text-sm transition-all ${isAvailable
                                   ? 'bg-green-500 text-white'
                                   : 'bg-gray-200 text-gray-500'
                                   } ${!isEditing || isLocked
