@@ -1,3 +1,4 @@
+import usePersistentState from "../../hooks/usePersistentState.js";
 import React, { useState, useEffect } from 'react';
 import Header from '../../reuse/Header';
 import Nav from '../../reuse/Nav';
@@ -22,7 +23,7 @@ const AddUsers = () => {
   const { error, success } = useSelector((state) => state.users);
   const { isSuperAdmin, admin } = useSelector((state) => state.admin);
 
-  const [activeTab, setActiveTab] = useState("drivers");
+  const [activeTab, setActiveTab] = usePersistentState("admin", "users", "tab", "drivers");
   const [editDriver, setEditDriver] = useState(null);
   const [editAdmin, setEditAdmin] = useState(null);
 

@@ -1,3 +1,4 @@
+import usePersistentState from "../../hooks/usePersistentState.js";
 import React, { useEffect, useState, useCallback, useMemo } from "react";
 import { SkeletonTableRows } from "../../reuse/Skeleton.jsx";
 import { useDispatch, useSelector } from "react-redux";
@@ -29,8 +30,8 @@ export default function RoutesForm() {
   const [editingId, setEditingId] = useState(null);
   const [submitError, setSubmitError] = useState(null);
   const [submitSuccess] = useState(null);
-  const [searchTerm, setSearchTerm] = useState("");
-  const [cityFilter, setCityFilter] = useState(""); // ✅ NEW: City filter state
+  const [searchTerm, setSearchTerm] = usePersistentState("admin", "routes", "search", "");
+  const [cityFilter, setCityFilter] = usePersistentState("admin", "routes", "city", ""); // ✅ NEW: City filter state
 
   // Fetch assigned cities (role-based) - using fetchPaginatedJobs with enabled filter
   useEffect(() => {
@@ -175,13 +176,13 @@ export default function RoutesForm() {
   // ✅ NEW: Handle city filter change
   const handleCityFilterChange = useCallback((e) => {
     setCityFilter(e.target.value);
-  }, []);
+  }, [setCityFilter]);
 
   // ✅ NEW: Clear all filters
   const handleClearFilters = useCallback(() => {
     setSearchTerm("");
     setCityFilter("");
-  }, []);
+  }, [setSearchTerm, setCityFilter]);
 
   // Memoized price fields configuration
   const priceFields = useMemo(() => [

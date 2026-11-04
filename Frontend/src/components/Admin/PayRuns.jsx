@@ -1,3 +1,4 @@
+import usePersistentState from "../../hooks/usePersistentState.js";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useSelector } from "react-redux";
 import { ChevronRight } from "lucide-react";
@@ -16,7 +17,7 @@ const selectClass = "mt-1 min-h-11 w-full rounded-xl border border-line bg-white
 export default function PayRuns() {
   const isSuperAdmin = useSelector((state) => state.admin?.isSuperAdmin === true);
   const [cities, setCities] = useState([]);
-  const [cityId, setCityId] = useState("");
+  const [cityId, setCityId] = usePersistentState("admin", "pay-runs", "cityId", "");
   const [runs, setRuns] = useState({ status: "idle", list: [] });
   const [detail, setDetail] = useState(null);
   // Every city change starts a new "epoch". An answer that arrives later is used only if it belongs to the same epoch
@@ -36,6 +37,11 @@ export default function PayRuns() {
   useEffect(() => {
     axios.get("/admin/get-admin-cities").then(({ data }) => setCities(data?.cities ?? [])).catch(() => setCities([]));
   }, []);
+
+  // A city kept from earlier that this admin can no longer use is dropped, so nothing is asked of the server for it.
+  useEffect(() => {
+    if (cities.length > 0 && cityId && !cities.some((c) => String(c.id) === String(cityId))) setCityId("");
+  }, [cities, cityId, setCityId]);
 
   const loadRuns = useCallback(async (signal) => {
     if (!cityId) return;

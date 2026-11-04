@@ -54,7 +54,7 @@ export default function AddAccessCodePage() {
   const [cityId, setCityId] = useState("");
   const [errors, setErrors] = useState({});
   const [touched, setTouched] = useState({});
-  const [localSearch, setLocalSearch] = useState("");
+  const [localSearch, setLocalSearch] = useState(searchTerm ?? "");
   const [localZipCodeFilter] = useState("");
   const [images, setImages] = useState([]);
   const [imageError, setImageError] = useState("");

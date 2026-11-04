@@ -1,3 +1,4 @@
+import usePersistentState from "../../hooks/usePersistentState.js";
 import React, { useEffect, useState, useCallback, useMemo, useRef } from "react";
 import { SkeletonList } from "../../reuse/Skeleton.jsx";
 import { TriangleAlert, Info } from "lucide-react";
@@ -130,9 +131,9 @@ export default function Jobs() {
   const [errors, setErrors] = useState({});
   const [editingId, setEditingId] = useState(null);
 
-  const [search, setSearch] = useState('');
+  const [search, setSearch] = usePersistentState("admin", "jobs", "search", '');
   const [currentPage, setCurrentPage] = useState(1);
-  const [filter, setFilter] = useState(FILTER.ALL);
+  const [filter, setFilter] = usePersistentState("admin", "jobs", "filter", FILTER.ALL);
   const [showDropdown, setShowDropdown] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
 

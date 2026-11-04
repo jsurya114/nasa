@@ -1,3 +1,4 @@
+import usePersistentState from "../../hooks/usePersistentState.js";
 import React, { useState, useCallback, useRef } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import {
@@ -19,7 +20,7 @@ import UploadResultSummary from "./UploadResultSummary";
 
 const DoubleStop = () => {
   const dispatch = useDispatch();
-  const [activeView, setActiveView] = useState("weekly");
+  const [activeView, setActiveView] = usePersistentState("admin", "double-stop", "view", "weekly");
   const [selectedDate, setSelectedDate] = useState(
     new Date().toLocaleDateString("en-CA")
   );

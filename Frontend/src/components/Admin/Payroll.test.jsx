@@ -50,7 +50,8 @@ const mount = async (route = "/") => {
   const adminReducer = (await import("../../redux/slice/admin/adminSlice.js")).default;
   const languageReducer = (await import("../../redux/slice/languageSlice.js")).default;
   const { default: Payroll } = await import("./Payroll.jsx");
-  const store = configureStore({ reducer: { admin: adminReducer, language: languageReducer } });
+  // A signed-in admin: what a page remembers is kept per person.
+  const store = configureStore({ reducer: { admin: adminReducer, language: languageReducer }, preloadedState: { admin: { ...adminReducer(undefined, { type: "init" }), admin: { id: 1, role: "admin" } } } });
   return render(<Provider store={store}><MemoryRouter initialEntries={[route]}><Payroll /></MemoryRouter></Provider>);
 };
 
@@ -92,8 +93,24 @@ describe("admin Payroll", () => {
     expect(screen.getByRole("combobox", { name: "Driver" }).value).toBe("Dee Test");
     expect(server.requests.some((r) => r.url === "/admin/payroll/drivers/7/balances" && r.params?.cityId === "3")).toBe(true);
     cleanup();
+    sessionStorage.clear(); // nothing remembered, so the bad link leaves the page empty
     await mount("/admin/payroll?cityId=3;DROP&driverId=abc");
     expect(await screen.findByText("Choose a city and a driver.")).toBeTruthy();
+  });
+
+  it("remembers the city and driver when the admin leaves the page and comes back, and a dashboard link wins over it", async () => {
+    await startServer({ drivers: [{ id: 7, name: "Dee Test" }, { id: 8, name: "Eli Stone" }] });
+    await mount();
+    await chooseDriver("Dee Test");
+    cleanup(); // the admin goes to another page
+    await mount();
+    expect(await screen.findByText("Add a record")).toBeTruthy();
+    expect(screen.getByLabelText("City").value).toBe("3");
+    expect(screen.getByRole("combobox", { name: "Driver" }).value).toBe("Dee Test");
+    cleanup();
+    await mount("/admin/payroll?cityId=3&driverId=8");
+    expect(await screen.findByText("Add a record")).toBeTruthy();
+    expect(screen.getByRole("combobox", { name: "Driver" }).value).toBe("Eli Stone");
   });
 
   it("shows two cards only, with penalties apart from other debts, and a saved record listed on the left", async () => {

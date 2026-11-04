@@ -1,3 +1,4 @@
+import usePersistentState from "../../hooks/usePersistentState.js";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useSelector } from "react-redux";
 import { useSearchParams } from "react-router-dom";
@@ -49,9 +50,12 @@ export default function Payroll() {
   // The dashboard links here with ?cityId=&driverId= (#166); only digits are used, the server checks access either way.
   const [params] = useSearchParams();
   const fromLink = (key) => (/^\d{1,9}$/.test(params.get(key) ?? "") ? params.get(key) : "");
-  const [cityId, setCityId] = useState(() => fromLink("cityId"));
+  // The last city and driver chosen are kept for when the admin comes back to this page; a link from the dashboard wins over them.
+  const linked = Boolean(fromLink("cityId"));
+  const [cityId, setCityId] = usePersistentState("admin", "payroll", "cityId", fromLink("cityId"), { ignoreSaved: linked });
+  const [savedDriver, setSavedDriver] = usePersistentState("admin", "payroll", "driverId", "", { ignoreSaved: linked });
   const [driverId, setDriverId] = useState("");
-  const linkedDriver = useRef(fromLink("driverId")); // used once, when that city's drivers have loaded
+  const linkedDriver = useRef(fromLink("driverId") || String(savedDriver)); // used once, when that city's drivers have loaded
   const [openId, setOpenId] = useState(null);
   const [prefill, setPrefill] = useState(null); // a refund chosen from "Refunds due"
   const { isSuperAdmin } = useSelector((state) => state.admin);
@@ -81,6 +85,11 @@ export default function Payroll() {
     setPrefill(null);
   }, [cityId, driverId]);
 
+  // A city kept from earlier that this admin can no longer use is dropped, so nothing is asked of the server for it.
+  useEffect(() => {
+    if (cities.length > 0 && cityId && !cities.some((c) => String(c.id) === String(cityId))) setCityId("");
+  }, [cities, cityId, setCityId]);
+
   const needsReview = (payroll.balances?.entries ?? [])
     .filter((e) => e.direction === "debit" && !e.exempt && !e.recovery_plan && Number(e.outstanding) > 0);
 
@@ -98,7 +107,7 @@ export default function Payroll() {
                 <label htmlFor="payroll-city" className="block text-sm font-medium text-gray-700">City</label>
                 <InfoTip label="city" text="The city the driver works in. You only see the cities you manage." />
               </div>
-              <select id="payroll-city" className={selectClass} value={cityId} onChange={(e) => setCityId(e.target.value)}>
+              <select id="payroll-city" className={selectClass} value={cityId} onChange={(e) => { setCityId(e.target.value); setSavedDriver(""); }}>
                 <option value="">Choose a city</option>
                 {cities.map((c) => <option key={c.id} value={c.id}>{c.job}</option>)}
               </select>
@@ -108,7 +117,7 @@ export default function Payroll() {
               info="Type part of a name to find the driver. Their records, balances and statements show below."
               options={drivers}
               value={driverId}
-              onChange={setDriverId}
+              onChange={(id) => { setDriverId(id); setSavedDriver(id ? String(id) : ""); }}
               disabled={!cityId}
               placeholder={cityId ? (drivers.length === 0 ? "No drivers in this city" : "Search for a driver") : "Choose a city first"}
               emptyText="No driver matches"

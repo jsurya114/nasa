@@ -7,6 +7,7 @@
 // keeps only the short-lived access token, in memory, and never writes either token to localStorage.
 
 import { clearDrafts } from "../utils/formDrafts";
+import { clearViewState } from "../utils/viewState";
 import { callNative, isNativeShell } from "./bridge";
 
 const AREAS = ["admin", "driver"];
@@ -172,6 +173,7 @@ const runSignOutHooks = (area, accessToken) => {
 // caller can tell the person that the phone may still hold a session.
 export const clearSession = (area) => {
   clearDrafts(area);
+  clearViewState(area);
   if (!isNativeShell()) {
     localStorage.removeItem(`${area}Token`);
     localStorage.removeItem(`${area}RefreshToken`);

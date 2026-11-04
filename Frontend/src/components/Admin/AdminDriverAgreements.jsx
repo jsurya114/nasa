@@ -1,3 +1,4 @@
+import usePersistentState from "../../hooks/usePersistentState.js";
 import React, { useEffect, useState } from 'react';
 import { FileText } from "lucide-react";
 import axios from '../../redux/slice/axiosInstance';
@@ -182,7 +183,7 @@ const AgreementModal = ({ isOpen, onClose, driverName }) => {
 const AdminDriverAgreements = () => {
   const [drivers, setDrivers] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [searchQuery, setSearchQuery] = useState('');
+  const [searchQuery, setSearchQuery] = usePersistentState("admin", "agreements", "search", '');
   const [modalOpen, setModalOpen] = useState(false);
   const [selectedDriverName, setSelectedDriverName] = useState('');
 

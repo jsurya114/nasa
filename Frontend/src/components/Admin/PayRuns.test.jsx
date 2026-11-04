@@ -51,7 +51,7 @@ const mount = async ({ superAdmin = false } = {}) => {
   ]);
   const languageReducer = (await import("../../redux/slice/languageSlice.js")).default;
   const { default: PayRuns } = await import("./PayRuns.jsx");
-  const store = configureStore({ reducer: { admin: (s = { isSuperAdmin: superAdmin }) => s, language: languageReducer } });
+  const store = configureStore({ reducer: { admin: (s = { isSuperAdmin: superAdmin, admin: { id: 1 } }) => s, language: languageReducer } });
   return render(<Provider store={store}><MemoryRouter><PayRuns /></MemoryRouter></Provider>);
 };
 
@@ -93,6 +93,16 @@ describe("admin Pay runs", () => {
     expect(confirm).toHaveBeenCalledTimes(1);
     expect(posts(server, "/17/finalize")).toHaveLength(1);
     expect(screen.queryByRole("button", { name: "Void run" })).toBeNull(); // a city admin cannot void
+  });
+
+  it("keeps the chosen city when the admin leaves the page and comes back", async () => {
+    await startServer();
+    await mount();
+    await chooseCity();
+    cleanup(); // the admin goes to another page
+    await mount();
+    await screen.findByRole("option", { name: "Test City" });
+    expect(screen.getByLabelText("City").value).toBe("3");
   });
 
   it("will not discard without a reason, and sends the reason when given", async () => {
