@@ -1,10 +1,9 @@
 import { AdminDashboardQueries } from "../../services/admin/dashboardQueries.js";
 import { WeeklyExcelQueries } from "../../services/admin/weeklyExcelQueries.js";
 import HttpStatus from "../../utils/statusCodes.js";
-import { parseClientDate, resolveToday } from "../../utils/businessDate.js";
+import { resolveToday } from "../../utils/businessDate.js";
 import logger from "../../utils/logger.js";
 import { UploadBusyError } from "../../services/admin/uploadSafety.js";
-import { notifyDriverPaid } from "../../services/push/pushEvents.js";
 import {
   CityAccessError,
   assertJobsAllowed,
@@ -221,70 +220,11 @@ export const updatePaymentData = async (req, res) => {
 };
 
 //  UPDATED: Pay journeys with closed = true, supports separate daily/weekly payments
-export const payDriver = async (req, res) => {
-  try {
-    const { driverName, startDate, endDate, dataType, job, today } = req.body;
-    const { id, role } = req.user;
-
-    if (!driverName) {
-      return res.status(HttpStatus.BAD_REQUEST).json({
-        success: false,
-        message: "Driver name is required"
-      });
-    }
-
-    // A city admin may pay only journeys in their assigned cities
-    let allowedJobs = null;
-    if (isCityLimited(role)) {
-      allowedJobs = await getAllowedJobs(id);
-      if (job && job !== "All") {
-        assertJobsAllowed([job], allowedJobs, "You can only mark payments as paid for your assigned cities");
-      }
-    }
-
-    //  Update only journeys where closed = true, optionally filtered by dataType and city (job)
-    const result = await AdminDashboardQueries.updateDriverPaymentStatus(
-      driverName,
-      startDate,
-      endDate,
-      dataType || null,
-      job || null,
-      parseClientDate(today),
-      allowedJobs
-    );
-
-    // Generate appropriate message based on dataType
-    const paymentTypeLabel = dataType === 'daily' ? 'daily (SPEEDX)' :
-      dataType === 'weekly' ? 'weekly (GOFO)' : 'all';
-
-    //  Check if any rows were updated
-    if (result.rowCount === 0) {
-      return res.status(HttpStatus.OK).json({
-        success: true,
-        message: `No closed ${paymentTypeLabel} journeys found to mark as paid for ${driverName}`,
-        rowsUpdated: 0,
-        warning: "Only journeys with closed status 'Yes' can be marked as paid"
-      });
-    }
-
-    notifyDriverPaid(driverName);
-
-    return res.status(HttpStatus.OK).json({
-      success: true,
-      message: `Payment marked as paid for ${result.rowCount} closed ${paymentTypeLabel} journey(s) for ${driverName}`,
-      rowsUpdated: result.rowCount
-    });
-  } catch (error) {
-    if (error instanceof CityAccessError) {
-      return res.status(HttpStatus.FORBIDDEN).json({ success: false, message: error.message });
-    }
-    console.error("Error in payDriver:", error);
-    return res.status(HttpStatus.INTERNAL_SERVER_ERROR).json({
-      success: false,
-      message: error.message || "Failed to update payment status"
-    });
-  }
-};
+// Older clients must use the approved-run workflow so a paid flag cannot bypass its statement or audit record.
+export const payDriver = (_req, res) => res.status(HttpStatus.CONFLICT).json({
+  success: false,
+  message: "Prepare and approve a pay run, then record payment from Driver payments or the approved run.",
+});
 
 export const updateWeeklyTempDataToDashboard = async (req, res) => {
   try {

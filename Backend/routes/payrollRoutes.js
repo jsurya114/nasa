@@ -8,6 +8,7 @@ import {
   getPayrollSettings, getPayRun, getPayRuns, postDiscard, postFinalize, postPayRun, postVoid, putRecoveryLimit,
 } from '../controllers/payroll/payRunController.js';
 import { getBatchReview } from '../controllers/payroll/payBatchController.js';
+import { getPaymentRuns, getPaymentReview, postPaymentRecord } from '../controllers/payroll/paymentRecordController.js';
 import { getStatus as getEvereeStatus, postCheck as postEvereeCheck } from '../controllers/payroll/evereeController.js';
 import { getAdminStatement, getDriverBalanceList, getDriverDashboardSummary, getDriverStatementList } from '../controllers/payroll/statementController.js';
 
@@ -41,6 +42,9 @@ router.get('/everee/status', getEvereeStatus);
 router.post('/everee/check', postEvereeCheck);
 // City payment batch review (#144): read-only; says who could be paid and why not.
 router.get('/runs/:runId/batch-review', getBatchReview);
+router.get('/payments/runs', getPaymentRuns);
+router.get('/payments/runs/:runId', getPaymentReview);
+router.post('/payments/runs/:runId/record', postPaymentRecord);
 
 // Read-only statements and balances for one driver of the admin's cities (#145).
 router.get('/statements/:statementId', getAdminStatement);
