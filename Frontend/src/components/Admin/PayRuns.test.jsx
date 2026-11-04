@@ -45,14 +45,14 @@ const startServer = async ({ net, held = [], cityType = "DAILY" } = {}) => {
   return state;
 };
 
-const mount = async ({ superAdmin = false } = {}) => {
+const mount = async ({ superAdmin = false, route = "/" } = {}) => {
   const [{ configureStore }, { Provider }, { MemoryRouter }] = await Promise.all([
     import("@reduxjs/toolkit"), import("react-redux"), import("react-router-dom"),
   ]);
   const languageReducer = (await import("../../redux/slice/languageSlice.js")).default;
   const { default: PayRuns } = await import("./PayRuns.jsx");
   const store = configureStore({ reducer: { admin: (s = { isSuperAdmin: superAdmin, admin: { id: 1 } }) => s, language: languageReducer } });
-  return render(<Provider store={store}><MemoryRouter><PayRuns /></MemoryRouter></Provider>);
+  return render(<Provider store={store}><MemoryRouter initialEntries={[route]}><PayRuns /></MemoryRouter></Provider>);
 };
 
 const chooseCity = async () => {
@@ -71,6 +71,19 @@ beforeEach(async () => {
 afterEach(cleanup);
 
 describe("admin Pay runs", () => {
+  it("opens the approved run linked from the Dashboard, and refuses a mismatched city link", async () => {
+    await startServer();
+    await mount({ route: "/admin/pay-runs?cityId=3&runId=17" });
+    expect(await screen.findByText("Dee Test")).toBeTruthy();
+    expect(screen.getByLabelText("City").value).toBe("3");
+    cleanup();
+    await resetBrowser();
+    await startServer();
+    await mount({ route: "/admin/pay-runs?cityId=5&runId=17" });
+    await screen.findByText("New draft");
+    await new Promise(r=>setTimeout(r,30));
+    expect(screen.queryByText("Dee Test")).toBeNull();
+  });
   it("defaults a weekly city's draft to GOFO, and blocks more than 31 inclusive days before sending", async () => {
     const server = await startServer({ cityType: "WEEKLY" });
     await mount();
