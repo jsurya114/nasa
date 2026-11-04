@@ -14,7 +14,7 @@ const reply = ({ source = "none", deducted = "0.00", net = null, flags = [], pen
 const ROW = { id: 1, driver_name: "Dee Test", job_date: "2026-11-03", route_name: "R1", packages: 10, no_scanned: 0, failed_attempt: 0, fs: 0, ds: 0, delivered: 10,
   driver_payment: "100.00", insurance_deduction: "20.00", closed: true, paid: false, data_type: "daily" };
 
-const startServer = async (payroll) => {
+const startServer = async (payroll, { insurance = "20.00" } = {}) => {
   const state = { payrollCalls: 0 };
   await installServer(async (config) => {
     const url = config.url;
@@ -24,8 +24,8 @@ const startServer = async (payroll) => {
       return { status: 200, data: { success: true, data: list } };
     }
     if (url === "/admin/dashboard/routes-by-city") return { status: 200, data: { success: true, data: [] } };
-    if (url === "/admin/dashboard/paymentTable") return { status: 200, data: { success: true, data: [{ ...ROW, driver_name: config.params?.driver && config.params.driver !== "All" ? config.params.driver : "Dee Test" }], pagination: { total: 1, page: 1, limit: 10, totalPages: 1 } } };
-    if (url === "/admin/dashboard/summary") return { status: 200, data: { success: true, data: { total_driver_payment: 100, total_insurance_deduction: 20, total_company_earnings: 10 } } };
+    if (url === "/admin/dashboard/paymentTable") return { status: 200, data: { success: true, data: [{ ...ROW, insurance_deduction: insurance, driver_name: config.params?.driver && config.params.driver !== "All" ? config.params.driver : "Dee Test" }], pagination: { total: 1, page: 1, limit: 10, totalPages: 1 } } };
+    if (url === "/admin/dashboard/summary") return { status: 200, data: { success: true, data: { total_driver_payment: 100, total_insurance_deduction: Number(insurance), total_company_earnings: 10 } } };
     const driver = url.match(/^\/admin\/payroll\/drivers\/(\d+)\/dashboard-summary$/);
     if (driver) {
       state.payrollCalls += 1;
@@ -164,6 +164,19 @@ describe("Dashboard: this payday's Penalty & Others, apart from what is still ow
     await waitFor(() => expect(screen.getByTestId("net-payment-row")).toBeTruthy());
     expect(screen.queryByTestId("penalty-deduction-row")).toBeNull();
     expect(screen.getByTestId("net-payment-row").textContent).toContain("$80.00");
+  });
+
+  it("with no insurance, no penalty and nothing owed the Net Payment preview is still shown under the table and in the Summary", async () => {
+    await startServer(reply({ source: "estimate", net: "100.00" }), { insurance: "0.00" });
+    const { container } = await mount();
+    await filter(container);
+    const row = await screen.findByTestId("net-payment-row");
+    expect(row.textContent).toContain("Net Payment preview (before the pay run is approved)");
+    expect(row.textContent).toContain("$100.00");
+    expect(screen.queryByTestId("penalty-deduction-row")).toBeNull();
+    expect(screen.queryByText(/Insurance Payment Deduction/)).toBeNull();
+    await waitFor(() => expect(within(screen.getByTestId("summary-net")).getByRole("textbox").value).toBe("$100.00"));
+    expect(screen.getByTestId("summary-net").textContent).toContain("preview (before the pay run is approved)");
   });
 
   it("marking a record complete lowers what is owed when the tab is visible again; the deduction follows the server", async () => {
