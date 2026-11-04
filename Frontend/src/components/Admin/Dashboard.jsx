@@ -464,10 +464,8 @@ export default function Dashboard() {
                     ] : []),
                     // #166: this payday's Penalty & Others and what is still owed, below the insurance deduction; then the net.
                     ...penaltyLines.afterInsurance,
-                    ...((Number(extraFieldsData.insuranceDeduction) > 0 || penaltyLines.hasRow || penaltyLines.afterInsurance.some((i) => i.kind === "notice")) ? [
-                      { field: "netDriverPayment", kind: "net", preview: penaltyLines.net.preview, muted: penaltyLines.net.muted, icon: Banknote, label: penaltyLines.net.label,
-                        text: `$${penaltyLines.net.net.toFixed(2)}` },
-                    ] : []),
+                    { field: "netDriverPayment", kind: "net", preview: penaltyLines.net.preview, muted: penaltyLines.net.muted, icon: Banknote, label: penaltyLines.net.label,
+                      text: `$${penaltyLines.net.net.toFixed(2)}` },
                     ...(isSuperAdmin ? [{ field: "companyEarnings", label: "Total Company Earnings", highlight: true }] : []),
                   ].map((item, i) => {
                     const look = summaryLook(item);
