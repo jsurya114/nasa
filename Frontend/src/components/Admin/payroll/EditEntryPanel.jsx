@@ -3,6 +3,7 @@ import axios from "../../../redux/slice/axiosInstance";
 import { toast } from "../../../utils/toast";
 import { newRequestId } from "../../../utils/requestId.js";
 import { Field, buttonClass, inputClass, primaryClass } from "./formParts.jsx";
+import ClaimTypeSelect from "./ClaimTypeSelect.jsx";
 
 // Edit keeps the original (#166): the server voids it and records the corrected entry as one linked action, so the
 // admin must say why. The form starts from the entry's latest saved version; only what changed is sent.
@@ -79,6 +80,8 @@ export default function EditEntryPanel({ entry, onDone, onCancel }) {
               <option value="full_next_payday">All on the next payday</option>
               <option value="installments">Fixed instalments</option>
             </select>
+          ) : key === "claimType" ? (
+            <ClaimTypeSelect value={form[key]} onChange={set(key)} />
           ) : (
             <input className={inputClass} type={key === "effectiveDate" || key === "intendedPayday" ? "date" : "text"} value={form[key]} onChange={set(key)} />
           )}

@@ -6,6 +6,7 @@ import { toLocalDateString } from "../../../utils/dateRange.js";
 import { formatMoney } from "../../../utils/money.js";
 import InfoTip from "../../../reuse/InfoTip.jsx";
 import { Field, inputClass } from "./formParts.jsx";
+import ClaimTypeSelect from "./ClaimTypeSelect.jsx";
 import { cleanMoneyInput } from "./moneyInput.js";
 
 // Records one manual entry for the chosen driver and city: an advance or a penalty. The server checks everything again; this form
@@ -26,7 +27,7 @@ const TIPS = {
   arrangement: "How it is taken back from the driver's pay: everything on the next payday, or a fixed amount each payday (instalments).",
   installment: "The amount taken each payday. It must be less than the whole amount.",
   paidOut: "Tick this if the advance was already handed to the driver outside payroll, so recording it does not pay it again.",
-  claimType: "What kind of penalty this is, for example Damaged Item or Fake POD.",
+  claimType: "What kind of penalty this is: Fake pod, Lost, Tracking interruption or Damaged item.",
   waybill: "Optional. The package's waybill number, if the penalty is about one parcel. It stops the same claim being entered twice.",
 };
 
@@ -58,6 +59,7 @@ export default function LedgerEntryForm({ cityId, driverId, onSaved, prefill, pa
     const found = {};
     if (!(amount > 0)) found.amount = "Amount must be more than 0";
     else if (amount > MAX_AMOUNT) found.amount = `Amount must be at most ${MAX_AMOUNT}`;
+    if (form.type === "manual_claim" && !form.claimType) found.claimType = "Choose the claim type";
     if (needsArrangement && !form.recoveryPlan) found.recoveryPlan = "Choose how it is repaid: all on the next payday, or fixed instalments.";
     if (form.recoveryPlan === "installments") {
       const per = Number(form.installmentAmount);
@@ -125,7 +127,7 @@ export default function LedgerEntryForm({ cityId, driverId, onSaved, prefill, pa
       {form.type === "manual_claim" && (
         <>
           <Field label="Claim type" info={TIPS.claimType} error={errors.claimType}>
-            <input className={inputClass} value={form.claimType} onChange={set("claimType")} maxLength={100} />
+            <ClaimTypeSelect value={form.claimType} onChange={set("claimType")} />
           </Field>
           <Field label="Waybill (optional)" info={TIPS.waybill} error={errors.waybill}>
             <input className={inputClass} value={form.waybill} onChange={set("waybill")} maxLength={64} />
