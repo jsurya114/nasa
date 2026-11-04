@@ -37,7 +37,7 @@ const note = (tx, itemId, text, extra = '') => tx.query(
   `UPDATE everee_payment_items SET check_note = $2, last_checked_at = now(), updated_at = now() ${extra} WHERE id = $1`, [itemId, text ? clip(text).slice(0, 300) : null]);
 
 const loadItem = async (db, itemId) => (await db.query(
-  `SELECT i.id, i.status, i.pay_statement_id, i.external_id, i.everee_worker_id, i.everee_payment_id, i.everee_payable_status, i.deposit_returned, i.amount::text AS amount,
+  `SELECT i.id, i.status, i.pay_statement_id, i.external_id, i.everee_worker_id, i.everee_payment_id, i.payment_link, i.everee_payable_status, i.deposit_returned, i.amount::text AS amount,
           i.payout_requested_at, i.external_worker_id, b.pay_run_id, b.city_id, b.environment, s.time_zone,
           (SELECT count(*) FROM everee_payment_attempts a WHERE a.item_id = i.id AND a.outcome = 'accepted')::int AS accepted_attempts,
           (i.payout_requested_at IS NULL AND COALESCE(i.last_attempt_at, i.created_at) >= now() - make_interval(mins => ${UNCERTAIN_AFTER_MINUTES})) AS may_be_sending
@@ -100,7 +100,10 @@ export const reconcileItem = async (db, itemId, deps = {}, client) => {
       const payable = readPayable(data);
       await inTransaction(db, (tx) => recordPayableStatus(tx, item, payable.paymentStatus));
       paymentId = payable.paymentId;
-      if (paymentId) await db.query('UPDATE everee_payment_items SET everee_payment_id = $2, updated_at = now() WHERE id = $1 AND everee_payment_id IS NULL', [item.id, paymentId]);
+      if (paymentId) {
+        await db.query("UPDATE everee_payment_items SET everee_payment_id = $2, payment_link = 'payable', updated_at = now() WHERE id = $1 AND everee_payment_id IS NULL", [item.id, paymentId]);
+        item.payment_link = item.payment_link ?? 'payable';
+      }
     } catch (error) {
       // 404: Everee never created it. Only when no create call was ever accepted and no payout was asked for; otherwise it is a puzzle for a person.
       if (error instanceof EvereeError && error.status === 404 && OPEN.includes(item.status) && item.accepted_attempts === 0 && !item.payout_requested_at) {
@@ -146,8 +149,14 @@ export const reconcileItem = async (db, itemId, deps = {}, client) => {
     await note(db, item.id, "A bank returned this deposit. It is not paid until the driver's bank details are fixed and Everee's retry settles.", ', deposit_returned = true');
     return 'returned';
   }
-  // Landed. In production an answer without its amount is not enough: the real answer shape is not proven yet, so it stays "unknown" until it is.
-  if (payout.netCents === null && item.environment === 'production') {
+  // The payment must be this item's worker's, when the answer says whose it is.
+  if (payout.workerId !== null && payout.workerId !== String(item.everee_worker_id)) {
+    await note(db, item.id, "Everee's payment belongs to a different worker than this payment was made for, so it is not marked paid. Check it in Everee.");
+    return 'unknown';
+  }
+  // Landed. An answer without its amount is not enough in production (the real answer shape is not proven yet), nor for a payment found only
+  // through an event: it stays "unknown" until the amount can be read and matches.
+  if (payout.netCents === null && (item.environment === 'production' || item.payment_link === 'event')) {
     await note(db, item.id, "Everee's answer for this payment did not state the amount, so it is not marked paid. Check it in Everee.");
     return 'unknown';
   }
@@ -218,13 +227,14 @@ export const itemsForPaymentEvent = async (db, data, environment) => {
 
 // The event names a payment and the payables in it. When an item has no payment yet, that link is kept (so a payable Everee will not let us read
 // still gets its payment looked at) but only when it is exact: the item's own external ID is named, the payment ID is well formed, and a worker the
-// event names is the item's worker. Keeping the link is not paying: the payment is still read from Everee and its amount and payouts verified.
+// event names is the item's worker (at least one worker identifier must be present and every one present must match). Keeping the link is not paying: the payment is still read from Everee and its amount and payouts verified.
 const rememberPaymentLink = async (db, data, environment) => {
   if (!isPaymentId(data.paymentId)) return;
   const external = (data.payableExternalIds ?? []).filter((id) => typeof id === 'string' && /^nasa-stmt-[0-9]+$/.test(id));
   if (external.length === 0) return;
+  if (!data.workerId && !data.externalWorkerId) return; // without a worker to compare, the link is not kept
   await db.query(
-    `UPDATE everee_payment_items i SET everee_payment_id = $1, updated_at = now()
+    `UPDATE everee_payment_items i SET everee_payment_id = $1, payment_link = 'event', updated_at = now()
       FROM everee_payment_batches b
       WHERE b.id = i.batch_id AND b.environment = $2 AND i.external_id = ANY($3::text[]) AND i.everee_payment_id IS NULL AND i.status = ANY($4::text[])
         AND ($5::text IS NULL OR i.everee_worker_id = $5) AND ($6::text IS NULL OR i.external_worker_id = $6)`,

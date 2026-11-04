@@ -333,11 +333,20 @@ test('everee payment status: only a payment that landed marks a statement paid',
       // a link that is not exact is not kept: another worker, a malformed payment ID
       await applyPaymentEvent(db, event(vF, 'EW-WRONG'), { environment: 'sandbox' }, fakeV.client, deps(fakeV.client));
       await applyPaymentEvent(db, event(vF, 'EW-F', { paymentId: 'not a valid id' }), { environment: 'sandbox' }, fakeV.client, deps(fakeV.client));
+      await applyPaymentEvent(db, { paymentId: 'pay-V', payableExternalIds: [vF.external_id] }, { environment: 'sandbox' }, fakeV.client, deps(fakeV.client)); // names no worker at all
       assert.equal((await item(scV, dF)).everee_payment_id, null);
       // the exact link is kept; Everee still says pending, so nothing is paid
       fakeV.state.payments['pay-V'] = { netPayouts: [{ id: 'po1', status: 'PENDING' }] };
       await applyPaymentEvent(db, event(vE, 'EW-E', { paymentStatus: 'PAID' }), { environment: 'sandbox' }, fakeV.client, deps(fakeV.client));
       assert.deepEqual([(await item(scV, dE)).everee_payment_id, (await item(scV, dE)).status], ['pay-V', 'submitted']);
+      assert.equal((await item(scV, dE)).payment_link, 'event', 'recorded as found through an event');
+      // a payment found through an event needs a readable amount, and must be this worker's
+      fakeV.state.payments['pay-V'] = { netPayouts: [{ id: 'po1', status: 'PAID' }] };
+      await applyPaymentEvent(db, event(vE, 'EW-E'), { environment: 'sandbox' }, fakeV.client, deps(fakeV.client));
+      assert.deepEqual([(await item(scV, dE)).status, (await item(scV, dE)).check_note.includes('did not state the amount')], ['submitted', true]);
+      fakeV.state.payments['pay-V'] = { ...landed(18), workerId: 'EW-OTHER' };
+      await applyPaymentEvent(db, event(vE, 'EW-E'), { environment: 'sandbox' }, fakeV.client, deps(fakeV.client));
+      assert.deepEqual([(await item(scV, dE)).status, (await item(scV, dE)).check_note.includes('different worker')], ['submitted', true]);
       // a payment whose amount is not ours is not paid; the right one is
       fakeV.state.payments['pay-V'] = landed(17);
       await applyPaymentEvent(db, event(vE, 'EW-E'), { environment: 'sandbox' }, fakeV.client, deps(fakeV.client));
