@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { createHmac, randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { getBatchView, submitBatch } from '../services/payments/everee/batchSubmit.js';
+import { getBatchView, retryBatch, submitBatch } from '../services/payments/everee/batchSubmit.js';
 import { previewEvereeBatch } from '../services/payments/everee/batchPreview.js';
 import { EvereeError } from '../services/payments/everee/evereeClient.js';
 import { applyPaymentEvent, checkBatch, checkOpenItems, reconcileItem } from '../services/payments/everee/paymentStatus.js';
@@ -17,14 +17,17 @@ const hasDb = process.env.PAYROLL_TEST_DB === '1';
 const migration = (name) => readFileSync(fileURLToPath(new URL(`../migrations/${name}`, import.meta.url)), 'utf8');
 const ARMED = { EVEREE_API_TOKEN: 'tsk_test_ABCDEF123456', EVEREE_TENANT_ID: '4321', EVEREE_PAYMENTS_ENABLED: 'true' };
 const KEY = 'whsec_test_key';
+const PRODUCTION = { EVEREE_API_TOKEN: 'tsk_prod_ABCDEF123456', EVEREE_TENANT_ID: '4321', EVEREE_ENVIRONMENT: 'production', EVEREE_PAYMENTS_ENABLED: 'true', EVEREE_PRODUCTION_PAYMENTS_APPROVED: 'true' };
 
 // A fake Everee: payables and payments are whatever the test puts in `state`.
 const makeEveree = () => {
-  const state = { payables: {}, payments: {}, readFails: false, historyReads: 0 };
+  const state = { payables: {}, payments: {}, readFails: false, historyReads: 0, payableReads: 0, missing: new Set() };
   const client = {
     createPayable: async (body) => ({ status: 201, data: { externalId: body.externalId }, requestId: 'req-ok' }),
     requestPayout: async (ids) => ({ status: 201, data: { payableCount: ids.length, payableExternalIds: ids }, requestId: 'req-pay' }),
     getPayable: async (externalId) => {
+      state.payableReads += 1;
+      if (state.missing.has(externalId)) throw new EvereeError('Everee did not find what was asked for', { status: 404 });
       if (state.readFails) throw new EvereeError('Everee refused the token', { status: 401 });
       return { status: 200, data: state.payables[externalId] ?? { externalId, paymentStatus: 'PENDING_APPROVAL' }, requestId: 'req-get' };
     },
@@ -245,6 +248,123 @@ test('everee payment status: only a payment that landed marks a statement paid',
       await db.query("UPDATE everee_payment_items SET last_checked_at = now() - interval '20 minutes' WHERE id = $1", [it.id]);
       const result = await checkOpenItems(db, deps(fake4.client));
       assert.ok(result.checked >= 1);
+    });
+
+    // ---- the review of #206 (Jasil): environment binding, uncertain outcomes, the event's payment link, an unreadable amount ----
+    const ageAttempt = (id) => db.query("UPDATE everee_payment_items SET last_attempt_at = now() - interval '10 minutes' WHERE id = $1", [id]);
+    const timeout = () => new EvereeError('Everee did not answer in time', { status: null });
+
+    await t.test('a batch of one environment is never looked at with the other one: no request is made', async () => {
+      const scE = await scenario('E', [[dA, '14.00']]);
+      const fakeE = makeEveree();
+      const bE = await sent(scE, fakeE);
+      const itE = await item(scE, dA);
+      fakeE.state.payables[itE.external_id] = { externalId: itE.external_id, paymentStatus: 'PENDING_APPROVAL', paymentId: 'pay-E1' };
+      fakeE.state.payments['pay-E1'] = landed(14);
+      const other = { ...deps(fakeE.client), env: PRODUCTION };
+      assert.equal(await reconcileItem(db, itE.id, other, fakeE.client), 'wrong_environment');
+      await assert.rejects(checkBatch(db, sup2, bE.batch.id, other), { status: 409, message: /made in sandbox; the server is set up for production/ });
+      assert.equal(await applyPaymentEvent(db, { paymentId: 'pay-E1', workerId: 'EW-A', payableExternalIds: [itE.external_id] }, { environment: 'production' }, fakeE.client, other), 'no_item');
+      assert.deepEqual([fakeE.state.payableReads, fakeE.state.historyReads], [0, 0]);
+      assert.deepEqual([(await item(scE, dA)).status, (await item(scE, dA)).everee_payment_id], ['submitted', null]);
+      assert.equal(await check(fakeE, itE.id), 'paid', 'with its own environment it is read as before');
+    });
+
+    await t.test('a create call that timed out is looked into after a while: no record at Everee means failed and retryable, a record means it goes on; nothing is created twice', async () => {
+      const scT = await scenario('T', [[dA, '30.00'], [dB, '20.00'], [dC, '10.00']]);
+      const fakeT = makeEveree();
+      fakeT.client.createPayable = async () => { throw timeout(); };
+      const bT = await sent(scT, fakeT);
+      assert.deepEqual(bT.counts, { submitted: 0, paid: 0, failed: 0, unconfirmed: 3 });
+      const [tA, tB, tC] = [await item(scT, dA), await item(scT, dB), await item(scT, dC)];
+      assert.equal(await check(fakeT, tA.id), 'too_recent', 'a send may still be running');
+      assert.deepEqual(await checkBatch(db, sup2, bT.batch.id, deps(fakeT.client)), { checked: 0, results: {} });
+      assert.equal(fakeT.state.payableReads, 0);
+      for (const i of [tA, tB, tC]) await ageAttempt(i.id);
+
+      fakeT.state.missing.add(tA.external_id); // never created
+      fakeT.state.payables[tB.external_id] = { externalId: tB.external_id, paymentStatus: 'PENDING_APPROVAL', paymentId: 'pay-T2' }; // created, payout asked
+      fakeT.state.payables[tC.external_id] = { externalId: tC.external_id, paymentStatus: 'WAITING', paymentId: null }; // created, payout not asked yet
+      const result = await checkBatch(db, sup2, bT.batch.id, deps(fakeT.client));
+      assert.deepEqual(result.results, { never_created: 1, not_processed: 1, waiting: 1 });
+      assert.deepEqual([(await item(scT, dA)).status, (await stmt(scT, dA)).payout_status], ['failed', 'failed']);
+      assert.match((await item(scT, dA)).error_message, /never created/);
+      assert.deepEqual([(await item(scT, dB)).status, (await stmt(scT, dB)).payout_status, Boolean((await item(scT, dB)).payout_requested_at)], ['submitted', 'submitted', true]);
+      assert.deepEqual([(await item(scT, dC)).status, (await stmt(scT, dC)).payout_status, (await item(scT, dC)).payout_requested_at], ['submitted', 'submitted', null]);
+      assert.equal((await getBatchView(db, sup2, bT.batch.id)).canRetry, true);
+
+      // Retry sends only what is needed: the missing payable is created (same external ID), the found one is asked for payout, B is left alone.
+      const creates = [];
+      const asked = [];
+      const good = makeEveree();
+      good.client.createPayable = async (body) => { creates.push(body.externalId); return { status: 201, data: { externalId: body.externalId }, requestId: 'r' }; };
+      good.client.requestPayout = async (ids) => { asked.push(...ids); return { status: 201, data: { payableExternalIds: ids }, requestId: 'r' }; };
+      good.state.payables = fakeT.state.payables;
+      await retryBatch(db, sup2, bT.batch.id, deps(good.client));
+      assert.deepEqual(creates, [tA.external_id], 'only the payable Everee never had is created');
+      assert.deepEqual(asked.sort(), [tA.external_id, tC.external_id].sort());
+      assert.equal(Boolean((await item(scT, dC)).payout_requested_at), true);
+      assert.equal((await item(scT, dA)).attempts, 2);
+    });
+
+    await t.test('a lost reply to the payout request: the accepted payable is found later, and its completion is read without sending anything again', async () => {
+      const scL = await scenario('L', [[dD, '15.00']]);
+      const fakeL = makeEveree();
+      fakeL.client.requestPayout = async () => { throw timeout(); };
+      const bL = await sent(scL, fakeL);
+      const itL = await item(scL, dD);
+      assert.deepEqual([itL.status, itL.payout_requested_at], ['submitted', null]);
+      assert.deepEqual(await checkBatch(db, sup2, bL.batch.id, deps(fakeL.client)), { checked: 0, results: {} }, 'fresh: a send may still be running');
+      await ageAttempt(itL.id);
+      fakeL.state.payables[itL.external_id] = { externalId: itL.external_id, paymentStatus: 'PENDING_APPROVAL', paymentId: 'pay-L' };
+      fakeL.state.payments['pay-L'] = landed(15);
+      assert.deepEqual((await checkBatch(db, sup2, bL.batch.id, deps(fakeL.client))).results, { paid: 1 });
+      assert.deepEqual([(await item(scL, dD)).status, (await stmt(scL, dD)).payout_status], ['paid', 'paid']);
+      assert.equal(fakeL.state.historyReads, 1);
+    });
+
+    await t.test('a verified event keeps its exact payment link, so a payable Everee will not let us read still completes; the payment is still verified', async () => {
+      const scV = await scenario('V', [[dE, '18.00'], [dF, '9.00']]);
+      const fakeV = makeEveree();
+      await sent(scV, fakeV);
+      const [vE, vF] = [await item(scV, dE), await item(scV, dF)];
+      fakeV.state.readFails = true; // the payable read is refused, as in the sandbox
+      const event = (it, worker, extra = {}) => ({ paymentId: 'pay-V', workerId: worker, payableExternalIds: [it.external_id], ...extra });
+      // a link that is not exact is not kept: another worker, a malformed payment ID
+      await applyPaymentEvent(db, event(vF, 'EW-WRONG'), { environment: 'sandbox' }, fakeV.client, deps(fakeV.client));
+      await applyPaymentEvent(db, event(vF, 'EW-F', { paymentId: 'not a valid id' }), { environment: 'sandbox' }, fakeV.client, deps(fakeV.client));
+      assert.equal((await item(scV, dF)).everee_payment_id, null);
+      // the exact link is kept; Everee still says pending, so nothing is paid
+      fakeV.state.payments['pay-V'] = { netPayouts: [{ id: 'po1', status: 'PENDING' }] };
+      await applyPaymentEvent(db, event(vE, 'EW-E', { paymentStatus: 'PAID' }), { environment: 'sandbox' }, fakeV.client, deps(fakeV.client));
+      assert.deepEqual([(await item(scV, dE)).everee_payment_id, (await item(scV, dE)).status], ['pay-V', 'submitted']);
+      // a payment whose amount is not ours is not paid; the right one is
+      fakeV.state.payments['pay-V'] = landed(17);
+      await applyPaymentEvent(db, event(vE, 'EW-E'), { environment: 'sandbox' }, fakeV.client, deps(fakeV.client));
+      assert.equal((await item(scV, dE)).status, 'submitted');
+      fakeV.state.payments['pay-V'] = landed(18);
+      assert.equal(await applyPaymentEvent(db, event(vE, 'EW-E'), { environment: 'sandbox' }, fakeV.client, deps(fakeV.client)), 'applied');
+      assert.deepEqual([(await item(scV, dE)).status, (await stmt(scV, dE)).payout_status], ['paid', 'paid']);
+      assert.equal((await item(scV, dF)).status, 'submitted', 'the other payable is untouched');
+    });
+
+    await t.test('in production a payment without a readable amount is not marked paid; with the amount it is', async () => {
+      const scU = await scenario('U', [[dA, '11.00']]);
+      await db.query("INSERT INTO everee_city_settings (city_id, time_zone, work_location_id, updated_by) VALUES ($1, 'America/Chicago', 1, $2)", [scU.city, sup1.id]);
+      await db.query(`INSERT INTO everee_workers (driver_id, environment, everee_worker_id, link_source, onboarding_complete, tin_status, linked_by)
+        VALUES ($1, 'production', 'EW-PA', 'matched_email', true, 'VERIFIED', $2)`, [dA, sup1.id]);
+      const fakeU = makeEveree();
+      const prod = (extra = {}) => ({ ...deps(fakeU.client), env: PRODUCTION, ...extra });
+      const hash = (await previewEvereeBatch(db, sup2, scU.run.id, { env: PRODUCTION })).previewHash;
+      await submitBatch(db, sup2, { runId: scU.run.id, requestId: randomUUID(), previewHash: hash }, prod());
+      const itU = await item(scU, dA);
+      fakeU.state.payables[itU.external_id] = { externalId: itU.external_id, paymentStatus: 'PENDING_APPROVAL', paymentId: 'pay-U' };
+      fakeU.state.payments['pay-U'] = { netPayouts: [{ id: 'po1', status: 'PAID' }], payDate: '2026-11-09' };
+      assert.equal(await reconcileItem(db, itU.id, prod(), fakeU.client), 'unknown');
+      assert.match((await item(scU, dA)).check_note, /did not state the amount/);
+      assert.equal((await stmt(scU, dA)).payout_status, 'submitted');
+      fakeU.state.payments['pay-U'] = landed(11);
+      assert.equal(await reconcileItem(db, itU.id, prod(), fakeU.client), 'paid');
     });
 
     await t.test('the guard still blocks changing who is paid how much, but allows the new status columns', async () => {

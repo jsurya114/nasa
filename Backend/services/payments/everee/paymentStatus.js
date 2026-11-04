@@ -7,7 +7,7 @@ import { readEvereeConfig } from './evereeConfig.js';
 import { createEvereeClient, EvereeError } from './evereeClient.js';
 import { DEFAULT_TIME_ZONE } from './payableRules.js';
 import { clip, defaultSleep, inTransaction, recordPayableStatus, withRateLimitRetry } from './batchSubmit.js';
-import { readPayable, readPayoutState } from './paymentState.js';
+import { isPaymentId, readPayable, readPayoutState } from './paymentState.js';
 
 // Reading payments back from Everee (issue #31, part 5). The only place where an Everee item becomes "paid", and it happens only when
 // Everee's Payment Data API says EVERY payout of the payment is PAID (money deposited), never because we sent something or an event said so.
@@ -25,13 +25,22 @@ const CHECK_INTERVAL_MINUTES = 15; // how often the scheduled check looks again 
 const MAX_PER_SCAN = 40;
 const MAX_PER_EVENT = 10; // Everee waits only a short while for the answer to a webhook; the scheduled check does the rest
 const THROTTLE_MS = 120;
+// An item that Everee has not been asked to pay out may still be on its way (a batch is being sent right now). Only after this long is the silence
+// treated as "the answer was lost" and looked into, so a scan never races the send that is still running.
+const UNCERTAIN_AFTER_MINUTES = 5;
+// Items worth looking at: waiting or returned ones that either have a payment to read or were asked for payout, or whose answer has been missing a while.
+// Placeholders: $2 is the list of waiting statuses.
+const DUE_SQL = `(i.status = ANY($2::text[]) OR (i.status = 'paid' AND i.deposit_returned))
+  AND (i.everee_payment_id IS NOT NULL OR i.payout_requested_at IS NOT NULL OR COALESCE(i.last_attempt_at, i.created_at) < now() - make_interval(mins => ${UNCERTAIN_AFTER_MINUTES}))`;
 
 const note = (tx, itemId, text, extra = '') => tx.query(
   `UPDATE everee_payment_items SET check_note = $2, last_checked_at = now(), updated_at = now() ${extra} WHERE id = $1`, [itemId, text ? clip(text).slice(0, 300) : null]);
 
 const loadItem = async (db, itemId) => (await db.query(
   `SELECT i.id, i.status, i.pay_statement_id, i.external_id, i.everee_worker_id, i.everee_payment_id, i.everee_payable_status, i.deposit_returned, i.amount::text AS amount,
-          b.pay_run_id, b.city_id, s.time_zone
+          i.payout_requested_at, i.external_worker_id, b.pay_run_id, b.city_id, b.environment, s.time_zone,
+          (SELECT count(*) FROM everee_payment_attempts a WHERE a.item_id = i.id AND a.outcome = 'accepted')::int AS accepted_attempts,
+          (i.payout_requested_at IS NULL AND COALESCE(i.last_attempt_at, i.created_at) >= now() - make_interval(mins => ${UNCERTAIN_AFTER_MINUTES})) AS may_be_sending
      FROM everee_payment_items i JOIN everee_payment_batches b ON b.id = i.batch_id LEFT JOIN everee_city_settings s ON s.city_id = b.city_id WHERE i.id = $1`, [itemId])).rows[0];
 
 // Marks the statement and item paid in one transaction. Returns what happened.
@@ -56,14 +65,36 @@ const completePaid = (db, item, paymentId, payDate) => inTransaction(db, async (
   return changed ? 'paid_review' : 'paid';
 });
 
+// Everee has no record of a payable whose create call got no answer, so it was never created: the item and statement become `failed`, which is
+// what "Retry what failed" takes. The same external ID is used again, so Everee cannot create a second payable. Same lock order as manual recording.
+const markNeverCreated = (db, item) => inTransaction(db, async (tx) => {
+  await tx.query('SELECT id FROM pay_runs WHERE id = $1 FOR UPDATE', [item.pay_run_id]);
+  await lockCityPayroll(tx, item.city_id);
+  const { rows: [fresh] } = await tx.query(
+    `SELECT i.status AS item_status, i.payout_requested_at, s.payout_status FROM everee_payment_items i JOIN pay_statements s ON s.id = i.pay_statement_id WHERE i.id = $1 FOR UPDATE OF i, s`, [item.id]);
+  if (!OPEN.includes(fresh.item_status) || !OPEN.includes(fresh.payout_status) || fresh.payout_requested_at) return 'not_failable';
+  await tx.query(
+    `UPDATE everee_payment_items SET status = 'failed', error_message = $2, check_note = NULL, last_checked_at = now(), updated_at = now() WHERE id = $1`,
+    [item.id, 'Everee has no record of this payable, so it was never created. It can be sent again with "Retry what failed".']);
+  await tx.query("UPDATE pay_statements SET payout_status = 'failed' WHERE id = $1 AND payout_status = ANY($2::text[])", [item.pay_statement_id, OPEN]);
+  return 'never_created';
+});
+
 // Looks again at one item. Never throws for an Everee problem: it is written as a note and the item keeps its status.
+// `deps.environment` is the environment the Everee client belongs to; an item of another environment is never looked at with it.
 export const reconcileItem = async (db, itemId, deps = {}, client) => {
   const item = await loadItem(db, itemId);
   if (!item) return 'unknown_item';
   if (!OPEN.includes(item.status) && !(item.status === 'paid' && item.everee_payment_id)) return 'skipped';
+  const environment = deps.environment ?? readEvereeConfig(deps.env ?? process.env).environment;
+  if (item.environment !== environment) {
+    logger.warn('Everee item belongs to another environment, not looked at', { itemId: item.id, itemEnvironment: item.environment });
+    return 'wrong_environment';
+  }
 
   let paymentId = item.everee_payment_id;
   if (!paymentId) {
+    if (item.may_be_sending) return 'too_recent'; // a send may still be running; it is looked at again later
     try {
       const { data } = await withRateLimitRetry(() => client.getPayable(item.external_id), deps);
       const payable = readPayable(data);
@@ -71,6 +102,12 @@ export const reconcileItem = async (db, itemId, deps = {}, client) => {
       paymentId = payable.paymentId;
       if (paymentId) await db.query('UPDATE everee_payment_items SET everee_payment_id = $2, updated_at = now() WHERE id = $1 AND everee_payment_id IS NULL', [item.id, paymentId]);
     } catch (error) {
+      // 404: Everee never created it. Only when no create call was ever accepted and no payout was asked for; otherwise it is a puzzle for a person.
+      if (error instanceof EvereeError && error.status === 404 && OPEN.includes(item.status) && item.accepted_attempts === 0 && !item.payout_requested_at) {
+        const outcome = await markNeverCreated(db, item);
+        if (outcome === 'never_created') logger.info('Everee has no record of the payable; marked failed so it can be retried', { itemId: item.id });
+        return outcome;
+      }
       const why = error instanceof EvereeError ? (error.status ?? 'no answer') : 'error';
       logger.warn('Everee payable could not be read', { itemId: item.id, reason: why });
       await note(db, item.id, `Everee's payable could not be read (${why}); it is looked at again later. Nothing was changed.`);
@@ -109,7 +146,12 @@ export const reconcileItem = async (db, itemId, deps = {}, client) => {
     await note(db, item.id, "A bank returned this deposit. It is not paid until the driver's bank details are fixed and Everee's retry settles.", ', deposit_returned = true');
     return 'returned';
   }
-  // Landed. The amount, when Everee states it, must be exactly what this item froze (a worker's payment may hold only our item or several).
+  // Landed. In production an answer without its amount is not enough: the real answer shape is not proven yet, so it stays "unknown" until it is.
+  if (payout.netCents === null && item.environment === 'production') {
+    await note(db, item.id, "Everee's answer for this payment did not state the amount, so it is not marked paid. Check it in Everee.");
+    return 'unknown';
+  }
+  // The amount, when Everee states it, must be exactly what this item froze (a worker's payment may hold only our item or several).
   if (payout.netCents !== null && payout.netCents !== toCents(item.amount)) {
     const { rows: [sum] } = await db.query('SELECT COALESCE(SUM(amount), 0)::text AS total FROM everee_payment_items WHERE everee_payment_id = $1', [paymentId]);
     if (payout.netCents !== toCents(sum.total)) {
@@ -154,12 +196,12 @@ export const checkOpenItems = async (db, deps = {}) => {
   if (!config.configured || String(env.EVEREE_PAYMENTS_ENABLED ?? '').toLowerCase() !== 'true') return { skipped: true };
   const { rows } = await db.query(
     `SELECT i.id FROM everee_payment_items i JOIN everee_payment_batches b ON b.id = i.batch_id
-      WHERE b.environment = $1 AND (i.status = ANY($2::text[]) OR (i.status = 'paid' AND i.deposit_returned))
-        AND (i.last_checked_at IS NULL OR i.last_checked_at < now() - make_interval(mins => $3)) AND i.payout_requested_at IS NOT NULL
+      WHERE b.environment = $1 AND ${DUE_SQL}
+        AND (i.last_checked_at IS NULL OR i.last_checked_at < now() - make_interval(mins => $3))
       ORDER BY i.last_checked_at NULLS FIRST, i.id LIMIT $4`, [config.environment, OPEN, CHECK_INTERVAL_MINUTES, MAX_PER_SCAN]);
   if (rows.length === 0) return { checked: 0 };
   const client = deps.client ?? createEvereeClient(config);
-  return { checked: rows.length, results: await reconcileItems(db, rows.map((r) => r.id), deps, client) };
+  return { checked: rows.length, results: await reconcileItems(db, rows.map((r) => r.id), { ...deps, environment: config.environment }, client) };
 };
 
 // A payment event from the webhook: which items it may concern. What it says is not trusted; it only picks what to look at again.
@@ -174,11 +216,27 @@ export const itemsForPaymentEvent = async (db, data, environment) => {
   return rows.map((r) => r.id);
 };
 
+// The event names a payment and the payables in it. When an item has no payment yet, that link is kept (so a payable Everee will not let us read
+// still gets its payment looked at) but only when it is exact: the item's own external ID is named, the payment ID is well formed, and a worker the
+// event names is the item's worker. Keeping the link is not paying: the payment is still read from Everee and its amount and payouts verified.
+const rememberPaymentLink = async (db, data, environment) => {
+  if (!isPaymentId(data.paymentId)) return;
+  const external = (data.payableExternalIds ?? []).filter((id) => typeof id === 'string' && /^nasa-stmt-[0-9]+$/.test(id));
+  if (external.length === 0) return;
+  await db.query(
+    `UPDATE everee_payment_items i SET everee_payment_id = $1, updated_at = now()
+      FROM everee_payment_batches b
+      WHERE b.id = i.batch_id AND b.environment = $2 AND i.external_id = ANY($3::text[]) AND i.everee_payment_id IS NULL AND i.status = ANY($4::text[])
+        AND ($5::text IS NULL OR i.everee_worker_id = $5) AND ($6::text IS NULL OR i.external_worker_id = $6)`,
+    [data.paymentId, environment, external, OPEN, data.workerId ?? null, data.externalWorkerId ?? null]);
+};
+
 export const applyPaymentEvent = async (db, data, config, client, deps = {}) => {
   if (!data.paymentId && !data.workerId && !data.externalWorkerId && !(data.payableExternalIds ?? []).length) return 'no_payment_id';
+  await rememberPaymentLink(db, data, config.environment);
   const ids = await itemsForPaymentEvent(db, data, config.environment);
   if (ids.length === 0) return 'no_item'; // a payment that is not one of ours
-  const results = await reconcileItems(db, ids.slice(0, MAX_PER_EVENT), { ...deps, throttleMs: 0 }, client);
+  const results = await reconcileItems(db, ids.slice(0, MAX_PER_EVENT), { ...deps, throttleMs: 0, environment: config.environment }, client);
   if (results.error) throw new Error('an item could not be checked; Everee will deliver the event again');
   return ids.length > MAX_PER_EVENT ? 'applied_rest_scheduled' : 'applied';
 };
@@ -186,15 +244,16 @@ export const applyPaymentEvent = async (db, data, config, client, deps = {}) => 
 // "Check now" for one batch, by a super admin of the batch's city.
 export const checkBatch = async (db, admin, batchId, deps = {}) => {
   if (!isSuperAdmin(admin)) throw new PayrollError(403, 'only a super admin can pay through Everee');
-  const { rows: [batch] } = await db.query('SELECT id, city_id FROM everee_payment_batches WHERE id = $1', [batchId]);
+  const { rows: [batch] } = await db.query('SELECT id, city_id, environment FROM everee_payment_batches WHERE id = $1', [batchId]);
   if (!batch) throw new PayrollError(404, 'payment batch not found');
   await assertCityAllowed(db, admin, batch.city_id);
   const env = deps.env ?? process.env;
   const config = readEvereeConfig(env);
   if (!config.configured) throw new PayrollError(409, 'Everee is not set up on this server');
+  // Before any request: another environment's evidence must never decide whether this batch is paid.
+  if (config.environment !== batch.environment) throw new PayrollError(409, `this batch was made in ${batch.environment}; the server is set up for ${config.environment}`);
   const { rows } = await db.query(
-    `SELECT id FROM everee_payment_items WHERE batch_id = $1 AND (status = ANY($2::text[]) OR (status = 'paid' AND deposit_returned)) AND payout_requested_at IS NOT NULL ORDER BY id LIMIT $3`,
-    [batchId, OPEN, MAX_PER_SCAN]);
+    `SELECT i.id FROM everee_payment_items i WHERE i.batch_id = $1 AND ${DUE_SQL} ORDER BY i.id LIMIT $3`, [batchId, OPEN, MAX_PER_SCAN]);
   const client = deps.client ?? createEvereeClient(config);
-  return { checked: rows.length, results: await reconcileItems(db, rows.map((r) => r.id), deps, client) };
+  return { checked: rows.length, results: await reconcileItems(db, rows.map((r) => r.id), { ...deps, environment: config.environment }, client) };
 };

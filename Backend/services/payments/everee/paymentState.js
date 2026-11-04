@@ -8,6 +8,8 @@ const PAYOUT_STATUSES = new Set(['PENDING', 'PAID', 'FAILED']);
 const ID_TEXT = /^[A-Za-z0-9_.:-]{1,200}$/;
 const DATE_TEXT = /^\d{4}-\d{2}-\d{2}$/;
 
+export const isPaymentId = (value) => typeof value === 'string' && ID_TEXT.test(value);
+
 // The payment a payable belongs to, from Everee's answer for the payable: { paymentStatus, paymentId } (either may be null).
 export const readPayable = (data) => {
   const o = data && typeof data === 'object' && !Array.isArray(data) ? data : {};
