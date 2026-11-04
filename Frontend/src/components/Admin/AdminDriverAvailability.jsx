@@ -1,3 +1,4 @@
+import usePersistentState from "../../hooks/usePersistentState.js";
 import { useEffect, useState } from "react";
 import { SkeletonList } from "../../reuse/Skeleton.jsx";
 import { Check, X, Circle, TriangleAlert, CircleCheck, CircleX, RefreshCw, Search } from "lucide-react";
@@ -24,12 +25,12 @@ export default function AdminDriverAvailability() {
   );
   const { admin } = useSelector((state) => state.admin);
 
-  const [filterDay, setFilterDay] = useState("");
-  const [filterCity, setFilterCity] = useState("");
-  const [filterAvailabilityStatus, setFilterAvailabilityStatus] = useState(""); // New: "available", "unavailable", or ""
-  const [searchQuery, setSearchQuery] = useState("");
-  const [currentPage, setCurrentPage] = useState(1);
-  const [itemsPerPage, setItemsPerPage] = useState(10);
+  const [filterDay, setFilterDay] = usePersistentState("admin", "availability", "day", "");
+  const [filterCity, setFilterCity] = usePersistentState("admin", "availability", "city", "");
+  const [filterAvailabilityStatus, setFilterAvailabilityStatus] = usePersistentState("admin", "availability", "status", ""); // New: "available", "unavailable", or ""
+  const [searchQuery, setSearchQuery] = usePersistentState("admin", "availability", "search", "");
+  const [currentPage, setCurrentPage] = usePersistentState("admin", "availability", "page", 1);
+  const [itemsPerPage, setItemsPerPage] = usePersistentState("admin", "availability", "perPage", 10);
   const [editingDriverId, setEditingDriverId] = useState(null);
   const [editAvailability, setEditAvailability] = useState({});
   const [isSaving, setIsSaving] = useState(false);

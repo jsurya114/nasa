@@ -1,3 +1,4 @@
+import usePersistentState from "../../hooks/usePersistentState.js";
 import React, { useEffect, useState, useCallback, useMemo } from "react";
 import { SkeletonTableRows } from "../../reuse/Skeleton.jsx";
 import { useSelector, useDispatch } from "react-redux";
@@ -66,13 +67,13 @@ const [isAdding, setIsAdding] = useState(false);
   
   const [validationErrors, setValidationErrors] = useState({});
   const [errorTimeout, setErrorTimeout] = useState(null);
-  const [currentPage, setCurrentPage] = useState(1);
-  const [itemsPerPage, setItemsPerPage] = useState(10);
+  const [currentPage, setCurrentPage] = usePersistentState("admin", "journeys", "page", 1);
+  const [itemsPerPage, setItemsPerPage] = usePersistentState("admin", "journeys", "perPage", 10);
 
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [journeyToDelete, setJourneyToDelete] = useState(null);
 
-  const [filters, setFilters] = useState({
+  const [filters, setFilters] = usePersistentState("admin", "journeys", "filters", {
     route_id: "",
     driver_name: "",
     journey_date: ""
@@ -148,7 +149,7 @@ useEffect(() => {
       [filterName]: value
     }));
     setCurrentPage(1);
-  }, []);
+  }, [setFilters, setCurrentPage]);
 
   const handleClearFilters = useCallback(() => {
     setFilters({
@@ -157,7 +158,7 @@ useEffect(() => {
       journey_date: ""
     });
     setCurrentPage(1);
-  }, []);
+  }, [setFilters, setCurrentPage]);
 
   const handleRefresh = useCallback(() => {
     dispatch(fetchPaginatedJourneys({ 
