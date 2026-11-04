@@ -147,6 +147,12 @@ const dashboardSlice = createSlice({
       totalPages: 1
     },
     loading: false,
+    // Choosing a city reloads its drivers and routes. That must not blank the whole page, so it has its own flags apart from `loading`
+    // (the first load of the dropdowns), and only the answer to the latest request is used.
+    driversLoading: false,
+    routesLoading: false,
+    driversRequestId: null,
+    routesRequestId: null,
     paymentLoading: false,
     allPaymentLoading: false,
     summaryLoading: false,
@@ -193,29 +199,37 @@ const dashboardSlice = createSlice({
         state.error = action.payload;
       })
       // Handle driver filter by city
-      .addCase(fetchDriversByCity.pending, (state) => {
-        state.loading = true;
+      .addCase(fetchDriversByCity.pending, (state, action) => {
+        state.driversLoading = true;
+        state.driversRequestId = action.meta.requestId;
+        state.drivers = []; // never leave the previous city's drivers to choose from
         state.error = null;
       })
       .addCase(fetchDriversByCity.fulfilled, (state, action) => {
-        state.loading = false;
+        if (state.driversRequestId !== action.meta.requestId) return;
+        state.driversLoading = false;
         state.drivers = action.payload || [];
       })
       .addCase(fetchDriversByCity.rejected, (state, action) => {
-        state.loading = false;
+        if (state.driversRequestId !== action.meta.requestId) return;
+        state.driversLoading = false;
         state.error = action.payload;
       })
       // ✅ NEW: Handle route filter by city
-      .addCase(fetchRoutesByCity.pending, (state) => {
-        state.loading = true;
+      .addCase(fetchRoutesByCity.pending, (state, action) => {
+        state.routesLoading = true;
+        state.routesRequestId = action.meta.requestId;
+        state.routes = [];
         state.error = null;
       })
       .addCase(fetchRoutesByCity.fulfilled, (state, action) => {
-        state.loading = false;
+        if (state.routesRequestId !== action.meta.requestId) return;
+        state.routesLoading = false;
         state.routes = action.payload || [];
       })
       .addCase(fetchRoutesByCity.rejected, (state, action) => {
-        state.loading = false;
+        if (state.routesRequestId !== action.meta.requestId) return;
+        state.routesLoading = false;
         state.error = action.payload;
       })
       .addCase(fetchSummaryData.pending, (state) => {
