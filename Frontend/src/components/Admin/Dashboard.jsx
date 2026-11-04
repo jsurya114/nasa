@@ -51,8 +51,12 @@ export default function Dashboard() {
     filters: reduxFilters,
     selectedDataType,
     showTodayOnly,
-    tableOwnerId
+    tableOwnerId,
+    driversLoading,
+    routesLoading
   } = useSelector((state) => state.dash);
+  // While a city's drivers or routes load, only that dropdown waits; the rest of the page stays as it is.
+  const isLoadingOptions = (name) => (name === "driver" && driversLoading) || (name === "route" && routesLoading);
 
   const { isSuperAdmin, admin } = useSelector((state) => state.admin);
   const penalty = usePenaltySummary();
@@ -358,7 +362,7 @@ export default function Dashboard() {
   const filterOptions = useMemo(
     () => [
       {
-        label: "Job",
+        label: "City",
         type: "select",
         name: "job",
         options: ["All", ...(cities?.map((city) => city.job) || [])],
@@ -461,13 +465,15 @@ export default function Dashboard() {
                   key={i}
                   className="grid grid-cols-1 sm:grid-cols-[160px_1fr_40px] items-center gap-2 sm:gap-3 px-4 py-3"
                 >
-                  <div className="text-gray-600">{item.label}</div>
+                  <div className="text-gray-600">{item.label}{isLoadingOptions(item.name) && " (loading...)"}</div>
                   {item.type === "select" ? (
                     <select
                       className="bg-white text-ink placeholder:text-ink-muted/70 focus:outline-none transition-shadow focus:ring-4 focus:ring-brand-500/20 focus:border-brand-500 min-h-11 w-full border border-line rounded-xl px-3 py-2"
                       name={item.name}
                       value={localFilters[item.name]}
                       onChange={handleFilterChange}
+                      disabled={isLoadingOptions(item.name)}
+                      aria-busy={isLoadingOptions(item.name)}
                     >
                       {item.options.map((opt, j) => (
                         <option key={j} value={opt}>
