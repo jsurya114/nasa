@@ -195,6 +195,13 @@ export const recordPayableStatus = async (tx, item, status) => {
     await tx.query("UPDATE everee_payment_items SET everee_payable_status = $2, status = 'unconfirmed', error_message = $3, updated_at = now() WHERE id = $1 AND status = 'submitted'",
       [item.id, status, `Everee reports this payable as ${status}; it was not paid out. Check the worker in Everee before doing anything else.`]);
     await tx.query("UPDATE pay_statements SET payout_status = 'unconfirmed' WHERE id = $1 AND payout_status = 'submitted'", [item.pay_statement_id]);
+  } else if (status) {
+    // Everee knows the payable (so a create call that got no answer did land) but has not been asked to pay it out yet: it is no longer unknown.
+    // It goes back to submitted, and the next "Retry what failed" asks Everee to pay it out. Nothing is created again.
+    await tx.query(
+      "UPDATE everee_payment_items SET everee_payable_status = $2, status = CASE WHEN status = 'unconfirmed' THEN 'submitted' ELSE status END, error_message = CASE WHEN status = 'unconfirmed' THEN NULL ELSE error_message END, updated_at = now() WHERE id = $1",
+      [item.id, status]);
+    await tx.query("UPDATE pay_statements SET payout_status = 'submitted' WHERE id = $1 AND payout_status = 'unconfirmed'", [item.pay_statement_id]);
   } else {
     await tx.query('UPDATE everee_payment_items SET everee_payable_status = $2, updated_at = now() WHERE id = $1', [item.id, status]);
   }
@@ -222,7 +229,7 @@ const requestPayout = async (db, batchId, deps, client) => {
   const { rows: waiting } = await db.query(
     `SELECT i.id, i.external_id, i.pay_statement_id FROM everee_payment_items i
       WHERE i.batch_id = $1 AND i.status = 'submitted' AND i.payout_requested_at IS NULL
-        AND EXISTS (SELECT 1 FROM everee_payment_attempts a WHERE a.item_id = i.id AND a.outcome = 'accepted') ORDER BY i.id`, [batchId]);
+        AND (i.everee_payable_status IS NOT NULL OR EXISTS (SELECT 1 FROM everee_payment_attempts a WHERE a.item_id = i.id AND a.outcome = 'accepted')) ORDER BY i.id`, [batchId]);
   if (waiting.length === 0) return null;
   const { rows: [request] } = await db.query('INSERT INTO everee_payout_requests (batch_id, asked_count) VALUES ($1, $2) RETURNING id', [batchId, waiting.length]);
   const asked = waiting.map((w) => w.external_id);

@@ -1,0 +1,25 @@
+# Everee, PR 5 review fixes: environment binding, uncertain outcomes, the event's payment link (issue #31)
+
+- **Date:** 2026-11-05
+- **Author:** Jayasoorya (with Claude Code)
+- **Issue / PR:** #31 / the pull request for `feat/everee-payment-status` (#206), answering Jasil's review of 2026-11-04
+- **Branch:** `feat/everee-payment-status`
+- **Type and scope:** fix(payroll), backend
+- **Files touched:** `Backend/services/payments/everee/paymentStatus.js`, `paymentState.js` (one export), `batchSubmit.js` (`recordPayableStatus`, payout selection), `Backend/tests/evereePaymentStatus.test.js`. No reserved files.
+
+**What changed** (each point is a finding in Jasil's review).
+1. **Environment binding (P1).** Looking at an item now checks the item's batch environment against the environment of the Everee client **before any request**, in the one shared function (`reconcileItem`), so the scheduled scan, Check now and the webhook all have it. A mismatch makes no request and returns `wrong_environment`. Check now also answers 409 up front when the batch was made in the other environment, as "Retry what failed" already did.
+2. **Uncertain outcomes are reconciled (P1/P2).** The scheduled scan and Check now no longer skip items whose payout request was never acknowledged. They take `submitted` and `unconfirmed` items with no payout acknowledgement once the last attempt is **5 minutes** old (a batch being sent right now is not touched; a send that is still running is `too_recent`). For such an item the payable is read by its external ID:
+   - **404**: Everee never created it. Only when no create call was ever accepted and no payout was asked for, the item and its statement become `failed`, so "Retry what failed" can send it again with the same external ID (Everee cannot create a second payable). Locks are taken in the order of manual recording.
+   - **Found, payout already asked for** (or a payment ID): the existing path records the status and reads the payment. A lost reply to the payout request is thereby discovered and completed without sending anything again.
+   - **Found, payout not asked for yet**: an `unconfirmed` item goes back to `submitted`, and the payout request now also covers a payable whose existence Everee confirmed (`everee_payable_status` set), so Retry asks for payout. No payable is created twice.
+3. **The event's payment link is kept (P1).** `payment.paid` and related events carry the payment ID and the payable external IDs. When an item has no payment ID yet and the event names the item's own external ID, a well-formed payment ID, and (if given) the item's worker, the link is saved on the item. The payment is then read from Everee's Payment Data API and verified (all payouts `PAID`, the amount) like any other. So the known case where reading a payable answers 401 no longer blocks completion. A link that is not exact (another worker, a malformed ID, a payable of another environment) is not saved. The event never marks anything paid.
+4. **Unreadable amount (P2, before live payments).** In **production**, a payment whose payouts do not state an amount is `unknown`, never paid, until the real answer shape is proven. Sandbox still accepts it so the sandbox round trip can be tried.
+
+**Database:** none. **Config and dependencies:** none. **Money impact:** none; amounts, deductions and debt are not touched. Completion is still the shared `settlePaidStatements` under the same locks.
+
+**Tested** (rolled back, fake Everee, 18 steps in `evereePaymentStatus`, 5 new): a batch is not looked at with the other environment (no payable or payment read, Check now 409, an event of the other environment finds nothing); a create call that timed out is left alone while fresh, then one with no record at Everee becomes `failed` and retryable, one that Everee has goes on, and Retry creates only the missing payable and asks payout only for the found one; a lost reply to the payout request is found later and its completion read once; an event keeps an exact payment link while the payable read is refused, a wrong worker or malformed payment ID is not kept, a pending or differently-priced payment is not paid, the right one is; in production a payment without an amount is not paid, with it it is. Backend suite: 338 pass, 4 fail (the same 4 claims-store tests fail on `develop`).
+
+**Not tested.** A real sandbox payment reaching `PAID` (still waiting for the client's funding account and the portal approval), the real field names of the payment history answer, and a real webhook. Jasil asked for that round trip before any production activation.
+
+**Risks and follow-ups.** A payable created by a timed-out call could still land at Everee after a 404 read; the 5 minute wait makes that unlikely, and a second create with the same external ID is refused by Everee, so it cannot be paid twice (the item would then stay `failed` with Everee's message until a person looks). The status job still starts in every server instance (safe, only wasteful), as Jasil noted.
