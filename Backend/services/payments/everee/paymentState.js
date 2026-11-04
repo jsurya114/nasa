@@ -29,14 +29,17 @@ const amountCents = (value) => {
 // netCents: the sum of the payouts when every one states an amount, else null.
 export const readPayoutState = (body) => {
   const payouts = body && typeof body === 'object' && Array.isArray(body.netPayouts) ? body.netPayouts : null;
-  if (!payouts || payouts.length === 0) return { state: 'unknown', netCents: null, payDate: null };
+  if (!payouts || payouts.length === 0) return { state: 'unknown', netCents: null, payDate: null, workerId: null };
   const statuses = payouts.map((p) => (p && typeof p.status === 'string' ? p.status.toUpperCase() : ''));
-  if (statuses.some((s) => !PAYOUT_STATUSES.has(s))) return { state: 'unknown', netCents: null, payDate: null };
+  if (statuses.some((s) => !PAYOUT_STATUSES.has(s))) return { state: 'unknown', netCents: null, payDate: null, workerId: null };
   const amounts = payouts.map((p) => amountCents(p.netAmount));
   const netCents = amounts.every((a) => a !== null) ? amounts.reduce((sum, a) => sum + a, 0) : null;
   const payDate = typeof body.payDate === 'string' && DATE_TEXT.test(body.payDate) ? body.payDate : null;
   let state = 'landed';
   if (statuses.includes('FAILED')) state = 'returned';
   else if (statuses.includes('PENDING')) state = 'pending';
-  return { state, netCents, payDate };
+  // The worker the payment belongs to, when the answer says (the field is not fully documented; absent means "not stated", never a match).
+  const rawWorker = body.workerId ?? body.worker?.workerId ?? body.worker?.id;
+  const workerId = (typeof rawWorker === 'string' || typeof rawWorker === 'number') && ID_TEXT.test(String(rawWorker)) ? String(rawWorker) : null;
+  return { state, netCents, payDate, workerId };
 };
