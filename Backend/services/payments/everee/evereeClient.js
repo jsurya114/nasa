@@ -29,6 +29,8 @@ const authorization = (token) => `Basic ${Buffer.from(`${token}:`).toString('bas
 
 export const createEvereeClient = (config, { fetchImpl = fetch, timeoutMs = REQUEST_TIMEOUT_MS } = {}) => {
   const request = async (method, path, body) => {
+    // The query string can hold a driver's email or phone (the worker search), so only the path before it is ever logged.
+    const loggedPath = path.split('?')[0];
     let response;
     try {
       response = await fetchImpl(`${config.baseUrl}${path}`, {
@@ -43,7 +45,7 @@ export const createEvereeClient = (config, { fetchImpl = fetch, timeoutMs = REQU
         signal: AbortSignal.timeout(timeoutMs),
       });
     } catch (error) {
-      logger.warn('Everee request did not complete', { method, path, reason: error.name === 'TimeoutError' ? 'timeout' : 'network' });
+      logger.warn('Everee request did not complete', { method, path: loggedPath, reason: error.name === 'TimeoutError' ? 'timeout' : 'network' });
       throw new EvereeError(error.name === 'TimeoutError' ? 'Everee did not answer in time' : 'Everee could not be reached');
     }
 
@@ -55,7 +57,7 @@ export const createEvereeClient = (config, { fetchImpl = fetch, timeoutMs = REQU
       payload = null; // an empty or non-JSON answer
     }
     if (!response.ok) {
-      logger.warn('Everee refused a request', { method, path, status: response.status, requestId });
+      logger.warn('Everee refused a request', { method, path: loggedPath, status: response.status, requestId });
       const detail = typeof payload?.errorMessage === 'string' ? payload.errorMessage.slice(0, 200) : null;
       throw new EvereeError(detail && response.status >= 400 && response.status < 500 && response.status !== 401 ? `${explain(response.status)}: ${detail}` : explain(response.status), {
         status: response.status, code: payload?.errorCode ?? null, requestId,
@@ -69,5 +71,11 @@ export const createEvereeClient = (config, { fetchImpl = fetch, timeoutMs = REQU
     post: (path, body) => request('POST', path, body),
     // The configured pay codes of the company: a read-only call that proves the token and tenant ID work together.
     listPayCodes: () => request('GET', '/integration/v1/pay-codes'),
+    // Loose text search over names, email, phone and IDs (at least 3 characters, at most 10 results). Read-only.
+    searchWorkers: (term) => request('GET', `/integration/v1/workers/search?term=${encodeURIComponent(term)}`),
+    // One worker by the external worker ID if there is one, else Everee's own ID. Read-only.
+    getWorker: (id) => request('GET', `/integration/v1/workers/${encodeURIComponent(id)}`),
+    // Creates a 1099 contractor with the complete record (sandbox test workers only; see workerStore.js).
+    createContractor: (body) => request('POST', '/integration/v1/workers/contractor', body),
   };
 };
