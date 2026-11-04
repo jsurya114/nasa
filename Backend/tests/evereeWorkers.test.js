@@ -131,6 +131,10 @@ test('everee workers: lookup by email or phone only, link only from one exact ma
       assert.deepEqual([result.matches[0].workerId, result.matches[0].matchedOn, result.matches[0].conflicts], ['W-ALICE', ['phone'], ['email']]);
       await assert.rejects(linkDriver(db, superAdmin, { cityId: city, driverId: sharesPhone, workerId: 'W-ALICE' }, deps()), { status: 409, message: /needs to be confirmed/ });
       assert.deepEqual(await linkRows(), []);
+      // A conflict is not "no worker": no test worker is created for it either.
+      await assert.rejects(createSandboxWorker(db, superAdmin, { cityId: city, driverId: sharesPhone }, deps()), { status: 409, message: /may already exist/ });
+      assert.deepEqual(everee.state.created, []);
+      assert.deepEqual(await linkRows(), []);
     });
 
     await t.test('a link is saved only from one exact match with the worker\'s ID, by a super admin', async () => {
@@ -201,7 +205,7 @@ test('everee workers: lookup by email or phone only, link only from one exact ma
       await assert.rejects(createSandboxWorker(db, superAdmin, { cityId: city, driverId: nameOnly }, deps({ env: PRODUCTION })), { status: 403 });
       await assert.rejects(createSandboxWorker(db, cityAdmin, { cityId: city, driverId: nameOnly }, deps()), { status: 403 });
       await assert.rejects(createSandboxWorker(db, superAdmin, { cityId: city, driverId: match }, deps()), { status: 409, message: /already linked/ });
-      await assert.rejects(createSandboxWorker(db, superAdmin, { cityId: city, driverId: ambiguous }, deps()), { status: 409, message: /already exists/ }, 'workers already match this driver');
+      await assert.rejects(createSandboxWorker(db, superAdmin, { cityId: city, driverId: ambiguous }, deps()), { status: 409, message: /may already exist/ }, 'workers already match this driver');
       assert.deepEqual(everee.state.created, []);
 
       const made = await createSandboxWorker(db, superAdmin, { cityId: city, driverId: nameOnly }, deps());

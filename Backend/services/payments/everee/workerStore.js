@@ -238,8 +238,9 @@ export const createSandboxWorker = async (db, admin, { cityId, driverId }, deps 
   // Look before creating. If the driver's own email or phone already finds a worker, that one is linked instead (by a person, with Look up).
   if (driverIssues(driver).length === 0) {
     const lookup = await lookupDriver(db, admin, { cityId, driverId }, deps);
-    if (lookup.result === 'match' || lookup.result === 'ambiguous' || lookup.result === 'blocked') {
-      throw new PayrollError(409, 'an Everee worker already exists for this driver (or the lookup is blocked); link it instead of creating a test worker');
+    // Only a clean "no match" allows a new worker, so any result added later is refused by default.
+    if (lookup.result !== 'no_match') {
+      throw new PayrollError(409, 'an Everee worker may already exist for this driver (or the lookup is blocked); resolve that instead of creating a test worker');
     }
   }
 
