@@ -1,6 +1,7 @@
 import usePersistentState from "../../hooks/usePersistentState.js";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useSelector } from "react-redux";
+import { useSearchParams } from "react-router-dom";
 import { ChevronRight } from "lucide-react";
 import axios from "../../redux/slice/axiosInstance";
 import Header from "../../reuse/Header";
@@ -16,9 +17,12 @@ import RunDetail from "./payRuns/RunDetail.jsx";
 const selectClass = "mt-1 min-h-11 w-full rounded-xl border border-line bg-white px-3 py-2 text-base focus:border-brand-500 focus:outline-none focus:ring-4 focus:ring-brand-500/20";
 
 export default function PayRuns() {
+  const [params] = useSearchParams();
+  const linkedCity = /^\d{1,12}$/.test(params.get("cityId") ?? "") ? params.get("cityId") : "";
+  const linkedRun = useRef(linkedCity && /^\d{1,12}$/.test(params.get("runId") ?? "") ? params.get("runId") : null);
   const isSuperAdmin = useSelector((state) => state.admin?.isSuperAdmin === true);
   const [cities, setCities] = useState([]);
-  const [cityId, setCityId] = usePersistentState("admin", "pay-runs", "cityId", "");
+  const [cityId, setCityId] = usePersistentState("admin", "pay-runs", "cityId", linkedCity, { ignoreSaved: Boolean(linkedCity) });
   const [runs, setRuns] = useState({ status: "idle", list: [] });
   const [detail, setDetail] = useState(null);
   // Every city change starts a new "epoch". An answer that arrives later is used only if it belongs to the same epoch
@@ -27,6 +31,7 @@ export default function PayRuns() {
   const epoch = useRef(0);
   const openRequest = useRef(null);
   const selectCity = (value) => {
+    linkedRun.current = null;
     epoch.current += 1;
     openRequest.current?.abort();
     setDetail(null);
@@ -38,6 +43,18 @@ export default function PayRuns() {
   useEffect(() => {
     axios.get("/admin/get-admin-cities").then(({ data }) => setCities(data?.cities ?? [])).catch(() => setCities([]));
   }, []);
+
+  useEffect(() => {
+    if (!linkedRun.current || !cityId || !cities.some(c => String(c.id) === String(cityId))) return;
+    const controller = new AbortController();
+    const era = epoch.current;
+    axios.get(`/admin/payroll/runs/${linkedRun.current}`, { signal: controller.signal }).then(({data}) => {
+      if (!controller.signal.aborted && era === epoch.current && String(data.run.city_id) === String(cityId)) {
+        linkedRun.current = null; setDetail(data);
+      }
+    }).catch(() => { if (!controller.signal.aborted && era === epoch.current) setRuns(r=>({...r,status:"error"})); });
+    return () => controller.abort();
+  }, [cityId,cities]);
 
   // A city kept from earlier that this admin can no longer use is dropped, so nothing is asked of the server for it.
   useEffect(() => {
@@ -113,7 +130,7 @@ export default function PayRuns() {
 
           {cityId && detail && (
             <section className="card-surface p-4">
-              <RunDetail detail={detail} isSuperAdmin={isSuperAdmin} onChanged={changed} onClose={() => setDetail(null)}
+              <RunDetail key={detail.run.id} detail={detail} isSuperAdmin={isSuperAdmin} onChanged={changed} onClose={() => setDetail(null)} onPaymentRecorded={() => open(detail.run.id)}
                 selectedCityId={cityId} cityName={cities.find((c) => String(c.id) === String(detail.run.city_id))?.job ?? `city ${detail.run.city_id}`} />
             </section>
           )}

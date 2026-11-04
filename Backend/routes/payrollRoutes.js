@@ -8,6 +8,7 @@ import {
   getPayrollSettings, getPayRun, getPayRuns, postDiscard, postFinalize, postPayRun, postVoid, putRecoveryLimit,
 } from '../controllers/payroll/payRunController.js';
 import { getBatchReview } from '../controllers/payroll/payBatchController.js';
+import { getPaymentRuns, getPaymentReview, postPaymentRecord } from '../controllers/payroll/paymentRecordController.js';
 import { getEvereePreview } from '../controllers/payroll/evereeBatchController.js';
 import { getStatus as getEvereeStatus, postCheck as postEvereeCheck } from '../controllers/payroll/evereeController.js';
 import { getWorkers as getEvereeWorkers, postLink as postEvereeLink, postLookup as postEvereeLookup, postRefresh as postEvereeRefresh, postSandboxWorker as postEvereeSandboxWorker, postUnlink as postEvereeUnlink } from '../controllers/payroll/evereeWorkerController.js';
@@ -51,6 +52,9 @@ router.post('/everee/workers/unlink', postEvereeUnlink);
 router.post('/everee/workers/sandbox-test', postEvereeSandboxWorker);
 // City payment batch review (#144): read-only; says who could be paid and why not.
 router.get('/runs/:runId/batch-review', getBatchReview);
+router.get('/payments/runs', getPaymentRuns);
+router.get('/payments/runs/:runId', getPaymentReview);
+router.post('/payments/runs/:runId/record', postPaymentRecord);
 // What paying this run through Everee would do (#31): who, how much, the total, what blocks anyone, and a fingerprint for the confirm step.
 // Read-only; super admin only, checked in the service.
 router.get('/runs/:runId/everee-preview', getEvereePreview);

@@ -5,6 +5,7 @@ import { confirmDialog } from "../../../utils/confirmDialog";
 import { formatMoney } from "../../../utils/money.js";
 import { describeLimit } from "./describeLimit.js";
 import { Link } from "react-router-dom";
+import RunPaymentStatus from "./RunPaymentStatus.jsx";
 
 // One pay run as the server froze it (#143): totals, what is waiting outside it, each driver's statement with its
 // flags, and the actions its status allows. Nothing here works out pay; every amount is the server's.
@@ -35,7 +36,7 @@ const FLAG_HELP = {
   needs_review: "Choose how this record will be repaid: all on the next payday, or fixed instalments.",
 };
 
-export default function RunDetail({ detail, isSuperAdmin, onChanged, onClose, selectedCityId, cityName }) {
+export default function RunDetail({ detail, isSuperAdmin, onChanged, onClose, selectedCityId, cityName, onPaymentRecorded }) {
   const { run, totals, statements, waiting } = detail;
   const [reason, setReason] = useState("");
   const [busy, setBusy] = useState(false);
@@ -91,6 +92,7 @@ export default function RunDetail({ detail, isSuperAdmin, onChanged, onClose, se
         <span className={`rounded-full border px-2.5 py-0.5 text-xs font-semibold ${STATUS_TONES[run.status] ?? STATUS_TONES.draft}`}>{run.status}</span>
       </div>
       {run.close_reason && <p className="mt-2 text-sm text-ink-muted">Reason: {run.close_reason}</p>}
+      {run.status === "finalized" && sameCity && <RunPaymentStatus key={run.id} runId={run.id} cityName={cityName} onRecorded={onPaymentRecorded} />}
 
       <p className="mt-3 rounded-xl bg-brand-50 p-3 text-sm text-brand-dark">
         {run.status === "draft" ? "Saved preview. Later changes do not update this draft; discard it and create a new one. Approval sends no money." : run.status === "finalized" ? "These statements are approved. Payment is handled separately; approval does not send money." : "This run is kept for history only. Its work and deductions have been released for another run."}
@@ -139,7 +141,7 @@ export default function RunDetail({ detail, isSuperAdmin, onChanged, onClose, se
             <li key={s.id} className="px-4 py-3">
               <div className="flex items-start justify-between gap-3">
                 <p className="font-medium text-ink">{s.driver_name}</p>
-                <div className="text-right"><p className="text-xs text-ink-muted">Driver pay</p><p className={`text-lg font-bold tabular-nums ${Number(s.net) < 0 ? "text-red-700" : "text-brand"}`}>{money(s.net)}</p></div>
+                <div className="text-right"><p className="text-xs text-ink-muted">Driver pay</p><p className={`text-lg font-bold tabular-nums ${Number(s.net) < 0 ? "text-red-700" : "text-brand"}`}>{money(s.net)}</p>{run.status === "finalized" && <p className={`mt-1 text-xs font-semibold ${s.payout_status === "paid" ? "text-green-700" : "text-amber-800"}`}>{s.payout_status === "paid" ? "Paid" : ["submitted","unconfirmed"].includes(s.payout_status) ? "Payment processing" : "Awaiting payment"}</p>}</div>
               </div>
               <dl className="mt-3 grid grid-cols-2 gap-3 text-sm sm:grid-cols-3">
                 {[["gross", "Earned"], ["recoveries", "Advances & other deductions"], ["carried_forward", "Still owes NASA"]].map(([key, label]) => <div key={key}><dt className="text-xs text-ink-muted">{label}</dt><dd className="mt-1 font-semibold tabular-nums">{money(s[key])}</dd></div>)}

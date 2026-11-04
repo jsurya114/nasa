@@ -11,7 +11,6 @@ import {
   fetchTodayPaymentData,
   fetchSummaryData,
   clearFilteredData,
-  payDriver,
   setDataType
 } from "../../redux/slice/admin/dashSlice.js";
 import Header from "../../reuse/Header.jsx";
@@ -19,6 +18,7 @@ import Nav from "../../reuse/Nav.jsx";
 import PaymentDashboardTable from "./DashboardTable.jsx";
 import usePenaltySummary from "./dashboard/usePenaltySummary.js";
 import { summaryItems, summaryLook } from "./dashboard/penaltyDisplay.js";
+import PaymentRuns from "./payRuns/PaymentRuns.jsx";
 import Loader from "../Loader.jsx"
 import { CalendarDays, CalendarRange, ChevronDown, Gavel, LayoutGrid, ShieldCheck, Banknote } from "lucide-react";
 
@@ -46,8 +46,6 @@ export default function Dashboard() {
     summaryData,
     summaryLoading,
     isFiltered,
-    paymentProcessing,
-    pagination,
     filters: reduxFilters,
     selectedDataType,
     showTodayOnly,
@@ -62,21 +60,14 @@ export default function Dashboard() {
   const penalty = usePenaltySummary();
   const penaltyLines = useMemo(() => summaryItems(penalty, Number(summaryData?.total_driver_payment || 0) - Number(summaryData?.total_insurance_deduction || 0)), [penalty, summaryData]);
 
-  const getTodayDate = () => {
-    const today = new Date();
-    return today.toLocaleDateString("en-CA")
-  };
-
   // Local state for form inputs only
   // The form is kept for when the admin leaves this page and comes back; `applied` is the form as it was when Filter Data was pressed.
   const [localFilters, setLocalFilters] = usePersistentState("admin", "dashboard", "form", BLANK_FILTERS);
   const [applied, setApplied] = usePersistentState("admin", "dashboard", "applied", null);
 
   const [currentPage, setCurrentPage] = useState(1);
-  const [itemsPerPage, setItemsPerPage] = usePersistentState("admin", "dashboard", "perPage", 10);
+  const [itemsPerPage] = usePersistentState("admin", "dashboard", "perPage", 10);
   const [showExtraFields, setShowExtraFields] = usePersistentState("admin", "dashboard", "extra", false);
-  const [showConfirmModal, setShowConfirmModal] = useState(false);
-  const [selectedPaymentType, setSelectedPaymentType] = useState(null); // 'daily' or 'weekly'
 
   // Calculate available data types based on filtered data
   const [originalDataTypes, setOriginalDataTypes] = useState({ daily: false, weekly: false });
@@ -109,55 +100,6 @@ export default function Dashboard() {
       reduxFilters.driver !== "All" &&
       (availableDataTypes.daily || availableDataTypes.weekly);
   }, [isFiltered, reduxFilters.driver, availableDataTypes]);
-
-  // ✅ UPDATED: Check for closed status as well as payment status
-  const shouldShowPayButton = useMemo(() => {
-    if (!isFiltered ||
-      !reduxFilters.driver ||
-      reduxFilters.driver === "All" ||
-      reduxFilters.paymentStatus !== "Pending" ||
-      filteredPaymentData.length === 0) {
-      return false;
-    }
-
-    // ✅ Only show pay button if there are unpaid AND closed journeys
-    const hasUnpaidClosedJourneys = filteredPaymentData.some(row => !row.paid && row.closed);
-    return hasUnpaidClosedJourneys;
-  }, [isFiltered, reduxFilters.driver, reduxFilters.paymentStatus, filteredPaymentData]);
-
-  // ✅ UPDATED: Calculate separate counts for daily and weekly payments
-  const paymentCounts = useMemo(() => {
-    if (!filteredPaymentData.length) {
-      return { dailyClosedUnpaid: 0, weeklyClosedUnpaid: 0, openUnpaid: 0 };
-    }
-
-    const dailyClosedUnpaid = filteredPaymentData.filter(row =>
-      row.closed && !row.paid && row.data_type === 'daily'
-    ).length;
-    const weeklyClosedUnpaid = filteredPaymentData.filter(row =>
-      row.closed && !row.paid && row.data_type === 'weekly'
-    ).length;
-    const openUnpaid = filteredPaymentData.filter(row => !row.closed && !row.paid).length;
-
-    return { dailyClosedUnpaid, weeklyClosedUnpaid, openUnpaid };
-  }, [filteredPaymentData]);
-
-  // ✅ NEW: Separate conditions for showing daily and weekly pay buttons
-  const shouldShowDailyPayButton = useMemo(() => {
-    return isFiltered &&
-      reduxFilters.driver &&
-      reduxFilters.driver !== "All" &&
-      reduxFilters.paymentStatus === "Pending" &&
-      paymentCounts.dailyClosedUnpaid > 0;
-  }, [isFiltered, reduxFilters.driver, reduxFilters.paymentStatus, paymentCounts.dailyClosedUnpaid]);
-
-  const shouldShowWeeklyPayButton = useMemo(() => {
-    return isFiltered &&
-      reduxFilters.driver &&
-      reduxFilters.driver !== "All" &&
-      reduxFilters.paymentStatus === "Pending" &&
-      paymentCounts.weeklyClosedUnpaid > 0;
-  }, [isFiltered, reduxFilters.driver, reduxFilters.paymentStatus, paymentCounts.weeklyClosedUnpaid]);
 
   const extraFieldsData = useMemo(() => {
     if (!isFiltered || !summaryData) {
@@ -311,48 +253,13 @@ export default function Dashboard() {
     }
   };
 
-  // ✅ UPDATED: handlePayDriver now accepts dataType for separate payments
-  const handlePayDriver = async (dataType) => {
-    setShowConfirmModal(false);
-    setSelectedPaymentType(null);
-
-    const result = await dispatch(payDriver({
-      driverName: reduxFilters.driver,
-      startDate: reduxFilters.startDate || null,
-      endDate: reduxFilters.endDate || null,
-      dataType: dataType, // 'daily' or 'weekly'
-      job: reduxFilters.job || null, // ✅ FIX: Pass selected city to scope payment
-    }));
-
-    if (result.type === 'dashboard/payDriver/fulfilled') {
-      setLocalFilters(prev => ({
-        ...prev,
-        paymentStatus: "All"
-      }));
-
-      const filterParams = {
-        page: currentPage,
-        limit: itemsPerPage,
-        dataType: selectedDataType
-      };
-
-      if (reduxFilters.job && reduxFilters.job !== "All") filterParams.job = reduxFilters.job;
-      if (reduxFilters.driver && reduxFilters.driver !== "All") filterParams.driver = reduxFilters.driver;
-      if (reduxFilters.route && reduxFilters.route !== "All") filterParams.route = reduxFilters.route;
-      if (reduxFilters.startDate) filterParams.startDate = reduxFilters.startDate;
-      if (reduxFilters.endDate) filterParams.endDate = reduxFilters.endDate;
-      if (reduxFilters.companyEarnings) filterParams.companyEarnings = reduxFilters.companyEarnings;
-
-      dispatch(fetchFilteredPaymentData(filterParams));
-
-      if (showExtraFields) {
-        const summaryParams = { ...filterParams };
-        delete summaryParams.page;
-        delete summaryParams.limit;
-        delete summaryParams.companyEarnings;
-        dispatch(fetchSummaryData(summaryParams));
-      }
-    }
+  const refreshAfterPayment = () => {
+    if (isFiltered && applied) {
+      const params = { ...buildFilterParams(applied, { limit: itemsPerPage, isSuperAdmin }), page: currentPage, dataType: selectedDataType };
+      dispatch(fetchFilteredPaymentData(params));
+      if (showExtraFields) dispatch(fetchSummaryData(summaryParamsOf(params)));
+    } else dispatch(fetchTodayPaymentData({ page: 1, limit: itemsPerPage }));
+    penalty.retry();
   };
 
   const handleAddDelivery = useCallback(() => {
@@ -443,6 +350,7 @@ export default function Dashboard() {
         <Header />
 
         <main className="max-w-[1450px] mx-auto p-2 sm:p-4 pb-20 sm:pb-40">
+          <PaymentRuns cities={cities ?? []} onRecorded={refreshAfterPayment} />
           <section className="card-surface mb-4">
             <div className="font-bold text-ink bg-brand-50/60 border-b border-line px-4 py-3 flex items-center justify-between">
               <span>Data Filters</span>
@@ -531,36 +439,6 @@ export default function Dashboard() {
                   Add Delivery
                 </button>
 
-                {/* ✅ UPDATED: Separate Daily and Weekly Pay Buttons */}
-                {shouldShowDailyPayButton && (
-                  <button
-                    onClick={() => {
-                      setSelectedPaymentType('daily');
-                      setShowConfirmModal(true);
-                    }}
-                    disabled={paymentProcessing}
-                    className="inline-flex items-center gap-2 bg-green-600 text-white font-semibold px-4 py-2.5 rounded-xl shadow-md hover:bg-green-700 transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed"
-                  >
-                    {paymentProcessing ? "Processing..." : (
-                      <><CalendarDays className="h-4 w-4" aria-hidden="true" />Pay Daily ({paymentCounts.dailyClosedUnpaid})</>
-                    )}
-                  </button>
-                )}
-
-                {shouldShowWeeklyPayButton && (
-                  <button
-                    onClick={() => {
-                      setSelectedPaymentType('weekly');
-                      setShowConfirmModal(true);
-                    }}
-                    disabled={paymentProcessing}
-                    className="inline-flex items-center gap-2 bg-brand text-white font-semibold px-4 py-2.5 rounded-xl shadow-md hover:bg-brand-900 transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed"
-                  >
-                    {paymentProcessing ? "Processing..." : (
-                      <><CalendarRange className="h-4 w-4" aria-hidden="true" />Pay Weekly ({paymentCounts.weeklyClosedUnpaid})</>
-                    )}
-                  </button>
-                )}
               </div>
 
               {showExtraFields && (
@@ -667,80 +545,6 @@ export default function Dashboard() {
 
         <Nav />
 
-        {/* ✅ UPDATED: Confirmation Modal for Separate Daily/Weekly Payments */}
-        {showConfirmModal && (
-          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-            <div className="bg-white rounded-3xl shadow-[var(--shadow-float)] max-w-md w-full animate-fadeIn border border-line">
-              <div className="p-6">
-                <div className="flex items-center gap-3 mb-4">
-                  <div className={`w-12 h-12 rounded-full flex items-center justify-center ${selectedPaymentType === 'weekly' ? 'bg-purple-100' : 'bg-green-100'}`}>
-                    <svg className={`w-6 h-6 ${selectedPaymentType === 'weekly' ? 'text-purple-600' : 'text-green-600'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                    </svg>
-                  </div>
-                  <h3 className="text-lg font-semibold text-gray-900">
-                    Confirm {selectedPaymentType === 'daily' ? 'Daily (SPEEDX)' : 'Weekly (GOFO)'} Payment
-                  </h3>
-                </div>
-
-                <div className="mb-4 space-y-3">
-                  <p className="text-gray-700">
-                    Mark <span className="font-semibold">{selectedPaymentType === 'daily' ? 'daily' : 'weekly'}</span> payments as paid for <span className="font-semibold text-gray-900">{reduxFilters.driver}</span>?
-                  </p>
-
-                  <div className={`border rounded-lg p-3 ${selectedPaymentType === 'weekly' ? 'bg-purple-50 border-purple-200' : 'bg-green-50 border-green-200'}`}>
-                    <div className="flex items-start gap-2">
-                      <svg className={`w-5 h-5 mt-0.5 ${selectedPaymentType === 'weekly' ? 'text-purple-600' : 'text-green-600'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                      </svg>
-                      <div>
-                        <p className={`text-sm font-semibold ${selectedPaymentType === 'weekly' ? 'text-purple-800' : 'text-green-800'}`}>
-                          {selectedPaymentType === 'daily' ? paymentCounts.dailyClosedUnpaid : paymentCounts.weeklyClosedUnpaid} closed {selectedPaymentType} journey(s) will be marked as paid
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-
-                  {paymentCounts.openUnpaid > 0 && (
-                    <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">
-                      <div className="flex items-start gap-2">
-                        <svg className="w-5 h-5 text-amber-600 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-                        </svg>
-                        <div>
-                          <p className="text-sm font-semibold text-amber-800">
-                            {paymentCounts.openUnpaid} journey(s) with open status will NOT be paid
-                          </p>
-                          <p className="text-xs text-amber-700 mt-1">
-                            Only journeys with closed status "Yes" can be marked as paid
-                          </p>
-                        </div>
-                      </div>
-                    </div>
-                  )}
-                </div>
-
-                <div className="flex gap-3 justify-end">
-                  <button
-                    onClick={() => {
-                      setShowConfirmModal(false);
-                      setSelectedPaymentType(null);
-                    }}
-                    className="px-4 py-2 text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-md transition-colors font-medium"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    onClick={() => handlePayDriver(selectedPaymentType)}
-                    className={`px-4 py-2 text-white rounded-md transition-colors font-medium ${selectedPaymentType === 'weekly' ? 'bg-purple-600 hover:bg-purple-700' : 'bg-green-600 hover:bg-green-700'}`}
-                  >
-                    Confirm Payment
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
       </div>
     </>
   );
