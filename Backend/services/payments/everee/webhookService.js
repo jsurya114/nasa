@@ -3,6 +3,7 @@ import { readEvereeConfig } from './evereeConfig.js';
 import { createEvereeClient, EvereeError } from './evereeClient.js';
 import { SIGNATURE_HEADER, TIMESTAMP_HEADER, verifySignature } from './webhookSignature.js';
 import { markLinkTerminated, refreshLinkRow } from './workerStore.js';
+import { applyPaymentEvent } from './paymentStatus.js';
 
 // Receiving Everee's webhook events (issue #31, part 2). The route is public (Everee calls it), so the signature is checked first,
 // before anything is read from the database. Then, in this order:
@@ -13,11 +14,12 @@ import { markLinkTerminated, refreshLinkRow } from './workerStore.js';
 //   5. it is processed, and only then answered 200. If processing fails the answer is 500, so Everee delivers it again (it retries for
 //      about 6.6 days); the stored event stays unprocessed and is processed on the next delivery.
 // Worker events do not trust what the event says: the worker is read from Everee again, so an event can only trigger a refresh.
-// Payment events are stored here and handled in the next part.
+// Payment events only prompt a fresh look at the payments they may concern (paymentStatus.js); what they say is not trusted either.
 
 const WORKER_EVENTS = new Set([
   'worker.created', 'worker.profile-updated', 'worker.onboarding-completed', 'worker.tin-verification-status-changed', 'worker.terminated', 'worker.deleted',
 ]);
+const PAYMENT_EVENTS = new Set(['payment.paid', 'payment-payables.status-changed', 'payment.deposit-returned', 'payment.deposit-retried']);
 const ID_TEXT = /^[A-Za-z0-9_.:-]{1,200}$/;
 const TYPE_TEXT = /^[a-z0-9][a-z0-9._-]{0,99}$/i;
 const PROCESSING_TIMEOUT_MS = 8000; // Everee waits only a short while for our answer
@@ -90,11 +92,12 @@ const applyWorkerEvent = async (db, event, config, client) => {
   return 'applied';
 };
 
-const processEvent = async (db, event, config, client) => {
+const processEvent = async (db, event, config, client, deps) => {
   if (event.version !== '1') return 'unsupported_version';
   if (event.type === 'test-event.created') return 'test_ok';
   if (WORKER_EVENTS.has(event.type)) return applyWorkerEvent(db, event, config, client);
-  return 'stored'; // payment events and the rest: kept for the next part
+  if (PAYMENT_EVENTS.has(event.type)) return applyPaymentEvent(db, trimData(event.object), config, client, deps);
+  return 'stored'; // the rest are kept
 };
 
 // headers: the request headers (lower-case names). Returns { status, body }.
@@ -135,7 +138,7 @@ export const receiveEvent = async (db, { rawBody, headers = {} }, deps = {}) => 
 
   try {
     const client = deps.client ?? createEvereeClient(config, { timeoutMs: PROCESSING_TIMEOUT_MS });
-    const outcome = await withTimeout(processEvent(db, event, config, client), PROCESSING_TIMEOUT_MS + 1000);
+    const outcome = await withTimeout(processEvent(db, event, config, client, deps), PROCESSING_TIMEOUT_MS + 1000);
     await db.query('UPDATE everee_webhook_events SET processed_at = now(), outcome = $2 WHERE id = $1', [rowId, outcome]);
     logger.info('Everee webhook processed', { eventId: event.id, type: event.type, outcome });
     return reply(200, { received: true, outcome });

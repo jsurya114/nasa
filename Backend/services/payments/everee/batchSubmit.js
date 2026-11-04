@@ -37,11 +37,11 @@ export class PreviewChangedError extends PayrollError {
 }
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-const clip = (text) => String(text ?? '').slice(0, MAX_MESSAGE);
+export const clip = (text) => String(text ?? '').slice(0, MAX_MESSAGE);
 let savepointCounter = 0;
 
 // A short transaction on a pool; on a client that is already inside one (the tests) a savepoint, so a failure undoes only this step.
-const inTransaction = async (db, fn) => {
+export const inTransaction = async (db, fn) => {
   // A pool has connect() but no release(); a client taken from a pool has both, so connect() alone cannot tell them apart.
   if (typeof db.connect === 'function' && typeof db.release !== 'function') return withTransaction(db, fn);
   const name = `everee_sp_${savepointCounter++}`;
@@ -56,10 +56,10 @@ const inTransaction = async (db, fn) => {
   }
 };
 
-const defaultSleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+export const defaultSleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 // A 429 means Everee did not run the request, so it is repeated after the wait Everee names (or a growing one, with a little jitter).
-const withRateLimitRetry = async (call, { sleep = defaultSleep } = {}) => {
+export const withRateLimitRetry = async (call, { sleep = defaultSleep } = {}) => {
   for (let attempt = 0; ; attempt += 1) {
     try {
       return await call();
@@ -89,6 +89,7 @@ const itemView = (row) => ({
   itemId: row.id, statementId: row.pay_statement_id, driverId: row.driver_id, driverName: row.driver_name, amount: row.amount, status: row.status,
   everee: { payableStatus: row.everee_payable_status, payoutRequested: Boolean(row.payout_requested_at), depositReturned: row.deposit_returned },
   attempts: row.attempts, error: row.error_message, lastAttemptAt: row.last_attempt_at,
+  paidAt: row.paid_at, payDate: row.everee_pay_date, lastCheckedAt: row.last_checked_at, note: row.check_note,
 });
 
 export const getBatchView = async (db, admin, batchId) => {
@@ -99,7 +100,7 @@ export const getBatchView = async (db, admin, batchId) => {
   await assertCityAllowed(db, admin, batch.city_id);
   const { rows } = await db.query(
     `SELECT i.id, i.pay_statement_id, i.driver_id, d.name AS driver_name, i.amount::text AS amount, i.status, i.everee_payable_status, i.payout_requested_at,
-            i.deposit_returned, i.attempts, i.error_message, i.last_attempt_at
+            i.deposit_returned, i.attempts, i.error_message, i.last_attempt_at, i.paid_at, to_char(i.everee_pay_date, 'YYYY-MM-DD') AS everee_pay_date, i.last_checked_at, i.check_note
        FROM everee_payment_items i JOIN drivers d ON d.id = i.driver_id WHERE i.batch_id = $1 ORDER BY d.name, i.id`, [batchId]);
   const { rows: payouts } = await db.query(
     `SELECT id, started_at, finished_at, asked_count, taken_count, outcome, http_status, everee_request_id, error_message
@@ -179,8 +180,25 @@ const sendItem = async (db, item, batch, deps, client) => {
 // What Everee says about a payable that the payout request did NOT take. A status that means "already asked for payout" is recorded as that
 // (a lost reply to an earlier request); a blocked one (ERROR, the worker cannot be paid, deleted) means the money is not moving and nobody
 // knows why from here, so it is "unconfirmed": blocked for manual recording and for a blind retry until someone has looked in Everee.
-const ASKED_FOR_PAYOUT = new Set(['PENDING_APPROVAL', 'PROCESSING', 'READY_TO_CALCULATE', 'PENDING_VERIFICATION', 'PENDING_PAYMENT', 'PENDING_FUNDING', 'PAID']);
-const BLOCKED = new Set(['ERROR', 'UNPAYABLE_WORKER', 'DELETED']);
+export const ASKED_FOR_PAYOUT = new Set(['PENDING_APPROVAL', 'PROCESSING', 'READY_TO_CALCULATE', 'PENDING_VERIFICATION', 'PENDING_PAYMENT', 'PENDING_FUNDING', 'PAID']);
+export const BLOCKED = new Set(['ERROR', 'UNPAYABLE_WORKER', 'DELETED']);
+
+// Writes what Everee says about a payable. "Already asked for payout" means money is moving: an item that was unconfirmed goes back to submitted.
+// A blocked status on a submitted item makes it unconfirmed. Never sets paid: only a payment that landed does (paymentStatus.js).
+export const recordPayableStatus = async (tx, item, status) => {
+  if (status && ASKED_FOR_PAYOUT.has(status)) {
+    await tx.query(
+      "UPDATE everee_payment_items SET everee_payable_status = $2, payout_requested_at = COALESCE(payout_requested_at, now()), status = CASE WHEN status = 'unconfirmed' THEN 'submitted' ELSE status END, error_message = CASE WHEN status = 'unconfirmed' THEN NULL ELSE error_message END, updated_at = now() WHERE id = $1",
+      [item.id, status]);
+    await tx.query("UPDATE pay_statements SET payout_status = 'submitted' WHERE id = $1 AND payout_status = 'unconfirmed'", [item.pay_statement_id]);
+  } else if (status && BLOCKED.has(status)) {
+    await tx.query("UPDATE everee_payment_items SET everee_payable_status = $2, status = 'unconfirmed', error_message = $3, updated_at = now() WHERE id = $1 AND status = 'submitted'",
+      [item.id, status, `Everee reports this payable as ${status}; it was not paid out. Check the worker in Everee before doing anything else.`]);
+    await tx.query("UPDATE pay_statements SET payout_status = 'unconfirmed' WHERE id = $1 AND payout_status = 'submitted'", [item.pay_statement_id]);
+  } else {
+    await tx.query('UPDATE everee_payment_items SET everee_payable_status = $2, updated_at = now() WHERE id = $1', [item.id, status]);
+  }
+};
 
 const inspectUntaken = async (db, items, deps, client) => {
   const sleep = deps.sleep ?? defaultSleep;
@@ -195,17 +213,7 @@ const inspectUntaken = async (db, items, deps, client) => {
       logger.warn('Everee payable status could not be read', { itemId: item.id, reason: error instanceof EvereeError ? error.status : 'unknown' });
       continue; // stays submitted; it is looked at again by the next retry or reconciliation
     }
-    await inTransaction(db, async (tx) => {
-      if (status && ASKED_FOR_PAYOUT.has(status)) {
-        await tx.query('UPDATE everee_payment_items SET everee_payable_status = $2, payout_requested_at = COALESCE(payout_requested_at, now()), updated_at = now() WHERE id = $1', [item.id, status]);
-      } else if (status && BLOCKED.has(status)) {
-        await tx.query("UPDATE everee_payment_items SET everee_payable_status = $2, status = 'unconfirmed', error_message = $3, updated_at = now() WHERE id = $1 AND status = 'submitted'",
-          [item.id, status, `Everee reports this payable as ${status}; it was not paid out. Check the worker in Everee before doing anything else.`]);
-        await tx.query("UPDATE pay_statements SET payout_status = 'unconfirmed' WHERE id = $1 AND payout_status = 'submitted'", [item.pay_statement_id]);
-      } else {
-        await tx.query('UPDATE everee_payment_items SET everee_payable_status = $2, updated_at = now() WHERE id = $1', [item.id, status]);
-      }
-    });
+    await inTransaction(db, (tx) => recordPayableStatus(tx, item, status));
   }
 };
 
