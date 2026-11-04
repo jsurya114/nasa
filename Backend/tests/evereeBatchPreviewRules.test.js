@@ -44,6 +44,8 @@ test('sending payments is off unless Everee is set up and EVEREE_PAYMENTS_ENABLE
   assert.equal(gate(prod).enabled, false, 'a production setup is still not approved');
   assert.match(gate(prod).reason, /not approved/);
   assert.equal(gate({ ...prod, EVEREE_PRODUCTION_PAYMENTS_APPROVED: 'yes' }).enabled, false);
+  assert.equal(gate({ ...prod, EVEREE_PRODUCTION_PAYMENTS_APPROVED: 'TRUE' }).enabled, false, 'the approval is compared exactly, not case-insensitively');
+  assert.equal(gate({ ...prod, EVEREE_PRODUCTION_PAYMENTS_APPROVED: ' true ' }).enabled, false);
   assert.equal(gate({ ...prod, EVEREE_PRODUCTION_PAYMENTS_APPROVED: 'true' }).enabled, true, 'only with its own explicit approval');
   assert.equal(gate({ ...SANDBOX, EVEREE_PAYMENTS_ENABLED: 'true', EVEREE_PRODUCTION_PAYMENTS_APPROVED: 'true' }).enabled, true, 'the sandbox does not need it');
 });
