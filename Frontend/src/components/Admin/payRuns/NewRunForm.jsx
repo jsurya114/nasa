@@ -8,25 +8,29 @@ import { lastDaysRange } from "../../../utils/dateRange.js";
 // holds the rows until the run is finalized or discarded. One request ID per draft, so a retry returns the same run.
 const inputClass = "mt-1 min-h-11 w-full rounded-xl border border-line bg-white px-3 py-2 text-base focus:border-brand-500 focus:outline-none focus:ring-4 focus:ring-brand-500/20";
 
-const fresh = () => {
+const fresh = (dataType = "daily") => {
   const { from_date, to_date } = lastDaysRange(7);
-  return { requestId: newRequestId(), periodStart: from_date, periodEnd: to_date, dataType: "daily" };
+  return { requestId: newRequestId(), periodStart: from_date, periodEnd: to_date, dataType };
 };
 
-export default function NewRunForm({ cityId, onDrafted }) {
-  const [form, setForm] = useState(fresh);
+export default function NewRunForm({ cityId, defaultDataType = "daily", onDrafted }) {
+  const [form, setForm] = useState(() => fresh(defaultDataType));
   const [errors, setErrors] = useState({});
   const [saving, setSaving] = useState(false);
   const set = (key) => (e) => setForm((f) => ({ ...f, [key]: e.target.value }));
+  const days = (Date.parse(form.periodEnd) - Date.parse(form.periodStart)) / 86400000 + 1;
+  const rangeError = !Number.isFinite(days) ? "Choose a start and end date." : days < 1 ? "End date must be on or after start date." : days > 31 ? "Choose a period of 31 days or fewer." : null;
 
   const submit = async (e) => {
     e.preventDefault();
+    if (rangeError) { setErrors({ periodEnd: rangeError }); return; }
     setSaving(true);
     setErrors({});
     try {
       const { data } = await axios.post("/admin/payroll/runs", { ...form, cityId });
-      toast.success(data.replay ? "This draft was already made; showing it" : `Draft made with ${data.statements.length} statement(s)`);
-      setForm(fresh());
+      if (data.statements.length === 0) toast.warn("No payable earnings found. Check the dates, pay type and existing runs.");
+      else toast.success(data.replay ? "This draft was already made; showing it" : `Draft made with ${data.statements.length} statement(s)`);
+      setForm(fresh(form.dataType));
       onDrafted(data);
     } catch (err) {
       setErrors(err.response?.data?.errors ?? {});
@@ -40,15 +44,16 @@ export default function NewRunForm({ cityId, onDrafted }) {
 
   return (
     <form onSubmit={submit} className="grid grid-cols-1 gap-3 sm:grid-cols-4" noValidate>
+      <p id="run-period-help" className="text-sm text-ink-muted sm:col-span-4">Choose the <strong>delivery dates</strong> to pay, up to 31 days. An advance dated after the end date waits for a later run.</p>
       <div>
         <label className="block text-sm font-medium text-gray-700">From
-          <input type="date" className={inputClass} value={form.periodStart} max={form.periodEnd} onChange={set("periodStart")} />
+          <input type="date" aria-describedby="run-period-help" className={inputClass} value={form.periodStart} max={form.periodEnd} onChange={set("periodStart")} />
         </label>
         {error("periodStart")}
       </div>
       <div>
         <label className="block text-sm font-medium text-gray-700">To
-          <input type="date" className={inputClass} value={form.periodEnd} min={form.periodStart} onChange={set("periodEnd")} />
+          <input type="date" aria-describedby="run-period-help run-range-status" aria-invalid={Boolean(rangeError)} className={inputClass} value={form.periodEnd} min={form.periodStart} onChange={set("periodEnd")} />
         </label>
         {error("periodEnd")}
       </div>
@@ -66,6 +71,9 @@ export default function NewRunForm({ cityId, onDrafted }) {
           {saving ? "Drafting..." : "Draft pay run"}
         </button>
       </div>
+      <p id="run-range-status" role={rangeError ? "alert" : "status"} className={`text-sm sm:col-span-4 ${rangeError ? "text-red-700" : "text-ink-muted"}`}>
+        {rangeError ?? `${days} delivery day${days === 1 ? "" : "s"} selected.`} {form.dataType === "weekly" ? "Weekly GOFO includes matched delivery claims." : "Daily SpeedX includes manual advances and penalties, not imported GOFO claims."}
+      </p>
     </form>
   );
 }
