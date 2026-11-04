@@ -5,7 +5,7 @@ import { RefreshCw, Wallet, ShieldCheck, Banknote } from "lucide-react";
 import { useDispatch, useSelector } from "react-redux";
 import { fetchFilteredPaymentData, fetchTodayPaymentData } from "../../redux/slice/admin/dashSlice";
 import PenaltyRows from "./dashboard/PenaltyRows.jsx";
-import { netFor, showRow } from "./dashboard/penaltyDisplay.js";
+import { netFor } from "./dashboard/penaltyDisplay.js";
 
 export default function PaymentDashboardTable({ penalty }) {
   const dispatch = useDispatch();
@@ -369,8 +369,8 @@ export default function PaymentDashboardTable({ penalty }) {
                       </tr>
                     )}
                     <PenaltyRows penalty={penalty} />
-                    {(totals.insuranceDeduction > 0 || showRow(penalty) || (penalty?.expected && penalty.status !== "ready")) && (() => {
-                      // Net Payment: the approved pay run's frozen net, else payment - insurance - this payday's deduction (a preview).
+                    {(() => {
+                      // Net Payment: always shown under the table. The approved pay run's frozen net, else payment - insurance - this payday's deduction (a preview).
                       const line = netFor(totals.netPayment, penalty);
                       const tone = line.muted ? "bg-gray-50 text-gray-600" : line.preview ? "bg-amber-50 font-bold border-b-2 border-amber-500" : "bg-green-50 font-bold border-b-2 border-green-600";
                       return (
