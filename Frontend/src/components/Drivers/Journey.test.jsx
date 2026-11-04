@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { installServer, removeShell, resetBrowser } from "../../test/fakeShell";
 
 // The real journey form, slices and sign-out, with a fake server that can drop the connection.
@@ -76,6 +76,13 @@ beforeEach(async () => {
 });
 afterEach(() => cleanup());
 
+// The page starts listening for "online" in an effect that runs just after "Check again" appears. A single event sent at once can arrive before
+// that, on a slow machine (CI), and nothing happens. So the event is sent again until the page has reacted.
+const connectionReturns = () => waitFor(() => {
+  window.dispatchEvent(new Event("online"));
+  expect(screen.getByRole("button", { name: "Route Already Saved" })).toBeTruthy();
+}, { timeout: 4000 });
+
 describe("saving a journey on a weak connection", () => {
   it("a normal save is shown as saved only after the server confirms", async () => {
     const s = await startServer();
@@ -143,8 +150,8 @@ describe("saving a journey on a weak connection", () => {
     expect(typed(container)).toEqual({ start: "10", end: "20", route: "3" });
 
     s.getMode = "ok";
-    await act(async () => { window.dispatchEvent(new Event("online")); });
-    expect(await screen.findByRole("button", { name: "Route Already Saved" })).toBeTruthy();
+    await connectionReturns();
+    expect(screen.getByRole("button", { name: "Route Already Saved" })).toBeTruthy();
     expect(s.posts).toBe(1);
   });
 
@@ -298,8 +305,8 @@ describe("an unconfirmed save survives a reload", () => {
     await mount();
     await screen.findByRole("button", { name: "Check again" });
     s.getMode = "ok";
-    await act(async () => { window.dispatchEvent(new Event("online")); });
-    expect(await screen.findByRole("button", { name: "Route Already Saved" })).toBeTruthy();
+    await connectionReturns();
+    expect(screen.getByRole("button", { name: "Route Already Saved" })).toBeTruthy();
     expect(s.posts).toBe(1);
   });
 
