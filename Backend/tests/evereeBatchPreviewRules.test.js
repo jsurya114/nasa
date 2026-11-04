@@ -40,5 +40,12 @@ test('sending payments is off unless Everee is set up and EVEREE_PAYMENTS_ENABLE
   // production needs its own deliberate setting as well; the flag alone does not make a production token usable
   const prodToken = { EVEREE_API_TOKEN: 'tsk_prod_ABCDEF123456', EVEREE_TENANT_ID: '4321', EVEREE_PAYMENTS_ENABLED: 'true' };
   assert.equal(gate(prodToken).enabled, false);
-  assert.equal(gate({ ...prodToken, EVEREE_ENVIRONMENT: 'production' }).enabled, true);
+  const prod = { ...prodToken, EVEREE_ENVIRONMENT: 'production' };
+  assert.equal(gate(prod).enabled, false, 'a production setup is still not approved');
+  assert.match(gate(prod).reason, /not approved/);
+  assert.equal(gate({ ...prod, EVEREE_PRODUCTION_PAYMENTS_APPROVED: 'yes' }).enabled, false);
+  assert.equal(gate({ ...prod, EVEREE_PRODUCTION_PAYMENTS_APPROVED: 'TRUE' }).enabled, false, 'the approval is compared exactly, not case-insensitively');
+  assert.equal(gate({ ...prod, EVEREE_PRODUCTION_PAYMENTS_APPROVED: ' true ' }).enabled, false);
+  assert.equal(gate({ ...prod, EVEREE_PRODUCTION_PAYMENTS_APPROVED: 'true' }).enabled, true, 'only with its own explicit approval');
+  assert.equal(gate({ ...SANDBOX, EVEREE_PAYMENTS_ENABLED: 'true', EVEREE_PRODUCTION_PAYMENTS_APPROVED: 'true' }).enabled, true, 'the sandbox does not need it');
 });

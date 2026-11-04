@@ -67,7 +67,7 @@ const receipt = async (db, id) => {
   return rows[0];
 };
 
-const approvedWork = async (db, ids, lock = false) =>
+export const approvedWork = async (db, ids, lock = false) =>
   (
     await db.query(
       `SELECT pd.id,pd.dashboard_data_id,pd.paid,pd.closed,pd.driver_payment::text AS gross,pd.insurance_deduction::text AS insurance,
@@ -80,7 +80,7 @@ const approvedWork = async (db, ids, lock = false) =>
       [ids],
     )
   ).rows;
-const invalidWork = (statements, earnings) => {
+export const invalidWork = (statements, earnings) => {
   const byStatement = new Map();
   for (const row of earnings) {
     const key = String(row.statement_id);
