@@ -1,8 +1,10 @@
 import React, { useEffect, useMemo, useState } from "react";
+import { Link } from "react-router-dom";
 import { Wallet } from "lucide-react";
 import axios from "../../../../redux/slice/axiosInstance";
 import { formatMoney } from "../../../../utils/money.js";
 import PayWithEvereeButton from "./PayWithEvereeButton.jsx";
+import { buttonClass } from "../../payroll/formParts.jsx";
 import useEvereeAvailable from "./useEvereeAvailable.js";
 
 // Under the Dashboard's driver jobs table (#31): pay the drivers of the applied filter through Everee. It follows the filter that was applied
@@ -65,7 +67,13 @@ export default function FilteredEvereePay({ applied, cities = [], drivers = [], 
         </p>
       )}
       {!scope.problem && state.status === "ready" && state.runs.length === 0 && (
-        <p className="mt-3 rounded-xl bg-brand-50 p-3 text-sm">No approved pay run is waiting to be paid for this selection. Approve a pay run first.</p>
+        <div className="mt-3 flex flex-wrap items-center gap-3 rounded-xl bg-brand-50 p-3 text-sm">
+          <button type="button" disabled aria-describedby="dash-everee-why" className={buttonClass}>Pay with Everee</button>
+          <p id="dash-everee-why" className="flex-1">
+            No approved pay run is waiting to be paid for this selection. Approve a pay run first, then pay it here.{" "}
+            <Link to={scope.cityId ? `/admin/pay-runs?cityId=${scope.cityId}` : "/admin/pay-runs"} className="font-semibold text-brand-600 underline">Prepare a pay run</Link>
+          </p>
+        </div>
       )}
       {!scope.problem && state.status === "ready" && state.runs.length > 0 && (
         <ul aria-label="Approved pay runs to pay" className="mt-3 grid gap-3 lg:grid-cols-2">

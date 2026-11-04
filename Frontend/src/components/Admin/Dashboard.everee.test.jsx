@@ -88,12 +88,16 @@ describe("Dashboard: Pay with Everee under the Driver Jobs table", () => {
     expect(screen.getByText(/all drivers in Test City/)).toBeTruthy();
   });
 
-  it("says so when no approved run is waiting, and shows nothing for payment status Paid, a city admin, or a server without Everee", async () => {
+  it("shows the button greyed out with the reason when no approved run is waiting, and shows nothing for payment status Paid, a city admin, or a server without Everee", async () => {
     await startServer({ runs: [] });
     const first = await mount();
     await apply(first.container, { city: "Test City", driver: "Dee Test" });
     expect(await screen.findByText(/No approved pay run is waiting to be paid/)).toBeTruthy();
-    expect(screen.queryByRole("button", { name: "Pay with Everee" })).toBeNull();
+    // the button is still there, so it is easy to find, but it cannot be pressed until a pay run is approved; the page says why and where to go
+    const waiting = screen.getByRole("button", { name: "Pay with Everee" });
+    expect(waiting.disabled).toBe(true);
+    expect(waiting.getAttribute("aria-describedby")).toBeTruthy();
+    expect(within(screen.getByRole("region", { name: "Pay with Everee" })).getByRole("link", { name: "Prepare a pay run" }).getAttribute("href")).toBe("/admin/pay-runs?cityId=3");
     cleanup();
 
     await startServer();
