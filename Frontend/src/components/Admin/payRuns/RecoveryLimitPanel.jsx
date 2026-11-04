@@ -38,11 +38,12 @@ export default function RecoveryLimitPanel({ isSuperAdmin }) {
 
   return (
     <section className="card-surface p-4" aria-labelledby="recovery-limit">
-      <h2 id="recovery-limit" className="text-base font-semibold text-ink">Recovery limit</h2>
+      <h2 id="recovery-limit" className="text-base font-semibold text-ink">Deduction limit per driver</h2>
       <p className="mt-1 text-sm text-ink-muted">
         {limit === undefined ? "Could not load the setting." : describeLimit(limit)}
       </p>
-      <p className="mt-1 text-xs text-ink-muted">Proposed policy, not yet confirmed with the client. A run keeps the limit it was drafted with.</p>
+      <p className="mt-1 text-sm text-ink-muted">The most taken for claims, advances and other debts from each driver’s pay. When not set, these deductions are paused.</p>
+      <p className="mt-1 text-xs text-ink-muted">Changes apply to new drafts. Existing drafts keep their saved limit.</p>
       {isSuperAdmin && !editing && (
         <button type="button" onClick={() => setEditing(true)} className="mt-3 min-h-11 rounded-xl border border-line bg-white px-4 text-sm font-semibold text-brand">
           Change

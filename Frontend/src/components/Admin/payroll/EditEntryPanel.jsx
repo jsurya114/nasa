@@ -29,7 +29,7 @@ export default function EditEntryPanel({ entry, onDone, onCancel }) {
       .then(({ data }) => {
         const latest = data.versions[data.versions.length - 1].entry;
         setCurrent(latest);
-        setForm(Object.fromEntries(FIELDS.map(([key, , column]) => [key, text(latest[column])])));
+        setForm({ ...Object.fromEntries(FIELDS.map(([key, , column]) => [key, text(latest[column])])), disbursedOutsidePayroll: latest.disbursed_outside_payroll === true });
       })
       .catch(() => { if (!controller.signal.aborted) setLoadFailed(true); });
     return () => controller.abort();
@@ -44,6 +44,7 @@ export default function EditEntryPanel({ entry, onDone, onCancel }) {
     for (const [key, , column] of FIELDS) {
       if (form[key] !== text(current[column])) changes[key] = form[key] === "" && key !== "amount" ? null : form[key];
     }
+    if (current.entry_type === "advance" && form.disbursedOutsidePayroll !== (current.disbursed_outside_payroll === true)) changes.disbursedOutsidePayroll = form.disbursedOutsidePayroll;
     if (Object.keys(changes).length === 0) {
       setErrors({ changes: "Change at least one field" });
       return;
@@ -87,6 +88,10 @@ export default function EditEntryPanel({ entry, onDone, onCancel }) {
           )}
         </Field>
       ))}
+      {current.entry_type === "advance" && <div className="rounded-xl border border-line bg-white p-3 sm:col-span-2">
+        <label className="flex min-h-11 items-center gap-2 text-sm font-medium"><input type="checkbox" className="h-5 w-5" checked={form.disbursedOutsidePayroll} onChange={(e) => setForm((f) => ({ ...f, disbursedOutsidePayroll: e.target.checked }))} />Driver has received this advance</label>
+        <p className="mt-1 text-xs text-ink-muted">Confirm only after handing over the money. This records the fact; it does not send money. Repayments stay paused while unchecked.</p>
+      </div>}
       <div className="sm:col-span-2">
         <Field label="Why are you editing this?" error={errors.reason}>
           <input className={inputClass} value={reason} onChange={(e) => setReason(e.target.value)} maxLength={480} />
