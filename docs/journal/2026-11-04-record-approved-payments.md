@@ -32,6 +32,26 @@ The rollback file refuses to remove populated payment history. Once a receipt ex
 
 No new environment variables are required. No production migration or deployment is part of this change.
 
+## Everee integration handoff (#31)
+
+The Dashboard cards and approved-run payment status are the shared entry points. Keep **Pay with Everee** distinct from **Record completed payments**: the latter is an admin's confirmation of money already received outside NASA and must never initiate a provider call.
+
+Existing manual-record routes:
+
+- `GET /admin/payroll/payments/runs` lists city-scoped awaiting/history cards.
+- `GET /admin/payroll/payments/runs/:runId` reviews frozen statements, blockers and manual receipts.
+- `POST /admin/payroll/payments/runs/:runId/record` confirms an external payment using a request UUID, paid date, method, reference, explicit confirmation and optional statement IDs. The server determines every amount.
+
+Connect Everee's preview/confirmation to the same run and immutable statement IDs. Preserve the provider-specific worker, environment, feature-switch and confirmer checks from its own implementation. Never recalculate earnings, deductions or debt when submitting or settling a payment.
+
+The manual settlement currently owns the transaction that checks the frozen earning rows and updates `pay_statements`, `payment_dashboard` and `dashboard_data` together. Extract a shared internal completion operation when adding provider settlement, with separate evidence for admin confirmation and verified provider completion. Do not call the manual HTTP endpoint from a webhook or fabricate its admin attestation. Manual receipt tables are currently manual-only; provider attempt IDs, event evidence and audit history need their own additive storage or an explicit migration.
+
+Submission and completion are separate states. Use the shared statement status to reserve a submitted payment; keep an unknown result unconfirmed and block manual marking or another transfer until reconciled. Only a verified successful provider completion should mark all three records paid. Use consistent run/city/statement locking between manual recording, provider submission, reconciliation and completion so simultaneous requests cannot both act on one statement. Keep network requests outside long database transactions; persist attempts and stable idempotency keys before sending.
+
+The cards already show processing/unconfirmed counts and the manual form blocks them. Extend the history to show provider attempts, results and references alongside manual receipts; a provider-paid statement currently has only its paid status and no manual receipt. Reuse the same status after partial success, and retain unpaid/failed drivers for review.
+
+Integration checks: manual confirmation racing provider submission; retries after a lost response; duplicate/out-of-order events; partial success; unknown outcomes; paid statements never resubmitted; city and confirmer scope; identical frozen amounts and remaining debt before/after completion. Keep sandbox and production evidence separate. No production payment switch is enabled by this handoff.
+
 ## Validation
 
 - Database-backed tests cover scope, approval, selected membership, partial/all confirmation, replay, atomic rollback, processing payouts, changed earnings and unchanged balances/amounts.
