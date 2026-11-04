@@ -69,5 +69,11 @@ export const createEvereeClient = (config, { fetchImpl = fetch, timeoutMs = REQU
     post: (path, body) => request('POST', path, body),
     // The configured pay codes of the company: a read-only call that proves the token and tenant ID work together.
     listPayCodes: () => request('GET', '/integration/v1/pay-codes'),
+    // Loose text search over names, email, phone and IDs (at least 3 characters, at most 10 results). Read-only.
+    searchWorkers: (term) => request('GET', `/integration/v1/workers/search?term=${encodeURIComponent(term)}`),
+    // One worker by the external worker ID if there is one, else Everee's own ID. Read-only.
+    getWorker: (id) => request('GET', `/integration/v1/workers/${encodeURIComponent(id)}`),
+    // Creates a 1099 contractor with the complete record (sandbox test workers only; see workerStore.js).
+    createContractor: (body) => request('POST', '/integration/v1/workers/contractor', body),
   };
 };
