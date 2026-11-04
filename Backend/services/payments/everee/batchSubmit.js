@@ -360,18 +360,30 @@ export const retryBatch = async (db, admin, batchId, deps = {}) => {
     const { gate, result } = await computePreview(tx, admin, batch.pay_run_id, { env }).then((r) => ({ gate: r.gate, result: r.result }));
     if (!gate.enabled) throw new PayrollError(409, `payments to Everee cannot be sent: ${gate.reason}`);
     if (!result.confirm.allowed) throw new PayrollError(403, result.confirm.reason);
+    // The same batch-level rules as confirming (a voided run, or a live city without its time zone and work location). "Nobody to pay" is
+    // not one of them: the statements of this batch are already in it, so the preview always calls them blocked.
+    const batchBlocker = result.batchBlockers.find((b) => ['run_not_finalized', 'city_settings_missing'].includes(b.code));
+    if (batchBlocker) throw new PayrollError(409, batchBlocker.message);
     if (config.environment !== batch.environment) throw new PayrollError(409, `this batch was made in ${batch.environment}; the server is set up for ${config.environment}`);
 
     const { rows: failed } = await tx.query(
-      `SELECT i.id, i.pay_statement_id, i.driver_id, s.payout_status FROM everee_payment_items i JOIN pay_statements s ON s.id = i.pay_statement_id
+      `SELECT i.id, i.pay_statement_id, i.driver_id, i.everee_worker_id, i.external_worker_id, s.payout_status FROM everee_payment_items i JOIN pay_statements s ON s.id = i.pay_statement_id
         WHERE i.batch_id = $1 AND i.status = 'failed' ORDER BY i.id FOR UPDATE OF i, s`, [batchId]);
     const retryable = [];
     for (const item of failed) {
       // A statement marked paid by hand in the meantime is never sent; a worker who is no longer ready is not sent either.
       if (item.payout_status !== 'failed') continue;
       const { rows: [link] } = await tx.query(
-        'SELECT onboarding_complete, tin_status, terminated FROM everee_workers WHERE driver_id = $1 AND environment = $2 AND unlinked_at IS NULL', [item.driver_id, config.environment]);
+        `SELECT everee_worker_id, external_worker_id, onboarding_complete, tin_status, terminated FROM everee_workers
+          WHERE driver_id = $1 AND environment = $2 AND unlinked_at IS NULL`, [item.driver_id, config.environment]);
       if (!link || !readyToPay({ onboardingComplete: link.onboarding_complete, tinStatus: link.tin_status, terminated: link.terminated })) continue;
+      // The payable goes to the worker saved on the item. If the driver has been linked to another Everee worker since, that is not the worker
+      // whose readiness was just checked, so it is not sent: it stays failed until a person looks.
+      if (link.everee_worker_id !== item.everee_worker_id || (link.external_worker_id ?? null) !== (item.external_worker_id ?? null)) {
+        await tx.query("UPDATE everee_payment_items SET error_message = $2, updated_at = now() WHERE id = $1",
+          [item.id, 'The driver is now linked to a different Everee worker than this payment was made for; it was not sent. Check it before doing anything else.']);
+        continue;
+      }
       retryable.push(item);
     }
     if (retryable.length > 0) {

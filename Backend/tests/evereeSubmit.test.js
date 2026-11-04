@@ -255,6 +255,54 @@ test('everee submit: reserve, send, payout request, replay, partial failure, ret
       await assert.rejects(retryBatch(db, sup2, batch.batch.id, deps(retry.client, { env: SANDBOX })), { status: 409, message: /switched off/ });
     });
 
+    await t.test('a retry goes only to the worker saved on the payment: a driver linked to another worker since is not sent to', async () => {
+      const run = await scenario('N', [[dA, '10.00']]);
+      const batch = await submit(run.run, makeEveree({ 'EW-A': 'refuse' }).client);
+      assert.equal(batch.counts.failed, 1);
+      // the driver is unlinked and linked to a DIFFERENT Everee worker that is ready
+      await db.query("UPDATE everee_workers SET unlinked_by = $2, unlinked_at = now(), unlink_reason = 'Test relink' WHERE driver_id = $1 AND unlinked_at IS NULL AND environment = 'sandbox'", [dA, sup1.id]);
+      await db.query(`INSERT INTO everee_workers (driver_id, environment, everee_worker_id, link_source, onboarding_complete, tin_status, linked_by)
+        VALUES ($1, 'sandbox', 'EW-A-OTHER', 'created_sandbox', true, 'VERIFIED', $2)`, [dA, sup1.id]);
+      const other = makeEveree();
+      const view = await retryBatch(db, sup2, batch.batch.id, deps(other.client));
+      assert.deepEqual(other.state.creates, [], 'nothing is sent to the old or the new worker');
+      assert.equal(view.items[0].status, 'failed');
+      assert.match(view.items[0].error, /different Everee worker/);
+      // linked back to the worker the payment was made for: it is sent again
+      await db.query("UPDATE everee_workers SET unlinked_by = $2, unlinked_at = now(), unlink_reason = 'Test relink back' WHERE driver_id = $1 AND unlinked_at IS NULL AND environment = 'sandbox'", [dA, sup1.id]);
+      await db.query(`INSERT INTO everee_workers (driver_id, environment, everee_worker_id, link_source, onboarding_complete, tin_status, linked_by)
+        VALUES ($1, 'sandbox', 'EW-A', 'created_sandbox', true, 'VERIFIED', $2)`, [dA, sup1.id]);
+      const back = makeEveree();
+      await retryBatch(db, sup2, batch.batch.id, deps(back.client));
+      assert.deepEqual(back.state.creates.map((c) => c.workerId), ['EW-A']);
+    });
+
+    await t.test('a retry obeys the batch-level rules too: a live city that lost its settings, and a run that is no longer finalized', async () => {
+      const LIVE = { ...PRODUCTION, EVEREE_PRODUCTION_PAYMENTS_APPROVED: 'true' };
+      for (const [driver, id] of [[dA, 'PW-A'], [dB, 'PW-B']]) {
+        await db.query(`INSERT INTO everee_workers (driver_id, environment, everee_worker_id, link_source, onboarding_complete, tin_status, linked_by)
+          VALUES ($1, 'production', $2, 'matched_email', true, 'VERIFIED', $3)`, [driver, id, sup1.id]);
+      }
+      const run = await scenario('V', [[dA, '10.00'], [dB, '11.00']]);
+      await setCitySettings(db, sup2, run.city, { timeZone: 'America/Chicago', workLocationId: 5 });
+      const batch = await submit(run.run, makeEveree({ 'PW-A': 'refuse' }).client, { previewHash: await hashOf(run.run, LIVE), extra: { env: LIVE } });
+      assert.deepEqual([batch.batch.environment, batch.counts.failed, batch.counts.submitted], ['production', 1, 1]);
+
+      await setCitySettings(db, sup2, run.city, { timeZone: null, workLocationId: null });
+      const fake = makeEveree();
+      await assert.rejects(retryBatch(db, sup2, batch.batch.id, deps(fake.client, { env: LIVE })), { status: 409, message: /time zone and work location/ });
+      assert.deepEqual([fake.state.creates, fake.state.payouts], [[], []]);
+      await setCitySettings(db, sup2, run.city, { timeZone: 'America/Chicago', workLocationId: 5 });
+      assert.equal((await retryBatch(db, sup2, batch.batch.id, deps(fake.client, { env: LIVE }))).counts.failed, 0, 'with its settings back the retry goes through');
+
+      const second = await scenario('Y', [[dA, '10.00']]);
+      const batch2 = await submit(second.run, makeEveree({ 'EW-A': 'refuse' }).client);
+      await db.query("UPDATE pay_runs SET status = 'voided', closed_at = now(), closed_by = $2, close_reason = 'Test void' WHERE id = $1", [second.run.id, sup1.id]);
+      const none = makeEveree();
+      await assert.rejects(retryBatch(db, sup2, batch2.batch.id, deps(none.client)), { status: 409, message: /not finalized/ });
+      assert.deepEqual(none.state.creates, []);
+    });
+
     await t.test('a rate limit is waited out and repeated (it means Everee did not run the request); one that never clears is "failed", not "unconfirmed"', async () => {
       const run = await scenario('L', [[dA, '10.00'], [dB, '11.00']]);
       sleeps.length = 0;
