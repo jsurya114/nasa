@@ -1,4 +1,4 @@
--- Rollback for issue #31 part 5: removes the four status columns (what we saw on the last look at Everee) and restores the previous guard.
+-- Rollback for issue #31 part 5: removes the five status columns (what we saw on the last look at Everee) and restores the previous guard.
 -- The pay date of a payment is lost; run it only if you do not need it. Refuses to run if any item has a pay date, because that is evidence.
 DO $$ BEGIN
   IF EXISTS (SELECT 1 FROM everee_payment_items WHERE everee_pay_date IS NOT NULL) THEN
@@ -6,6 +6,7 @@ DO $$ BEGIN
   END IF;
 END $$;
 ALTER TABLE everee_payment_items DROP CONSTRAINT IF EXISTS everee_items_check_note_length;
+ALTER TABLE everee_payment_items DROP COLUMN IF EXISTS send_lease_until;
 ALTER TABLE everee_payment_items DROP COLUMN IF EXISTS payment_link;
 ALTER TABLE everee_payment_items DROP COLUMN IF EXISTS check_note;
 ALTER TABLE everee_payment_items DROP COLUMN IF EXISTS last_checked_at;

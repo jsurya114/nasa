@@ -31,7 +31,8 @@ const UNCERTAIN_AFTER_MINUTES = 5;
 // Items worth looking at: waiting or returned ones that either have a payment to read or were asked for payout, or whose answer has been missing a while.
 // Placeholders: $2 is the list of waiting statuses.
 const DUE_SQL = `(i.status = ANY($2::text[]) OR (i.status = 'paid' AND i.deposit_returned))
-  AND (i.everee_payment_id IS NOT NULL OR i.payout_requested_at IS NOT NULL OR COALESCE(i.last_attempt_at, i.created_at) < now() - make_interval(mins => ${UNCERTAIN_AFTER_MINUTES}))`;
+  AND (i.everee_payment_id IS NOT NULL OR i.payout_requested_at IS NOT NULL
+       OR (COALESCE(i.last_attempt_at, i.created_at) < now() - make_interval(mins => ${UNCERTAIN_AFTER_MINUTES}) AND COALESCE(i.send_lease_until, 'epoch') < now()))`;
 
 const note = (tx, itemId, text, extra = '') => tx.query(
   `UPDATE everee_payment_items SET check_note = $2, last_checked_at = now(), updated_at = now() ${extra} WHERE id = $1`, [itemId, text ? clip(text).slice(0, 300) : null]);
@@ -40,7 +41,7 @@ const loadItem = async (db, itemId) => (await db.query(
   `SELECT i.id, i.status, i.pay_statement_id, i.external_id, i.everee_worker_id, i.everee_payment_id, i.payment_link, i.everee_payable_status, i.deposit_returned, i.amount::text AS amount,
           i.payout_requested_at, i.external_worker_id, b.pay_run_id, b.city_id, b.environment, s.time_zone,
           (SELECT count(*) FROM everee_payment_attempts a WHERE a.item_id = i.id AND a.outcome = 'accepted')::int AS accepted_attempts,
-          (i.payout_requested_at IS NULL AND COALESCE(i.last_attempt_at, i.created_at) >= now() - make_interval(mins => ${UNCERTAIN_AFTER_MINUTES})) AS may_be_sending
+          (i.payout_requested_at IS NULL AND (COALESCE(i.last_attempt_at, i.created_at) >= now() - make_interval(mins => ${UNCERTAIN_AFTER_MINUTES}) OR COALESCE(i.send_lease_until, 'epoch') >= now())) AS may_be_sending
      FROM everee_payment_items i JOIN everee_payment_batches b ON b.id = i.batch_id LEFT JOIN everee_city_settings s ON s.city_id = b.city_id WHERE i.id = $1`, [itemId])).rows[0];
 
 // Marks the statement and item paid in one transaction. Returns what happened.
@@ -71,8 +72,12 @@ const markNeverCreated = (db, item) => inTransaction(db, async (tx) => {
   await tx.query('SELECT id FROM pay_runs WHERE id = $1 FOR UPDATE', [item.pay_run_id]);
   await lockCityPayroll(tx, item.city_id);
   const { rows: [fresh] } = await tx.query(
-    `SELECT i.status AS item_status, i.payout_requested_at, s.payout_status FROM everee_payment_items i JOIN pay_statements s ON s.id = i.pay_statement_id WHERE i.id = $1 FOR UPDATE OF i, s`, [item.id]);
-  if (!OPEN.includes(fresh.item_status) || !OPEN.includes(fresh.payout_status) || fresh.payout_requested_at) return 'not_failable';
+    `SELECT i.status AS item_status, i.payout_requested_at, s.payout_status,
+            (COALESCE(i.last_attempt_at, i.created_at) >= now() - make_interval(mins => ${UNCERTAIN_AFTER_MINUTES}) OR COALESCE(i.send_lease_until, 'epoch') >= now()) AS owned,
+            EXISTS (SELECT 1 FROM everee_payment_attempts a WHERE a.item_id = i.id AND a.outcome = 'accepted') AS accepted
+       FROM everee_payment_items i JOIN pay_statements s ON s.id = i.pay_statement_id WHERE i.id = $1 FOR UPDATE OF i, s`, [item.id]);
+  // Checked again under the locks: a sender may have taken the item since it was read, and then it is not ours to release.
+  if (!OPEN.includes(fresh.item_status) || !OPEN.includes(fresh.payout_status) || fresh.payout_requested_at || fresh.owned || fresh.accepted) return 'not_failable';
   await tx.query(
     `UPDATE everee_payment_items SET status = 'failed', error_message = $2, check_note = NULL, last_checked_at = now(), updated_at = now() WHERE id = $1`,
     [item.id, 'Everee has no record of this payable, so it was never created. It can be sent again with "Retry what failed".']);
