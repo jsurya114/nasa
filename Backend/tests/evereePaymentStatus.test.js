@@ -154,7 +154,7 @@ test('everee payment status: only a payment that landed marks a statement paid',
 
     await t.test('the shared payment history shows the Everee result beside manual receipts, labelled system-verified, and the manual receipt shape is unchanged', async () => {
       const review = await reviewRunPayments(db, sup2, sc.run.id);
-      const forDriver = (driver) => review.drivers.find((d) => String(d.statementId) === String(driver.id));
+      const forDriver = (driver, from = review) => from.drivers.find((d) => String(d.statementId) === String(driver.id));
       const sA = await stmt(sc, dA);
       const a = forDriver(sA);
       assert.equal(a.payment, null, 'the manual receipt field stays as it was: no manual receipt for an Everee payment');
@@ -165,6 +165,9 @@ test('everee payment status: only a payment that landed marks a statement paid',
       assert.ok(a.providerPayment.confirmedAt && a.providerPayment.initiatedAt && a.providerPayment.lastCheckedAt && a.providerPayment.batchId && a.providerPayment.itemId);
       const waiting = review.drivers.find((d) => d.providerPayment?.status === 'submitted');
       assert.equal(waiting.providerPayment.systemVerified, false, 'sent but not paid is not system-verified');
+      // A city admin may see the run's history but not the provider's details: the outcome only.
+      const reduced = forDriver(sA, await reviewRunPayments(db, cityAdmin, sc.run.id)).providerPayment;
+      assert.deepEqual(reduced, { provider: 'everee', systemVerified: true, environment: 'sandbox', status: 'paid', paidOn: '2026-11-09', returned: false, needsReview: false });
     });
 
     await t.test('a deposit returned AFTER paid is flagged for a person and the statement stays paid; the flag clears when the retry settles', async () => {

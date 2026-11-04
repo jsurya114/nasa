@@ -1,6 +1,6 @@
 // Records an admin's confirmation of an external payment. Never calls a bank or provider.
 // Call inside a transaction. Frozen statements and immutable earning-line IDs define what is paid.
-import { assertCityAllowed, PayrollError } from "./payRunStore.js";
+import { assertCityAllowed, isSuperAdmin, PayrollError } from "./payRunStore.js";
 import { lockCityPayroll } from "../claims/claimsStore.js";
 import { blockersFor, reviewRunAsBatch } from "./payBatchReview.js";
 import { fromCents, toCents } from "./payCalculator.js";
@@ -288,7 +288,9 @@ export const listPaymentRuns = async (
 // What a payment provider (Everee) did for each statement of the run, to be shown beside the manual receipts. Additive: `payment` (the manual
 // receipt) keeps its shape. `status` is the item's: only "paid" means the provider confirmed the deposit, and that confirmation is made by the
 // system from the provider's own records, not typed in by an admin. Empty when the provider tables are not installed.
-const providerPaymentsFor = async (db, runId) => {
+// The batch view of Everee payments is for a super admin, so the history gives the same detail only to one. Any other admin who may see the
+// run's payment history gets the outcome alone (no IDs, references, requester names or notes).
+const providerPaymentsFor = async (db, admin, runId) => {
   const { rows: [installed] } = await db.query("SELECT to_regclass('everee_payment_items') IS NOT NULL AS yes");
   if (!installed.yes) return new Map();
   const { rows } = await db.query(
@@ -298,10 +300,11 @@ const providerPaymentsFor = async (db, runId) => {
       WHERE b.pay_run_id=$1 ORDER BY i.id`,
     [runId],
   );
+  const full = isSuperAdmin(admin);
   return new Map(
     rows.map((r) => [
       String(r.pay_statement_id),
-      {
+      full ? {
         provider: "everee",
         systemVerified: r.status === "paid",
         batchId: r.batch_id,
@@ -317,6 +320,14 @@ const providerPaymentsFor = async (db, runId) => {
         returned: r.deposit_returned,
         needsReview: r.deposit_returned || r.status === "unconfirmed" || r.status === "failed",
         note: r.status === "paid" ? r.check_note : (r.error_message ?? r.check_note),
+      } : {
+        provider: "everee",
+        systemVerified: r.status === "paid",
+        environment: r.environment,
+        status: r.status,
+        paidOn: r.pay_date,
+        returned: r.deposit_returned,
+        needsReview: r.deposit_returned || r.status === "unconfirmed" || r.status === "failed",
       },
     ]),
   );
@@ -332,7 +343,7 @@ export const reviewRunPayments = async (db, admin, runId) => {
       [runId],
     )
   ).rows;
-  const providerPayments = await providerPaymentsFor(db, runId);
+  const providerPayments = await providerPaymentsFor(db, admin, runId);
   // A legacy mark must be reconciled, never silently treated as a fresh payment confirmation.
   const unpaid = (
     await db.query(
