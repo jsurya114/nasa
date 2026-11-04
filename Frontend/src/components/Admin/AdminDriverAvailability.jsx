@@ -47,6 +47,10 @@ export default function AdminDriverAvailability() {
     "sunday"
   ];
 
+  // With a day chosen, only that day is shown for each driver (the list already holds only the drivers available that day).
+  // While a driver is being edited every day is shown again, so editing works as it always did.
+  const shownDays = daysOfWeek.includes(filterDay) && editingDriverId === null ? [filterDay] : daysOfWeek;
+
   const daysShort = {
     monday: "Mon",
     tuesday: "Tue",
@@ -681,7 +685,7 @@ export default function AdminDriverAvailability() {
                         <th className="px-6 py-4 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
                           Status
                         </th>
-                        <th className="px-6 py-4 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider" colSpan={7}>
+                        <th className="px-6 py-4 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider" colSpan={shownDays.length}>
                           Weekly Availability
                         </th>
                         <th className="px-6 py-4 text-center text-xs font-semibold text-gray-700 uppercase tracking-wider">
@@ -690,8 +694,8 @@ export default function AdminDriverAvailability() {
                       </tr>
                       <tr className="bg-gray-50 border-t border-line">
                         <th colSpan={3}></th>
-                        {daysOfWeek.map((day, index) => {
-                          const isCurrentDay = index === currentDayIndex;
+                        {shownDays.map((day) => {
+                          const isCurrentDay = daysOfWeek.indexOf(day) === currentDayIndex;
                           return (
                             <th
                               key={day}
@@ -747,7 +751,8 @@ export default function AdminDriverAvailability() {
                             </td>
 
                             {/* Day toggles */}
-                            {daysOfWeek.map((day, dayIdx) => {
+                            {shownDays.map((day) => {
+                              const dayIdx = daysOfWeek.indexOf(day);
                               const isAvailable = displayAvailability[day];
                               const isLocked = isDayLocked(day);
                               const isDayToday = dayIdx === currentDayIndex;
@@ -867,8 +872,9 @@ export default function AdminDriverAvailability() {
                       </div>
 
                       {/* Availability Grid */}
-                      <div className="grid grid-cols-7 gap-2 mb-4">
-                        {daysOfWeek.map((day, dayIdx) => {
+                      <div className={`grid ${shownDays.length === 1 ? "grid-cols-1" : "grid-cols-7"} gap-2 mb-4`}>
+                        {shownDays.map((day) => {
+                          const dayIdx = daysOfWeek.indexOf(day);
                           const isAvailable = displayAvailability[day];
                           const isLocked = isDayLocked(day);
                           const isDayToday = dayIdx === currentDayIndex;
