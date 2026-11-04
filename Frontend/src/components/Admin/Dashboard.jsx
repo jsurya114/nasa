@@ -1,4 +1,6 @@
-import React, { useState, useMemo, useCallback, useEffect } from "react";
+import usePersistentState from "../../hooks/usePersistentState.js";
+import { buildFilterParams, summaryParamsOf } from "./dashboard/filterParams.js";
+import React, { useState, useMemo, useCallback, useEffect, useRef } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import { useNavigate } from "react-router-dom";
 import {
@@ -20,6 +22,16 @@ import { summaryItems, summaryLook } from "./dashboard/penaltyDisplay.js";
 import Loader from "../Loader.jsx"
 import { CalendarDays, CalendarRange, ChevronDown, Gavel, LayoutGrid, ShieldCheck, Banknote } from "lucide-react";
 
+const BLANK_FILTERS = {
+  job: "All",
+  driver: "All",
+  route: "All",
+  startDate: "",
+  endDate: "",
+  paymentStatus: "All",
+  companyEarnings: false,
+};
+
 export default function Dashboard() {
   const dispatch = useDispatch();
   const navigate = useNavigate();
@@ -38,10 +50,11 @@ export default function Dashboard() {
     pagination,
     filters: reduxFilters,
     selectedDataType,
-    showTodayOnly
+    showTodayOnly,
+    tableOwnerId
   } = useSelector((state) => state.dash);
 
-  const { isSuperAdmin } = useSelector((state) => state.admin);
+  const { isSuperAdmin, admin } = useSelector((state) => state.admin);
   const penalty = usePenaltySummary();
   const penaltyLines = useMemo(() => summaryItems(penalty, Number(summaryData?.total_driver_payment || 0) - Number(summaryData?.total_insurance_deduction || 0)), [penalty, summaryData]);
 
@@ -51,19 +64,13 @@ export default function Dashboard() {
   };
 
   // Local state for form inputs only
-  const [localFilters, setLocalFilters] = useState({
-    job: "All",
-    driver: "All",
-    route: "All",
-    startDate: "",
-    endDate: "",
-    paymentStatus: "All",
-    companyEarnings: false,
-  });
+  // The form is kept for when the admin leaves this page and comes back; `applied` is the form as it was when Filter Data was pressed.
+  const [localFilters, setLocalFilters] = usePersistentState("admin", "dashboard", "form", BLANK_FILTERS);
+  const [applied, setApplied] = usePersistentState("admin", "dashboard", "applied", null);
 
   const [currentPage, setCurrentPage] = useState(1);
-  const [itemsPerPage, setItemsPerPage] = useState(10);
-  const [showExtraFields, setShowExtraFields] = useState(false);
+  const [itemsPerPage, setItemsPerPage] = usePersistentState("admin", "dashboard", "perPage", 10);
+  const [showExtraFields, setShowExtraFields] = usePersistentState("admin", "dashboard", "extra", false);
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [selectedPaymentType, setSelectedPaymentType] = useState(null); // 'daily' or 'weekly'
 
@@ -181,10 +188,30 @@ export default function Dashboard() {
     };
   }, [summaryData, isFiltered]);
 
-  // Fetch dropdown data AND today's data on mount
+  // Fetch dropdown data AND the table on mount. Coming back to the page, the admin finds what they had: the dropdowns narrowed to the
+  // chosen city, and the table they filtered (kept in Redux, or asked again with the same filters after a reload) instead of today's.
+  const latest = useRef({});
+  latest.current = { localFilters, applied, isFiltered, showTodayOnly, showExtraFields, isSuperAdmin, adminId: admin?.id ?? null, tableOwnerId };
+  const lastPerPage = useRef(null);
   useEffect(() => {
-    dispatch(fetchDashboardData());
-    dispatch(fetchTodayPaymentData({ page: 1, limit: itemsPerPage }));
+    const perPageChanged = lastPerPage.current !== null && lastPerPage.current !== itemsPerPage;
+    lastPerPage.current = itemsPerPage;
+    const { localFilters: form, applied: before, isFiltered: held, showTodayOnly: today, showExtraFields: extra, isSuperAdmin: superAdmin, adminId, tableOwnerId: owner } = latest.current;
+    dispatch(fetchDashboardData()).then(() => {
+      if (form.job && form.job !== "All") {
+        dispatch(fetchDriversByCity(form.job));
+        dispatch(fetchRoutesByCity(form.job));
+      }
+    });
+    // Held only if the signed-in administrator asked for it: a table is never carried over from another person.
+    const redisHoldsFilteredTable = held && !today && adminId !== null && owner === adminId;
+    if (perPageChanged || (!redisHoldsFilteredTable && !before)) {
+      dispatch(fetchTodayPaymentData({ page: 1, limit: itemsPerPage }));
+    } else if (!redisHoldsFilteredTable) {
+      const params = buildFilterParams(before, { limit: itemsPerPage, isSuperAdmin: superAdmin });
+      dispatch(fetchFilteredPaymentData(params));
+      if (extra) dispatch(fetchSummaryData(summaryParamsOf(params)));
+    }
   }, [dispatch, itemsPerPage]);
 
   // Handle job city change to fetch filtered drivers and routes
@@ -203,7 +230,7 @@ export default function Dashboard() {
       dispatch(fetchDriversByCity("All"));
       dispatch(fetchRoutesByCity("All")); // ✅ Fetch all routes
     }
-  }, [dispatch]);
+  }, [dispatch, setLocalFilters]);
   const handleFilterChange = useCallback((e) => {
     const { name, value, type, checked } = e.target;
 
@@ -217,7 +244,7 @@ export default function Dashboard() {
       ...prev,
       [name]: type === "checkbox" ? checked : value,
     }));
-  }, [handleJobChange]);
+  }, [handleJobChange, setLocalFilters]);
 
   // ✅ UPDATED: Handle Filter Data button - check if filters are applied
   const handleFilterClick = () => {
@@ -225,63 +252,24 @@ export default function Dashboard() {
     penalty.retry(); // and ask again, so a record saved or completed since then shows up
     setShowExtraFields(localFilters.companyEarnings);
 
-    // ✅ NEW: Check if any filters are actually applied
-    const hasFilters =
-      localFilters.job !== "All" ||
-      localFilters.driver !== "All" ||
-      localFilters.route !== "All" ||
-      localFilters.startDate ||
-      localFilters.endDate ||
-      localFilters.paymentStatus !== "All";
-
-    const filterParams = {
-      page: 1,
-      limit: itemsPerPage,
-      dataType: "all"
-    };
+    const filterParams = buildFilterParams(localFilters, { limit: itemsPerPage, isSuperAdmin });
+    setApplied(localFilters);
 
     dispatch(setDataType("all"));
-
-    // ✅ NEW: If no filters, show all data instead of filtered
-    if (!hasFilters) {
-      // No filters applied - fetch all data
-      filterParams.allData = true; // This will fetch all data without date restriction
-    } else {
-      // Filters applied - add them to params
-      if (localFilters.job !== "All") filterParams.job = localFilters.job;
-      if (localFilters.driver !== "All") filterParams.driver = localFilters.driver;
-      if (localFilters.route !== "All") filterParams.route = localFilters.route;
-      if (localFilters.startDate) filterParams.startDate = localFilters.startDate;
-      if (localFilters.endDate) filterParams.endDate = localFilters.endDate;
-      if (localFilters.paymentStatus !== "All") filterParams.paymentStatus = localFilters.paymentStatus;
-    }
-
-    if (isSuperAdmin && localFilters.companyEarnings) filterParams.companyEarnings = localFilters.companyEarnings;
 
     setCurrentPage(1);
 
     dispatch(fetchFilteredPaymentData(filterParams));
 
     if (localFilters.companyEarnings) {
-      const summaryParams = { ...filterParams };
-      delete summaryParams.page;
-      delete summaryParams.limit;
-      delete summaryParams.companyEarnings;
-      dispatch(fetchSummaryData(summaryParams));
+      dispatch(fetchSummaryData(summaryParamsOf(filterParams)));
     }
   };
 
   // ✅ UPDATED: Handle Clear Filters - reset to today's data
   const handleClearFilters = () => {
-    setLocalFilters({
-      job: "All",
-      driver: "All",
-      route: "All",
-      startDate: "",
-      endDate: "",
-      paymentStatus: "All",
-      companyEarnings: false,
-    });
+    setLocalFilters(BLANK_FILTERS);
+    setApplied(null);
     setShowExtraFields(false);
     setCurrentPage(1);
     setOriginalDataTypes({ daily: false, weekly: false });
