@@ -8,6 +8,7 @@ import {
   getPayrollSettings, getPayRun, getPayRuns, postDiscard, postFinalize, postPayRun, postVoid, putRecoveryLimit,
 } from '../controllers/payroll/payRunController.js';
 import { getBatchReview } from '../controllers/payroll/payBatchController.js';
+import { getStatus as getEvereeStatus, postCheck as postEvereeCheck } from '../controllers/payroll/evereeController.js';
 import { getAdminStatement, getDriverBalanceList, getDriverDashboardSummary, getDriverStatementList } from '../controllers/payroll/statementController.js';
 
 const router = express.Router();
@@ -35,6 +36,9 @@ router.get('/runs/:runId', getPayRun);
 router.post('/runs/:runId/finalize', postFinalize);
 router.post('/runs/:runId/discard', postDiscard);
 router.post('/runs/:runId/void', postVoid);
+// Everee connection (#31): whether the backend is set up and which environment, and a read-only test call. Super admin only, checked in the service.
+router.get('/everee/status', getEvereeStatus);
+router.post('/everee/check', postEvereeCheck);
 // City payment batch review (#144): read-only; says who could be paid and why not.
 router.get('/runs/:runId/batch-review', getBatchReview);
 
