@@ -9,7 +9,7 @@ import { EvereeError } from '../services/payments/everee/evereeClient.js';
 import { applyPaymentEvent, checkBatch, checkOpenItems, reconcileItem } from '../services/payments/everee/paymentStatus.js';
 import { receiveEvent } from '../services/payments/everee/webhookService.js';
 import { finalizeRun, generateRun } from '../services/payroll/payRuns/payRunStore.js';
-import { recordRunPayment } from '../services/payroll/payRuns/paymentRecords.js';
+import { recordRunPayment, reviewRunPayments } from '../services/payroll/payRuns/paymentRecords.js';
 
 // Needs a PostgreSQL copy with the app's tables (never production): PAYROLL_TEST_DB=1 and the DB_* variables. One transaction, always rolled back.
 // Everything is made up, and Everee is a fake: no request leaves this machine, no money moves.
@@ -150,6 +150,21 @@ test('everee payment status: only a payment that landed marks a statement paid',
       const manual = async (ids) => recordRunPayment(db, sup2, sc.run.id, { requestId: randomUUID(), paidOn: (await one("SELECT to_char(now(), 'YYYY-MM-DD') AS d")).d, method: 'other', reference: 'manual test', confirmed: true, statementIds: ids });
       assert.equal((await manual([(await stmt(sc, dA)).id])).alreadyPaid, true);
       await assert.rejects(manual([(await stmt(sc, dB)).id]), { status: 409, message: /processing, unconfirmed or needs review/ });
+    });
+
+    await t.test('the shared payment history shows the Everee result beside manual receipts, labelled system-verified, and the manual receipt shape is unchanged', async () => {
+      const review = await reviewRunPayments(db, sup2, sc.run.id);
+      const forDriver = (driver) => review.drivers.find((d) => String(d.statementId) === String(driver.id));
+      const sA = await stmt(sc, dA);
+      const a = forDriver(sA);
+      assert.equal(a.payment, null, 'the manual receipt field stays as it was: no manual receipt for an Everee payment');
+      assert.deepEqual(
+        { provider: a.providerPayment.provider, systemVerified: a.providerPayment.systemVerified, status: a.providerPayment.status, reference: a.providerPayment.providerReference,
+          paidOn: a.providerPayment.paidOn, environment: a.providerPayment.environment, requestedBy: a.providerPayment.requestedByName, returned: a.providerPayment.returned, needsReview: a.providerPayment.needsReview },
+        { provider: 'everee', systemVerified: true, status: 'paid', reference: 'pay-A', paidOn: '2026-11-09', environment: 'sandbox', requestedBy: `Test two ${tag}`, returned: false, needsReview: false });
+      assert.ok(a.providerPayment.confirmedAt && a.providerPayment.initiatedAt && a.providerPayment.lastCheckedAt && a.providerPayment.batchId && a.providerPayment.itemId);
+      const waiting = review.drivers.find((d) => d.providerPayment?.status === 'submitted');
+      assert.equal(waiting.providerPayment.systemVerified, false, 'sent but not paid is not system-verified');
     });
 
     await t.test('a deposit returned AFTER paid is flagged for a person and the statement stays paid; the flag clears when the retry settles', async () => {

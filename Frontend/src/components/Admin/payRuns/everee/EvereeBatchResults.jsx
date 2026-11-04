@@ -25,7 +25,7 @@ export default function EvereeBatchResults({ view, busy, onCheck, onRetry }) {
       </div>
       {waiting > 0 && (
         <p className="mt-3 rounded-xl bg-amber-50 p-3 text-sm text-amber-900">
-          A payment is paid only when Everee confirms the deposit. Approve the payroll run in the Everee portal; this page then updates by itself within about 15 minutes, or press Check now.
+          A payment is paid only when Everee confirms the deposit. Approve the payroll run in the Everee portal. Everee is checked every 15 minutes and this window refreshes by itself every minute; or press Check now.
         </p>
       )}
       <ul className="mt-3 divide-y divide-line">

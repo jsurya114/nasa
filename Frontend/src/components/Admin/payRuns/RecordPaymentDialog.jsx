@@ -11,6 +11,7 @@ import {
   buttonClass,
   primaryClass,
 } from "../payroll/formParts.jsx";
+import ProviderPaymentLine from "./everee/ProviderPaymentLine.jsx";
 
 const METHODS = {
   bank_transfer: "Bank transfer",
@@ -386,6 +387,9 @@ export default function RecordPaymentDialog({
                               · {d.payment.reference} ·{" "}
                               {d.payment.recorded_by_name}
                             </p>
+                          )}
+                          {d.providerPayment && (
+                            <ProviderPaymentLine payment={d.providerPayment} />
                           )}
                         </li>
                       ))}

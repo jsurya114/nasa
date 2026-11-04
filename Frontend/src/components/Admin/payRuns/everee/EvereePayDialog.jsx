@@ -8,11 +8,12 @@ import EvereePreview from "./EvereePreview.jsx";
 import { readableError } from "./evereeLabels.js";
 
 const base = "/admin/payroll";
+export const REFRESH_MS = 60_000; // how often an open window re-reads the results while payments are still waiting
 
 // Pay a finalized run through Everee (#31): the server's preview, then ONE confirm click that sends the exact preview it showed. The confirm
 // carries a request ID that stays the same until the preview changes, so a repeated click or a lost answer never sends twice. The result is
 // read back from the server; nothing here decides what is paid.
-export default function EvereePayDialog({ runId, cityName, onClose, onChanged }) {
+export default function EvereePayDialog({ runId, cityName, onClose, onChanged, refreshMs = REFRESH_MS }) {
   const [state, setState] = useState({ status: "loading", preview: null, batches: [], message: "" });
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
@@ -67,6 +68,31 @@ export default function EvereePayDialog({ runId, cityName, onClose, onChanged })
     await load();
     onChanged?.();
   }, "The payment could not be confirmed. Look at the results below before trying again; pressing confirm again will not send it twice.");
+
+  // While payments wait for Everee, the open window reads the server's results again every minute (a read only: Everee is checked by the server
+  // every 15 minutes, or at once with Check now). A failed read is ignored; the last results stay on screen.
+  const waiting = state.batches.some((b) => b.counts.submitted + b.counts.unconfirmed > 0);
+  const paidCount = useRef(0);
+  useEffect(() => { paidCount.current = state.batches.reduce((n, b) => n + b.counts.paid, 0); }, [state.batches]);
+  useEffect(() => {
+    if (!waiting || busy) return undefined;
+    const controller = new AbortController();
+    const timer = setInterval(async () => {
+      try {
+        const [preview, batches] = await Promise.all([
+          axios.get(`${base}/runs/${runId}/everee-preview`, { signal: controller.signal }),
+          axios.get(`${base}/runs/${runId}/everee-batches`, { signal: controller.signal }),
+        ]);
+        if (controller.signal.aborted || !mounted.current) return;
+        const list = batches.data?.batches ?? [];
+        setState((s) => ({ ...s, status: "ready", preview: preview.data, batches: list }));
+        if (list.reduce((n, b) => n + b.counts.paid, 0) > paidCount.current) onChanged?.();
+      } catch {
+        // keep showing the last results; the next minute tries again
+      }
+    }, refreshMs);
+    return () => { clearInterval(timer); controller.abort(); };
+  }, [waiting, busy, runId, onChanged, refreshMs]);
 
   const afterAction = async () => { await load(); onChanged?.(); };
   const check = (batchId) => run(async () => { await axios.post(`${base}/everee-batches/${batchId}/check`); await afterAction(); }, "Everee could not be checked. Try again in a moment.");

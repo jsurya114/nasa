@@ -285,6 +285,43 @@ export const listPaymentRuns = async (
   };
 };
 
+// What a payment provider (Everee) did for each statement of the run, to be shown beside the manual receipts. Additive: `payment` (the manual
+// receipt) keeps its shape. `status` is the item's: only "paid" means the provider confirmed the deposit, and that confirmation is made by the
+// system from the provider's own records, not typed in by an admin. Empty when the provider tables are not installed.
+const providerPaymentsFor = async (db, runId) => {
+  const { rows: [installed] } = await db.query("SELECT to_regclass('everee_payment_items') IS NOT NULL AS yes");
+  if (!installed.yes) return new Map();
+  const { rows } = await db.query(
+    `SELECT i.pay_statement_id, i.id AS item_id, i.batch_id, b.environment, i.status, i.everee_payment_id, to_char(i.everee_pay_date,'YYYY-MM-DD') AS pay_date,
+            i.paid_at, a.name AS requested_by_name, b.created_at AS initiated_at, i.last_checked_at, i.deposit_returned, i.check_note, i.error_message
+       FROM everee_payment_items i JOIN everee_payment_batches b ON b.id=i.batch_id LEFT JOIN admin a ON a.id=b.created_by
+      WHERE b.pay_run_id=$1 ORDER BY i.id`,
+    [runId],
+  );
+  return new Map(
+    rows.map((r) => [
+      String(r.pay_statement_id),
+      {
+        provider: "everee",
+        systemVerified: r.status === "paid",
+        batchId: r.batch_id,
+        itemId: r.item_id,
+        environment: r.environment,
+        status: r.status,
+        providerReference: r.everee_payment_id,
+        paidOn: r.pay_date,
+        confirmedAt: r.paid_at,
+        requestedByName: r.requested_by_name,
+        initiatedAt: r.initiated_at,
+        lastCheckedAt: r.last_checked_at,
+        returned: r.deposit_returned,
+        needsReview: r.deposit_returned || r.status === "unconfirmed" || r.status === "failed",
+        note: r.status === "paid" ? r.check_note : (r.error_message ?? r.check_note),
+      },
+    ]),
+  );
+};
+
 export const reviewRunPayments = async (db, admin, runId) => {
   const review = await reviewRunAsBatch(db, admin, runId);
   const history = (
@@ -295,6 +332,7 @@ export const reviewRunPayments = async (db, admin, runId) => {
       [runId],
     )
   ).rows;
+  const providerPayments = await providerPaymentsFor(db, runId);
   // A legacy mark must be reconciled, never silently treated as a fresh payment confirmation.
   const unpaid = (
     await db.query(
@@ -330,6 +368,7 @@ export const reviewRunPayments = async (db, admin, runId) => {
     payment:
       history.find((p) => String(p.statement_id) === String(d.statementId)) ??
       null,
+    providerPayment: providerPayments.get(String(d.statementId)) ?? null,
   }));
   const eligible = drivers.filter((d) => d.eligible);
   const eligibleTotals = Object.fromEntries(

@@ -1,5 +1,6 @@
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { MemoryRouter } from "react-router-dom";
 import { installServer, removeShell, resetBrowser } from "../../../../test/fakeShell";
 
 // The Pay with Everee button and dialog (#31) with made-up answers. Nothing leaves this machine, no money moves.
@@ -156,5 +157,67 @@ describe("Pay with Everee", () => {
     await waitFor(() => expect(server.calls).toContain("post /admin/payroll/everee-batches/5/retry"));
     fireEvent.click(within(results).getByRole("button", { name: "Check now" }));
     await waitFor(() => expect(server.calls).toContain("post /admin/payroll/everee-batches/5/check"));
+  });
+  it("shows the unresolved claims and each driver's warning before the confirm button, without blocking it", async () => {
+    await startServer({
+      preview: previewOf({
+        summary: { drivers: 3, eligible: 2, blocked: 1, total: "230.00", withWarnings: 1, pendingClaims: { total: 3, unresolved: 2, ambiguous: 1, review: 0 } },
+        drivers: [
+          person(1, "Dee Test", "100.00", { blockers: [{ code: "previous_payout_failed", severity: "disclose", message: "an earlier payment attempt failed; check that it did not go through before paying again" }] }),
+          person(2, "Eli Test", "130.00"),
+          person(3, "Fay Test", "20.00", { eligible: false, blockers: [{ code: "no_everee_worker", severity: "blocking", message: "this driver is not linked to an Everee worker" }] }),
+        ],
+      }),
+    });
+    await mount();
+    await open();
+    const note = await screen.findByRole("note", { name: "Read before confirming" });
+    expect(within(note).getByText(/3 city claims are still unresolved/)).toBeTruthy();
+    expect(within(note).getByText(/1 of the drivers below has a warning/)).toBeTruthy();
+    const paid = within(screen.getByRole("list", { name: "Drivers that will be paid" }));
+    expect(paid.getByText(/An earlier payment attempt failed; check that it did not go through/)).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Confirm and pay 2 drivers, $230.00" }).disabled).toBe(false); // warn only
+  });
+
+  it("an open window re-reads the results by itself while payments wait, and tells the page when one is paid", async () => {
+    const server = await startServer({
+      preview: previewOf({ drivers: [], summary: { drivers: 0, eligible: 0, blocked: 0, total: "0.00" }, canSubmit: false, batchBlockers: [{ code: "nobody_to_pay", message: "no driver in this run can be paid right now" }] }),
+      batches: [batchOf([item(1, "Dee Test", "submitted")])],
+    });
+    const { default: EvereePayDialog } = await import("./EvereePayDialog.jsx");
+    const changed = vi.fn();
+    render(<EvereePayDialog runId={17} cityName="Test City" refreshMs={40} onClose={() => {}} onChanged={changed} />);
+    const results = await screen.findByRole("region", { name: "Everee payment results" });
+    expect(within(results).queryByText("Paid")).toBeNull();
+    server.batches = [batchOf([item(1, "Dee Test", "paid")])];
+    expect(await within(results).findByText("Paid")).toBeTruthy();
+    expect(changed).toHaveBeenCalled();
+    expect(within(results).queryByRole("button", { name: "Check now" })).toBeNull();
+  });
+
+  it("the payment history shows an Everee payment beside the manual receipt, as verified by the system, even after the run is fully paid", async () => {
+    const review = {
+      run: RUN,
+      drivers: [
+        { statementId: 1, driverId: 1, driverName: "Dee Test", payoutStatus: "paid", eligible: false, amounts: { net: "100.00" }, blockers: [], payment: null,
+          providerPayment: { provider: "everee", systemVerified: true, status: "paid", environment: "sandbox", providerReference: "pay-A", paidOn: "2026-11-09", confirmedAt: "2026-11-09T15:00:00Z", requestedByName: "Sam Super", initiatedAt: "2026-11-08T12:00:00Z", lastCheckedAt: "2026-11-09T15:05:00Z", returned: true, needsReview: true, note: null } },
+        { statementId: 2, driverId: 2, driverName: "Eli Test", payoutStatus: "paid", eligible: false, amounts: { net: "50.00" }, blockers: [],
+          payment: { paid_on: "2026-11-04", method: "cash", reference: "Cash handed over", recorded_by_name: "Sam Super" }, providerPayment: null },
+      ],
+      summary: { pendingClaims: { total: 0 } },
+    };
+    await installServer(async () => ({ status: 200, data: review }));
+    const { default: RecordPaymentDialog } = await import("../RecordPaymentDialog.jsx");
+    render(<MemoryRouter><RecordPaymentDialog runId={17} cityName="Test City" onClose={() => {}} onRecorded={() => {}} /></MemoryRouter>);
+    const card = await screen.findByLabelText("Everee payment");
+    expect(within(card).getByText(/Paid through Everee/)).toBeTruthy();
+    expect(within(card).getByText(/verified by the system/)).toBeTruthy();
+    expect(within(card).getByText(/sandbox: no real money/)).toBeTruthy();
+    expect(within(card).getByText(/Reference pay-A/)).toBeTruthy();
+    expect(within(card).getByText(/Pay date 2026-11-09/)).toBeTruthy();
+    expect(within(card).getByText(/Sent by Sam Super/)).toBeTruthy();
+    expect(within(card).getByText(/A bank returned this deposit/)).toBeTruthy();
+    expect(screen.getAllByLabelText("Everee payment")).toHaveLength(1); // only the Everee driver
+    expect(screen.getByText(/Cash handed over/)).toBeTruthy(); // the manual receipt is unchanged
   });
 });
