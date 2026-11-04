@@ -58,7 +58,7 @@ export const paymentsGate = (config, env = process.env) => {
     return { enabled: false, reason: 'sending payments to Everee is switched off (EVEREE_PAYMENTS_ENABLED is not "true")' };
   }
   // Production is a separate decision: it needs its own explicit approval setting, set only after Jasil approves going live.
-  if (config.environment === 'production' && String(env.EVEREE_PRODUCTION_PAYMENTS_APPROVED ?? '').trim().toLowerCase() !== 'true') {
+  if (config.environment === 'production' && env.EVEREE_PRODUCTION_PAYMENTS_APPROVED !== 'true') {
     return { enabled: false, reason: 'live payments are not approved yet (EVEREE_PRODUCTION_PAYMENTS_APPROVED is not "true")' };
   }
   return { enabled: true, reason: null };
