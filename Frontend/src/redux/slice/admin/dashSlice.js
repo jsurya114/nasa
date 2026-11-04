@@ -1,6 +1,21 @@
-import { createSlice, createAsyncThunk } from "@reduxjs/toolkit";
+import { createSlice, createAsyncThunk, isAnyOf } from "@reduxjs/toolkit";
 import axios from "../axiosInstance";
 import { toast } from "react-toastify";
+import { accessAdminUser, adminLogin, adminLogout, manualLogout } from "./adminSlice";
+
+// Everything on this page belongs to the administrator who asked for it: the table, the summary and the dropdowns are scoped to that
+// person's role and cities. Each read is recorded when it starts (with who asked), and its answer is used only if that record still exists.
+// Ending the session clears the records (see the session boundary below), so an answer still on its way from an earlier session is
+// dropped when it arrives, and the next person to sign in on this tab can never be shown the previous person's data.
+const withAsker = {
+  getPendingMeta: (_, { getState }) => ({ adminId: getState().admin?.admin?.id ?? null }),
+};
+// The record of the read this answer belongs to (and forgets it), or null when its session has ended.
+const settle = (state, action) => {
+  const asked = state.inFlight[action.meta.requestId] ?? null;
+  delete state.inFlight[action.meta.requestId];
+  return asked;
+};
 
 export const fetchDashboardData = createAsyncThunk(
   "dashboard/fetchDashboardData",
@@ -12,7 +27,8 @@ export const fetchDashboardData = createAsyncThunk(
     } catch (err) {
       return rejectWithValue(err.response?.data?.message || err.message);
     }
-  }
+  },
+  withAsker
 );
 
 // ✅ Fetch drivers filtered by city
@@ -27,7 +43,8 @@ export const fetchDriversByCity = createAsyncThunk(
     } catch (err) {
       return rejectWithValue(err.response?.data?.message || err.message);
     }
-  }
+  },
+  withAsker
 );
 
 // ✅ NEW: Fetch routes filtered by city
@@ -42,7 +59,8 @@ export const fetchRoutesByCity = createAsyncThunk(
     } catch (err) {
       return rejectWithValue(err.response?.data?.message || err.message);
     }
-  }
+  },
+  withAsker
 );
 
 export const fetchSummaryData = createAsyncThunk(
@@ -55,7 +73,8 @@ export const fetchSummaryData = createAsyncThunk(
     } catch (err) {
       return rejectWithValue(err.response?.data?.message || err.message);
     }
-  }
+  },
+  withAsker
 );
 
 export const fetchFilteredPaymentData = createAsyncThunk(
@@ -72,7 +91,8 @@ export const fetchFilteredPaymentData = createAsyncThunk(
     } catch (err) {
       return rejectWithValue(err.response?.data?.message || err.message);
     }
-  }
+  },
+  withAsker
 );
 
 // ✅ NEW: Fetch today's payment data (default view)
@@ -97,7 +117,8 @@ export const fetchTodayPaymentData = createAsyncThunk(
     } catch (err) {
       return rejectWithValue(err.response?.data?.message || err.message);
     }
-  }
+  },
+  withAsker
 );
 
 export const fetchAllPaymentData = createAsyncThunk(
@@ -110,7 +131,8 @@ export const fetchAllPaymentData = createAsyncThunk(
     } catch (err) {
       return rejectWithValue(err.response?.data?.message || err.message);
     }
-  }
+  },
+  withAsker
 );
 
 export const payDriver = createAsyncThunk(
@@ -129,40 +151,45 @@ export const payDriver = createAsyncThunk(
   }
 );
 
+const initialState = {
+  cities: [],
+  drivers: [],
+  routes: [],
+  filteredPaymentData: [],
+  allPaymentData: [],
+  summaryData: null,
+  filters: {},
+  selectedDataType: "all",
+  pagination: {
+    total: 0,
+    page: 1,
+    limit: 10,
+    totalPages: 1
+  },
+  loading: false,
+  // Choosing a city reloads its drivers and routes. That must not blank the whole page, so it has its own flags apart from `loading`
+  // (the first load of the dropdowns), and only the answer to the latest request is used.
+  driversLoading: false,
+  routesLoading: false,
+  driversRequestId: null,
+  routesRequestId: null,
+  paymentLoading: false,
+  allPaymentLoading: false,
+  summaryLoading: false,
+  paymentProcessing: false,
+  error: null,
+  paymentError: null,
+  summaryError: null,
+  isFiltered: false,
+  showTodayOnly: false, // ✅ NEW: Track if showing only today's data
+  // Reads on their way, by request ID, each with who asked; and who asked for the table that is held now.
+  inFlight: {},
+  tableOwnerId: null,
+};
+
 const dashboardSlice = createSlice({
   name: "dashboard",
-  initialState: {
-    cities: [],
-    drivers: [],
-    routes: [],
-    filteredPaymentData: [],
-    allPaymentData: [],
-    summaryData: null,
-    filters: {},
-    selectedDataType: "all",
-    pagination: {
-      total: 0,
-      page: 1,
-      limit: 10,
-      totalPages: 1
-    },
-    loading: false,
-    // Choosing a city reloads its drivers and routes. That must not blank the whole page, so it has its own flags apart from `loading`
-    // (the first load of the dropdowns), and only the answer to the latest request is used.
-    driversLoading: false,
-    routesLoading: false,
-    driversRequestId: null,
-    routesRequestId: null,
-    paymentLoading: false,
-    allPaymentLoading: false,
-    summaryLoading: false,
-    paymentProcessing: false,
-    error: null,
-    paymentError: null,
-    summaryError: null,
-    isFiltered: false,
-    showTodayOnly: false, // ✅ NEW: Track if showing only today's data
-  },
+  initialState,
   reducers: {
     clearFilteredData: (state) => {
       state.filteredPaymentData = [];
@@ -189,12 +216,16 @@ const dashboardSlice = createSlice({
         state.error = null;
       })
       .addCase(fetchDashboardData.fulfilled, (state, action) => {
+        const asked = settle(state, action);
+        if (!asked) return;
         state.loading = false;
         state.cities = action.payload.cities || [];
         state.drivers = action.payload.drivers || [];
         state.routes = action.payload.routes || [];
       })
       .addCase(fetchDashboardData.rejected, (state, action) => {
+        const asked = settle(state, action);
+        if (!asked) return;
         state.loading = false;
         state.error = action.payload;
       })
@@ -206,12 +237,14 @@ const dashboardSlice = createSlice({
         state.error = null;
       })
       .addCase(fetchDriversByCity.fulfilled, (state, action) => {
-        if (state.driversRequestId !== action.meta.requestId) return;
+        const asked = settle(state, action);
+        if (!asked || state.driversRequestId !== action.meta.requestId) return;
         state.driversLoading = false;
         state.drivers = action.payload || [];
       })
       .addCase(fetchDriversByCity.rejected, (state, action) => {
-        if (state.driversRequestId !== action.meta.requestId) return;
+        const asked = settle(state, action);
+        if (!asked || state.driversRequestId !== action.meta.requestId) return;
         state.driversLoading = false;
         state.error = action.payload;
       })
@@ -223,12 +256,14 @@ const dashboardSlice = createSlice({
         state.error = null;
       })
       .addCase(fetchRoutesByCity.fulfilled, (state, action) => {
-        if (state.routesRequestId !== action.meta.requestId) return;
+        const asked = settle(state, action);
+        if (!asked || state.routesRequestId !== action.meta.requestId) return;
         state.routesLoading = false;
         state.routes = action.payload || [];
       })
       .addCase(fetchRoutesByCity.rejected, (state, action) => {
-        if (state.routesRequestId !== action.meta.requestId) return;
+        const asked = settle(state, action);
+        if (!asked || state.routesRequestId !== action.meta.requestId) return;
         state.routesLoading = false;
         state.error = action.payload;
       })
@@ -237,10 +272,14 @@ const dashboardSlice = createSlice({
         state.summaryError = null;
       })
       .addCase(fetchSummaryData.fulfilled, (state, action) => {
+        const asked = settle(state, action);
+        if (!asked) return;
         state.summaryLoading = false;
         state.summaryData = action.payload;
       })
       .addCase(fetchSummaryData.rejected, (state, action) => {
+        const asked = settle(state, action);
+        if (!asked) return;
         state.summaryLoading = false;
         state.summaryError = action.payload;
       })
@@ -249,6 +288,9 @@ const dashboardSlice = createSlice({
         state.paymentError = null;
       })
       .addCase(fetchFilteredPaymentData.fulfilled, (state, action) => {
+        const asked = settle(state, action);
+        if (!asked) return;
+        state.tableOwnerId = asked.adminId;
         state.paymentLoading = false;
         state.filteredPaymentData = action.payload.data;
         state.pagination = action.payload.pagination;
@@ -257,6 +299,8 @@ const dashboardSlice = createSlice({
         state.showTodayOnly = false; // ✅ Not showing today-only view
       })
       .addCase(fetchFilteredPaymentData.rejected, (state, action) => {
+        const asked = settle(state, action);
+        if (!asked) return;
         state.paymentLoading = false;
         state.paymentError = action.payload;
         state.isFiltered = true;
@@ -268,6 +312,9 @@ const dashboardSlice = createSlice({
         state.paymentError = null;
       })
       .addCase(fetchTodayPaymentData.fulfilled, (state, action) => {
+        const asked = settle(state, action);
+        if (!asked) return;
+        state.tableOwnerId = asked.adminId;
         state.paymentLoading = false;
         state.filteredPaymentData = action.payload.data;
         state.pagination = action.payload.pagination;
@@ -276,6 +323,8 @@ const dashboardSlice = createSlice({
         state.showTodayOnly = true; // ✅ Mark as showing today's data
       })
       .addCase(fetchTodayPaymentData.rejected, (state, action) => {
+        const asked = settle(state, action);
+        if (!asked) return;
         state.paymentLoading = false;
         state.paymentError = action.payload;
         state.isFiltered = false;
@@ -286,10 +335,14 @@ const dashboardSlice = createSlice({
         state.paymentError = null;
       })
       .addCase(fetchAllPaymentData.fulfilled, (state, action) => {
+        const asked = settle(state, action);
+        if (!asked) return;
         state.allPaymentLoading = false;
         state.allPaymentData = action.payload;
       })
       .addCase(fetchAllPaymentData.rejected, (state, action) => {
+        const asked = settle(state, action);
+        if (!asked) return;
         state.allPaymentLoading = false;
         state.paymentError = action.payload;
       })
@@ -302,6 +355,29 @@ const dashboardSlice = createSlice({
       .addCase(payDriver.rejected, (state) => {
         state.paymentProcessing = false;
       });
+
+    // A read is recorded when it starts.
+    builder.addMatcher(
+      isAnyOf(
+        fetchDashboardData.pending, fetchDriversByCity.pending, fetchRoutesByCity.pending, fetchSummaryData.pending,
+        fetchFilteredPaymentData.pending, fetchTodayPaymentData.pending, fetchAllPaymentData.pending
+      ),
+      (state, action) => {
+        state.inFlight[action.meta.requestId] = { adminId: action.meta.adminId };
+      }
+    );
+
+    // The session boundary: signing out (at its start, whatever its outcome), signing in, or the server ending the session. Everything held
+    // here ends with the session that received it, and the epoch moves on so an answer still on its way is dropped when it arrives.
+    builder.addMatcher(
+      isAnyOf(adminLogout.pending, adminLogout.fulfilled, adminLogout.rejected, manualLogout, adminLogin.pending, adminLogin.fulfilled),
+      () => ({ ...initialState, inFlight: {} })
+    );
+    // A failed access check that is not just a lost connection means the session is gone.
+    builder.addMatcher(
+      (action) => accessAdminUser.rejected.match(action) && !action.payload?.transient,
+      () => ({ ...initialState, inFlight: {} })
+    );
   },
 });
 

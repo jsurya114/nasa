@@ -194,8 +194,8 @@ const outstandingOf = (e) => {
   return Math.max(0, cents(e.amount) - cents(e.settled) - cents(e.settled_outside));
 };
 
-// Entries for one city (and optionally one driver), newest first, each with what pay runs settled or reserved and
-// what is still outstanding, plus each driver's balance. A city admin must name one of their cities; a super admin
+// Entries for one city (and optionally one driver), newest first, each with the driver's name, the name of the admin who entered it,
+// what pay runs settled or reserved and what is still outstanding, plus each driver's balance. A city admin must name one of their cities; a super admin
 // may leave it out. Balance: positive, the driver owes NASA; negative, NASA owes the driver. It counts only what
 // finalized runs settled, never what a draft merely reserved.
 export const listEntries = async (db, admin, { cityId = null, driverId = null } = {}) => {
@@ -205,6 +205,8 @@ export const listEntries = async (db, admin, { cityId = null, driverId = null } 
   const { rows } = await db.query(
     `SELECT ${ENTRY_COLUMNS},
             (SELECT v.id FROM driver_ledger_entries v WHERE v.voids_entry_id = e.id) AS voided_by,
+            (SELECT d.name FROM drivers d WHERE d.id = e.driver_id) AS driver_name,
+            (SELECT a.name FROM admin a WHERE a.id = e.created_by) AS entered_by,
             x.settled, x.reserved, x.settled_outside, x.pay_runs
        FROM driver_ledger_entries e
        ${RUN_USE_SQL}

@@ -57,6 +57,19 @@ test('the driver ledger: city access, exemption, no double entries, immutable hi
       assert.equal(result.entry.created_by, dfwAdmin.id);
     });
 
+    await t.test('the list of a city names each driver and the admin who entered the entry, for every driver of the city', async () => {
+      const second = await createEntry(db, superAdmin, entry({ driverId: d2, type: 'advance', amount: '20', reason: 'Cash in hand', disbursedOutsidePayroll: true, recoveryPlan: 'full_next_payday' }));
+      const { entries } = await listEntries(db, dfwAdmin, { cityId: dfw });
+      const nameOf = async (table, id) => (await one(`SELECT name FROM ${table} WHERE id = $1`, [id])).name;
+      const mine = entries.find((e) => e.created_by === dfwAdmin.id);
+      assert.equal(mine.entered_by, await nameOf('admin', dfwAdmin.id));
+      assert.equal(mine.driver_name, await nameOf('drivers', d1));
+      const cash = entries.find((e) => String(e.id) === String(second.entry.id));
+      assert.equal(cash.entered_by, await nameOf('admin', superAdmin.id), 'another admin\'s entry shows that admin');
+      assert.equal(cash.driver_name, await nameOf('drivers', d2), 'and the other driver of the city is listed too');
+      await voidEntry(db, superAdmin, { entryId: second.entry.id, requestId: randomUUID(), reason: 'Test cleanup' });
+    });
+
     await t.test('a debit without a repayment arrangement is flagged for review; one with a plan is not', async () => {
       const noPlan = await createEntry(db, dfwAdmin, entry({ type: 'expense', amount: '200', reason: 'No plan yet' }));
       const plan = await createEntry(db, dfwAdmin, entry({ type: 'advance', amount: '200', disbursedOutsidePayroll: true, recoveryPlan: 'installments', installmentAmount: '50' }));

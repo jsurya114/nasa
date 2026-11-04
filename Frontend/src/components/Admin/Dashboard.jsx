@@ -51,13 +51,14 @@ export default function Dashboard() {
     filters: reduxFilters,
     selectedDataType,
     showTodayOnly,
+    tableOwnerId,
     driversLoading,
     routesLoading
   } = useSelector((state) => state.dash);
   // While a city's drivers or routes load, only that dropdown waits; the rest of the page stays as it is.
   const isLoadingOptions = (name) => (name === "driver" && driversLoading) || (name === "route" && routesLoading);
 
-  const { isSuperAdmin } = useSelector((state) => state.admin);
+  const { isSuperAdmin, admin } = useSelector((state) => state.admin);
   const penalty = usePenaltySummary();
   const penaltyLines = useMemo(() => summaryItems(penalty, Number(summaryData?.total_driver_payment || 0) - Number(summaryData?.total_insurance_deduction || 0)), [penalty, summaryData]);
 
@@ -194,19 +195,20 @@ export default function Dashboard() {
   // Fetch dropdown data AND the table on mount. Coming back to the page, the admin finds what they had: the dropdowns narrowed to the
   // chosen city, and the table they filtered (kept in Redux, or asked again with the same filters after a reload) instead of today's.
   const latest = useRef({});
-  latest.current = { localFilters, applied, isFiltered, showTodayOnly, showExtraFields, isSuperAdmin };
+  latest.current = { localFilters, applied, isFiltered, showTodayOnly, showExtraFields, isSuperAdmin, adminId: admin?.id ?? null, tableOwnerId };
   const lastPerPage = useRef(null);
   useEffect(() => {
     const perPageChanged = lastPerPage.current !== null && lastPerPage.current !== itemsPerPage;
     lastPerPage.current = itemsPerPage;
-    const { localFilters: form, applied: before, isFiltered: held, showTodayOnly: today, showExtraFields: extra, isSuperAdmin: superAdmin } = latest.current;
+    const { localFilters: form, applied: before, isFiltered: held, showTodayOnly: today, showExtraFields: extra, isSuperAdmin: superAdmin, adminId, tableOwnerId: owner } = latest.current;
     dispatch(fetchDashboardData()).then(() => {
       if (form.job && form.job !== "All") {
         dispatch(fetchDriversByCity(form.job));
         dispatch(fetchRoutesByCity(form.job));
       }
     });
-    const redisHoldsFilteredTable = held && !today;
+    // Held only if the signed-in administrator asked for it: a table is never carried over from another person.
+    const redisHoldsFilteredTable = held && !today && adminId !== null && owner === adminId;
     if (perPageChanged || (!redisHoldsFilteredTable && !before)) {
       dispatch(fetchTodayPaymentData({ page: 1, limit: itemsPerPage }));
     } else if (!redisHoldsFilteredTable) {

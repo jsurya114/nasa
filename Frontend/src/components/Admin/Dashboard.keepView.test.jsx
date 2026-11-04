@@ -10,7 +10,7 @@ const ROW = { id: 1, driver_name: "Dee Test", job_date: "2026-11-03", route_name
   driver_payment: "100.00", insurance_deduction: "20.00", closed: true, paid: false, data_type: "daily" };
 
 const startServer = async () => {
-  const state = { tableCalls: [] };
+  const state = { tableCalls: [], hold: null }; // hold: a promise the filtered table waits for before it answers
   await installServer(async (config) => {
     const url = config.url;
     if (url === "/admin/dashboard/data") return { status: 200, data: { success: true, data: { cities: [{ id: 3, job: "Test City" }, { id: 4, job: "Other City" }], drivers: [{ id: 7, name: "Dee Test" }, { id: 8, name: "Eli Other" }], routes: [] } } };
@@ -22,6 +22,7 @@ const startServer = async () => {
     if (url === "/admin/dashboard/paymentTable") {
       state.tableCalls.push(config.params);
       const today = config.params?.defaultToday === "true";
+      if (!today && state.hold) await state.hold;
       const driver = today ? "Today Driver" : (config.params?.driver && config.params.driver !== "All" ? config.params.driver : "Dee Test");
       return { status: 200, data: { success: true, data: [{ ...ROW, driver_name: driver }], pagination: { total: 1, page: 1, limit: 10, totalPages: 1 } } };
     }
@@ -113,5 +114,61 @@ describe("Dashboard keeps the admin's view when they leave and come back", () =>
     const other = await mount(await makeStore(2));
     await waitFor(() => expect(select(other.container, "job").value).toBe("All"));
     expect(server.tableCalls.at(-1).defaultToday).toBe("true");
+  });
+});
+
+const signInAs = async (store, id) => {
+  const { manualLogout } = await import("../../redux/slice/admin/adminSlice.js");
+  store.dispatch(manualLogout()); // the real sign-out, without leaving the page (a client-side navigation)
+  store.dispatch({ type: "admin/login/fulfilled", payload: { admin: { id, role: "admin" } }, meta: { requestId: `login-${id}`, requestStatus: "fulfilled" } });
+};
+
+describe("Dashboard: one administrator's table is never shown to the next", () => {
+  it("signing out and in as someone else on the same tab asks for their own table and shows none of the previous one", async () => {
+    const server = await startServer();
+    const store = await makeStore(1);
+    const first = await mount(store);
+    await applyFilter(first.container);
+    cleanup();
+    await signInAs(store, 2);
+    const callsBefore = server.tableCalls.length;
+    const { container } = await mount(store);
+    await waitFor(() => expect(server.tableCalls.length).toBeGreaterThan(callsBefore));
+    await waitFor(() => expect(container.querySelector("table")?.textContent).toContain("Today Driver"));
+    expect(container.querySelector("table").textContent).not.toContain("Eli Other"); // the table, not the dropdown that lists every driver
+    expect(select(container, "job").value).toBe("All");
+  });
+
+  it("the same administrator coming back still keeps the table (the person is the same)", async () => {
+    const server = await startServer();
+    const store = await makeStore(1);
+    const first = await mount(store);
+    await applyFilter(first.container);
+    cleanup();
+    const callsBefore = server.tableCalls.length;
+    const { container } = await mount(store);
+    await waitFor(() => expect(select(container, "job").value).toBe("Other City"));
+    expect(container.textContent).toContain("Eli Other");
+    expect(server.tableCalls.slice(callsBefore).some((p) => p.defaultToday === "true")).toBe(false);
+  });
+
+  it("a table still on its way when the session changes is dropped when it arrives", async () => {
+    const server = await startServer();
+    let release;
+    server.hold = new Promise((resolve) => { release = resolve; });
+    const store = await makeStore(1);
+    const first = await mount(store);
+    const { container } = first;
+    await waitFor(() => expect(within(select(container, "job")).getByRole("option", { name: "Other City" })).toBeTruthy());
+    fireEvent.change(select(container, "job"), { target: { name: "job", value: "Other City" } });
+    await waitFor(() => expect(within(select(container, "driver")).getByRole("option", { name: "Eli Other" })).toBeTruthy());
+    fireEvent.change(select(container, "driver"), { target: { name: "driver", value: "Eli Other" } });
+    fireEvent.click(screen.getByRole("button", { name: "Filter Data" }));
+    cleanup(); // the first administrator leaves while the answer is still coming
+    await signInAs(store, 2);
+    release(); // ... and it arrives now
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(store.getState().dash.filteredPaymentData.some((row) => row.driver_name === "Eli Other")).toBe(false);
+    expect(store.getState().dash.tableOwnerId).not.toBe(1);
   });
 });
