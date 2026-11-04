@@ -48,3 +48,14 @@ export const describeConfig = (config) => ({
   tenantId: config.tenantId || null,
   problems: config.problems,
 });
+
+// Whether payments may be sent to Everee at all (issue #31). Off unless EVEREE_PAYMENTS_ENABLED is exactly "true", so setting up the connection,
+// linking workers and previewing a batch never makes a payment possible by accident. Production is a separate, deliberate step: it needs
+// a production token AND EVEREE_ENVIRONMENT=production (see readEvereeConfig) and, until Jasil approves going live, is not switched on.
+export const paymentsGate = (config, env = process.env) => {
+  if (!config.configured) return { enabled: false, reason: 'Everee is not set up in the backend settings' };
+  if (String(env.EVEREE_PAYMENTS_ENABLED ?? '').trim().toLowerCase() !== 'true') {
+    return { enabled: false, reason: 'sending payments to Everee is switched off (EVEREE_PAYMENTS_ENABLED is not "true")' };
+  }
+  return { enabled: true, reason: null };
+};
