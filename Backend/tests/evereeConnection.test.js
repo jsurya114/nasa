@@ -109,6 +109,17 @@ test('service: without settings nothing is sent; with them the pay codes come ba
   assert.equal(ok.requestId, 'req-1');
 });
 
+test('service: the pay codes are read whether Everee answers with a plain list (as the sandbox does) or a page object', async () => {
+  const plain = [{ payCodeType: 'TAXABLE_PAY', displayLabel: 'Contractor', apiKey: 'CONTRACTOR' }, { payCodeType: 'NON_TAXABLE_PAY', displayLabel: 'Reimbursement', apiKey: 'REIMBURSEMENT' }];
+  const fromList = await checkEvereeConnection(superAdmin, { env: SANDBOX, fetchImpl: fakeFetch(() => reply(200, plain)) });
+  assert.deepEqual(fromList.payCodes.map((p) => p.code), ['CONTRACTOR', 'REIMBURSEMENT']);
+  assert.equal(fromList.payCodes[0].label, 'Contractor');
+  const fromPage = await checkEvereeConnection(superAdmin, { env: SANDBOX, fetchImpl: fakeFetch(() => reply(200, { pageNumber: 0, items: plain })) });
+  assert.equal(fromPage.payCodes.length, 2);
+  const none = await checkEvereeConnection(superAdmin, { env: SANDBOX, fetchImpl: fakeFetch(() => reply(200, {})) });
+  assert.deepEqual(none.payCodes, []);
+});
+
 test('service: Everee problems are answered in words, with the request ID, never thrown', async () => {
   const refused = await checkEvereeConnection(superAdmin, { env: SANDBOX, fetchImpl: fakeFetch(() => reply(401, {}, { 'x-request-id': 'req-401' })) });
   assert.deepEqual([refused.ok, refused.requestId], [false, 'req-401']);
