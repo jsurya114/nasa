@@ -6,6 +6,7 @@ import Header from "../../reuse/Header";
 import Nav from "../../reuse/Nav";
 import { SkeletonList } from "../../reuse/Skeleton.jsx";
 import RecoveryLimitPanel from "./payRuns/RecoveryLimitPanel.jsx";
+import EvereePanel from "./payRuns/EvereePanel.jsx";
 import NewRunForm from "./payRuns/NewRunForm.jsx";
 import RunDetail from "./payRuns/RunDetail.jsx";
 
@@ -90,6 +91,7 @@ export default function PayRuns() {
           </div>
 
           <RecoveryLimitPanel isSuperAdmin={isSuperAdmin} />
+          {isSuperAdmin && <EvereePanel />}
 
           <label className="block max-w-sm text-sm font-medium text-gray-700">City
             <select className={selectClass} value={cityId} onChange={(e) => selectCity(e.target.value)}>
