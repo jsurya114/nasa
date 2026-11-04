@@ -394,6 +394,43 @@ test('everee payment status: only a payment that landed marks a statement paid',
       assert.equal(await reconcileItem(db, itU.id, prod(), fakeU.client), 'paid');
     });
 
+    await t.test('a queued retry stays reserved for its sender: reconciliation does not release it, and a statement paid by hand meanwhile is never sent', async () => {
+      const scW = await scenario('W', [[dA, '30.00'], [dB, '20.00'], [dC, '10.00']]);
+      const refused = makeEveree();
+      refused.client.createPayable = async () => { throw new EvereeError('Everee answered 422: Validation failed', { status: 422 }); };
+      const bW = await sent(scW, refused);
+      assert.deepEqual(bW.counts, { submitted: 0, paid: 0, failed: 3, unconfirmed: 0 });
+      const all = (await db.query('SELECT id, pay_statement_id, external_id FROM everee_payment_items WHERE batch_id = $1 ORDER BY id', [bW.batch.id])).rows;
+      for (const row of all) await ageAttempt(row.id); // their last attempt is long ago, as a queued retry's would be
+      const last = all[2];
+
+      const noRecord = makeEveree();
+      noRecord.client.getPayable = async () => { throw new EvereeError('Everee did not find what was asked for', { status: 404 }); };
+      const good = makeEveree();
+      const created = [];
+      const seen = {};
+      good.client.createPayable = async (body) => {
+        created.push(body.externalId);
+        if (created.length === 1) {
+          // 1. reconciliation runs while the sender is busy: Everee has no record of anything, yet nothing queued may be released
+          seen.checked = await checkBatch(db, sup2, bW.batch.id, deps(noRecord.client));
+          seen.states = (await db.query('SELECT i.status, s.payout_status FROM everee_payment_items i JOIN pay_statements s ON s.id = i.pay_statement_id WHERE i.batch_id = $1 ORDER BY i.id', [bW.batch.id])).rows.map((r) => `${r.status}/${r.payout_status}`);
+          // 2. even if the queued item WERE released (as an older recovery did), and its statement paid by hand, the sender must not send it
+          await db.query("UPDATE everee_payment_items SET status = 'failed', send_lease_until = NULL WHERE id = $1", [last.id]);
+          await db.query("UPDATE pay_statements SET payout_status = 'failed' WHERE id = $1", [last.pay_statement_id]);
+          await recordRunPayment(db, sup2, scW.run.id, { requestId: randomUUID(), paidOn: (await one("SELECT to_char(now(), 'YYYY-MM-DD') AS d")).d, method: 'other', reference: 'manual test', confirmed: true, statementIds: [last.pay_statement_id] });
+        }
+        return { status: 201, data: { externalId: body.externalId }, requestId: 'req-ok' };
+      };
+      await retryBatch(db, sup2, bW.batch.id, deps(good.client));
+
+      assert.deepEqual(seen.checked, { checked: 0, results: {} }, 'nothing owned by the sender is looked at');
+      assert.deepEqual(seen.states, ['submitted/submitted', 'submitted/submitted', 'submitted/submitted'], 'still reserved while the sender works');
+      assert.deepEqual(created, [all[0].external_id, all[1].external_id], 'the statement paid by hand meanwhile was never sent');
+      assert.equal((await one('SELECT payout_status FROM pay_statements WHERE id = $1', [last.pay_statement_id])).payout_status, 'paid');
+      assert.equal((await one('SELECT count(*)::int n FROM everee_payment_items WHERE batch_id = $1 AND send_lease_until IS NOT NULL', [bW.batch.id])).n, 0, 'the sender gave up ownership when done');
+    });
+
     await t.test('the guard still blocks changing who is paid how much, but allows the new status columns', async () => {
       const iA2 = await item(sc, dA);
       await assert.rejects(db.query('SAVEPOINT g').then(() => db.query('UPDATE everee_payment_items SET amount = 1 WHERE id = $1', [iA2.id])).finally(() => db.query('ROLLBACK TO SAVEPOINT g')), /cannot be changed/);

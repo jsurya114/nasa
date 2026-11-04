@@ -28,6 +28,8 @@ import { readyToPay } from './workerRules.js';
 const MAX_RATE_LIMIT_RETRIES = 3;
 const THROTTLE_MS = 120; // well inside Everee's 100 operations per 5 seconds
 const MAX_MESSAGE = 480;
+// A sender owns the items it reserved until it is done with them (or this long has passed, if it crashed). Reconciliation never takes an owned item.
+const SEND_LEASE_MINUTES = 30;
 
 export class PreviewChangedError extends PayrollError {
   constructor(preview) {
@@ -137,12 +139,23 @@ const setStatement = (tx, statementId, to, from) => tx.query('UPDATE pay_stateme
 
 // One payable: the attempt is written first, then the request is sent, then the answer is written. Returns the new item status.
 const sendItem = async (db, item, batch, deps, client) => {
+  // Claim the item under the same locks as manual recording (run, city, statement) and only if it is STILL reserved for sending: it may have been
+  // released, or its statement paid by hand, while it waited its turn in the queue. The attempt row is written in the same step.
   const attempt = await inTransaction(db, async (tx) => {
+    await tx.query('SELECT id FROM pay_runs WHERE id = $1 FOR UPDATE', [batch.pay_run_id]);
+    await lockCityPayroll(tx, batch.city_id);
+    const { rows: [fresh] } = await tx.query(
+      `SELECT i.status AS item_status, s.payout_status FROM everee_payment_items i JOIN pay_statements s ON s.id = i.pay_statement_id WHERE i.id = $1 FOR UPDATE OF i, s`, [item.id]);
+    if (!fresh || fresh.item_status !== 'submitted' || fresh.payout_status !== 'submitted') return null;
     const { rows: [row] } = await tx.query(
       'UPDATE everee_payment_items SET attempts = attempts + 1, last_attempt_at = now(), updated_at = now() WHERE id = $1 RETURNING attempts', [item.id]);
     const { rows: [a] } = await tx.query('INSERT INTO everee_payment_attempts (item_id, attempt_no) VALUES ($1, $2) RETURNING id', [item.id, row.attempts]);
     return a.id;
   });
+  if (attempt === null) {
+    logger.warn('Everee item is no longer reserved for sending, so nothing was sent', { itemId: item.id });
+    return 'skipped';
+  }
 
   const body = payableBody({
     statementId: item.pay_statement_id, amount: item.amount,
@@ -267,7 +280,7 @@ const requestPayout = async (db, batchId, deps, client) => {
 
 const sendBatch = async (db, batchId, itemIds, deps, client) => {
   const { rows: [batch] } = await db.query(
-    `SELECT b.id, b.city_id, to_char(r.period_start, 'YYYY-MM-DD') AS period_start, to_char(r.period_end, 'YYYY-MM-DD') AS period_end,
+    `SELECT b.id, b.city_id, b.pay_run_id, to_char(r.period_start, 'YYYY-MM-DD') AS period_start, to_char(r.period_end, 'YYYY-MM-DD') AS period_end,
             s.time_zone, s.work_location_id
        FROM everee_payment_batches b JOIN pay_runs r ON r.id = b.pay_run_id LEFT JOIN everee_city_settings s ON s.city_id = b.city_id WHERE b.id = $1`, [batchId]);
   batch.time_zone = batch.time_zone ?? DEFAULT_TIME_ZONE;
@@ -275,12 +288,17 @@ const sendBatch = async (db, batchId, itemIds, deps, client) => {
     `SELECT id, pay_statement_id, everee_worker_id, external_worker_id, amount::text AS amount FROM everee_payment_items WHERE id = ANY($1::bigint[]) ORDER BY id`, [itemIds]);
   const sleep = deps.sleep ?? defaultSleep;
   let first = true;
-  for (const item of items) {
-    if (!first) await sleep(deps.throttleMs ?? THROTTLE_MS);
-    first = false;
-    await sendItem(db, item, batch, deps, client);
+  try {
+    for (const item of items) {
+      if (!first) await sleep(deps.throttleMs ?? THROTTLE_MS);
+      first = false;
+      await sendItem(db, item, batch, deps, client);
+    }
+    await requestPayout(db, batchId, deps, client);
+  } finally {
+    // Done with these items (sent, skipped or failed): the sender gives up ownership, so reconciliation may look at them.
+    await db.query('UPDATE everee_payment_items SET send_lease_until = NULL WHERE id = ANY($1::bigint[])', [itemIds]);
   }
-  await requestPayout(db, batchId, deps, client);
 };
 
 // ---------- confirm and pay ----------
@@ -341,9 +359,9 @@ export const submitBatch = async (db, admin, { runId, requestId, previewHash }, 
     const itemIds = [];
     for (const i of items) {
       const { rows: [row] } = await tx.query(
-        `INSERT INTO everee_payment_items (batch_id, pay_statement_id, driver_id, everee_worker_id, external_worker_id, external_id, amount)
-         VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`,
-        [batch.id, i.statementId, i.driverId, i.workerId, i.externalWorkerId, externalIdOf(i.statementId), i.amount]);
+        `INSERT INTO everee_payment_items (batch_id, pay_statement_id, driver_id, everee_worker_id, external_worker_id, external_id, amount, send_lease_until)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, now() + make_interval(mins => $8)) RETURNING id`,
+        [batch.id, i.statementId, i.driverId, i.workerId, i.externalWorkerId, externalIdOf(i.statementId), i.amount, SEND_LEASE_MINUTES]);
       itemIds.push(row.id);
     }
     return { replay: false, batchId: batch.id, itemIds, config };
@@ -409,7 +427,9 @@ export const retryBatch = async (db, admin, batchId, deps = {}) => {
       if (invalidWork(locked, await approvedWork(tx, ids, true)).size > 0) throw new PayrollError(409, 'some included earnings changed or are already marked paid; review the run before retrying');
       const { rowCount } = await tx.query("UPDATE pay_statements SET payout_status = 'submitted' WHERE id = ANY($1::bigint[]) AND payout_status = 'failed'", [ids]);
       if (rowCount !== ids.length) throw new PayrollError(409, 'a statement changed; refresh the batch');
-      await tx.query("UPDATE everee_payment_items SET status = 'submitted', error_message = NULL, updated_at = now() WHERE id = ANY($1::bigint[]) AND status = 'failed'", [retryable.map((i) => i.id)]);
+      await tx.query(
+        "UPDATE everee_payment_items SET status = 'submitted', error_message = NULL, send_lease_until = now() + make_interval(mins => $2), updated_at = now() WHERE id = ANY($1::bigint[]) AND status = 'failed'",
+        [retryable.map((i) => i.id), SEND_LEASE_MINUTES]);
     }
     return { config, itemIds: retryable.map((i) => i.id) };
   });
