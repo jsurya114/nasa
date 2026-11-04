@@ -245,13 +245,33 @@ describe("admin Payroll", () => {
     fill("Type", "manual_claim");
     fill("Amount (USD)", "40");
     fill("Reason", "Damaged parcel");
-    fill("Claim type", "Damaged Item");
+    fill("Claim type", "Damaged item");
     fireEvent.click(screen.getByRole("button", { name: "Add record" }));
     await waitFor(() => expect(server.posts).toHaveLength(1));
     const item = (await screen.findByText("Penalty: Damaged parcel")).closest("li");
     expect(item.textContent).toContain("$40.00");
     const buttons = [...item.querySelectorAll("button")].map((b) => b.textContent);
     expect(buttons).toEqual(["Edit", "Mark complete", "History"]);
+  });
+
+  it("a penalty's claim type is chosen from Fake pod, Lost, Tracking interruption and Damaged item, and one must be chosen", async () => {
+    const server = await startServer({ payable: "500.00" });
+    await mount();
+    await chooseDriver();
+    expect(screen.queryByLabelText("Claim type")).toBeNull(); // an advance has no claim type
+    fill("Type", "manual_claim");
+    const select = screen.getByLabelText("Claim type");
+    expect(select.tagName).toBe("SELECT");
+    expect([...select.options].map((o) => o.textContent)).toEqual(["Choose a claim type", "Fake pod", "Lost", "Tracking interruption", "Damaged item"]);
+    fill("Amount (USD)", "40");
+    fill("Reason", "Parcel lost");
+    fireEvent.click(screen.getByRole("button", { name: "Add record" }));
+    expect(await screen.findByText("Choose the claim type")).toBeTruthy();
+    expect(server.posts).toHaveLength(0);
+    fill("Claim type", "Lost");
+    fireEvent.click(screen.getByRole("button", { name: "Add record" }));
+    await waitFor(() => expect(server.posts).toHaveLength(1));
+    expect(server.posts[0].claimType).toBe("Lost");
   });
 
   it("the driver list can be searched: typing waits for a pause (debounced), then filters; Enter picks", async () => {
