@@ -7,12 +7,13 @@ import logger from '../../../utils/logger.js';
 const REQUEST_TIMEOUT_MS = 15_000;
 
 export class EvereeError extends Error {
-  constructor(message, { status = null, code = null, requestId = null } = {}) {
+  constructor(message, { status = null, code = null, requestId = null, retryAfterSeconds = null } = {}) {
     super(message);
     this.name = 'EvereeError';
     this.status = status;
     this.code = code;
     this.requestId = requestId;
+    this.retryAfterSeconds = retryAfterSeconds; // from RateLimit-Reset on a 429
   }
 }
 
@@ -61,6 +62,7 @@ export const createEvereeClient = (config, { fetchImpl = fetch, timeoutMs = REQU
       const detail = typeof payload?.errorMessage === 'string' ? payload.errorMessage.slice(0, 200) : null;
       throw new EvereeError(detail && response.status >= 400 && response.status < 500 && response.status !== 401 ? `${explain(response.status)}: ${detail}` : explain(response.status), {
         status: response.status, code: payload?.errorCode ?? null, requestId,
+        retryAfterSeconds: Number.isFinite(Number(response.headers?.get?.('ratelimit-reset'))) ? Number(response.headers.get('ratelimit-reset')) : null,
       });
     }
     return { status: response.status, data: payload, requestId };
@@ -77,5 +79,11 @@ export const createEvereeClient = (config, { fetchImpl = fetch, timeoutMs = REQU
     getWorker: (id) => request('GET', `/integration/v1/workers/${encodeURIComponent(id)}`),
     // Creates a 1099 contractor with the complete record (sandbox test workers only; see workerStore.js).
     createContractor: (body) => request('POST', '/integration/v1/workers/contractor', body),
+    // A payable item: an amount owed to a worker. The same externalId again updates the item while it is unpaid (that is what makes a retry safe).
+    createPayable: (body) => request('POST', '/integration/v1/payables', body),
+    // Asks Everee to turn the named unpaid payables into payments (contractors are paid only after this). Limited to the given external IDs.
+    requestPayout: (externalIds) => request('POST', '/integration/v1/payables/payment-request', { externalIds }),
+    // One payable by its external ID: what Everee knows about it (paymentStatus, paymentId). Read-only.
+    getPayable: (externalId) => request('GET', `/integration/v1/payables/${encodeURIComponent(externalId)}`),
   };
 };

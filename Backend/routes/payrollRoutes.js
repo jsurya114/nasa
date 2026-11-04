@@ -10,6 +10,7 @@ import {
 import { getBatchReview } from '../controllers/payroll/payBatchController.js';
 import { getPaymentRuns, getPaymentReview, postPaymentRecord } from '../controllers/payroll/paymentRecordController.js';
 import { getEvereePreview } from '../controllers/payroll/evereeBatchController.js';
+import { getBatch as getEvereeBatch, getRunBatches as getEvereeRunBatches, getSettings as getEvereeCitySettings, postBatch as postEvereeBatch, postRetry as postEvereeBatchRetry, putSettings as putEvereeCitySettings } from '../controllers/payroll/evereePaymentController.js';
 import { getStatus as getEvereeStatus, postCheck as postEvereeCheck } from '../controllers/payroll/evereeController.js';
 import { getWorkers as getEvereeWorkers, postLink as postEvereeLink, postLookup as postEvereeLookup, postRefresh as postEvereeRefresh, postSandboxWorker as postEvereeSandboxWorker, postUnlink as postEvereeUnlink } from '../controllers/payroll/evereeWorkerController.js';
 import { getAdminStatement, getDriverBalanceList, getDriverDashboardSummary, getDriverStatementList } from '../controllers/payroll/statementController.js';
@@ -58,6 +59,14 @@ router.post('/payments/runs/:runId/record', postPaymentRecord);
 // What paying this run through Everee would do (#31): who, how much, the total, what blocks anyone, and a fingerprint for the confirm step.
 // Read-only; super admin only, checked in the service.
 router.get('/runs/:runId/everee-preview', getEvereePreview);
+// Paying through Everee (#31, part 4): the confirm click sends the batch (only with the payments switch on), the batch and its per-driver
+// results can be read, and what failed can be retried. Per-city Everee settings (time zone, work location). Super admin only, checked in the service.
+router.post('/runs/:runId/everee-batches', postEvereeBatch);
+router.get('/runs/:runId/everee-batches', getEvereeRunBatches);
+router.get('/everee-batches/:batchId', getEvereeBatch);
+router.post('/everee-batches/:batchId/retry', postEvereeBatchRetry);
+router.get('/everee/city-settings', getEvereeCitySettings);
+router.put('/everee/city-settings/:cityId', putEvereeCitySettings);
 
 // Read-only statements and balances for one driver of the admin's cities (#145).
 router.get('/statements/:statementId', getAdminStatement);
