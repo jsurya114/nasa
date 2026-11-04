@@ -10,6 +10,7 @@ import {
 import { getBatchReview } from '../controllers/payroll/payBatchController.js';
 import { getPaymentRuns, getPaymentReview, postPaymentRecord } from '../controllers/payroll/paymentRecordController.js';
 import { getStatus as getEvereeStatus, postCheck as postEvereeCheck } from '../controllers/payroll/evereeController.js';
+import { getWorkers as getEvereeWorkers, postLink as postEvereeLink, postLookup as postEvereeLookup, postRefresh as postEvereeRefresh, postSandboxWorker as postEvereeSandboxWorker, postUnlink as postEvereeUnlink } from '../controllers/payroll/evereeWorkerController.js';
 import { getAdminStatement, getDriverBalanceList, getDriverDashboardSummary, getDriverStatementList } from '../controllers/payroll/statementController.js';
 
 const router = express.Router();
@@ -40,6 +41,14 @@ router.post('/runs/:runId/void', postVoid);
 // Everee connection (#31): whether the backend is set up and which environment, and a read-only test call. Super admin only, checked in the service.
 router.get('/everee/status', getEvereeStatus);
 router.post('/everee/check', postEvereeCheck);
+// Linking drivers to existing Everee workers (#31): the city's drivers and their link state, a read-only lookup by email or phone, and a link
+// that is saved only from one exact match. Test workers (sandbox only, made-up data), refresh and unlink. Super admin only, checked in the service.
+router.get('/everee/workers', getEvereeWorkers);
+router.post('/everee/workers/lookup', postEvereeLookup);
+router.post('/everee/workers/link', postEvereeLink);
+router.post('/everee/workers/refresh', postEvereeRefresh);
+router.post('/everee/workers/unlink', postEvereeUnlink);
+router.post('/everee/workers/sandbox-test', postEvereeSandboxWorker);
 // City payment batch review (#144): read-only; says who could be paid and why not.
 router.get('/runs/:runId/batch-review', getBatchReview);
 router.get('/payments/runs', getPaymentRuns);
