@@ -7,6 +7,7 @@ import adminRoutes from './routes/adminRoutes.js'
 import driverRoutes from "./routes/driverRoutes.js"
 import payrollRoutes from "./routes/payrollRoutes.js"
 import assignmentHistoryRoutes from "./routes/assignmentHistoryRoutes.js"
+import evereeWebhookRoutes from './routes/evereeWebhookRoutes.js'
 import cookieParser from 'cookie-parser';
 import sanitizeMiddleware from './middlewares/sanitize.js';
 import { notFound, errorHandler } from './middlewares/errorHandler.js';
@@ -37,6 +38,9 @@ app.use(cors({
 
 // Gzip JSON responses over 1 KB. Excel downloads and other already-compressed types are skipped by default.
 app.use(compression({ threshold: 1024 }));
+
+// Everee's webhook: the body stays raw bytes (its signature covers them exactly), so it is mounted before the JSON parser below.
+app.use('/webhooks/everee', express.raw({ type: () => true, limit: '256kb' }), evereeWebhookRoutes);
 
 app.use(express.json({ limit: "50mb" }));
 app.use(express.urlencoded({ limit: "50mb", extended: true }));
