@@ -10,6 +10,7 @@ import StatementDetail from "../Drivers/pay/StatementDetail.jsx";
 import LedgerEntryForm from "./payroll/LedgerEntryForm.jsx";
 import RefundsDue from "./payroll/RefundsDue.jsx";
 import AdminBalances from "./payroll/AdminBalances.jsx";
+import CityRecordsTable from "./payroll/CityRecordsTable.jsx";
 import SearchSelect from "./payroll/SearchSelect.jsx";
 import InfoTip from "../../reuse/InfoTip.jsx";
 
@@ -54,6 +55,7 @@ export default function Payroll() {
   const linkedDriver = useRef(fromLink("driverId")); // used once, when that city's drivers have loaded
   const [openId, setOpenId] = useState(null);
   const [prefill, setPrefill] = useState(null); // a refund chosen from "Refunds due"
+  const [recordsKey, setRecordsKey] = useState(0); // bumped when a record changes, so the city table asks again
   const { isSuperAdmin } = useSelector((state) => state.admin);
   const payroll = useDriverPayroll(cityId, driverId);
   const city = cities.find((c) => String(c.id) === String(cityId));
@@ -115,6 +117,10 @@ export default function Payroll() {
             />
           </div>
 
+          {cityId && (
+            <CityRecordsTable cityId={cityId} refreshKey={recordsKey} selectedDriverId={driverId} onPickDriver={setDriverId} />
+          )}
+
           {!driverId && <p className="mt-6 rounded-2xl border border-line bg-white p-4 text-sm text-ink-muted">Choose a city and a driver.</p>}
           {driverId && payroll.status === "loading" && <div className="mt-6"><SkeletonList rows={3} label="Loading" /></div>}
           {driverId && payroll.status === "error" && (
@@ -145,7 +151,7 @@ export default function Payroll() {
                       });
                       document.getElementById("record-entry")?.scrollIntoView?.({ behavior: "smooth", block: "start" }); // absent in some test DOMs
                     }} />
-                    <AdminBalances balances={payroll.balances} isSuperAdmin={isSuperAdmin} onChanged={payroll.reload} />
+                    <AdminBalances balances={payroll.balances} isSuperAdmin={isSuperAdmin} onChanged={() => { payroll.reload(); setRecordsKey((k) => k + 1); }} />
                     <h2 className="mb-2 text-sm font-semibold text-ink">Pay statements</h2>
                     <StatementList statements={payroll.statements} onOpen={setOpenId} />
                   </>
@@ -155,7 +161,7 @@ export default function Payroll() {
                 <h2 id="record-entry" className="mb-4 text-lg font-semibold text-ink">Add a record</h2>
                 <LedgerEntryForm key={`${cityId}-${driverId}-${prefill?.key ?? "new"}`} cityId={Number(cityId)} driverId={Number(driverId)}
                   prefill={prefill?.fields} payable={payroll.balances?.payable}
-                  onSaved={() => { setPrefill(null); payroll.reload(); }} />
+                  onSaved={() => { setPrefill(null); payroll.reload(); setRecordsKey((k) => k + 1); }} />
               </section>
             </div>
           )}
