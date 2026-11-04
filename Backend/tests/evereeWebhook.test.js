@@ -145,16 +145,16 @@ test('everee webhook: signature, company, once per event ID, worker events, retr
       assert.equal((await link()).onboarding_complete, true);
     });
 
-    await t.test('payment events and the rest are stored, with ids and statuses only (no amounts, names, emails or bank details)', async () => {
+    await t.test('payment events are stored with ids and statuses only and prompt a look (none of these concern one of our payments); the rest is stored (no amounts, names, emails or bank details)', async () => {
       const payment = event({
         id: 'evt-paid', type: 'payment-payables.status-changed',
         data: { object: { paymentStatus: 'PAID', paymentErrorMessage: null, payableExternalIds: ['nasa-stmt-1', 'nasa-stmt-2'], workerId: 'W-1', email: 'x@example.com', netAmount: { amount: '99.00' }, bankName: 'Some Bank' } },
       });
-      assert.deepEqual((await send(payment)).body, { received: true, outcome: 'stored' });
+      assert.deepEqual((await send(payment)).body, { received: true, outcome: 'no_item' });
       const row = await stored('evt-paid');
       assert.deepEqual(row.data, { workerId: 'W-1', paymentStatus: 'PAID', payableExternalIds: ['nasa-stmt-1', 'nasa-stmt-2'] });
       const paid = event({ id: 'evt-paid2', type: 'payment.paid', data: { object: { paymentId: 77, grossAmount: { amount: '5' }, payables: [{ externalId: 'nasa-stmt-9', amount: { amount: '5' } }] } } });
-      assert.equal((await send(paid)).body.outcome, 'stored');
+      assert.equal((await send(paid)).body.outcome, 'no_item');
       assert.deepEqual((await stored('evt-paid2')).data, { paymentId: '77', payableExternalIds: ['nasa-stmt-9'] });
       assert.equal((await send(event({ id: 'evt-unknown', type: 'report.completed' }))).body.outcome, 'stored');
       assert.equal((await send(event({ id: 'evt-test', type: 'test-event.created', data: { object: { testMessage: 'This is a test message' } } }))).body.outcome, 'test_ok');

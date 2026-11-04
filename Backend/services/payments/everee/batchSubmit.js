@@ -28,6 +28,8 @@ import { readyToPay } from './workerRules.js';
 const MAX_RATE_LIMIT_RETRIES = 3;
 const THROTTLE_MS = 120; // well inside Everee's 100 operations per 5 seconds
 const MAX_MESSAGE = 480;
+// A sender owns the items it reserved until it is done with them (or this long has passed, if it crashed). Reconciliation never takes an owned item.
+const SEND_LEASE_MINUTES = 30;
 
 export class PreviewChangedError extends PayrollError {
   constructor(preview) {
@@ -37,11 +39,11 @@ export class PreviewChangedError extends PayrollError {
 }
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-const clip = (text) => String(text ?? '').slice(0, MAX_MESSAGE);
+export const clip = (text) => String(text ?? '').slice(0, MAX_MESSAGE);
 let savepointCounter = 0;
 
 // A short transaction on a pool; on a client that is already inside one (the tests) a savepoint, so a failure undoes only this step.
-const inTransaction = async (db, fn) => {
+export const inTransaction = async (db, fn) => {
   // A pool has connect() but no release(); a client taken from a pool has both, so connect() alone cannot tell them apart.
   if (typeof db.connect === 'function' && typeof db.release !== 'function') return withTransaction(db, fn);
   const name = `everee_sp_${savepointCounter++}`;
@@ -56,10 +58,10 @@ const inTransaction = async (db, fn) => {
   }
 };
 
-const defaultSleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+export const defaultSleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 // A 429 means Everee did not run the request, so it is repeated after the wait Everee names (or a growing one, with a little jitter).
-const withRateLimitRetry = async (call, { sleep = defaultSleep } = {}) => {
+export const withRateLimitRetry = async (call, { sleep = defaultSleep } = {}) => {
   for (let attempt = 0; ; attempt += 1) {
     try {
       return await call();
@@ -89,6 +91,7 @@ const itemView = (row) => ({
   itemId: row.id, statementId: row.pay_statement_id, driverId: row.driver_id, driverName: row.driver_name, amount: row.amount, status: row.status,
   everee: { payableStatus: row.everee_payable_status, payoutRequested: Boolean(row.payout_requested_at), depositReturned: row.deposit_returned },
   attempts: row.attempts, error: row.error_message, lastAttemptAt: row.last_attempt_at,
+  paidAt: row.paid_at, payDate: row.everee_pay_date, lastCheckedAt: row.last_checked_at, note: row.check_note,
 });
 
 export const getBatchView = async (db, admin, batchId) => {
@@ -99,7 +102,7 @@ export const getBatchView = async (db, admin, batchId) => {
   await assertCityAllowed(db, admin, batch.city_id);
   const { rows } = await db.query(
     `SELECT i.id, i.pay_statement_id, i.driver_id, d.name AS driver_name, i.amount::text AS amount, i.status, i.everee_payable_status, i.payout_requested_at,
-            i.deposit_returned, i.attempts, i.error_message, i.last_attempt_at
+            i.deposit_returned, i.attempts, i.error_message, i.last_attempt_at, i.paid_at, to_char(i.everee_pay_date, 'YYYY-MM-DD') AS everee_pay_date, i.last_checked_at, i.check_note
        FROM everee_payment_items i JOIN drivers d ON d.id = i.driver_id WHERE i.batch_id = $1 ORDER BY d.name, i.id`, [batchId]);
   const { rows: payouts } = await db.query(
     `SELECT id, started_at, finished_at, asked_count, taken_count, outcome, http_status, everee_request_id, error_message
@@ -136,12 +139,23 @@ const setStatement = (tx, statementId, to, from) => tx.query('UPDATE pay_stateme
 
 // One payable: the attempt is written first, then the request is sent, then the answer is written. Returns the new item status.
 const sendItem = async (db, item, batch, deps, client) => {
+  // Claim the item under the same locks as manual recording (run, city, statement) and only if it is STILL reserved for sending: it may have been
+  // released, or its statement paid by hand, while it waited its turn in the queue. The attempt row is written in the same step.
   const attempt = await inTransaction(db, async (tx) => {
+    await tx.query('SELECT id FROM pay_runs WHERE id = $1 FOR UPDATE', [batch.pay_run_id]);
+    await lockCityPayroll(tx, batch.city_id);
+    const { rows: [fresh] } = await tx.query(
+      `SELECT i.status AS item_status, s.payout_status FROM everee_payment_items i JOIN pay_statements s ON s.id = i.pay_statement_id WHERE i.id = $1 FOR UPDATE OF i, s`, [item.id]);
+    if (!fresh || fresh.item_status !== 'submitted' || fresh.payout_status !== 'submitted') return null;
     const { rows: [row] } = await tx.query(
       'UPDATE everee_payment_items SET attempts = attempts + 1, last_attempt_at = now(), updated_at = now() WHERE id = $1 RETURNING attempts', [item.id]);
     const { rows: [a] } = await tx.query('INSERT INTO everee_payment_attempts (item_id, attempt_no) VALUES ($1, $2) RETURNING id', [item.id, row.attempts]);
     return a.id;
   });
+  if (attempt === null) {
+    logger.warn('Everee item is no longer reserved for sending, so nothing was sent', { itemId: item.id });
+    return 'skipped';
+  }
 
   const body = payableBody({
     statementId: item.pay_statement_id, amount: item.amount,
@@ -179,8 +193,32 @@ const sendItem = async (db, item, batch, deps, client) => {
 // What Everee says about a payable that the payout request did NOT take. A status that means "already asked for payout" is recorded as that
 // (a lost reply to an earlier request); a blocked one (ERROR, the worker cannot be paid, deleted) means the money is not moving and nobody
 // knows why from here, so it is "unconfirmed": blocked for manual recording and for a blind retry until someone has looked in Everee.
-const ASKED_FOR_PAYOUT = new Set(['PENDING_APPROVAL', 'PROCESSING', 'READY_TO_CALCULATE', 'PENDING_VERIFICATION', 'PENDING_PAYMENT', 'PENDING_FUNDING', 'PAID']);
-const BLOCKED = new Set(['ERROR', 'UNPAYABLE_WORKER', 'DELETED']);
+export const ASKED_FOR_PAYOUT = new Set(['PENDING_APPROVAL', 'PROCESSING', 'READY_TO_CALCULATE', 'PENDING_VERIFICATION', 'PENDING_PAYMENT', 'PENDING_FUNDING', 'PAID']);
+export const BLOCKED = new Set(['ERROR', 'UNPAYABLE_WORKER', 'DELETED']);
+
+// Writes what Everee says about a payable. "Already asked for payout" means money is moving: an item that was unconfirmed goes back to submitted.
+// A blocked status on a submitted item makes it unconfirmed. Never sets paid: only a payment that landed does (paymentStatus.js).
+export const recordPayableStatus = async (tx, item, status) => {
+  if (status && ASKED_FOR_PAYOUT.has(status)) {
+    await tx.query(
+      "UPDATE everee_payment_items SET everee_payable_status = $2, payout_requested_at = COALESCE(payout_requested_at, now()), status = CASE WHEN status = 'unconfirmed' THEN 'submitted' ELSE status END, error_message = CASE WHEN status = 'unconfirmed' THEN NULL ELSE error_message END, updated_at = now() WHERE id = $1",
+      [item.id, status]);
+    await tx.query("UPDATE pay_statements SET payout_status = 'submitted' WHERE id = $1 AND payout_status = 'unconfirmed'", [item.pay_statement_id]);
+  } else if (status && BLOCKED.has(status)) {
+    await tx.query("UPDATE everee_payment_items SET everee_payable_status = $2, status = 'unconfirmed', error_message = $3, updated_at = now() WHERE id = $1 AND status = 'submitted'",
+      [item.id, status, `Everee reports this payable as ${status}; it was not paid out. Check the worker in Everee before doing anything else.`]);
+    await tx.query("UPDATE pay_statements SET payout_status = 'unconfirmed' WHERE id = $1 AND payout_status = 'submitted'", [item.pay_statement_id]);
+  } else if (status) {
+    // Everee knows the payable (so a create call that got no answer did land) but has not been asked to pay it out yet: it is no longer unknown.
+    // It goes back to submitted, and the next "Retry what failed" asks Everee to pay it out. Nothing is created again.
+    await tx.query(
+      "UPDATE everee_payment_items SET everee_payable_status = $2, status = CASE WHEN status = 'unconfirmed' THEN 'submitted' ELSE status END, error_message = CASE WHEN status = 'unconfirmed' THEN NULL ELSE error_message END, updated_at = now() WHERE id = $1",
+      [item.id, status]);
+    await tx.query("UPDATE pay_statements SET payout_status = 'submitted' WHERE id = $1 AND payout_status = 'unconfirmed'", [item.pay_statement_id]);
+  } else {
+    await tx.query('UPDATE everee_payment_items SET everee_payable_status = $2, updated_at = now() WHERE id = $1', [item.id, status]);
+  }
+};
 
 const inspectUntaken = async (db, items, deps, client) => {
   const sleep = deps.sleep ?? defaultSleep;
@@ -195,17 +233,7 @@ const inspectUntaken = async (db, items, deps, client) => {
       logger.warn('Everee payable status could not be read', { itemId: item.id, reason: error instanceof EvereeError ? error.status : 'unknown' });
       continue; // stays submitted; it is looked at again by the next retry or reconciliation
     }
-    await inTransaction(db, async (tx) => {
-      if (status && ASKED_FOR_PAYOUT.has(status)) {
-        await tx.query('UPDATE everee_payment_items SET everee_payable_status = $2, payout_requested_at = COALESCE(payout_requested_at, now()), updated_at = now() WHERE id = $1', [item.id, status]);
-      } else if (status && BLOCKED.has(status)) {
-        await tx.query("UPDATE everee_payment_items SET everee_payable_status = $2, status = 'unconfirmed', error_message = $3, updated_at = now() WHERE id = $1 AND status = 'submitted'",
-          [item.id, status, `Everee reports this payable as ${status}; it was not paid out. Check the worker in Everee before doing anything else.`]);
-        await tx.query("UPDATE pay_statements SET payout_status = 'unconfirmed' WHERE id = $1 AND payout_status = 'submitted'", [item.pay_statement_id]);
-      } else {
-        await tx.query('UPDATE everee_payment_items SET everee_payable_status = $2, updated_at = now() WHERE id = $1', [item.id, status]);
-      }
-    });
+    await inTransaction(db, (tx) => recordPayableStatus(tx, item, status));
   }
 };
 
@@ -214,7 +242,7 @@ const requestPayout = async (db, batchId, deps, client) => {
   const { rows: waiting } = await db.query(
     `SELECT i.id, i.external_id, i.pay_statement_id FROM everee_payment_items i
       WHERE i.batch_id = $1 AND i.status = 'submitted' AND i.payout_requested_at IS NULL
-        AND EXISTS (SELECT 1 FROM everee_payment_attempts a WHERE a.item_id = i.id AND a.outcome = 'accepted') ORDER BY i.id`, [batchId]);
+        AND (i.everee_payable_status IS NOT NULL OR EXISTS (SELECT 1 FROM everee_payment_attempts a WHERE a.item_id = i.id AND a.outcome = 'accepted')) ORDER BY i.id`, [batchId]);
   if (waiting.length === 0) return null;
   const { rows: [request] } = await db.query('INSERT INTO everee_payout_requests (batch_id, asked_count) VALUES ($1, $2) RETURNING id', [batchId, waiting.length]);
   const asked = waiting.map((w) => w.external_id);
@@ -252,7 +280,7 @@ const requestPayout = async (db, batchId, deps, client) => {
 
 const sendBatch = async (db, batchId, itemIds, deps, client) => {
   const { rows: [batch] } = await db.query(
-    `SELECT b.id, b.city_id, to_char(r.period_start, 'YYYY-MM-DD') AS period_start, to_char(r.period_end, 'YYYY-MM-DD') AS period_end,
+    `SELECT b.id, b.city_id, b.pay_run_id, to_char(r.period_start, 'YYYY-MM-DD') AS period_start, to_char(r.period_end, 'YYYY-MM-DD') AS period_end,
             s.time_zone, s.work_location_id
        FROM everee_payment_batches b JOIN pay_runs r ON r.id = b.pay_run_id LEFT JOIN everee_city_settings s ON s.city_id = b.city_id WHERE b.id = $1`, [batchId]);
   batch.time_zone = batch.time_zone ?? DEFAULT_TIME_ZONE;
@@ -260,12 +288,17 @@ const sendBatch = async (db, batchId, itemIds, deps, client) => {
     `SELECT id, pay_statement_id, everee_worker_id, external_worker_id, amount::text AS amount FROM everee_payment_items WHERE id = ANY($1::bigint[]) ORDER BY id`, [itemIds]);
   const sleep = deps.sleep ?? defaultSleep;
   let first = true;
-  for (const item of items) {
-    if (!first) await sleep(deps.throttleMs ?? THROTTLE_MS);
-    first = false;
-    await sendItem(db, item, batch, deps, client);
+  try {
+    for (const item of items) {
+      if (!first) await sleep(deps.throttleMs ?? THROTTLE_MS);
+      first = false;
+      await sendItem(db, item, batch, deps, client);
+    }
+    await requestPayout(db, batchId, deps, client);
+  } finally {
+    // Done with these items (sent, skipped or failed): the sender gives up ownership, so reconciliation may look at them.
+    await db.query('UPDATE everee_payment_items SET send_lease_until = NULL WHERE id = ANY($1::bigint[])', [itemIds]);
   }
-  await requestPayout(db, batchId, deps, client);
 };
 
 // ---------- confirm and pay ----------
@@ -326,9 +359,9 @@ export const submitBatch = async (db, admin, { runId, requestId, previewHash }, 
     const itemIds = [];
     for (const i of items) {
       const { rows: [row] } = await tx.query(
-        `INSERT INTO everee_payment_items (batch_id, pay_statement_id, driver_id, everee_worker_id, external_worker_id, external_id, amount)
-         VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`,
-        [batch.id, i.statementId, i.driverId, i.workerId, i.externalWorkerId, externalIdOf(i.statementId), i.amount]);
+        `INSERT INTO everee_payment_items (batch_id, pay_statement_id, driver_id, everee_worker_id, external_worker_id, external_id, amount, send_lease_until)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, now() + make_interval(mins => $8)) RETURNING id`,
+        [batch.id, i.statementId, i.driverId, i.workerId, i.externalWorkerId, externalIdOf(i.statementId), i.amount, SEND_LEASE_MINUTES]);
       itemIds.push(row.id);
     }
     return { replay: false, batchId: batch.id, itemIds, config };
@@ -394,7 +427,9 @@ export const retryBatch = async (db, admin, batchId, deps = {}) => {
       if (invalidWork(locked, await approvedWork(tx, ids, true)).size > 0) throw new PayrollError(409, 'some included earnings changed or are already marked paid; review the run before retrying');
       const { rowCount } = await tx.query("UPDATE pay_statements SET payout_status = 'submitted' WHERE id = ANY($1::bigint[]) AND payout_status = 'failed'", [ids]);
       if (rowCount !== ids.length) throw new PayrollError(409, 'a statement changed; refresh the batch');
-      await tx.query("UPDATE everee_payment_items SET status = 'submitted', error_message = NULL, updated_at = now() WHERE id = ANY($1::bigint[]) AND status = 'failed'", [retryable.map((i) => i.id)]);
+      await tx.query(
+        "UPDATE everee_payment_items SET status = 'submitted', error_message = NULL, send_lease_until = now() + make_interval(mins => $2), updated_at = now() WHERE id = ANY($1::bigint[]) AND status = 'failed'",
+        [retryable.map((i) => i.id), SEND_LEASE_MINUTES]);
     }
     return { config, itemIds: retryable.map((i) => i.id) };
   });

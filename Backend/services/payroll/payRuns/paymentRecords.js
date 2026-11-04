@@ -115,6 +115,36 @@ const priorRecord = async (db, requestId) =>
     )
   ).rows[0];
 
+// Locks the source rows before the derived pay rows (the upload's lock order) and returns the earning rows the statements froze.
+// Shared by recording a payment by hand and by completing one that a provider confirmed, so both take locks in the same order.
+export const lockApprovedEarnings = async (db, statementIds) => {
+  await db.query(
+    `SELECT dd.id FROM dashboard_data dd WHERE dd.id IN (
+    SELECT pd.dashboard_data_id FROM payment_dashboard pd JOIN pay_statement_lines l ON l.payment_dashboard_id=pd.id
+     WHERE l.statement_id=ANY($1::bigint[]) AND l.active AND l.line_type='earning') ORDER BY dd.id FOR UPDATE`,
+    [statementIds],
+  );
+  return approvedWork(db, statementIds, true);
+};
+
+// THE one place that marks approved statements paid: each statement, and the source and pay rows it included, in the caller's transaction.
+// Frozen amounts, deductions and remaining debt are never touched. Used by manual recording and by a provider payment confirmed as landed.
+// earnings: the rows from lockApprovedEarnings for these statements (empty when they must not be touched: see the Everee completion).
+export const settlePaidStatements = async (db, { statementIds, earnings, paidOn, reference }) => {
+  await db.query(
+    "UPDATE dashboard_data SET paid=true WHERE id=ANY($1::int[])",
+    [earnings.map((e) => e.dashboard_data_id).filter(Boolean)],
+  );
+  await db.query(
+    "UPDATE payment_dashboard SET paid=true,payment_date=$2 WHERE id=ANY($1::int[])",
+    [earnings.map((e) => e.id), paidOn],
+  );
+  await db.query(
+    "UPDATE pay_statements SET payout_status='paid',payout_reference=$2,paid_at=now() WHERE id=ANY($1::bigint[])",
+    [statementIds, reference],
+  );
+};
+
 export const recordRunPayment = async (db, admin, runId, request) => {
   const found = (
     await db.query("SELECT id,city_id FROM pay_runs WHERE id=$1", [runId])
@@ -186,13 +216,7 @@ export const recordRunPayment = async (db, admin, runId, request) => {
     );
   const ids = targets.map((s) => s.id);
   // Lock source rows before derived pay rows, matching the upload's lock order.
-  await db.query(
-    `SELECT dd.id FROM dashboard_data dd WHERE dd.id IN (
-    SELECT pd.dashboard_data_id FROM payment_dashboard pd JOIN pay_statement_lines l ON l.payment_dashboard_id=pd.id
-     WHERE l.statement_id=ANY($1::bigint[]) AND l.active AND l.line_type='earning') ORDER BY dd.id FOR UPDATE`,
-    [ids],
-  );
-  const earnings = await approvedWork(db, ids, true);
+  const earnings = await lockApprovedEarnings(db, ids);
   if (invalidWork(targets, earnings).size)
     throw new PayrollError(
       409,
@@ -219,18 +243,7 @@ export const recordRunPayment = async (db, admin, runId, request) => {
     SELECT $1,id,net FROM pay_statements WHERE id=ANY($2::bigint[])`,
     [inserted.id, ids],
   );
-  await db.query(
-    "UPDATE dashboard_data SET paid=true WHERE id=ANY($1::int[])",
-    [earnings.map((e) => e.dashboard_data_id).filter(Boolean)],
-  );
-  await db.query(
-    "UPDATE payment_dashboard SET paid=true,payment_date=$2 WHERE id=ANY($1::int[])",
-    [earnings.map((e) => e.id), request.paidOn],
-  );
-  await db.query(
-    "UPDATE pay_statements SET payout_status='paid',payout_reference=$2,paid_at=now() WHERE id=ANY($1::bigint[])",
-    [ids, request.reference],
-  );
+  await settlePaidStatements(db, { statementIds: ids, earnings, paidOn: request.paidOn, reference: request.reference });
   const driverNames = (
     await db.query("SELECT name FROM drivers WHERE id=ANY($1::int[])", [
       targets.map((s) => s.driver_id),

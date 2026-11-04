@@ -85,5 +85,7 @@ export const createEvereeClient = (config, { fetchImpl = fetch, timeoutMs = REQU
     requestPayout: (externalIds) => request('POST', '/integration/v1/payables/payment-request', { externalIds }),
     // One payable by its external ID: what Everee knows about it (paymentStatus, paymentId). Read-only.
     getPayable: (externalId) => request('GET', `/integration/v1/payables/${encodeURIComponent(externalId)}`),
+    // One payment of a worker by its payment ID. Everee answers 404 until the payment has been processed for deposit. Read-only.
+    getPaymentHistoryItem: (paymentId) => request('GET', `/integration/v1/workers/payment-history/${encodeURIComponent(paymentId)}`),
   };
 };
