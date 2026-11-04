@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { installServer, removeShell, resetBrowser } from "../../test/fakeShell";
 
 // The real journey form, slices and sign-out, with a fake server that can drop the connection.
