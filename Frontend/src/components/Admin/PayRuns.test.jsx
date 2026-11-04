@@ -17,7 +17,7 @@ const detailOf = (run, net = "294.24") => ({
 });
 
 // held: requests matching "METHOD url" wait until the test calls release(key), to test answers that arrive late.
-const startServer = async ({ net, held = [] } = {}) => {
+const startServer = async ({ net, held = [], cityType = "DAILY" } = {}) => {
   const gates = Object.fromEntries(held.map((key) => {
     let open;
     const promise = new Promise((resolve) => { open = resolve; });
@@ -29,7 +29,7 @@ const startServer = async ({ net, held = [] } = {}) => {
     state.calls.push({ method: config.method, url: config.url, params: config.params, body });
     const gate = gates[`${config.method.toUpperCase()} ${config.url}`];
     if (gate) await gate.promise;
-    if (config.url === "/admin/get-admin-cities") return { status: 200, data: { cities: [{ id: 3, job: "Test City" }, { id: 5, job: "Other City" }] } };
+    if (config.url === "/admin/get-admin-cities") return { status: 200, data: { cities: [{ id: 3, job: "Test City", city_type: cityType }, { id: 5, job: "Other City" }] } };
     if (config.url === "/admin/payroll/settings") return { status: 200, data: { recoveryLimit: null } };
     if (config.url === "/admin/payroll/settings/recovery-limit") return { status: 200, data: { recoveryLimit: body.recoveryLimit } };
     if (config.method === "get" && config.url === "/admin/payroll/runs") return { status: 200, data: { runs: String(config.params?.cityId) === "3" ? [state.run] : [] } };
@@ -71,6 +71,22 @@ beforeEach(async () => {
 afterEach(cleanup);
 
 describe("admin Pay runs", () => {
+  it("defaults a weekly city's draft to GOFO, and blocks more than 31 inclusive days before sending", async () => {
+    const server = await startServer({ cityType: "WEEKLY" });
+    await mount();
+    await chooseCity();
+    expect(screen.getByLabelText("Pay data").value).toBe("weekly");
+    fireEvent.change(screen.getByLabelText("From"), { target: { value: "2026-08-03" } });
+    fireEvent.change(screen.getByLabelText("To"), { target: { value: "2026-09-03" } });
+    fireEvent.click(screen.getByRole("button", { name: "Draft pay run" }));
+    expect(screen.getByRole("alert").textContent).toContain("31 days or fewer");
+    expect(posts(server, "/admin/payroll/runs")).toHaveLength(0);
+    fireEvent.change(screen.getByLabelText("To"), { target: { value: "2026-09-02" } });
+    fireEvent.click(screen.getByRole("button", { name: "Draft pay run" }));
+    await screen.findByText("Dee Test");
+    expect(posts(server, "/admin/payroll/runs")[0].body).toMatchObject({ periodStart: "2026-08-03", periodEnd: "2026-09-02", dataType: "weekly" });
+  });
+
   it("drafts a run for the chosen city, shows its statements and what waits outside, then finalizes it", async () => {
     const server = await startServer();
     await mount();
@@ -88,7 +104,7 @@ describe("admin Pay runs", () => {
     expect(screen.getByText("no recovery limit is set; nothing was recovered automatically")).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Void run" })).toBeNull();
 
-    fireEvent.click(screen.getByRole("button", { name: "Finalize" }));
+    fireEvent.click(screen.getByRole("button", { name: "Approve statements" }));
     expect(await screen.findByText("finalized")).toBeTruthy();
     expect(confirm).toHaveBeenCalledTimes(1);
     expect(posts(server, "/17/finalize")).toHaveLength(1);
@@ -115,13 +131,14 @@ describe("admin Pay runs", () => {
     await chooseCity();
     fireEvent.click(await screen.findByRole("button", { name: /Open run\s*2026-11-01/ }));
     expect(await screen.findByText(/A statement is below zero/)).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Finalize" }).disabled).toBe(true);
+    expect(screen.getByRole("button", { name: "Approve statements" }).disabled).toBe(true);
   });
 
   it("lets a super admin set the recovery limit with a reason, and void a finalized run", async () => {
     const server = await startServer();
     server.run = { ...RUN, status: "finalized" };
     await mount({ superAdmin: true });
+    fireEvent.click(screen.getByText("Deduction limit & payment setup"));
     fireEvent.click(await screen.findByRole("button", { name: "Change" }));
     fireEvent.change(screen.getByLabelText("Limit"), { target: { value: "percent_of_available" } });
     fireEvent.change(screen.getByLabelText("Percent (0 to 100)"), { target: { value: "50" } });
@@ -143,7 +160,7 @@ describe("admin Pay runs", () => {
     await chooseCity();
     fireEvent.click(await screen.findByRole("button", { name: /Open run\s*2026-11-01/ }));
     expect(await screen.findByText("Test City", { selector: "p" })).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "Finalize" }));
+    fireEvent.click(screen.getByRole("button", { name: "Approve statements" }));
     await waitFor(() => expect(confirm).toHaveBeenCalled());
     expect(confirm.mock.calls[0][0].title).toMatch(/Test City, 2026-11-01 – 2026-11-07/);
   });
@@ -158,7 +175,7 @@ describe("admin Pay runs: late answers after a city switch", () => {
   const settle = () => new Promise((r) => setTimeout(r, 50));
   const noRunShown = () => {
     expect(screen.queryByText("Dee Test")).toBeNull();
-    expect(screen.queryByRole("button", { name: "Finalize" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Approve statements" })).toBeNull();
   };
 
   it("opening a run, then switching city before it loads", async () => {
@@ -189,7 +206,7 @@ describe("admin Pay runs: late answers after a city switch", () => {
     await mount();
     await chooseCity();
     fireEvent.click(await screen.findByRole("button", { name: /Open run\s*2026-11-01/ }));
-    fireEvent.click(await screen.findByRole("button", { name: "Finalize" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Approve statements" }));
     await waitFor(() => expect(posts(server, "/17/finalize")).toHaveLength(1));
     await switchTo("5");
     server.release("POST /admin/payroll/runs/17/finalize");

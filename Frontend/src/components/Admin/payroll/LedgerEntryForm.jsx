@@ -115,9 +115,11 @@ export default function LedgerEntryForm({ cityId, driverId, onSaved, prefill, pa
       <Field label="Amount (USD)" info={TIPS.amount} error={errors.amount}>
         <input className={inputClass} inputMode="decimal" value={form.amount} onChange={setMoney("amount")} placeholder="0.00" />
       </Field>
-      <Field label="Date" info={TIPS.date} error={errors.effectiveDate}>
+      <div><Field label="Date" info={TIPS.date} error={errors.effectiveDate}>
         <input type="date" className={inputClass} value={form.effectiveDate} onChange={set("effectiveDate")} />
       </Field>
+        <p className="mt-1 text-xs text-ink-muted">Use the date this happened. A pay run ending before this date will not deduct it.</p>
+      </div>
       <Field label="Reason" info={TIPS.reason} error={errors.reason}>
         <input className={inputClass} value={form.reason} onChange={set("reason")} maxLength={500} />
       </Field>
@@ -153,11 +155,12 @@ export default function LedgerEntryForm({ cityId, driverId, onSaved, prefill, pa
         </fieldset>
       )}
       {form.type === "advance" && (
-        <label className="flex min-h-11 items-center gap-2 text-sm font-medium text-gray-700 sm:col-span-2">
+        <div className="rounded-xl border border-line bg-canvas p-3 sm:col-span-2"><label className="flex min-h-11 items-center gap-2 text-sm font-medium text-gray-700">
           <input type="checkbox" className="h-5 w-5" checked={form.disbursedOutsidePayroll} onChange={set("disbursedOutsidePayroll")} />
           Already paid out to the driver outside payroll
           <InfoTip label="already paid out" text={TIPS.paidOut} />
         </label>
+        <p className={`mt-1 text-sm ${form.disbursedOutsidePayroll ? "text-ink-muted" : "text-amber-800"}`}>{form.disbursedOutsidePayroll ? "Repayments can start when due, under the chosen arrangement and recovery limit." : "Repayments are paused until you confirm the money was given to the driver. You can confirm it later using Edit on this record."}</p></div>
       )}
       {isDebit && (
         <>

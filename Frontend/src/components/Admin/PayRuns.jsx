@@ -87,11 +87,16 @@ export default function PayRuns() {
         <div className="mx-auto max-w-5xl space-y-5">
           <div>
             <h1 className="text-2xl font-bold tracking-tight text-ink">Pay runs</h1>
-            <p className="mt-1 text-sm text-gray-500">Freeze each driver's statement for a period. No money is sent from this page.</p>
+            <p className="mt-1 text-sm text-gray-500">Choose a city and delivery period, review each driver’s pay, then approve the statements. Payment is a separate step.</p>
           </div>
 
-          <RecoveryLimitPanel isSuperAdmin={isSuperAdmin} />
-          {isSuperAdmin && <EvereePanel />}
+          <details className="rounded-2xl border border-line bg-white">
+            <summary className="cursor-pointer p-4 text-sm font-semibold text-brand">Deduction limit & payment setup</summary>
+            <div className="space-y-3 p-3 pt-0">
+              <RecoveryLimitPanel isSuperAdmin={isSuperAdmin} />
+              {isSuperAdmin && <EvereePanel />}
+            </div>
+          </details>
 
           <label className="block max-w-sm text-sm font-medium text-gray-700">City
             <select className={selectClass} value={cityId} onChange={(e) => selectCity(e.target.value)}>
@@ -111,7 +116,7 @@ export default function PayRuns() {
             <>
               <section className="card-surface p-4" aria-labelledby="new-run">
                 <h2 id="new-run" className="mb-3 text-base font-semibold text-ink">New draft</h2>
-                <NewRunForm key={cityId} cityId={Number(cityId)} onDrafted={changed} />
+                <NewRunForm key={cityId} cityId={Number(cityId)} defaultDataType={cities.find((c) => String(c.id) === String(cityId))?.city_type === "WEEKLY" ? "weekly" : "daily"} onDrafted={changed} />
               </section>
               <section aria-labelledby="run-list">
                 <h2 id="run-list" className="mb-2 text-base font-semibold text-ink">Runs</h2>

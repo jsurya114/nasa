@@ -209,6 +209,21 @@ describe("AdminBalances: the records list", () => {
   });
 
   const plan = (value) => fireEvent.change(screen.getByLabelText("Repayment arrangement"), { target: { value } });
+  it("confirms a cash handover through the audited edit endpoint without changing amount or plan", async () => {
+    const history = { ...HISTORY, versions: [{ entry: { ...HISTORY.versions[1].entry, entry_type: "advance", disbursed_outside_payroll: false }, edit: null }] };
+    const server = await startServer({}, history);
+    await mount();
+    fireEvent.click(screen.getAllByRole("button", { name: "Edit" })[0]);
+    const received = await screen.findByRole("checkbox", { name: "Driver has received this advance" });
+    expect(received.checked).toBe(false);
+    fireEvent.click(received);
+    fill("Why are you editing this?", "Cash handed to driver");
+    fireEvent.click(screen.getByRole("button", { name: "Save correction" }));
+    await waitFor(() => expect(server.posts).toHaveLength(1));
+    expect(server.posts[0]).toMatchObject({ url: "/admin/payroll/ledger/5/edit", body: { reason: "Cash handed to driver", changes: { disbursedOutsidePayroll: true } } });
+    expect(Object.keys(server.posts[0].body.changes)).toEqual(["disbursedOutsidePayroll"]);
+  });
+
   const save = async (server) => {
     fireEvent.change(screen.getByLabelText("Why are you editing this?"), { target: { value: "Plan changed" } });
     fireEvent.click(screen.getByRole("button", { name: "Save correction" }));

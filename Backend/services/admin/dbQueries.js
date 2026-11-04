@@ -414,7 +414,7 @@ updateParams = [
     getAdminCities: async (adminId) => {
         try {
             const result = await pool.query(
-                `SELECT c.id, c.job, c.city_code, c.enabled
+                `SELECT c.id, c.job, c.city_code, c.enabled, c.city_type
                  FROM city c
                  INNER JOIN admin_city_ref acr ON c.id = acr.city_id
                  WHERE acr.admin_id = $1 AND c.enabled = true
