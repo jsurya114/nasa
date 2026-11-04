@@ -4,14 +4,14 @@ import pool from '../../config/db.js';
 import HttpStatus from '../../utils/statusCodes.js';
 import logger from '../../utils/logger.js';
 import { PayrollError } from '../../services/payroll/payRuns/payRunStore.js';
-import { previewEvereeBatch } from '../../services/payments/everee/batchPreview.js';
+import { parseDriverScope, previewEvereeBatch } from '../../services/payments/everee/batchPreview.js';
 
 export const getEvereePreview = async (req, res) => {
   const raw = String(req.params.runId ?? '');
   const runId = /^\d{1,12}$/.test(raw) && Number(raw) > 0 ? Number(raw) : null;
   if (!runId) return res.status(HttpStatus.BAD_REQUEST).json({ message: 'unknown pay run' });
   try {
-    return res.status(HttpStatus.OK).json(await previewEvereeBatch(pool, req.admin, runId));
+    return res.status(HttpStatus.OK).json(await previewEvereeBatch(pool, req.admin, runId, { onlyDrivers: parseDriverScope(req.query.driverIds) }));
   } catch (error) {
     if (error instanceof PayrollError) return res.status(error.status).json({ message: error.message });
     logger.error('Everee batch preview failed', { code: error.code, message: error.message });

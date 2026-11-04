@@ -12,7 +12,9 @@ const base = "/admin/payroll";
 // Pay a finalized run through Everee (#31): the server's preview, then ONE confirm click that sends the exact preview it showed. The confirm
 // carries a request ID that stays the same until the preview changes, so a repeated click or a lost answer never sends twice. The result is
 // read back from the server; nothing here decides what is paid.
-export default function EvereePayDialog({ runId, cityName, onClose, onChanged }) {
+export default function EvereePayDialog({ runId, cityName, driverIds = null, onClose, onChanged }) {
+  // The driver list as text, so a new array with the same drivers does not make the screen load again.
+  const scopeKey = driverIds ? driverIds.join(",") : "";
   const [state, setState] = useState({ status: "loading", preview: null, batches: [], message: "" });
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
@@ -23,7 +25,7 @@ export default function EvereePayDialog({ runId, cityName, onClose, onChanged })
   const load = useCallback(async (signal) => {
     try {
       const [preview, batches] = await Promise.all([
-        axios.get(`${base}/runs/${runId}/everee-preview`, { signal }),
+        axios.get(`${base}/runs/${runId}/everee-preview`, { signal, params: scopeKey ? { driverIds: scopeKey } : undefined }),
         axios.get(`${base}/runs/${runId}/everee-batches`, { signal }),
       ]);
       if (signal?.aborted || !mounted.current) return;
@@ -32,7 +34,7 @@ export default function EvereePayDialog({ runId, cityName, onClose, onChanged })
       if (signal?.aborted || !mounted.current) return;
       setState({ status: "error", preview: null, batches: [], message: readableError(error, "Everee payments could not be loaded.") });
     }
-  }, [runId]);
+  }, [runId, scopeKey]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -57,7 +59,7 @@ export default function EvereePayDialog({ runId, cityName, onClose, onChanged })
     const { preview } = state;
     if (confirmId.current.hash !== preview.previewHash) confirmId.current = { hash: preview.previewHash, requestId: newRequestId() };
     try {
-      await axios.post(`${base}/runs/${runId}/everee-batches`, { requestId: confirmId.current.requestId, previewHash: preview.previewHash });
+      await axios.post(`${base}/runs/${runId}/everee-batches`, { requestId: confirmId.current.requestId, previewHash: preview.previewHash, ...(scopeKey && { driverIds: scopeKey.split(",").map(Number) }) });
     } catch (error) {
       // What would be paid changed since it was shown: show the new preview and let the person confirm again.
       if (error.response?.status === 409 && error.response.data?.preview) setState((s) => ({ ...s, preview: error.response.data.preview }));

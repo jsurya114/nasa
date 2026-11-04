@@ -19,6 +19,7 @@ import PaymentDashboardTable from "./DashboardTable.jsx";
 import usePenaltySummary from "./dashboard/usePenaltySummary.js";
 import { summaryItems, summaryLook } from "./dashboard/penaltyDisplay.js";
 import PaymentRuns from "./payRuns/PaymentRuns.jsx";
+import FilteredEvereePay from "./payRuns/everee/FilteredEvereePay.jsx";
 import Loader from "../Loader.jsx"
 import { CalendarDays, CalendarRange, ChevronDown, Gavel, LayoutGrid, ShieldCheck, Banknote } from "lucide-react";
 
@@ -540,6 +541,10 @@ export default function Dashboard() {
               </div>
               <PaymentDashboardTable showExtraFields={showExtraFields} penalty={penalty} />
             </section>
+          )}
+
+          {isFiltered && (
+            <FilteredEvereePay applied={applied} cities={cities ?? []} drivers={drivers ?? []} known={{ cityId: penalty.cityId, driverId: penalty.driverId }} onChanged={refreshAfterPayment} />
           )}
         </main>
 

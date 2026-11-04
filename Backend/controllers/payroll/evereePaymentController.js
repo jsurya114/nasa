@@ -8,6 +8,7 @@ import {
   getBatchView, getCitySettings, listRunBatches, PreviewChangedError, retryBatch, setCitySettings, submitBatch,
 } from '../../services/payments/everee/batchSubmit.js';
 import { checkBatch } from '../../services/payments/everee/paymentStatus.js';
+import { listPayableRuns } from '../../services/payments/everee/payableRuns.js';
 
 const id = (value) => (/^\d{1,12}$/.test(String(value ?? '')) && Number(value) > 0 ? Number(value) : null);
 
@@ -34,11 +35,12 @@ const need = (value, message) => {
 };
 
 export const postBatch = run('submit', (req) => submitBatch(pool, req.admin, {
-  runId: need(id(req.params.runId), 'unknown pay run'), requestId: req.body?.requestId, previewHash: req.body?.previewHash,
+  runId: need(id(req.params.runId), 'unknown pay run'), requestId: req.body?.requestId, previewHash: req.body?.previewHash, driverIds: req.body?.driverIds,
 }));
 export const getRunBatches = run('list', (req) => listRunBatches(pool, req.admin, need(id(req.params.runId), 'unknown pay run')));
 export const getBatch = run('read', (req) => getBatchView(pool, req.admin, need(id(req.params.batchId), 'unknown payment batch')));
 export const postRetry = run('retry', (req) => retryBatch(pool, req.admin, need(id(req.params.batchId), 'unknown payment batch')));
 export const postCheck = run('check', (req) => checkBatch(pool, req.admin, need(id(req.params.batchId), 'unknown payment batch')));
+export const getPayableRuns = run('payable runs', (req) => listPayableRuns(pool, req.admin, { cityId: req.query.cityId, driverId: req.query.driverId }));
 export const getSettings = run('settings', (req) => getCitySettings(pool, req.admin, need(id(req.query.cityId), 'cityId must be a number')));
 export const putSettings = run('settings update', (req) => setCitySettings(pool, req.admin, need(id(req.params.cityId), 'cityId must be a number'), req.body ?? {}));

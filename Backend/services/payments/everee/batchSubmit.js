@@ -5,7 +5,7 @@ import { lockCityPayroll, withTransaction } from '../../payroll/claims/claimsSto
 import { approvedWork, invalidWork } from '../../payroll/payRuns/paymentRecords.js';
 import { readEvereeConfig } from './evereeConfig.js';
 import { createEvereeClient, EvereeError } from './evereeClient.js';
-import { computePreview } from './batchPreview.js';
+import { computePreview, parseDriverScope } from './batchPreview.js';
 import { DEFAULT_TIME_ZONE, externalIdOf, isTimeZone, payableBody } from './payableRules.js';
 import { readyToPay } from './workerRules.js';
 
@@ -281,11 +281,12 @@ const sendBatch = async (db, batchId, itemIds, deps, client) => {
 const clientFor = (config, deps) => deps.client ?? createEvereeClient(config);
 
 // requestId: made by the confirm click. previewHash: what the admin saw (from the preview endpoint).
-export const submitBatch = async (db, admin, { runId, requestId, previewHash }, deps = {}) => {
+export const submitBatch = async (db, admin, { runId, requestId, previewHash, driverIds }, deps = {}) => {
   requireSuperAdmin(admin);
   if (typeof requestId !== 'string' || !UUID.test(requestId)) throw new PayrollError(400, 'requestId must be a UUID made by the confirm click');
   if (typeof previewHash !== 'string' || !/^[0-9a-f]{64}$/.test(previewHash)) throw new PayrollError(400, 'previewHash must be the hash of the preview that was confirmed');
   const env = deps.env ?? process.env;
+  const onlyDrivers = parseDriverScope(driverIds); // the same list the preview was made with
 
   const reserved = await inTransaction(db, async (tx) => {
     // The same order of locks as recordRunPayment: the run, then the city, then the statements and their earning rows.
@@ -302,7 +303,7 @@ export const submitBatch = async (db, admin, { runId, requestId, previewHash }, 
       return { replay: true, batchId: prior.id, itemIds: [] };
     }
 
-    const { result, items, config, gate } = await computePreview(tx, admin, runId, { env });
+    const { result, items, config, gate } = await computePreview(tx, admin, runId, { env, onlyDrivers });
     if (!gate.enabled) throw new PayrollError(409, `payments to Everee cannot be sent: ${gate.reason}`);
     if (!result.confirm.allowed) throw new PayrollError(403, result.confirm.reason);
     const blocker = result.batchBlockers.find((b) => b.code !== 'payments_off');

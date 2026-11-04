@@ -4,7 +4,8 @@ import { randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { getBatchView, getCitySettings, PreviewChangedError, retryBatch, setCitySettings, submitBatch } from '../services/payments/everee/batchSubmit.js';
-import { previewEvereeBatch } from '../services/payments/everee/batchPreview.js';
+import { parseDriverScope, previewEvereeBatch } from '../services/payments/everee/batchPreview.js';
+import { listPayableRuns } from '../services/payments/everee/payableRuns.js';
 import { EvereeError } from '../services/payments/everee/evereeClient.js';
 import { noonInZone } from '../services/payments/everee/payableRules.js';
 import { finalizeRun, generateRun } from '../services/payroll/payRuns/payRunStore.js';
@@ -442,6 +443,66 @@ test('everee submit: reserve, send, payout request, replay, partial failure, ret
       await savepoint(() => assert.rejects(db.query(
         `INSERT INTO everee_payment_items (batch_id, pay_statement_id, driver_id, everee_worker_id, external_id, amount) VALUES ($1, 1, $2, 'EW-A', $3, 1)`,
         [first.batch_id, dA, first.external_id]), /duplicate key|everee_payment_items_external_id_key/), 'the same external ID twice');
+    });
+
+    await t.test('a batch can be limited to the drivers of the Dashboard\'s filtered list: only they are previewed, hashed, reserved and sent', async () => {
+      const sc = await scenario('SC', [[dC, '30.00'], [dD, '40.00']]);
+      const only = async (ids, env = ARMED) => previewEvereeBatch(db, sup2, sc.run.id, { env, onlyDrivers: ids });
+      const whole = await only(null);
+      const scoped = await only([dC]);
+      assert.deepEqual([whole.summary.eligible, whole.summary.total], [2, '70.00']);
+      assert.deepEqual([scoped.summary.drivers, scoped.summary.eligible, scoped.summary.total], [1, 1, '30.00']);
+      assert.deepEqual(scoped.drivers.map((d) => d.driverId), [dC]);
+      assert.notEqual(scoped.previewHash, whole.previewHash);
+
+      const fake = makeEveree();
+      // the confirm must name the same drivers as the preview: the whole run's hash with a limited list (or the reverse) is refused and sends nothing
+      await assert.rejects(submitBatch(db, sup2, { runId: sc.run.id, requestId: randomUUID(), previewHash: whole.previewHash, driverIds: [dC] }, deps(fake.client)), (error) => error instanceof PreviewChangedError);
+      await assert.rejects(submitBatch(db, sup2, { runId: sc.run.id, requestId: randomUUID(), previewHash: scoped.previewHash }, deps(fake.client)), (error) => error instanceof PreviewChangedError);
+      assert.deepEqual(fake.state.creates, []);
+
+      const batch = await submitBatch(db, sup2, { runId: sc.run.id, requestId: randomUUID(), previewHash: scoped.previewHash, driverIds: [dC] }, deps(fake.client));
+      assert.deepEqual([batch.batch.drivers, batch.batch.total, fake.state.creates.length], [1, '30.00', 1]);
+      assert.equal(fake.state.creates[0].workerId, 'EW-C');
+      assert.equal((await statement(sc.run, dC)).payout_status, 'submitted');
+      assert.equal((await statement(sc.run, dD)).payout_status, 'not_submitted', 'a driver outside the list is untouched');
+      assert.equal(await item(sc.run, dD), undefined);
+
+      // the rest of the run can still be paid afterwards, on its own
+      const rest = await only([dD]);
+      assert.deepEqual([rest.summary.eligible, rest.summary.total], [1, '40.00']);
+      const second = await submitBatch(db, sup2, { runId: sc.run.id, requestId: randomUUID(), previewHash: rest.previewHash, driverIds: [dD] }, deps(fake.client));
+      assert.equal(second.batch.drivers, 1);
+      // the whole run now has nobody left to pay
+      assert.ok((await only(null)).batchBlockers.some((b) => b.code === 'nobody_to_pay'));
+    });
+
+    await t.test('the driver list is validated: a bad one is a 400 and never means "the whole run"', async () => {
+      for (const bad of [[], ['x'], [0], [-1], ['1;2'], [1.5], 'abc', Array.from({ length: 201 }, (_, i) => i + 1)]) {
+        assert.throws(() => parseDriverScope(bad), { status: 400 }, JSON.stringify(bad).slice(0, 30));
+      }
+      assert.equal(parseDriverScope(undefined), null);
+      assert.equal(parseDriverScope(''), null);
+      assert.deepEqual(parseDriverScope('3, 1,3'), [1, 3]);
+      assert.deepEqual(parseDriverScope([2, '1']), [1, 2]);
+    });
+
+    await t.test('the approved runs a filtered list can be paid from: for a city or a driver, unpaid only, super admin only', async () => {
+      const sc = await scenario('PR', [[dA, '15.00'], [dB, '25.00']]);
+      const mine = (r) => r.runs.find((x) => x.id === sc.run.id);
+      const byCity = await listPayableRuns(db, sup2, { cityId: sc.city });
+      assert.deepEqual([mine(byCity).drivers, mine(byCity).remaining, mine(byCity).city], [2, '40.00', 'Test Submit PR']);
+      const byDriver = await listPayableRuns(db, sup2, { driverId: dA });
+      assert.deepEqual([mine(byDriver).drivers, mine(byDriver).remaining], [1, '15.00']);
+      assert.equal(mine(await listPayableRuns(db, sup2, { cityId: sc.city, driverId: dE })), undefined, 'a driver with nothing in this run');
+      assert.equal(mine(await listPayableRuns(db, sup2, { cityId: 987654321 })), undefined);
+      await assert.rejects(listPayableRuns(db, cityAdmin, { cityId: sc.city }), { status: 403 });
+      await assert.rejects(listPayableRuns(db, sup2, { cityId: 'x' }), { status: 400 });
+      await assert.rejects(listPayableRuns(db, sup2, { driverId: '1 or 1=1' }), { status: 400 });
+      // once paid by hand, the run no longer has anything to pay for that driver
+      await recordRunPayment(db, sup2, sc.run.id, { requestId: randomUUID(), paidOn: (await one("SELECT to_char(now(), 'YYYY-MM-DD') AS d")).d, method: 'other', reference: 'manual test', confirmed: true, statementIds: [(await statement(sc.run, dA)).id] });
+      assert.equal(mine(await listPayableRuns(db, sup2, { driverId: dA })), undefined);
+      assert.equal(mine(await listPayableRuns(db, sup2, { cityId: sc.city })).drivers, 1);
     });
 
     await t.test('reading a batch is for a super admin of its city', async () => {

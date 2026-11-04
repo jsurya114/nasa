@@ -49,9 +49,26 @@ export const previewHashOf = ({ runId, environment, items }) => {
   return createHash('sha256').update(JSON.stringify({ v: 1, runId, environment, items: canonical })).digest('hex');
 };
 
-export const computePreview = async (db, admin, runId, { env = process.env } = {}) => {
+const MAX_SCOPE = 200;
+
+// The drivers a preview or a confirm is limited to (the Dashboard's filtered list): null for the whole run, or a list of driver IDs.
+// Accepts an array or a comma-separated text. Anything else is a 400, never "the whole run".
+export const parseDriverScope = (value) => {
+  if (value === undefined || value === null || value === '') return null;
+  const list = Array.isArray(value) ? value : String(value).split(',');
+  const ids = list.map((v) => (typeof v === 'number' ? v : String(v).trim()));
+  if (ids.length === 0 || ids.length > MAX_SCOPE || ids.some((v) => !/^\d{1,9}$/.test(String(v)) || Number(v) <= 0)) {
+    throw new PayrollError(400, `driverIds must be 1 to ${MAX_SCOPE} driver IDs`);
+  }
+  return [...new Set(ids.map(Number))].sort((a, b) => a - b);
+};
+
+// onlyDrivers: limit the batch to these drivers of the run (the preview, the hash and the confirm all use the same list, so what is confirmed
+// is exactly what was shown). Statements of other drivers are not in it at all, as if they were not in the run.
+export const computePreview = async (db, admin, runId, { env = process.env, onlyDrivers = null } = {}) => {
   if (!isSuperAdmin(admin)) throw new PayrollError(403, 'only a super admin can preview or confirm a payment to Everee');
-  const review = await reviewRunAsBatch(db, admin, runId); // also checks the run exists and the admin's city
+  const full = await reviewRunAsBatch(db, admin, runId); // also checks the run exists and the admin's city
+  const review = onlyDrivers ? { ...full, drivers: full.drivers.filter((d) => onlyDrivers.includes(Number(d.driverId))) } : full;
   const config = readEvereeConfig(env);
   const gate = paymentsGate(config, env);
 

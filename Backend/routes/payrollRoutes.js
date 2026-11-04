@@ -10,7 +10,7 @@ import {
 import { getBatchReview } from '../controllers/payroll/payBatchController.js';
 import { getPaymentRuns, getPaymentReview, postPaymentRecord } from '../controllers/payroll/paymentRecordController.js';
 import { getEvereePreview } from '../controllers/payroll/evereeBatchController.js';
-import { getBatch as getEvereeBatch, getRunBatches as getEvereeRunBatches, getSettings as getEvereeCitySettings, postBatch as postEvereeBatch, postRetry as postEvereeBatchRetry, postCheck as postEvereeBatchCheck, putSettings as putEvereeCitySettings } from '../controllers/payroll/evereePaymentController.js';
+import { getBatch as getEvereeBatch, getRunBatches as getEvereeRunBatches, getSettings as getEvereeCitySettings, postBatch as postEvereeBatch, postRetry as postEvereeBatchRetry, postCheck as postEvereeBatchCheck, getPayableRuns as getEvereePayableRuns, putSettings as putEvereeCitySettings } from '../controllers/payroll/evereePaymentController.js';
 import { getStatus as getEvereeStatus, postCheck as postEvereeCheck } from '../controllers/payroll/evereeController.js';
 import { getWorkers as getEvereeWorkers, postLink as postEvereeLink, postLookup as postEvereeLookup, postRefresh as postEvereeRefresh, postSandboxWorker as postEvereeSandboxWorker, postUnlink as postEvereeUnlink } from '../controllers/payroll/evereeWorkerController.js';
 import { getAdminStatement, getDriverBalanceList, getDriverDashboardSummary, getDriverStatementList } from '../controllers/payroll/statementController.js';
@@ -66,6 +66,7 @@ router.get('/runs/:runId/everee-batches', getEvereeRunBatches);
 router.get('/everee-batches/:batchId', getEvereeBatch);
 router.post('/everee-batches/:batchId/retry', postEvereeBatchRetry);
 router.post('/everee-batches/:batchId/check', postEvereeBatchCheck);
+router.get('/everee/payable-runs', getEvereePayableRuns);
 router.get('/everee/city-settings', getEvereeCitySettings);
 router.put('/everee/city-settings/:cityId', putEvereeCitySettings);
 

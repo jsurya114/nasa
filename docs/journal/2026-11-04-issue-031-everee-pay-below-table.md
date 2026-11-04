@@ -1,0 +1,24 @@
+# Everee, PR 7: Pay with Everee under the Dashboard's driver jobs table (issue #31)
+
+- **Date:** 2026-11-04
+- **Author:** Jayasoorya (with Claude Code)
+- **Issue / PR:** #31 / see the pull request for this branch (it contains the commits of #204, #205, #206 and #207 until they merge)
+- **Branch:** `feat/everee-pay-below-table` (from `feat/everee-pay-button`)
+- **Type and scope:** feat(payroll), backend and frontend, no database change
+- **Files touched:** new `Backend/services/payments/everee/payableRuns.js`, `Frontend/src/components/Admin/payRuns/everee/FilteredEvereePay.jsx`, `Frontend/src/components/Admin/Dashboard.everee.test.jsx`; edited `batchPreview.js` and `batchSubmit.js` (an optional driver list), the two Everee controllers, `payrollRoutes.js` (one route), `PayWithEvereeButton.jsx`, `EvereePayDialog.jsx`, tests `evereeSubmit`, and **`Frontend/src/components/Admin/Dashboard.jsx` (Jasil's zone): one import and one block under the Driver Jobs table**. No reserved Excel or pay file.
+
+**What it does.** After Filter Data, a **Pay with Everee** section appears directly under the Driver Jobs table. It follows the filter that was applied:
+- a **city**, or a **driver with or without a city**, with payment status **All or Pending** (not Paid, not before a filter is applied), for a super admin on a server where Everee is set up;
+- it lists the approved (finalized) pay runs that still have something to pay for that city or driver, each with its own **Pay with Everee** button, which opens the same preview and "Confirm and pay N drivers, $X" screen as the Driver payments card (PR #207). The delivery dates of the filter do not apply: an approved run is paid whole, whatever days it covers (the section says so);
+- when a driver is chosen the screen is limited to that driver, so the payment is exactly the filtered list. If none is chosen it is every payable driver of the run;
+- nothing waiting: "No approved pay run is waiting to be paid for this selection. Approve a pay run first."; two drivers with one name and no city: it asks for a city and sends nothing (the remembered ID can be just the first of them).
+
+**Backend.** `GET /admin/payroll/everee/payable-runs?cityId=&driverId=` (super admin; finalized runs with unpaid statements above $0 for the city and/or driver, newest 10). The preview (`?driverIds=`) and the confirm (`driverIds` in the body) take an optional list of drivers (1 to 200 positive IDs; anything else is a 400, never "the whole run"). The same list limits the preview, its hash, the statements reserved and the payables sent, so what is confirmed is exactly what was shown; the confirm with another list than the preview's is refused with the new preview (409) and sends nothing. The rest of the run can be paid afterwards, on its own. Retry and check are unchanged (they work on a batch's own items).
+
+**Money impact.** None changed: amounts are the frozen statement nets, and the same guards, locks and "Paid only when Everee confirms" apply. A smaller batch just contains fewer statements.
+
+**Tested.** Backend with a fake Everee, rolled back (3 new steps, 24 in all): a limited batch previews, hashes, reserves and sends only that driver and leaves the other untouched, which can then be paid alone; the whole-run hash with a list (or the reverse) is refused and sends nothing; bad driver lists are 400; the runs list for a city and for a driver, only unpaid, super admin only, bad IDs 400, and a statement paid by hand disappears. Ignoring the list in the confirm, or in the preview, each make 2 steps fail (checked). Frontend, the real Dashboard with a fake server (4 tests): city + driver + Pending then Filter Data shows the section after the table with a button, asking only for that city and driver; driver without city and city without driver; nothing waiting; nothing for payment status Paid, a city admin or a server without Everee; same-name drivers without a city are not guessed. Offering it for status Paid, or guessing between same-name drivers, each make 1 test fail (checked). Backend suite 336 pass, 4 fail (the same 4 claims-store tests fail on `develop`); frontend 242 pass; build works; the files of this change are lint-clean (the errors in `DashboardTable`, `DoubleStop` and `DriverPaymentUpdate` were already there).
+
+**Not tested.** Not looked at in a real browser (no finalized run in the local database, no super admin login used); phone layout; no payment sent from this screen. This branch does not contain the "always show the Net Payment line" change (#208); the two touch different lines of `Dashboard.jsx`.
+
+**Open question for Jasil.** Payment status Pending on the Dashboard filters delivery rows; this section follows approved pay runs instead, because payments are made per finalized run. Delivery dates are ignored by design.
