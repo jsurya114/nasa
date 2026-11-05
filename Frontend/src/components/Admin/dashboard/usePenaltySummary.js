@@ -24,7 +24,10 @@ export default function usePenaltySummary() {
   const { cityId, driverId } = remembered ?? lookup(filters?.job, filters?.driver);
   const from = filters?.startDate || undefined;
   const to = filters?.endDate || undefined;
-  const scopeKey = `${cityId}|${driverId}|${from}|${to}`;
+  // The Payment status filter (All, Paid or Pending) is part of the scope: the server must know which pay rows the table shows, so that an
+  // unpaid run's figures never stand in for a table of paid history, and a change of status asks again instead of reusing another answer.
+  const paymentStatus = filters?.paymentStatus && filters.paymentStatus !== "All" ? filters.paymentStatus : undefined;
+  const scopeKey = `${cityId}|${driverId}|${from}|${to}|${paymentStatus}`;
   const [state, setState] = useState({ status: "idle", data: null, scopeKey: null });
   const [attempt, setAttempt] = useState(0);
   // "Expected": the admin applied a city and a driver, so their deductions belong on this page. Until they arrive,
@@ -38,11 +41,11 @@ export default function usePenaltySummary() {
     }
     const controller = new AbortController();
     setState({ status: "loading", data: null, scopeKey });
-    axios.get(`/admin/payroll/drivers/${driverId}/dashboard-summary`, { params: { cityId, ...(from && to && { from, to }) }, signal: controller.signal })
+    axios.get(`/admin/payroll/drivers/${driverId}/dashboard-summary`, { params: { cityId, ...(from && to && { from, to }), ...(paymentStatus && { paymentStatus }) }, signal: controller.signal })
       .then(({ data }) => { if (!controller.signal.aborted) setState({ status: "ready", data, scopeKey }); })
       .catch(() => { if (!controller.signal.aborted) setState({ status: "error", data: null, scopeKey }); });
     return () => controller.abort();
-  }, [expected, scopeKey, cityId, driverId, from, to, attempt]);
+  }, [expected, scopeKey, cityId, driverId, from, to, paymentStatus, attempt]);
 
   // Figures belong to the scope they were fetched for. For the render between a new scope arriving and its request starting, say
   // "loading" rather than show the previous scope's figures against the new table.

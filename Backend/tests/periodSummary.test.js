@@ -326,6 +326,35 @@ test('dashboard period summary: this payday, approved or preview, and what is st
       assert.deepEqual([paid.source, paid.deducted], ['estimate', '0.00']);
     });
 
+    await t.test('with no dates, an unpaid run stands in for the table only when the table shows exactly the rows that run holds (Paid, Pending and All)', async () => {
+      const sc = await freshScenario();
+      const earlier = await sc.day(-14);
+      const today = await sc.day(0);
+      // paid history: $200 earned two weeks ago, on a finalized run that is already paid
+      await sc.row(earlier, '200.00');
+      const paidRun = await sc.draft(await sc.day(-20), earlier, 'weekly');
+      await finalizeRun(db, superAdmin, paidRun.run.id);
+      await db.query("UPDATE pay_statements SET paid_at = now(), payout_status = 'paid' WHERE pay_run_id = $1", [paidRun.run.id]);
+      await db.query('UPDATE payment_dashboard SET paid = true, payment_date = CURRENT_DATE WHERE driver_id = $1 AND journey_date = $2', [sc.d, earlier]);
+      // then a separate approved run, not yet paid: $100 earned, a $40 penalty taken, net $60
+      await sc.penalty({ amount: '40', recoveryPlan: 'full_next_payday' });
+      await sc.row(today, '100.00');
+      const open = await sc.draft(await sc.day(-6), today, 'weekly');
+      await finalizeRun(db, superAdmin, open.run.id);
+      assert.equal(open.statements[0].net, '60.00');
+      const ask = async (paymentStatus) => (await getDriverPeriodSummary(db, superAdmin, { driverId: sc.d, cityId: sc.c, ...(paymentStatus && { paymentStatus }) })).payday;
+      // a table of paid history only: the unpaid run's figures must not replace its net (the regression found in review)
+      const paid = await ask('paid');
+      assert.deepEqual([paid.source, paid.deducted, paid.net], ['estimate', '0.00', null]);
+      // a table of the unpaid rows only: those are exactly the rows the run holds, so its own figures are shown
+      const pending = await ask('pending');
+      assert.deepEqual([pending.source, pending.deducted, pending.net, pending.flags], ['approved', '40.00', '60.00', []]);
+      // paid and unpaid rows together: the run does not describe the whole table, so it is not shown as the table's net
+      const all = await ask(null);
+      assert.deepEqual([all.source, all.deducted, all.net], ['estimate', '0.00', null]);
+      await assert.rejects(ask('everything'), { status: 400 });
+    });
+
     await t.test('a penalty entered after the week the pay is for is still taken (no dates), the same as the real draft that ends today', async () => {
       const sc = await freshScenario();
       const workDay = await sc.day(-20); // the pay is from three weeks ago (an older report)

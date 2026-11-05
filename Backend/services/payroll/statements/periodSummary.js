@@ -114,9 +114,12 @@ const estimatePayday = async (db, driverId, cityId, rangeFrom, rangeTo) => {
 };
 
 // What this driver's runs in the city still hold: statements of draft and approved runs that are not paid yet. Without dates the
-// Dashboard shows these when no other pay is left, because the pay they took from is no longer "unpaid" once it is on a run, yet it has
-// not been paid out either. A paid statement, or one of a discarded or voided run, is history and not counted.
-const openRunTotals = async (db, driverId, cityId) => {
+// Dashboard shows these when no other pay is left, because the pay they took from is no longer "unpaid" once it is on a run, yet it has not
+// been paid out either. A paid statement, or one of a discarded or voided run, is history and not counted.
+// They stand in for the table only when the table shows exactly the rows those runs hold: the Dashboard can be filtered to Paid or to Pending
+// (`paymentStatus`: 'paid', 'pending' or null for all), and a table of paid history, or of paid and unpaid rows together, is not described by an
+// unpaid run's net. `covers` says whether every pay row the table would show is on one of these runs.
+const openRunTotals = async (db, driverId, cityId, paymentStatus) => {
   const { rows } = await db.query(
     `SELECT r.status AS run_status, s.claim_deductions, s.recoveries, s.net
        FROM pay_statements s JOIN pay_runs r ON r.id = s.pay_run_id
@@ -124,15 +127,28 @@ const openRunTotals = async (db, driverId, cityId) => {
         AND s.paid_at IS NULL AND s.payout_status <> 'paid'`,
     [driverId, cityId]
   );
-  return { totals: totalsOf(rows), approved: rows.length > 0 && rows.every((r) => r.run_status === 'finalized') };
+  const { rows: shown } = await db.query(
+    `SELECT p.id, EXISTS (
+              SELECT 1 FROM pay_statement_lines l JOIN pay_statements s ON s.id = l.statement_id JOIN pay_runs r ON r.id = s.pay_run_id
+               WHERE l.payment_dashboard_id = p.id AND l.active AND l.line_type = 'earning' AND r.city_id = $2 AND r.status IN ('draft', 'finalized')
+                 AND s.paid_at IS NULL AND s.payout_status <> 'paid') AS held
+       FROM payment_dashboard p JOIN drivers d ON d.id = p.driver_id
+      WHERE p.driver_id = $1 AND d.city_id = $2 AND ($3::boolean IS NULL OR p.paid = $3::boolean)`,
+    [driverId, cityId, paymentStatus === 'paid' ? true : paymentStatus === 'pending' ? false : null]
+  );
+  return { totals: totalsOf(rows), approved: rows.length > 0 && rows.every((r) => r.run_status === 'finalized'), covers: shown.length > 0 && shown.every((r) => r.held) };
 };
 
 // range: { from, to } as YYYY-MM-DD, or both left out. Without dates (the owner does not want to choose them) the estimate covers all
 // the driver's closed, unpaid pay not yet on a run, as the next pay run would. When none is left because it is all on runs that are not yet
-// paid, those runs' own figures are shown, so a run does not make the deduction vanish from the Dashboard. Returns the figures, or throws
+// paid, and the table shows exactly those rows (see openRunTotals), those runs' own figures are shown, so a run does not make the deduction
+// vanish from the Dashboard. Returns the figures, or throws
 // PayrollError.
-export const getDriverPeriodSummary = async (db, admin, { driverId, cityId, from, to }) => {
+export const PAYMENT_STATUSES = Object.freeze(['paid', 'pending']);
+
+export const getDriverPeriodSummary = async (db, admin, { driverId, cityId, from, to, paymentStatus = null }) => {
   const hasRange = Boolean(from || to);
+  if (paymentStatus !== null && !PAYMENT_STATUSES.includes(paymentStatus)) throw new PayrollError(400, 'paymentStatus must be paid or pending, or left out for all');
   if (hasRange && (!parseDate(from) || !parseDate(to) || from > to)) throw new PayrollError(400, 'from and to must be real dates (YYYY-MM-DD), from not after to, or both left out');
   await assertCityAllowed(db, admin, cityId);
   const { rows: driver } = await db.query('SELECT 1 FROM drivers WHERE id = $1 AND city_id = $2', [driverId, cityId]);
@@ -165,8 +181,8 @@ export const getDriverPeriodSummary = async (db, admin, { driverId, cityId, from
     const estimate = await estimatePayday(db, driverId, cityId, null, null);
     // Pay that is still unpaid and not on a run is the next payday, and it is what the estimate shows, as before. Only when none is left
     // (all of it is already on runs not yet paid) are those runs' own figures shown, instead of "nothing can be taken".
-    const held = estimate.net === null ? await openRunTotals(db, driverId, cityId) : null;
-    payday = held && held.totals.count > 0
+    const held = estimate.net === null ? await openRunTotals(db, driverId, cityId, paymentStatus) : null;
+    payday = held && held.totals.count > 0 && held.covers
       ? { source: held.approved ? 'approved' : 'draft', ...held.totals, flags: [] }
       : { source: 'estimate', ...estimate };
   }

@@ -78,5 +78,9 @@ export const getDriverDashboardSummary = async (req, res) => {
   const cityId = id(req.query.cityId);
   if (!driverId) return badRequest(res, 'unknown driver');
   if (!cityId) return badRequest(res, 'choose a city');
-  return send('summary', () => getDriverPeriodSummary(pool, req.admin, { driverId, cityId, from: String(req.query.from ?? ''), to: String(req.query.to ?? '') }))(req, res);
+  // The Dashboard's Payment status filter, so figures for unpaid runs are not shown over a table of paid history: "Paid", "Pending" or "All".
+  const status = String(req.query.paymentStatus ?? 'All').toLowerCase();
+  if (!['all', 'paid', 'pending'].includes(status)) return badRequest(res, 'paymentStatus must be Paid, Pending or All');
+  const paymentStatus = status === 'all' ? null : status;
+  return send('summary', () => getDriverPeriodSummary(pool, req.admin, { driverId, cityId, from: String(req.query.from ?? ''), to: String(req.query.to ?? ''), paymentStatus }))(req, res);
 };
