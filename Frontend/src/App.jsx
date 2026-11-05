@@ -19,6 +19,7 @@ const AdminPayRuns = lazy(() => import("./components/Admin/PayRuns.jsx"));
 
 import ProtectedRoutes from "./routes/admin/ProtectedRoute.jsx";
 import AdminPublicOnlyRoute from "./routes/admin/PublicOnlyRoute.jsx";
+import SuperAdminRoute from "./routes/admin/SuperAdminRoute.jsx";
 import DriverLogin from "./components/Drivers/DriverLogin.jsx";
 
 // Lazy-loaded Driver pages
@@ -62,8 +63,10 @@ function App() {
               <Route path="/admin/manage-access-codes" element={<AddAccessCodePage />} />
               <Route path="/admin/journeys" element={<AdminJourney />} />
               <Route path="/admin/driver-availability" element={<AdminDriverAvailability />} />
-              <Route path="/admin/payroll" element={<AdminPayroll />} />
-              <Route path="/admin/pay-runs" element={<AdminPayRuns />} />
+              <Route element={<SuperAdminRoute />}>
+                <Route path="/admin/payroll" element={<AdminPayroll />} />
+                <Route path="/admin/pay-runs" element={<AdminPayRuns />} />
+              </Route>
             </Route>
 
             {/* Driver Public Routes */}
