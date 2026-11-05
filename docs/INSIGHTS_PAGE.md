@@ -3,7 +3,7 @@
 | Field | Value |
 |---|---|
 | Issue | #227 |
-| Status | In progress. PR 1 (the API foundation) is described here; the rest is the plan. |
+| Status | In progress. PR 1 (the API, #229) and PR 4 (the page foundation) are done; the rest is the plan below. |
 | Owner | Jayasoorya |
 | Related | `docs/INSIGHTS_MCP.md` (the Claude connector, #220). Both read the same reporting layer. |
 
@@ -32,11 +32,13 @@ Every answer is `{ meta, data }`. `meta` holds `generatedAt`, `definitionsVersio
 
 ## Plan: small pull requests into `develop`
 
-1. **API foundation** (this PR): the guarded router, the report runner, overview, city ranking, cities and definitions; an optional `source` filter and a city filter on the shared reporting functions.
-2. **Trends and drivers**: revenue and margin trend and delivered volume by day, week or month; weekday totals, peak dates and the calendar heatmap; top 10 drivers by completed deliveries (stable IDs, city, active days, deliveries per active day).
-3. **Claims, completeness and "Needs attention"**: chargeable, exempt and unmatched claims counted and valued apart; failed-attempt and unscanned counts; data completeness; current ("as of") debt and payment-backlog figures through the canonical services.
-4. **UI foundation**: a lazy-loaded super-admin route and menu entry, the header filters (presets Last 7, Last 30, This month, Last month, Custom; default Last 30 days and All cities), KPI cards with the comparison, states. Adds Recharts (pinned; React 19 and bundle size checked).
-5. **UI charts**: trend and volume charts, top cities, the driver leaderboard, the heatmap and weekday bars, each with a table alternative; clicking a city or driver filters, with a visible reset.
-6. **Polish and acceptance**: the Needs attention area, mobile widths, reduced motion, accessibility, screenshots, validation against the Dashboard's own totals, documented limits.
+Jasil's #228 (trends, driver ranking, claim exposure, payment overview, forecast) already builds the reporting functions that the original steps 2 and 3 would have written, as plain functions in `Backend/services/reporting/`. Insights does not repeat them: it wraps them, so the page and Claude share one set of definitions. The order, with what each step needs:
+
+1. **API foundation** (#229, open): the guarded router, the report runner, overview, city ranking, cities and definitions; an optional `source` filter and a city filter on the shared functions.
+2. **Page foundation** (this document's PR, stacked on #229): the lazy-loaded super-admin route and menu entry, the header filters (presets Last 7, Last 30, This month, Last month, Custom; default Last 30 days and All cities; the city; the record source), the KPI cards with the previous-period comparison, the top cities ranking with a table alternative and click-to-filter, the data-as-of panel, and every state (loading, empty, error, refused). No chart library yet.
+3. **API: trends and drivers** (needs #228 merged): `/admin/insights/trends` and `/admin/insights/rankings/drivers` wrapping `deliveryTrends` and `rankDrivers`, with the same `source` filter added to them.
+4. **UI charts**: revenue and margin trend and delivered-volume charts, the driver leaderboard, the calendar heatmap and the weekday bars, each with a table alternative. Adds Recharts (pinned; React 19 and bundle size checked) only here, where it is used.
+5. **API and UI: claims and "Needs attention"** (needs #228): claim exposure, payment backlog and data completeness, with "as of" labels; driver advances, debts and penalty balances through the canonical Payroll services, which #228 leaves out on purpose.
+6. **Polish and acceptance**: mobile and accessibility review, reduced motion, validation against the Dashboard's own totals, documented limits.
 
 Each pull request carries tests for daily and weekly data, city transfers, claim exemptions and unmatched claims, empty data and zero denominators, join duplication and role access, plus a journal entry.
