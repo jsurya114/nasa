@@ -78,6 +78,12 @@ test('pay runs: today\'s totals, exactly-once rows and deductions, frozen histor
       assert.equal(s1.lines.some((l) => l.payment_dashboard_id === outside), false, 'a row after the period is left out');
       assert.equal(detail.totals.net, '386.99');
       assert.equal(detail.waiting.entries_needing_review, 1);
+      // The breakdown can name the advance and its instalment, and say that nothing was taken from it, because the limit is not set.
+      const rec = s1.records.find((r) => r.id === String(advance.id));
+      assert.deepEqual([rec.entry_type, rec.amount, rec.recovery_plan, rec.installment_amount, rec.taken], ['advance', '200.00', 'installments', '50.00', '0.00']);
+      assert.deepEqual(s1.flags.find((f) => f.code === 'recovery_limit_not_set').entryIds.map(String), [String(advance.id)]);
+      assert.equal(s1.records.some((r) => r.id === String(reimbursement.id)), true, 'a reimbursement added to pay is listed too');
+      assert.deepEqual(statementOf(detail, d2).records, [], 'a driver with no records has none listed');
     });
 
     await t.test('the same request again returns the same run; another run cannot take rows a draft holds', async () => {
@@ -104,6 +110,7 @@ test('pay runs: today\'s totals, exactly-once rows and deductions, frozen histor
       const s1 = statementOf(await getRun(db, cityAdmin, run.id), d1);
       // 300 - 5.76 + 12.25 = 306.49 available; claim 40 + instalment 50 = 90; net 216.49; carried 150 + 30
       assert.deepEqual([s1.claim_deductions, s1.recoveries, s1.net, s1.carried_forward], ['40.00', '50.00', '216.49', '180.00']);
+      assert.equal(s1.records.find((r) => r.id === String(advance.id)).taken, '50.00', 'the instalment taken in this run is shown on the advance');
       const history = await one("SELECT count(*)::int AS n FROM payroll_settings_history WHERE changed_by = $1", [superAdmin.id]);
       assert.equal(history.n, 1, 'the setting change is recorded');
     });

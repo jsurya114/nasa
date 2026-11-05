@@ -6,6 +6,7 @@ import { formatMoney } from "../../../utils/money.js";
 import { describeLimit } from "./describeLimit.js";
 import { Link } from "react-router-dom";
 import RunPaymentStatus from "./RunPaymentStatus.jsx";
+import StatementRecords from "./StatementRecords.jsx";
 
 // One pay run as the server froze it (#143): totals, what is waiting outside it, each driver's statement with its
 // flags, and the actions its status allows. Nothing here works out pay; every amount is the server's.
@@ -159,6 +160,7 @@ export default function RunDetail({ detail, isSuperAdmin, onChanged, onClose, se
                     </div>
                   ))}
                 </dl>
+                <StatementRecords records={s.records} flags={s.flags} runEnd={run.period_end} />
               </details>
             </li>
           ))}

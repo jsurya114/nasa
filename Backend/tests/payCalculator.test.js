@@ -33,6 +33,7 @@ test('no recovery limit set: nothing is recovered automatically, everything carr
   }));
   assert.deepEqual([totals.claimDeductions, totals.recoveries, totals.net, totals.carriedForward], ['0.00', '0.00', '294.24', '140.00']);
   assert.ok(flags.some((f) => f.code === 'recovery_limit_not_set'));
+  assert.deepEqual(flags.find((f) => f.code === 'recovery_limit_not_set').entryIds, [1], 'the flag names the debit that was waiting, not the claim');
 });
 
 test('$200 advance as $50 over four paydays', () => {

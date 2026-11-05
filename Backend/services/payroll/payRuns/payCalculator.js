@@ -124,7 +124,10 @@ export const calculateStatement = (input) => {
 
   const cap = recoveryCap(input.recoveryLimit, availableCents);
   const wanted = due.reduce((sum, item) => sum + item.want, 0);
-  if (cap === null && wanted > 0) flags.push({ code: 'recovery_limit_not_set', message: 'no recovery limit is set; nothing was recovered automatically' });
+  if (cap === null && wanted > 0) {
+    flags.push({ code: 'recovery_limit_not_set', message: 'no recovery limit is set; nothing was recovered automatically',
+      entryIds: due.filter((item) => item.kind === 'debit' && item.want > 0).map((item) => item.id) });
+  }
 
   let room = cap ?? 0;
   let claimCents = 0;

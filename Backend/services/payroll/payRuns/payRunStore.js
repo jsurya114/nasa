@@ -261,6 +261,25 @@ export const generateRun = async (db, admin, request) => {
   return { run, replay: false };
 };
 
+// The ledger records (advances, penalties, reimbursements) each statement touched: those with a line in it, and those its
+// flags name (held, not yet due, over the limit, no limit set). `taken` is what this statement recovered from each record.
+// Both come from what the run froze, so an old run reads the same later. Read only; nothing here changes pay.
+const recordsFor = async (db, statements, lines) => {
+  const flagIds = (s) => (s.flags ?? []).flatMap((f) => [f.entryId, ...(f.entryIds ?? [])]).filter((id) => id !== undefined && id !== null).map(String);
+  const idsOf = (s) => [...new Set([...lines.filter((l) => l.statement_id === s.id && l.ledger_entry_id).map((l) => String(l.ledger_entry_id)), ...flagIds(s)])];
+  const all = [...new Set(statements.flatMap(idsOf))];
+  if (all.length === 0) return new Map();
+  const { rows } = await db.query(
+    `SELECT id::text AS id, entry_type, direction, amount::text AS amount, recovery_plan, installment_amount::text AS installment_amount,
+            to_char(effective_date, 'YYYY-MM-DD') AS effective_date, reason
+       FROM driver_ledger_entries WHERE id = ANY($1::bigint[]) ORDER BY id`, [all]);
+  const byId = new Map(rows.map((r) => [r.id, r]));
+  return new Map(statements.map((s) => [s.id, idsOf(s).filter((id) => byId.has(id)).map((id) => {
+    const taken = lines.filter((l) => l.statement_id === s.id && l.active && l.line_type === 'recovery' && String(l.ledger_entry_id) === id).reduce((sum, l) => sum + toCents(l.amount), 0);
+    return { ...byId.get(id), taken: fromCents(-taken) };
+  })]));
+};
+
 // A run with its statements, lines, and what is waiting outside it (pending claims, entries needing review).
 export const getRun = async (db, admin, runId) => {
   const run = await loadRun(db, runId);
@@ -281,6 +300,7 @@ export const getRun = async (db, admin, runId) => {
               AND NOT EXISTS (SELECT 1 FROM driver_ledger_entries v WHERE v.voids_entry_id = e.id))::int AS entries_needing_review`,
     [run.city_id]
   );
+  const records = await recordsFor(db, statements, lines);
   const totals = statements.reduce((acc, s) => {
     for (const k of ['gross', 'insurance', 'reimbursements', 'claim_deductions', 'recoveries', 'net', 'carried_forward']) acc[k] += toCents(s[k]);
     return acc;
@@ -288,7 +308,7 @@ export const getRun = async (db, admin, runId) => {
   return {
     run,
     totals: Object.fromEntries(Object.entries(totals).map(([k, v]) => [k, fromCents(v)])),
-    statements: statements.map((s) => ({ ...s, lines: lines.filter((l) => l.statement_id === s.id) })),
+    statements: statements.map((s) => ({ ...s, lines: lines.filter((l) => l.statement_id === s.id), records: records.get(s.id) ?? [] })),
     waiting: waiting[0],
   };
 };

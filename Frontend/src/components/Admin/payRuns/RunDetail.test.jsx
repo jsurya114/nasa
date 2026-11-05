@@ -41,3 +41,28 @@ it("explains an empty draft and prevents approving it", () => {
   expect(screen.getByRole("link", { name: /Check earnings/ }).getAttribute("href")).toBe("/admin/dashboard");
   expect(screen.getByRole("button", { name: "Approve statements" }).disabled).toBe(true);
 });
+
+const advance = { id: "5843", entry_type: "advance", direction: "debit", amount: "100.00", recovery_plan: "installments", installment_amount: "50.00", effective_date: "2026-11-04", reason: "Cash" };
+
+it("names an advance and its instalment in the full breakdown, and says why nothing was taken from it", () => {
+  mount([{ ...row(7, "Dee Test", [{ code: "not_yet_due", entryId: "5843", message: "m" }]), recoveries: "0.00", records: [{ ...advance, taken: "0.00" }] }]);
+  const statement = screen.getByText("Dee Test").closest("li");
+  fireEvent.click(within(statement).getByText("Full payment breakdown"));
+  expect(within(statement).getByText("Advances, penalties and other records")).toBeTruthy();
+  expect(within(statement).getByText("Advance · dated 2026-11-04").nextElementSibling.textContent).toBe("$100.00");
+  expect(within(statement).getByText("repaid in instalments of $50.00")).toBeTruthy();
+  expect(within(statement).getByText("Taken in this run").nextElementSibling.textContent).toBe("$0.00");
+  expect(within(statement).getByText(/Dated after this run ends \(2026-11-07\), so it is taken from a later pay run/)).toBeTruthy();
+});
+
+it("shows the instalment taken in this run, with no reason, and the no-limit reason for a record the limit blocked", () => {
+  mount([{ ...row(7, "Dee Test"), records: [{ ...advance, effective_date: "2026-11-01", taken: "50.00" }] },
+    { ...row(8, "Eve Test", [{ code: "recovery_limit_not_set", message: "m", entryIds: ["5900"] }]), recoveries: "0.00", records: [{ ...advance, id: "5900", taken: "0.00" }] }]);
+  const taken = screen.getByText("Dee Test").closest("li");
+  fireEvent.click(within(taken).getByText("Full payment breakdown"));
+  expect(within(taken).getByText("Taken in this run").nextElementSibling.textContent).toBe("$50.00");
+  expect(within(taken).queryByText(/Dated after|No recovery limit/)).toBeNull();
+  const blocked = screen.getByText("Eve Test").closest("li");
+  fireEvent.click(within(blocked).getByText("Full payment breakdown"));
+  expect(within(blocked).getByText("No recovery limit is set, so nothing is taken automatically.")).toBeTruthy();
+});
