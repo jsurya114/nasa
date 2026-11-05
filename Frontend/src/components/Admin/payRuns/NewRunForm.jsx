@@ -8,13 +8,16 @@ import { lastDaysRange } from "../../../utils/dateRange.js";
 // holds the rows until the run is finalized or discarded. One request ID per draft, so a retry returns the same run.
 const inputClass = "mt-1 min-h-11 w-full rounded-xl border border-line bg-white px-3 py-2 text-base focus:border-brand-500 focus:outline-none focus:ring-4 focus:ring-brand-500/20";
 
-const fresh = (dataType = "daily") => {
+const fresh = () => {
   const { from_date, to_date } = lastDaysRange(7);
-  return { requestId: newRequestId(), periodStart: from_date, periodEnd: to_date, dataType };
+  return { requestId: newRequestId(), periodStart: from_date, periodEnd: to_date };
 };
 
-export default function NewRunForm({ cityId, defaultDataType = "daily", onDrafted }) {
-  const [form, setForm] = useState(() => fresh(defaultDataType));
+// The city decides the pay data: a weekly city is paid from GOFO, any other city from daily SpeedX.
+const PAY_DATA = { weekly: "Weekly (GOFO)", daily: "Daily (SpeedX)" };
+
+export default function NewRunForm({ cityId, dataType = "daily", onDrafted }) {
+  const [form, setForm] = useState(fresh);
   const [errors, setErrors] = useState({});
   const [saving, setSaving] = useState(false);
   const set = (key) => (e) => setForm((f) => ({ ...f, [key]: e.target.value }));
@@ -27,10 +30,10 @@ export default function NewRunForm({ cityId, defaultDataType = "daily", onDrafte
     setSaving(true);
     setErrors({});
     try {
-      const { data } = await axios.post("/admin/payroll/runs", { ...form, cityId });
+      const { data } = await axios.post("/admin/payroll/runs", { ...form, dataType, cityId });
       if (data.statements.length === 0) toast.warn("No payable earnings found. Check the dates, pay type and existing runs.");
       else toast.success(data.replay ? "This draft was already made; showing it" : `Draft made with ${data.statements.length} statement(s)`);
-      setForm(fresh(form.dataType));
+      setForm(fresh());
       onDrafted(data);
     } catch (err) {
       setErrors(err.response?.data?.errors ?? {});
@@ -58,12 +61,9 @@ export default function NewRunForm({ cityId, defaultDataType = "daily", onDrafte
         {error("periodEnd")}
       </div>
       <div>
-        <label className="block text-sm font-medium text-gray-700">Pay data
-          <select className={inputClass} value={form.dataType} onChange={set("dataType")}>
-            <option value="daily">Daily (SpeedX)</option>
-            <option value="weekly">Weekly (GOFO)</option>
-          </select>
-        </label>
+        <p className="block text-sm font-medium text-gray-700">Pay data
+          <span data-testid="pay-data" className={`${inputClass} flex items-center bg-gray-50 font-semibold text-ink`}>{PAY_DATA[dataType]}</span>
+        </p>
         {error("dataType")}
       </div>
       <div className="flex items-end">
@@ -72,7 +72,7 @@ export default function NewRunForm({ cityId, defaultDataType = "daily", onDrafte
         </button>
       </div>
       <p id="run-range-status" role={rangeError ? "alert" : "status"} className={`text-sm sm:col-span-4 ${rangeError ? "text-red-700" : "text-ink-muted"}`}>
-        {rangeError ?? `${days} delivery day${days === 1 ? "" : "s"} selected.`} {form.dataType === "weekly" ? "Weekly GOFO includes matched delivery claims." : "Daily SpeedX includes manual advances and penalties, not imported GOFO claims."}
+        {rangeError ?? `${days} delivery day${days === 1 ? "" : "s"} selected.`} {dataType === "weekly" ? "Weekly GOFO includes matched delivery claims." : "Daily SpeedX includes manual advances and penalties, not imported GOFO claims."}
       </p>
     </form>
   );

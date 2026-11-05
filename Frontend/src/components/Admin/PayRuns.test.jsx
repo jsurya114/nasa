@@ -88,7 +88,8 @@ describe("admin Pay runs", () => {
     const server = await startServer({ cityType: "WEEKLY" });
     await mount();
     await chooseCity();
-    expect(screen.getByLabelText("Pay data").value).toBe("weekly");
+    expect(screen.getByTestId("pay-data").textContent).toBe("Weekly (GOFO)");
+    expect(screen.queryByRole("combobox", { name: "Pay data" })).toBeNull();
     fireEvent.change(screen.getByLabelText("From"), { target: { value: "2026-08-03" } });
     fireEvent.change(screen.getByLabelText("To"), { target: { value: "2026-09-03" } });
     fireEvent.click(screen.getByRole("button", { name: "Draft pay run" }));
@@ -107,6 +108,7 @@ describe("admin Pay runs", () => {
     expect(screen.queryByRole("button", { name: "Change" })).toBeNull();
     await chooseCity();
     expect(server.calls.find((c) => c.url === "/admin/payroll/runs" && c.method === "get").params).toEqual({ cityId: "3" });
+    expect(screen.getByTestId("pay-data").textContent).toBe("Daily (SpeedX)");
 
     fireEvent.click(screen.getByRole("button", { name: "Draft pay run" }));
     expect(await screen.findByText("Dee Test")).toBeTruthy();

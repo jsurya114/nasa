@@ -139,7 +139,7 @@ export default function PayRuns() {
             <>
               <section className="card-surface p-4" aria-labelledby="new-run">
                 <h2 id="new-run" className="mb-3 text-base font-semibold text-ink">New draft</h2>
-                <NewRunForm key={cityId} cityId={Number(cityId)} defaultDataType={cities.find((c) => String(c.id) === String(cityId))?.city_type === "WEEKLY" ? "weekly" : "daily"} onDrafted={changed} />
+                <NewRunForm key={cityId} cityId={Number(cityId)} dataType={cities.find((c) => String(c.id) === String(cityId))?.city_type === "WEEKLY" ? "weekly" : "daily"} onDrafted={changed} />
               </section>
               <section aria-labelledby="run-list">
                 <h2 id="run-list" className="mb-2 text-base font-semibold text-ink">Runs</h2>

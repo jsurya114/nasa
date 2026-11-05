@@ -111,7 +111,7 @@ describe("Pay to drivers: Bank transfer (Everee)", () => {
     expect(screen.getByText("Submitted to Everee", { selector: "p" })).toBeTruthy();
     expect(within(results).getAllByText("Submitted to Everee").length).toBe(2);
     expect(within(results).queryByText("Transaction successful")).toBeNull();
-    expect(within(results).getByText(/A payment is paid only when Everee confirms the deposit/)).toBeTruthy();
+    expect(within(results).getByText(/A payment is successful only when Everee confirms settlement/)).toBeTruthy();
   });
 
   it("only the chosen drivers are previewed and sent", async () => {
@@ -184,6 +184,24 @@ describe("Pay to drivers: Bank transfer (Everee)", () => {
     expect(server.posts[1].requestId).not.toBe(server.posts[0].requestId);
   });
 
+  it("offers the Everee approval portal after submission without treating it as payment completion", async () => {
+    const server = await startServer();
+    await mount();
+    await toPayment();
+    await waitFor(() => expect(methods()).toContain("Bank transfer (Everee)"));
+    choose("everee");
+    await summary();
+    fireEvent.click(pay());
+    const approval = await screen.findByRole("link", { name: /Open Everee to approve/ });
+    expect(approval.getAttribute("href")).toBe("https://app.everee.com");
+    expect(approval.getAttribute("target")).toBe("_blank");
+    expect(approval.getAttribute("rel")).toContain("noopener");
+    expect(approval.getAttribute("rel")).toContain("noreferrer");
+    expect(server.posts).toHaveLength(1);
+    expect(server.records).toHaveLength(0);
+    expect(screen.queryByText("Transaction successful")).toBeNull();
+  });
+
   it("cannot be paid when the batch is blocked, and says why", async () => {
     await startServer({ preview: previewOf({ canSubmit: false, batchBlockers: [{ code: "payments_off", message: "sending payments to Everee is switched off" }] }) });
     await mount();
@@ -198,6 +216,11 @@ describe("Pay to drivers: Bank transfer (Everee)", () => {
     await startServer({
       preview: previewOf({
         summary: { drivers: 3, eligible: 2, blocked: 1, total: "230.00", withWarnings: 1, pendingClaims: { total: 3, unresolved: 2, ambiguous: 1, review: 0 } },
+        drivers: [
+          person(1, "Dee Test", "100.00", { blockers: [{ code: "previous_payout_failed", severity: "disclose", message: "an earlier payment attempt failed; check that it did not go through before paying again" }] }),
+          person(2, "Eli Test", "130.00"),
+          person(3, "Fay Test", "20.00", { eligible: false, blockers: [{ code: "no_everee_worker", severity: "blocking", message: "this driver is not linked to an Everee worker" }] }),
+        ],
       }),
     });
     await mount();
@@ -207,6 +230,10 @@ describe("Pay to drivers: Bank transfer (Everee)", () => {
     const note = await screen.findByRole("note", { name: "Read before paying" });
     expect(within(note).getByText(/3 city claims are still unresolved/)).toBeTruthy();
     expect(within(note).getByText(/1 of the drivers has a warning/)).toBeTruthy();
+    const payable = screen.getByRole("list", { name: "Drivers that will be paid" });
+    const warned = within(payable).getAllByRole("listitem").find((row) => row.textContent.includes("Dee Test"));
+    expect(within(warned).getByText(/An earlier payment attempt failed/)).toBeTruthy();
+    expect(within(warned).getByText("$100.00")).toBeTruthy();
     await summary();
     expect(pay().disabled).toBe(false); // warn only
   });
@@ -223,7 +250,7 @@ describe("Pay to drivers: Bank transfer (Everee)", () => {
     expect(within(results).getByText("Transaction successful")).toBeTruthy();
     expect(within(results).getByText("Not sent")).toBeTruthy();
     expect(within(results).getByText("Unconfirmed")).toBeTruthy();
-    expect(within(results).getByText("Submitted to Everee")).toBeTruthy();
+    expect(within(results).getByText("Deposit returned")).toBeTruthy();
     expect(within(results).getByText("Everee answered 422: Validation failed")).toBeTruthy();
     expect(within(results).getByText(/A bank returned this deposit/)).toBeTruthy();
     fireEvent.click(within(results).getByRole("button", { name: "Retry what failed" }));
@@ -245,6 +272,21 @@ describe("Pay to drivers: Bank transfer (Everee)", () => {
     expect(within(results).queryByRole("button", { name: "Check now" })).toBeNull();
   });
 
+  it("keeps refreshing a returned deposit and notifies history when it settles, even when paid counts do not change", async () => {
+    const server = await startServer({ batches: [batchOf([item(1, "Dee Test", "paid", { everee: { depositReturned: true } })])] });
+    const { default: EvereeRunResults } = await import("./EvereeRunResults.jsx");
+    const changed = vi.fn();
+    render(<EvereeRunResults runId={17} refreshMs={40} onChanged={changed} />);
+    const results = await screen.findByRole("region", { name: "Everee payment results" });
+    expect(within(results).getByText("Deposit returned")).toBeTruthy();
+    await waitFor(() => expect(changed).toHaveBeenCalled());
+    changed.mockClear();
+    server.batches = [batchOf([item(1, "Dee Test", "paid", { everee: { depositReturned: false } })])];
+    expect(await within(results).findByText("Transaction successful")).toBeTruthy();
+    expect(changed).toHaveBeenCalled();
+    expect(within(results).queryByRole("button", { name: "Check now" })).toBeNull();
+  });
+
   it("the payment history shows an Everee payment beside the manual receipt, as verified by the system, even after the run is fully paid", async () => {
     const review = {
       run: RUN,
@@ -259,7 +301,8 @@ describe("Pay to drivers: Bank transfer (Everee)", () => {
     await startServer({ review });
     await mount();
     const card = await screen.findByLabelText("Everee payment");
-    expect(within(card).getByText(/Transaction successful/)).toBeTruthy();
+    expect(within(card).getByText(/Deposit returned/)).toBeTruthy();
+    expect(within(card).queryByText(/Transaction successful/)).toBeNull();
     expect(within(card).getByText(/verified by the system/)).toBeTruthy();
     expect(within(card).getByText(/sandbox: no real money/)).toBeTruthy();
     expect(within(card).getByText(/Reference pay-A/)).toBeTruthy();

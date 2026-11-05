@@ -8,6 +8,7 @@ export default function EvereeSummary({ preview, loading, error }) {
   if (error) return <p role="alert" className="rounded-xl bg-red-50 p-3 text-sm text-red-700">{error}</p>;
   if (loading || !preview) return <p role="status" className="text-sm text-ink-muted">Checking these drivers with Everee…</p>;
   const { summary, drivers, batchBlockers, environment } = preview;
+  const eligible = drivers.filter((d) => d.eligible);
   const blocked = drivers.filter((d) => !d.eligible);
   const claims = summary.pendingClaims?.total ?? 0;
   return (
@@ -32,6 +33,19 @@ export default function EvereeSummary({ preview, loading, error }) {
           {claims > 0 && <p className="mt-1">{claims} city {claims === 1 ? "claim is" : "claims are"} still unresolved. {claims === 1 ? "It is" : "They are"} not deducted in these payments.</p>}
           {summary.withWarnings > 0 && <p className="mt-1">{summary.withWarnings} of the drivers {summary.withWarnings === 1 ? "has a warning" : "have warnings"}; they are paid unless you leave them out by fixing the cause first.</p>}
         </div>
+      )}
+      {eligible.length > 0 && (
+        <ul aria-label="Drivers that will be paid" className="divide-y divide-line rounded-xl border border-line bg-white px-3">
+          {eligible.map((d) => (
+            <li key={d.statementId} className="py-2">
+              <div className="flex justify-between gap-2">
+                <span className="font-semibold">{d.driverName}</span>
+                <span className="font-bold tabular-nums">{formatMoney(d.amount)}</span>
+              </div>
+              {blockerLines(d).map((line) => <p key={line} className="mt-1 text-amber-800">{line}</p>)}
+            </li>
+          ))}
+        </ul>
       )}
     </div>
   );

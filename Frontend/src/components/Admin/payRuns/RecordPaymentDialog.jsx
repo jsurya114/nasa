@@ -12,6 +12,7 @@ import {
   primaryClass,
 } from "../payroll/formParts.jsx";
 import EvereeRunResults from "./everee/EvereeRunResults.jsx";
+import EvereeApprovalLink from "./everee/EvereeApprovalLink.jsx";
 import EvereeSummary from "./everee/EvereeSummary.jsx";
 import ProviderPaymentLine from "./everee/ProviderPaymentLine.jsx";
 import useEvereeAvailable from "./everee/useEvereeAvailable.js";
@@ -279,8 +280,12 @@ export default function RecordPaymentDialog({
                 Everee has these payments, but nothing is paid yet. Approve the payroll run in Everee. The status here and in Payment history
                 changes to Transaction successful only when Everee confirms every deposit.
               </p>
-              <EvereeRunResults runId={runId} reloadKey={resultsKey} onChanged={onRecorded} />
-              <button type="button" onClick={onClose} className={primaryClass}>Done</button>
+              <EvereeRunResults runId={runId} reloadKey={resultsKey} onChanged={onRecorded} showApprovalLink={false} />
+              <p className="text-sm text-ink-muted">Everee opens in a new tab. Return here after approval to check the payment status.</p>
+              <div className="flex flex-wrap gap-2">
+                <EvereeApprovalLink className={primaryClass} />
+                <button type="button" onClick={onClose} className={buttonClass}>Done</button>
+              </div>
             </div>
           ) : result ? (
             <div className="overflow-y-auto p-5 sm:p-8">
