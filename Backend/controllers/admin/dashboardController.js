@@ -3,6 +3,8 @@ import { WeeklyExcelQueries } from "../../services/admin/weeklyExcelQueries.js";
 import HttpStatus from "../../utils/statusCodes.js";
 import { resolveToday } from "../../utils/businessDate.js";
 import logger from "../../utils/logger.js";
+import pool from "../../config/db.js";
+import { markProcessingRows } from "../../services/payroll/payRuns/processingRows.js";
 import { UploadBusyError } from "../../services/admin/uploadSafety.js";
 import {
   CityAccessError,
@@ -115,7 +117,7 @@ export const getPaymentDashboardData = async (req, res) => {
 
     return res.status(HttpStatus.OK).json({
       success: true,
-      data: result,
+      data: await markProcessingRows(pool, result),
       pagination: {
         total: totalCount,
         page: pageNum,
@@ -171,7 +173,7 @@ export const getAllPaymentDashboardData = async (req, res) => {
 
     const result = await AdminDashboardQueries.PaymentDashboardTable(filters, id, role);
 
-    return res.status(HttpStatus.OK).json({ success: true, data: result });
+    return res.status(HttpStatus.OK).json({ success: true, data: await markProcessingRows(pool, result) });
   } catch (error) {
     console.error("Error in getAllPaymentDashboardData:", error);
     console.error("Error message:", error.message);
