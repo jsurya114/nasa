@@ -86,6 +86,31 @@ export const METRIC_DEFINITIONS = Object.freeze([
     ],
   },
   {
+    id: 'driver_ranking',
+    label: 'Driver ranking',
+    unit: 'count',
+    definition: 'Drivers ordered by completed deliveries in the period (or by deliveries per active day, among drivers with enough active days), with the city where they delivered most.',
+    caveats: ['Ties are broken by driver id. Only names and cities are shown: no contact, bank, tax or login details.'],
+  },
+  {
+    id: 'delivery_trend',
+    label: 'Delivery trend and busiest weekdays',
+    unit: 'count',
+    definition: 'Deliveries, earned revenue and margin by day, week (starting Monday) or month, and the average deliveries on each weekday over the days that have records.',
+    caveats: ['A day with no records is missing data, not a zero-delivery day. Buckets at the edge of the period are flagged when only partly inside it.'],
+  },
+  {
+    id: 'delivery_forecast',
+    label: 'Delivery forecast',
+    unit: 'count (estimated)',
+    definition: 'An estimate of deliveries for the coming days from the recent pattern of each weekday, tested on past weeks without using future data, with its historical error and a range when there are enough tests.',
+    caveats: [
+      'An estimate, not a promise: it ignores holidays, weather, new contracts and route changes.',
+      'A partly imported latest week is left out of the pattern, and the answer is insufficient_data when history cannot support a useful forecast.',
+      'There is no revenue forecast.',
+    ],
+  },
+  {
     id: 'payment_overview',
     label: 'Payment overview',
     unit: CURRENCY,
@@ -100,4 +125,5 @@ export const REPORTING_LIMITATIONS = Object.freeze([
   'Missing data is reported as missing, never as zero.',
   'Historical deliveries stay with the city of the route they were recorded on, even if a driver later moves city.',
   'Balances and payment backlogs are as of the moment the answer was produced.',
+  'Driver advances, debts and penalty balances are not available through this connector yet: Payroll is the authority for what a driver owes.',
 ]);
