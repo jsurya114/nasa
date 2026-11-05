@@ -154,12 +154,13 @@ const loadClaimBalances = async (db, driverId, statuses, cityIds) => {
 
 // Spreads repayments made outside payroll over what is owed, oldest first (the driver's ledger debts, then carrier
 // claims), so the amounts by kind always add up to the total: nothing is counted twice or lost. Penalties are the
-// hand-entered claims (ledger type manual_claim). All amounts are whole cents.
+// hand-entered claims (ledger type manual_claim) and the carrier claims read from the Excel; everything else the driver
+// owes (advances, expenses, corrections) is "other". All amounts are whole cents.
 export const allocateOwed = (entries, claims, repaidCents) => {
   const byDate = (key) => (a, b) => (String(a[key]) < String(b[key]) ? -1 : String(a[key]) > String(b[key]) ? 1 : Number(a.id) - Number(b.id));
   const items = [
     ...entries.filter((e) => e.direction === 'debit').sort(byDate('effective_date')).map((e) => ({ owed: toCents(e.outstanding), penalty: e.entry_type === 'manual_claim' })),
-    ...[...claims].sort(byDate('claim_at')).map((c) => ({ owed: toCents(c.outstanding), penalty: false })),
+    ...[...claims].sort(byDate('claim_at')).map((c) => ({ owed: toCents(c.outstanding), penalty: true })),
   ];
   let pool = repaidCents;
   const left = { penalties: 0, other: 0 };
@@ -192,7 +193,7 @@ const balances = async (db, driverId, statuses, cityIds, { withRefunds = false }
     ...(withRefunds && cityIds?.length === 1 && { payable: await driverPayable(db, driverId, cityIds[0]) }),
     entries,
     claims,
-    // owedPenalties + owedOther always equals owedByDriver (hand-entered penalties apart from everything else owed).
+    // owedPenalties + owedOther always equals owedByDriver (penalties, hand-entered and from the Excel, apart from everything else owed).
     totals: { owedByDriver: fromCents(Math.max(0, debitCents - repaidCents)), owedPenalties: fromCents(owed.penalties), owedOther: fromCents(owed.other), owedToDriver: fromCents(creditCents) },
   };
 };

@@ -30,9 +30,13 @@ test('repayments clear the oldest debt first, so the split follows the age of wh
   assert.deepEqual(split([entry(1, 'manual_claim', '40.00', '2026-10-01'), entry(2, 'expense', '30.00', '2026-11-01')], [], 2000), [2000, 3000]);
 });
 
-test('carrier claims come after the driver\'s ledger debts, and are never counted as penalties', () => {
-  assert.deepEqual(split([entry(1, 'manual_claim', '40.00')], [claim(9, '25.00')], 1000), [3000, 2500]);
-  assert.deepEqual(split([entry(1, 'manual_claim', '40.00')], [claim(9, '25.00')], 5000), [0, 1500]);
+test('carrier claims from the Excel are penalties too, and come after the driver\'s ledger debts when repaid', () => {
+  assert.deepEqual(split([], [claim(9, '25.00')], 0), [2500, 0]);
+  assert.deepEqual(split([entry(1, 'manual_claim', '40.00')], [claim(9, '25.00')], 1000), [5500, 0]);
+  assert.deepEqual(split([entry(1, 'manual_claim', '40.00')], [claim(9, '25.00')], 5000), [1500, 0]);
+  // an advance stays under "other"; the repayment clears the older advance first, then the claim
+  assert.deepEqual(split([entry(1, 'advance', '30.00', '2026-10-01')], [claim(9, '25.00')], 3500), [2000, 0]);
+  assert.deepEqual(split([entry(1, 'advance', '30.00', '2026-10-01')], [claim(9, '25.00')], 0), [2500, 3000]);
 });
 
 test('credits and settled entries do not change the split', () => {

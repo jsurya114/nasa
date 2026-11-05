@@ -9,8 +9,8 @@ import { describeStanding } from "./describeStanding.js";
 
 const TYPE_LABEL = { manual_claim: "Penalty", advance: "Advance", expense: "Expense", correction: "Correction", reimbursement: "Reimbursement", advance_repayment: "Repayment" };
 const TIPS = {
-  owes: "What the driver still owes NASA for advances and other debts, after anything repaid, waived or already taken from pay.",
-  penalties: "What the driver still owes for penalties, after anything repaid, waived or already taken from pay.",
+  owes: "What the driver still owes NASA for advances and other debts (not penalties), after anything repaid, waived or already taken from pay.",
+  penalties: "What the driver still owes for penalties: those entered by hand and the carrier claims from the Excel, after anything repaid, waived or already taken from pay.",
   records: "Every advance and penalty entered for this driver. Use Edit to correct one (the original is kept), Mark complete when it was repaid or waived, and History to see what happened to it.",
 };
 
