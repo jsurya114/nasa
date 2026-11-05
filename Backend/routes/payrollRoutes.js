@@ -1,8 +1,9 @@
-// Payroll routes (issues #138 to #145). Mounted at /admin/payroll in app.js. Admin and super admin only;
-// each action also checks the admin's cities in its service.
+// Payroll routes (issues #138 to #145). Mounted at /admin/payroll in app.js. Super admin only, except the one
+// Dashboard summary below; each action also checks the admin's cities in its service.
 import express from 'express';
 import { sanitizeRouterParams } from '../middlewares/sanitize.js';
 import adminAuth from '../middlewares/adminAuth.js';
+import { requireRole } from '../middlewares/requireRole.js';
 import { getLedger, getLedgerHistory, postLedgerEdit, postLedgerEntry, postLedgerVoid, postSettlement, postSettlementReversal } from '../controllers/payroll/ledgerController.js';
 import {
   getPayrollSettings, getPayRun, getPayRuns, postDiscard, postFinalize, postPayRun, postVoid, putRecoveryLimit,
@@ -18,6 +19,13 @@ import { getAdminStatement, getDriverBalanceList, getDriverDashboardSummary, get
 const router = express.Router();
 sanitizeRouterParams(router);
 router.use(adminAuth);
+
+// This payday's deductions and what is still outstanding, for the Dashboard (#166). The one payroll call an ordinary admin
+// still makes, because the Dashboard shows it; the service checks the admin's cities.
+router.get('/drivers/:driverId/dashboard-summary', getDriverDashboardSummary);
+
+// Everything below is for the super admin only: ledger, pay runs, payments and Everee. Keep new payroll routes below this line.
+router.use(requireRole('superadmin'));
 
 // Manual advances, repayments, expenses, reimbursements, claims and corrections (#142).
 router.get('/ledger', getLedger);
@@ -73,7 +81,5 @@ router.put('/everee/city-settings/:cityId', putEvereeCitySettings);
 router.get('/statements/:statementId', getAdminStatement);
 router.get('/drivers/:driverId/statements', getDriverStatementList);
 router.get('/drivers/:driverId/balances', getDriverBalanceList);
-// This payday's deductions and what is still outstanding, for the dashboard (#166).
-router.get('/drivers/:driverId/dashboard-summary', getDriverDashboardSummary);
 
 export default router;

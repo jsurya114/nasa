@@ -1,4 +1,5 @@
 import React from "react";
+import { useSelector } from "react-redux";
 import {
   LayoutDashboard,
   Users,
@@ -14,6 +15,7 @@ import {
 import GlassTabBar from "./GlassTabBar.jsx";
 
 function Nav() {
+  const isSuperAdmin = useSelector((state) => state.admin?.isSuperAdmin === true);
   const links = [
     { to: "/admin/dashboard", Icon: LayoutDashboard, label: "Dashboard" },
     { to: "/admin/create-users", Icon: Users, label: "Users" },
@@ -23,8 +25,11 @@ function Nav() {
     { to: "/admin/manage-access-codes", Icon: KeyRound, label: "Access Codes" },
     { to: "/admin/driver-availability", Icon: CalendarDays, label: "Availability" },
     { to: "/admin/agreements", Icon: FileText, label: "Agreements" },
-    { to: "/admin/payroll", Icon: Wallet, label: "Payroll" },
-    { to: "/admin/pay-runs", Icon: Banknote, label: "Pay runs" },
+    // Payroll and pay runs are for the super admin only.
+    ...(isSuperAdmin ? [
+      { to: "/admin/payroll", Icon: Wallet, label: "Payroll" },
+      { to: "/admin/pay-runs", Icon: Banknote, label: "Pay runs" },
+    ] : []),
   ];
 
   return <GlassTabBar items={links} primaryCount={4} moreLabel="More" navLabel="Admin navigation" lang="en" />;

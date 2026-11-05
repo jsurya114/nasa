@@ -5,6 +5,7 @@ import { confirmDialog } from "../../../utils/confirmDialog";
 import { formatMoney } from "../../../utils/money.js";
 import { describeLimit } from "./describeLimit.js";
 import { Link } from "react-router-dom";
+import { X } from "lucide-react";
 import RunPaymentStatus from "./RunPaymentStatus.jsx";
 
 // One pay run as the server froze it (#143): totals, what is waiting outside it, each driver's statement with its
@@ -89,7 +90,13 @@ export default function RunDetail({ detail, isSuperAdmin, onChanged, onClose, se
           <p className="text-sm font-medium text-ink">{cityName}</p>
           <p className="text-sm text-ink-muted">{run.data_type === "weekly" ? "Weekly" : "Daily"} · run #{run.id} · {describeLimit(run.recovery_limit)}</p>
         </div>
-        <span className={`rounded-full border px-2.5 py-0.5 text-xs font-semibold ${STATUS_TONES[run.status] ?? STATUS_TONES.draft}`}>{run.status}</span>
+        <div className="flex items-center gap-2">
+          <span className={`rounded-full border px-2.5 py-0.5 text-xs font-semibold ${STATUS_TONES[run.status] ?? STATUS_TONES.draft}`}>{run.status}</span>
+          {/* At the top so a long list of drivers never hides the way out. Closing changes nothing; the draft stays in the Runs list. */}
+          <button type="button" onClick={onClose} aria-label="Close this run" className="inline-flex min-h-11 items-center gap-1 rounded-xl border border-line bg-white px-3 text-sm font-semibold text-ink">
+            <X className="h-4 w-4" aria-hidden="true" />Close
+          </button>
+        </div>
       </div>
       {run.close_reason && <p className="mt-2 text-sm text-ink-muted">Reason: {run.close_reason}</p>}
       {run.status === "finalized" && sameCity && <RunPaymentStatus key={run.id} runId={run.id} cityName={cityName} onRecorded={onPaymentRecorded} />}

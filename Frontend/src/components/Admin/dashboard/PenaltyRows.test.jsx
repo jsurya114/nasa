@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { cleanup, render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
+import { Provider } from "react-redux";
+import { configureStore } from "@reduxjs/toolkit";
 import PenaltyRows from "./PenaltyRows.jsx";
 import { netFor, rowInfo, showRow, summaryItems } from "./penaltyDisplay.js";
 
@@ -9,7 +11,11 @@ const ready = ({ source = "estimate", deducted = "0.00", net = null, penalties =
   status: "ready", expected: true, cityId: 3, driverId: 7,
   data: { payday: { source, deducted, net, flags }, outstanding: { penalties, other, total: (Number(penalties) + Number(other)).toFixed(2) } },
 });
-const show = (penalty) => render(<MemoryRouter><table><tbody><PenaltyRows penalty={penalty} /></tbody></table></MemoryRouter>);
+const show = (penalty, isSuperAdmin = true) => render(
+  <Provider store={configureStore({ reducer: { admin: (state = { isSuperAdmin }) => state } })}>
+    <MemoryRouter><table><tbody><PenaltyRows penalty={penalty} /></tbody></table></MemoryRouter>
+  </Provider>,
+);
 afterEach(cleanup);
 
 describe("the net", () => {
@@ -60,6 +66,10 @@ describe("the row and the Summary", () => {
     expect(screen.getByTestId("penalty-deduction-row").textContent).toContain("-$50.00");
     expect(screen.getByTestId("penalty-owed").textContent).toContain("Still owed in all: $250.00 (Penalties $240.00 · Others $10.00)");
     expect(screen.getByRole("link", { name: "View entries and history" }).getAttribute("href")).toBe("/admin/payroll?cityId=3&driverId=7");
+    cleanup();
+    show(ready({ deducted: "50.00" }), false);
+    expect(screen.getByTestId("penalty-deduction-row").textContent).toContain("-$50.00");
+    expect(screen.queryByRole("link", { name: "View entries and history" })).toBeNull();
     cleanup();
     show(ready({ penalties: "100.00", flags: [{ code: "recovery_limit_not_set", message: "no recovery limit is set" }] }));
     expect(screen.getByTestId("penalty-note").textContent).toContain("no recovery limit is set");
