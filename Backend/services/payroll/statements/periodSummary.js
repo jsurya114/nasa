@@ -113,9 +113,24 @@ const estimatePayday = async (db, driverId, cityId, rangeFrom, rangeTo) => {
   };
 };
 
+// What this driver's runs in the city still hold: statements of draft and approved runs that are not paid yet. Without dates the
+// Dashboard shows these when no other pay is left, because the pay they took from is no longer "unpaid" once it is on a run, yet it has
+// not been paid out either. A paid statement, or one of a discarded or voided run, is history and not counted.
+const openRunTotals = async (db, driverId, cityId) => {
+  const { rows } = await db.query(
+    `SELECT r.status AS run_status, s.claim_deductions, s.recoveries, s.net
+       FROM pay_statements s JOIN pay_runs r ON r.id = s.pay_run_id
+      WHERE s.driver_id = $1 AND r.city_id = $2 AND r.status IN ('draft', 'finalized')
+        AND s.paid_at IS NULL AND s.payout_status <> 'paid'`,
+    [driverId, cityId]
+  );
+  return { totals: totalsOf(rows), approved: rows.length > 0 && rows.every((r) => r.run_status === 'finalized') };
+};
+
 // range: { from, to } as YYYY-MM-DD, or both left out. Without dates (the owner does not want to choose them) the estimate covers all
-// the driver's closed, unpaid pay, as the next pay run would; runs already made are then not looked at. Returns the
-// figures, or throws PayrollError.
+// the driver's closed, unpaid pay not yet on a run, as the next pay run would. When none is left because it is all on runs that are not yet
+// paid, those runs' own figures are shown, so a run does not make the deduction vanish from the Dashboard. Returns the figures, or throws
+// PayrollError.
 export const getDriverPeriodSummary = async (db, admin, { driverId, cityId, from, to }) => {
   const hasRange = Boolean(from || to);
   if (hasRange && (!parseDate(from) || !parseDate(to) || from > to)) throw new PayrollError(400, 'from and to must be real dates (YYYY-MM-DD), from not after to, or both left out');
@@ -146,8 +161,14 @@ export const getDriverPeriodSummary = async (db, admin, { driverId, cityId, from
   else if (draft.count > 0) payday = { source: 'draft', ...draft, flags: [] };
   else if (hasRange) payday = { source: 'estimate', ...(await estimatePayday(db, driverId, cityId, from, to)) };
   else {
-    // No dates: all the driver's closed, unpaid pay, over the span of that work (see estimatePayday).
-    payday = { source: 'estimate', ...(await estimatePayday(db, driverId, cityId, null, null)) };
+    // No dates: all the driver's closed, unpaid pay, over the span of that work (see estimatePayday), plus what runs not yet paid took.
+    const estimate = await estimatePayday(db, driverId, cityId, null, null);
+    // Pay that is still unpaid and not on a run is the next payday, and it is what the estimate shows, as before. Only when none is left
+    // (all of it is already on runs not yet paid) are those runs' own figures shown, instead of "nothing can be taken".
+    const held = estimate.net === null ? await openRunTotals(db, driverId, cityId) : null;
+    payday = held && held.totals.count > 0
+      ? { source: held.approved ? 'approved' : 'draft', ...held.totals, flags: [] }
+      : { source: 'estimate', ...estimate };
   }
 
   return {

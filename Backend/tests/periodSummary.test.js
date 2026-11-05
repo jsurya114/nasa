@@ -217,10 +217,10 @@ test('dashboard period summary: this payday, approved or preview, and what is st
       assert.deepEqual([estimate.claimDeductions, estimate.recoveries, estimate.deducted], [total('claim_deductions'), total('recoveries'), (Number(total('claim_deductions')) + Number(total('recoveries'))).toFixed(2)],
         'the estimate takes exactly what the two drafts took, not the instalment and the claim twice');
       assert.equal(estimate.net, total('net'), 'and its net is the calculator\'s own net, with the reimbursement in it');
-      // The same driver without dates: the estimate was worked out before the runs above, so it is gone now; ask again on a fresh
-      // driver below. Here the rows are on live statements, so nothing is eligible.
+      // The same driver without dates: all the pay is now on the two unpaid drafts, so nothing is left to estimate and the Dashboard shows what
+      // those drafts took (instalment 50 and claim 25 = 75, nets 80 + 75), not "nothing can be taken".
       const after = (await getDriverPeriodSummary(db, superAdmin, { driverId: d2, cityId: city2 })).payday;
-      assert.deepEqual([after.source, after.deducted, after.net], ['estimate', '0.00', null]);
+      assert.deepEqual([after.source, after.deducted, after.net, after.flags], ['draft', '75.00', '155.00', []]);
     });
 
     // A clean city, route and driver for a scenario of its own (the drivers above are used up). Weekly pay rows have no sequence numbers.
@@ -298,7 +298,32 @@ test('dashboard period summary: this payday, approved or preview, and what is st
       assert.deepEqual([real.statements[0].recoveries, real.statements[0].net], ['50.00', '50.00'], 'and the same as the real following draft');
       // the once-per-overlapping-period protection is kept: with that draft in place the same work cannot be taken twice
       const again = await sc.estimate();
-      assert.deepEqual([again.deducted, again.net], ['0.00', null]);
+      // nothing is estimated twice; what the Dashboard shows now is what the two runs that hold all the pay took (50 each)
+      assert.deepEqual([again.source, again.deducted, again.net], ['draft', '100.00', '100.00']);
+    });
+
+    await t.test('with no dates, pay already on an approved run still shows what that run took; a record added later shows as owed; once paid it is history', async () => {
+      const sc = await freshScenario();
+      await sc.penalty({ amount: '300', recoveryPlan: 'installments', installmentAmount: '50' });
+      const today = await sc.day(0);
+      await sc.row(today, '100.00');
+      const before = await sc.estimate();
+      assert.deepEqual([before.source, before.deducted], ['estimate', '50.00']);
+      const made = await sc.draft(await sc.day(-6), today, 'weekly');
+      await finalizeRun(db, superAdmin, made.run.id);
+      // all the pay is on the approved run now: the Dashboard still shows its deduction and net, not "nothing can be taken"
+      const onRun = await sc.estimate();
+      assert.deepEqual([onRun.source, onRun.deducted, onRun.net, onRun.flags], ['approved', '50.00', made.statements[0].net, []]);
+      // a record added after the run is owed, but it comes off a later payday: this payday's figure does not move, what is owed does
+      await sc.penalty({ amount: '20', recoveryPlan: 'full_next_payday' });
+      const added = await sc.estimate();
+      assert.deepEqual([added.source, added.deducted], ['approved', '50.00']);
+      const owed = (await getDriverPeriodSummary(db, superAdmin, { driverId: sc.d, cityId: sc.c })).outstanding;
+      assert.equal(owed.penalties, '270.00', '300 less the 50 the run took, plus the new 20');
+      // once the statement is paid it is history: nothing is left to take this payday
+      await db.query("UPDATE pay_statements SET paid_at = now(), payout_status = 'paid' WHERE id = $1", [made.statements[0].id]);
+      const paid = await sc.estimate();
+      assert.deepEqual([paid.source, paid.deducted], ['estimate', '0.00']);
     });
 
     await t.test('a penalty entered after the week the pay is for is still taken (no dates), the same as the real draft that ends today', async () => {
