@@ -6,7 +6,7 @@ import axios from "../../../redux/slice/axiosInstance";
 // (#166). The server works both out (pay runs, or the pay calculator on a copy); nothing is calculated here. It needs a city
 // and a driver; the dates add this payday's deduction.
 export default function usePenaltySummary() {
-  const { cities, drivers, filters } = useSelector((state) => state.dash);
+  const { cities, drivers, filters, selectedDataType } = useSelector((state) => state.dash);
   // The dropdowns change as soon as the admin edits the form, before Filter Data is pressed, while the table still shows the
   // applied city and driver. So the IDs are remembered when the filters are applied, by the names the table will carry, and are
   // not looked up again in whatever the dropdowns hold later. Without a remembered entry, the current options are used.
@@ -24,10 +24,13 @@ export default function usePenaltySummary() {
   const { cityId, driverId } = remembered ?? lookup(filters?.job, filters?.driver);
   const from = filters?.startDate || undefined;
   const to = filters?.endDate || undefined;
-  // The Payment status filter (All, Paid or Pending) is part of the scope: the server must know which pay rows the table shows, so that an
-  // unpaid run's figures never stand in for a table of paid history, and a change of status asks again instead of reusing another answer.
+  // What the table shows is part of the scope: the Payment status (All, Paid, Pending), the Route and the View tab (All, daily, weekly). The server
+  // must know them, so that a run's figures stand in for the table's net only when the table holds exactly the rows that run holds, and a change
+  // of any of them asks again instead of reusing another answer.
   const paymentStatus = filters?.paymentStatus && filters.paymentStatus !== "All" ? filters.paymentStatus : undefined;
-  const scopeKey = `${cityId}|${driverId}|${from}|${to}|${paymentStatus}`;
+  const route = filters?.route && filters.route !== "All" ? filters.route : undefined;
+  const dataType = selectedDataType && selectedDataType !== "all" ? selectedDataType : undefined;
+  const scopeKey = `${cityId}|${driverId}|${from}|${to}|${paymentStatus}|${route}|${dataType}`;
   const [state, setState] = useState({ status: "idle", data: null, scopeKey: null });
   const [attempt, setAttempt] = useState(0);
   // "Expected": the admin applied a city and a driver, so their deductions belong on this page. Until they arrive,
@@ -41,11 +44,11 @@ export default function usePenaltySummary() {
     }
     const controller = new AbortController();
     setState({ status: "loading", data: null, scopeKey });
-    axios.get(`/admin/payroll/drivers/${driverId}/dashboard-summary`, { params: { cityId, ...(from && to && { from, to }), ...(paymentStatus && { paymentStatus }) }, signal: controller.signal })
+    axios.get(`/admin/payroll/drivers/${driverId}/dashboard-summary`, { params: { cityId, ...(from && to && { from, to }), ...(paymentStatus && { paymentStatus }), ...(route && { route }), ...(dataType && { dataType }) }, signal: controller.signal })
       .then(({ data }) => { if (!controller.signal.aborted) setState({ status: "ready", data, scopeKey }); })
       .catch(() => { if (!controller.signal.aborted) setState({ status: "error", data: null, scopeKey }); });
     return () => controller.abort();
-  }, [expected, scopeKey, cityId, driverId, from, to, paymentStatus, attempt]);
+  }, [expected, scopeKey, cityId, driverId, from, to, paymentStatus, route, dataType, attempt]);
 
   // Figures belong to the scope they were fetched for. For the render between a new scope arriving and its request starting, say
   // "loading" rather than show the previous scope's figures against the new table.

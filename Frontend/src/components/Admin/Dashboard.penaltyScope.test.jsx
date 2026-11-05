@@ -20,17 +20,27 @@ const BY_STATUS = {
 const ROW = { id: 1, driver_name: "Dee Test", job_date: "2026-10-01", route_name: "R1", packages: 10, no_scanned: 0, failed_attempt: 0, fs: 0, ds: 0, delivered: 10,
   driver_payment: "200.00", insurance_deduction: "20.00", closed: true, paid: true, data_type: "daily" };
 
-const startServer = async () => {
-  const state = { calls: [] };
+const ROUTES = [{ id: 11, name: "Route A" }, { id: 12, name: "Route B" }];
+// With two routes held by one run (net $260), the run's figures describe the whole table only; a single route's table has its own net.
+const RUN_ONLY_WHOLE = summary({ source: "approved", deducted: "40.00", recoveries: "40.00", net: "260.00" });
+
+const startServer = async ({ gateRouteA } = {}) => {
+  const state = { calls: [], routeCalls: [] };
   await installServer(async (config) => {
     const url = config.url;
-    if (url === "/admin/dashboard/data") return { status: 200, data: { success: true, data: { cities: [{ id: 3, job: "Test City" }], drivers: [{ id: 7, name: "Dee Test" }], routes: [] } } };
+    if (url === "/admin/dashboard/data") return { status: 200, data: { success: true, data: { cities: [{ id: 3, job: "Test City" }], drivers: [{ id: 7, name: "Dee Test" }], routes: ROUTES } } };
     if (url === "/admin/dashboard/drivers-by-city") return { status: 200, data: { success: true, data: [{ id: 7, name: "Dee Test" }] } };
-    if (url === "/admin/dashboard/routes-by-city") return { status: 200, data: { success: true, data: [] } };
+    if (url === "/admin/dashboard/routes-by-city") return { status: 200, data: { success: true, data: ROUTES } };
     if (url === "/admin/dashboard/paymentTable") return { status: 200, data: { success: true, data: [ROW], pagination: { total: 1, page: 1, limit: 10, totalPages: 1 } } };
     if (url === "/admin/dashboard/summary") return { status: 200, data: { success: true, data: { total_driver_payment: 200, total_insurance_deduction: 20, total_company_earnings: 10 } } };
     if (/^\/admin\/payroll\/drivers\/\d+\/dashboard-summary$/.test(url)) {
       state.calls.push(config.params?.paymentStatus);
+      state.routeCalls.push(config.params?.route);
+      if (config.params?.route) {
+        // the answer a correct server gives for one route of a run that holds two: its own figures are not the run's
+        if (config.params.route === "Route A" && gateRouteA) await gateRouteA;
+        return config.params.route === "Route A" && gateRouteA ? RUN_ONLY_WHOLE : summary({});
+      }
       return BY_STATUS[config.params?.paymentStatus ?? "none"];
     }
     return { status: 200, data: {} };
@@ -94,5 +104,36 @@ describe("Dashboard: the penalty summary follows the Payment status filter", () 
     // All: no status is sent
     await apply(container, "All");
     await waitFor(() => expect(server.calls).toContain(undefined));
+  });
+
+  it("a route is sent with the request, and an answer that arrives late for another route is never shown (review of #219)", async () => {
+    let release;
+    const gateRouteA = new Promise((resolve) => { release = resolve; });
+    const server = await startServer({ gateRouteA });
+    const { container } = await mount();
+    await waitFor(() => expect(within(select(container, "job")).getByRole("option", { name: "Test City" })).toBeTruthy());
+    fireEvent.change(select(container, "job"), { target: { name: "job", value: "Test City" } });
+    await waitFor(() => expect(within(select(container, "driver")).getByRole("option", { name: "Dee Test" })).toBeTruthy());
+    fireEvent.change(select(container, "driver"), { target: { name: "driver", value: "Dee Test" } });
+    await waitFor(() => expect(within(select(container, "route")).getByRole("option", { name: "Route A" })).toBeTruthy());
+
+    // Route A: the request carries the route, and its answer is still pending
+    fireEvent.change(select(container, "route"), { target: { name: "route", value: "Route A" } });
+    fireEvent.click(screen.getByRole("button", { name: "Filter Data" }));
+    await waitFor(() => expect(server.routeCalls).toContain("Route A"));
+    // switch to Route B while Route A's answer is pending
+    fireEvent.change(select(container, "route"), { target: { name: "route", value: "Route B" } });
+    fireEvent.click(screen.getByRole("button", { name: "Filter Data" }));
+    await waitFor(() => expect(server.routeCalls).toContain("Route B"));
+    await waitFor(() => expect(screen.getByTestId("net-payment-row")).toBeTruthy());
+    // Route A's answer (the whole run's $260 net) arrives now: it must not replace Route B's table
+    release();
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    expect(screen.getByTestId("net-payment-row").textContent).not.toContain("approved pay run");
+    expect(screen.getByTestId("net-payment-row").textContent).not.toContain("$260.00");
+    // back to all routes: the route is no longer sent
+    fireEvent.change(select(container, "route"), { target: { name: "route", value: "All" } });
+    fireEvent.click(screen.getByRole("button", { name: "Filter Data" }));
+    await waitFor(() => expect(server.routeCalls.at(-1)).toBeUndefined());
   });
 });
