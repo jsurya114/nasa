@@ -5,7 +5,7 @@ import { randomBytes } from 'node:crypto';
 import express from 'express';
 import { requireRole } from '../middlewares/requireRole.js';
 import { createInsightsRouter } from '../services/insights/router.js';
-import { createReportRunner } from '../services/insights/reportRunner.js';
+import { cancelReportBackend, createReportRunner } from '../services/insights/reportRunner.js';
 import { getCityRanking, getDefinitions, getOverview, parseFilters } from '../services/insights/insightsService.js';
 import { InputError, parseCityIdsText, parseSource } from '../services/reporting/inputs.js';
 
@@ -226,20 +226,74 @@ test('reports follow the source and city filters and add up: daily + weekly = al
       assert.equal(await snapshot(), before, 'no driver, delivery record, amount or pay run changed');
     });
 
-    await t.test('the runner reads only: a write fails, a slow report is stopped, a cancelled one frees its connection', async () => {
+    await t.test('the runner reads only: a write fails, a slow report is stopped, and a cancel reaches only its own report', async () => {
       await db.query('ROLLBACK');
+      const sessions = async () => Number((await pool.query("SELECT count(*)::int AS n FROM pg_stat_activity WHERE application_name LIKE 'nasa\\_insights\\_%' AND pid <> pg_backend_pid()")).rows[0].n);
       const runner = createReportRunner({ pool, env: {}, timeoutMs: 400 });
       assert.equal(runner.restrictedLogin, false);
       assert.deepEqual((await runner.run(async (c) => (await c.query('SELECT 1 AS n')).rows))[0], { n: 1 });
       await assert.rejects(runner.run((c) => c.query('CREATE TEMP TABLE insights_probe (a int)')), /read-only transaction/);
       await assert.rejects(runner.run((c) => c.query('SELECT pg_sleep(3)')), (e) => e.code === '57014');
-      const idleBefore = pool.idleCount;
+      assert.equal(await sessions(), 0, 'a finished report leaves no connection behind');
+
+      // A dropped request cancels its own query quickly, while an unrelated query on the shared pool, running at the same time, is not touched.
+      const other = pool.query('SELECT pg_sleep(1.2), 42 AS answer');
       const abort = new AbortController();
-      setTimeout(() => abort.abort(), 100);
+      setTimeout(() => abort.abort(), 150);
       const started = Date.now();
       await assert.rejects(createReportRunner({ pool, env: {}, timeoutMs: 5000 }).run((c) => c.query('SELECT pg_sleep(4)'), { signal: abort.signal }), /cancelled/);
-      assert.ok(Date.now() - started < 2000, 'cancelling stops the query');
-      assert.ok(pool.idleCount >= idleBefore, 'the connection is back in the pool');
+      assert.ok(Date.now() - started < 2000, 'cancelling stops the report');
+      assert.equal((await other).rows[0].answer, 42, 'the unrelated query finished normally');
+      assert.equal(await sessions(), 0, 'the cancelled report\'s connection is closed');
+      // a request already dropped never opens a connection
+      const dropped = new AbortController();
+      dropped.abort();
+      await assert.rejects(runner.run((c) => c.query('SELECT 1'), { signal: dropped.signal }), /cancelled/);
+    });
+
+    await t.test('a late cancel does nothing: with a finished report\'s name it cannot stop another session\'s query, even one that has its process id', async () => {
+      await db.query('ROLLBACK');
+      // a report that has finished: its connection and name are gone
+      let finishedName;
+      let finishedPid;
+      await createReportRunner({ pool, env: {} }).run(async (c) => {
+        const { rows } = await c.query("SELECT pg_backend_pid() AS pid, current_setting('application_name') AS name");
+        finishedName = rows[0].name;
+        finishedPid = rows[0].pid;
+      });
+      assert.match(finishedName, /^nasa_insights_[0-9a-f]{12}$/);
+      // an unrelated long query on the shared pool, as if it had been handed the finished report's process id
+      const bystander = await pool.connect();
+      try {
+        const { rows } = await bystander.query('SELECT pg_backend_pid() AS pid');
+        // handlers are attached at once: a cancelled query rejects while we are still waiting for the cancel to finish
+        const running = bystander.query('SELECT pg_sleep(1), 7 AS seven').then((r) => r.rows[0].seven, (e) => `cancelled:${e.code}`);
+        await new Promise((resolve) => setTimeout(resolve, 100));
+        await cancelReportBackend(pool, rows[0].pid, finishedName);   // right name, wrong session
+        await cancelReportBackend(pool, finishedPid, 'someone_else');  // right pid (gone), wrong name
+        assert.equal(await running, 7, 'the other session\'s query was not cancelled');
+        // and the same helper does cancel a session that really has that name
+        await bystander.query("SET application_name = 'nasa_insights_probe0000'");
+        const doomed = bystander.query('SELECT pg_sleep(5)').then(() => 'finished', (e) => `cancelled:${e.code}`);
+        await new Promise((resolve) => setTimeout(resolve, 100));
+        await cancelReportBackend(pool, rows[0].pid, 'nasa_insights_probe0000');
+        assert.equal(await doomed, 'cancelled:57014');
+      } finally {
+        bystander.release();
+      }
+      await db.query('BEGIN');
+    });
+
+    await t.test('at most three reports run at once; the rest wait their turn', async () => {
+      const sessions = async () => Number((await pool.query("SELECT count(*)::int AS n FROM pg_stat_activity WHERE application_name LIKE 'nasa\\_insights\\_%' AND pid <> pg_backend_pid()")).rows[0].n);
+      const runner = createReportRunner({ pool, env: {}, timeoutMs: 5000 });
+      let peak = 0;
+      const sampler = setInterval(async () => { peak = Math.max(peak, await sessions().catch(() => 0)); }, 40);
+      const results = await Promise.all(Array.from({ length: 7 }, (_, i) => runner.run(async (c) => { await c.query('SELECT pg_sleep(0.25)'); return i; })));
+      clearInterval(sampler);
+      assert.deepEqual(results, [0, 1, 2, 3, 4, 5, 6], 'all seven finished');
+      assert.ok(peak >= 1 && peak <= 3, `at most 3 at once, saw ${peak}`);
+      assert.equal(await sessions(), 0);
       await db.query('BEGIN');
     });
   } finally {
