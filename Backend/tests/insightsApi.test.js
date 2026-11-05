@@ -6,7 +6,8 @@ import express from 'express';
 import { requireRole } from '../middlewares/requireRole.js';
 import { createInsightsRouter } from '../services/insights/router.js';
 import { cancelReportBackend, createReportRunner } from '../services/insights/reportRunner.js';
-import { getCityRanking, getDefinitions, getOverview, parseFilters } from '../services/insights/insightsService.js';
+import { getCityRanking, getDefinitions, getOverview, getTrends, parseFilters } from '../services/insights/insightsService.js';
+import { bucketEndOf, bucketStartOf, bucketStarts } from '../services/insights/trendSeries.js';
 import { InputError, parseCityIdsText, parseSource } from '../services/reporting/inputs.js';
 
 // The Insights page's data API (issue #227): super admin only, read only, one shared reporting layer. The first part needs no database. The second
@@ -37,7 +38,7 @@ const call = async (app, path, role) => {
   }
 };
 const PERIOD = 'start_date=2026-10-01&end_date=2026-10-31';
-const PATHS = ['/definitions', '/cities', `/overview?${PERIOD}`, `/rankings/cities?${PERIOD}`];
+const PATHS = ['/definitions', '/cities', `/overview?${PERIOD}`, `/rankings/cities?${PERIOD}`, `/trends?${PERIOD}&interval=week`];
 
 test('only the super admin may use Insights: no token, an ordinary admin and a driver are refused before any report runs', async () => {
   let calls = 0;
@@ -55,7 +56,7 @@ test('only the super admin may use Insights: no token, an ordinary admin and a d
     assert.equal(answer.cache, 'no-store', 'company figures are never cached');
     assert.deepEqual(Object.keys(answer.body).sort(), ['data', 'meta']);
   }
-  assert.equal(calls, 3, 'the three data routes ran one report each; definitions read no data');
+  assert.equal(calls, 4, 'the four data routes ran one report each; definitions read no data');
 });
 
 test('a bad request is refused with a message and runs nothing; a report failure shows no internal detail', async () => {
@@ -66,6 +67,7 @@ test('a bad request is refused with a message and runs nothing; a report failure
     `/overview?${PERIOD}&source=monthly`, `/overview?${PERIOD}&city_ids=abc`, `/overview?${PERIOD}&city_ids=0`, `/overview?${PERIOD}&city_ids=1,,2`,
     `/rankings/cities?${PERIOD}&rank_by=profit`, `/rankings/cities?${PERIOD}&limit=0`, `/rankings/cities?${PERIOD}&limit=abc`, `/rankings/cities?${PERIOD}&limit=51`,
     '/overview?start_date=2020-01-01&end_date=2026-10-31',
+    `/trends?${PERIOD}`, `/trends?${PERIOD}&interval=hourly`, `/trends?${PERIOD}&interval=Week`, '/trends?start_date=2025-01-01&end_date=2026-01-31&interval=week&source=monthly',
   ];
   for (const path of bad) {
     const answer = await call(app, path, 'superadmin');
@@ -94,6 +96,26 @@ test('the route files keep the guard first and are mounted before /admin', () =>
   assert.match(routes, /createInsightsRouter\(\{ adminAuth, requireRole,/);
   const app = readFileSync(new URL('../app.js', import.meta.url), 'utf8');
   assert.ok(app.indexOf("app.use('/admin/insights'") > -1 && app.indexOf("app.use('/admin/insights'") < app.indexOf("app.use('/admin', "), 'mounted before the general /admin router');
+});
+
+// ---------- trend buckets (no database) ----------
+test('trend buckets: weeks start on Monday, months on the 1st, every bucket that touches the period is listed, in order', () => {
+  assert.deepEqual(bucketStarts('day', '2026-10-30', '2026-11-02'), ['2026-10-30', '2026-10-31', '2026-11-01', '2026-11-02']);
+  // 2026-10-19 is a Monday; the period 21 Oct to 3 Nov starts in the week of 19 Oct and ends in the week of 2 Nov
+  assert.deepEqual(bucketStarts('week', '2026-10-21', '2026-11-03'), ['2026-10-19', '2026-10-26', '2026-11-02']);
+  assert.equal(new Date('2026-10-19T00:00:00Z').getUTCDay(), 1);
+  assert.deepEqual(bucketStarts('month', '2026-10-15', '2027-01-03'), ['2026-10-01', '2026-11-01', '2026-12-01', '2027-01-01']);
+  assert.deepEqual(bucketStarts('week', '2026-11-02', '2026-11-02'), ['2026-11-02']);
+  for (const [interval, date] of [['week', '2026-10-25'], ['week', '2026-10-26'], ['month', '2026-02-28'], ['day', '2026-10-25']]) {
+    const start = bucketStartOf(interval, date);
+    assert.ok(start <= date && date <= bucketEndOf(interval, start), `${date} is inside its ${interval}`);
+  }
+  assert.equal(bucketStartOf('week', '2026-10-25'), '2026-10-19', 'a Sunday belongs to the week that began on the Monday before');
+  assert.equal(bucketEndOf('week', '2026-10-19'), '2026-10-25');
+  assert.equal(bucketEndOf('month', '2026-02-01'), '2026-02-28');
+  assert.equal(bucketEndOf('month', '2028-02-01'), '2028-02-29', 'leap year');
+  assert.equal(bucketEndOf('month', '2026-12-01'), '2026-12-31', 'year end');
+  assert.equal(bucketStarts('month', '2024-01-01', '2026-12-31').length, 36);
 });
 
 // ---------- what the filters mean (no database) ----------
@@ -215,6 +237,64 @@ test('reports follow the source and city filters and add up: daily + weekly = al
       const unfiltered = await getCityRanking(run, q('&rank_by=gross_margin&limit=50'));
       assert.ok(mine(unfiltered).length === 2);
       await assert.rejects(getCityRanking(run, q(`&rank_by=deliveries&city_ids=999999999`)), /Unknown city_id/);
+    });
+
+    await t.test('every trend interval adds up to the overview for the same filters; days and weeks without records are gaps, not zero', async () => {
+      const cents = (v) => (v === null || v === undefined ? 0 : Math.round(Number(v) * 100));
+      for (const extra of ['', '&source=daily', '&source=weekly', `&city_ids=${cityA}`, `&city_ids=${cityB}&source=weekly`]) {
+        const ov = (await getOverview(run, q(`&compare=false${extra}`))).data;
+        for (const interval of ['day', 'week', 'month']) {
+          const tr = (await getTrends(run, q(`&interval=${interval}${extra}`))).data;
+          const add = (key, f = Number) => tr.series.reduce((n, p) => n + f(p[key]), 0);
+          assert.equal(add('deliveries', (v) => v ?? 0), ov.deliveries, `${interval}${extra}: deliveries`);
+          assert.equal(add('earnedDeliveryRevenue', cents), cents(ov.earnedDeliveryRevenue), `${interval}${extra}: revenue`);
+          assert.equal(add('grossMarginBeforeOverheads', cents), cents(ov.grossMarginBeforeOverheads), `${interval}${extra}: margin`);
+          assert.equal(add('daysInBucketWithinPeriod'), 14, `${interval}${extra}: the buckets cover the 14 days exactly once`);
+        }
+      }
+      const day = (await getTrends(run, q('&interval=day'))).data;
+      assert.equal(day.series.length, 14);
+      const quiet = day.series.find((p) => p.bucketStart === '2091-03-03');
+      assert.deepEqual([quiet.hasRecords, quiet.deliveries, quiet.earnedDeliveryRevenue, quiet.activeDrivers], [false, null, null, null], 'a day with no records is a gap');
+      assert.deepEqual(day.series.find((p) => p.bucketStart === '2091-03-02').deliveries, 20);
+      // weeks start on Monday and the edge weeks are flagged as partly inside the period
+      const weeks = (await getTrends(run, q('&interval=week'))).data.series;
+      assert.ok(weeks.every((p) => new Date(`${p.bucketStart}T00:00:00Z`).getUTCDay() === 1), 'every week starts on a Monday');
+      assert.equal(weeks[0].partialBucket, new Date('2091-03-01T00:00:00Z').getUTCDay() !== 1);
+      assert.equal(weeks.at(-1).partialBucket, new Date('2091-03-14T00:00:00Z').getUTCDay() !== 0);
+      // one month bucket, March, partly inside the period
+      const months = (await getTrends(run, q('&interval=month'))).data.series;
+      assert.deepEqual([months.length, months[0].bucketStart, months[0].bucketEnd, months[0].partialBucket], [1, '2091-03-01', '2091-03-31', true]);
+      assert.equal(months[0].deliveries, 180);
+    });
+
+    await t.test('the weekday pattern and the busiest dates follow the same records', async () => {
+      const tr = (await getTrends(run, q('&interval=week'))).data;
+      assert.equal(tr.weekdays.length, 7);
+      assert.equal(tr.weekdays.reduce((n, w) => n + w.totalDeliveries, 0), 180, 'the weekday totals add up to the period');
+      const worked = tr.weekdays.filter((w) => w.daysWithRecords > 0);
+      assert.ok(worked.length > 0 && worked.length < 7, 'a weekday with no records has no average, not zero');
+      assert.equal(tr.weekdays.find((w) => w.daysWithRecords === 0).averageDeliveriesPerDayWithRecords, null);
+      const best = [...worked].sort((a, b) => Number(b.averageDeliveriesPerDayWithRecords) - Number(a.averageDeliveriesPerDayWithRecords))[0];
+      assert.equal(tr.busiestWeekday, best.weekday);
+      assert.deepEqual(tr.peakDates[0], { date: '2091-03-01', weekday: tr.peakDates[0].weekday, deliveries: 110 }, '10 daily + 100 weekly on 1 March');
+      assert.deepEqual(tr.peakDates.map((d) => d.deliveries), [110, 50, 20], 'ordered by deliveries, only days with records');
+    });
+
+    await t.test('an empty filter and a record still open are shown honestly', async () => {
+      const empty = await getTrends(run, q(`&interval=week&city_ids=${cityB}&source=daily`));
+      assert.ok(empty.data.series.every((p) => p.hasRecords === false && p.deliveries === null));
+      assert.equal(empty.data.busiestWeekday, null);
+      assert.deepEqual(empty.data.peakDates, []);
+      assert.match(empty.meta.warnings.join(' '), /no delivery records/i);
+      // a record that is still open: its deliveries count, its (missing) revenue and margin do not
+      await row({ driver: d1, route: routeA, date: '2091-03-10', seq: 190, delivered: 4, pay: null, margin: null });
+      const before = (await getTrends(run, q('&interval=day&source=daily'))).data.series.find((p) => p.bucketStart === '2091-03-10');
+      assert.deepEqual([before.hasRecords, before.deliveries, before.earnedDeliveryRevenue, before.grossMarginBeforeOverheads, before.recordsWithoutStoredAmounts], [true, 4, null, null, 1]);
+      const warned = await getTrends(run, q('&interval=day&source=daily'));
+      assert.match(warned.meta.warnings.join(' '), /1 record has no stored amounts yet/);
+      await assert.rejects(getTrends(run, 'start_date=2090-01-01&end_date=2091-03-14&interval=day'.split('&').reduce((o, kv) => ({ ...o, [kv.split('=')[0]]: kv.split('=')[1] }), {})), /at most 366 days/);
+      await assert.rejects(getTrends(run, q(`&interval=week&city_ids=999999999`)), /Unknown city_id/);
     });
 
     await t.test('reading changed nothing', async () => {
