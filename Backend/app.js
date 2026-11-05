@@ -6,6 +6,7 @@ import pool from './config/db.js';
 import adminRoutes from './routes/adminRoutes.js'
 import driverRoutes from "./routes/driverRoutes.js"
 import payrollRoutes from "./routes/payrollRoutes.js"
+import insightsRoutes from "./routes/insightsRoutes.js"
 import assignmentHistoryRoutes from "./routes/assignmentHistoryRoutes.js"
 import evereeWebhookRoutes from './routes/evereeWebhookRoutes.js'
 import { mountMcp } from './services/mcp/mountMcp.js';
@@ -67,6 +68,12 @@ app.use('/admin/payroll', (req, _, next) => {
   logger.info(`${req.method} ${req.originalUrl.split('?')[0]}`)
   next()
 }, payrollRoutes);
+
+// Insights page data: super admin only and read only. Before /admin so it is handled here and checked once.
+app.use('/admin/insights', (req, _, next) => {
+  logger.info(`${req.method} ${req.originalUrl.split('?')[0]}`)
+  next()
+}, insightsRoutes);
 
 // Before /admin so these requests are handled here and checked once.
 app.use('/admin/assignment-history', (req, _, next) => {

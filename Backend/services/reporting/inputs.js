@@ -53,6 +53,23 @@ export function parseLimit(limit, { fallback = 10, max = 50 } = {}) {
   return limit;
 }
 
+export const SOURCES = Object.freeze(['daily', 'weekly']);
+
+// The record source: 'daily' or 'weekly', or left out for both. Anything else is refused.
+export function parseSource(value) {
+  if (value === undefined || value === null || value === '' || value === 'all') return null;
+  if (!SOURCES.includes(value)) throw new InputError(`source must be one of: ${SOURCES.join(', ')}, or left out for both`);
+  return value;
+}
+
+// City ids written in a query string, "3,5,9" (a list is also accepted), as the same sorted unique ids parseCityIds returns.
+export function parseCityIdsText(value) {
+  if (value === undefined || value === null || value === '') return null;
+  const parts = Array.isArray(value) ? value : String(value).split(',');
+  const ids = parts.map((part) => (typeof part === 'string' && /^\d{1,9}$/.test(part.trim()) ? Number(part.trim()) : NaN));
+  return parseCityIds(ids);
+}
+
 export function parseRankBy(value) {
   if (!RANK_METRICS.includes(value)) throw new InputError(`rank_by must be one of: ${RANK_METRICS.join(', ')}`);
   return value;

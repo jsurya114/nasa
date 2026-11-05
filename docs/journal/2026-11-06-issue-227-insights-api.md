@@ -1,0 +1,28 @@
+# Insights page, PR 1: the guarded, read-only data API (issue #227)
+
+- **Date:** 2026-11-06
+- **Author:** Jayasoorya (with Claude Code)
+- **Issue / PR:** #227 / the pull request for `feat/insights-api`
+- **Branch:** `feat/insights-api` (from `develop`)
+- **Type and scope:** feat(insights), backend
+- **Files touched:** new `Backend/routes/insightsRoutes.js`, `Backend/services/insights/{router,insightsService,reportRunner}.js`, test `Backend/tests/insightsApi.test.js`, `docs/INSIGHTS_PAGE.md`; edited `Backend/app.js` (one import and one mount) and, additively, `Backend/services/reporting/{deliveryReports,inputs}.js` (Jasil's shared reporting layer from #222/#224; the connector's behaviour is unchanged, see below). No reserved files: the Analytics files (`analyticsController`, `analyticsQueries`, `Analystic`, `analyticsSlice`) and `dashboardQueries.js` are only read.
+
+**What and why.** Jasil asked on Slack (6 Nov 2026) for a super-admin Insights page. This is the first of six small PRs (plan in `docs/INSIGHTS_PAGE.md` and on #227): the data API the page will call, before any screen, so access, definitions and totals are settled and reviewed first.
+- **Routes** (`GET /admin/insights/...`, mounted before `/admin`): `definitions`, `cities`, `overview` (KPIs and the previous equal-length period) and `rankings/cities`. They call the shared reporting functions, the same ones the Claude connector uses, so the page and Claude cannot show different totals.
+- **Access.** The router checks the token (`adminAuth`) and then `requireRole('superadmin')` before any route, so a route added below cannot be reached without both. An ordinary admin, a driver and no token are refused before any report runs. There is no route that writes: Insights recalculates nothing, changes no rate or claim, marks nobody paid and never calls Everee. Answers carry `Cache-Control: no-store`; 120 requests a minute per admin.
+- **Filters.** `start_date` and `end_date` are required and validated (a real date, from not after to, up to 1096 days: the pay run's 31-day limit is not inherited); `city_ids` (comma list, at most 50, unknown ids refused by name); `source` (`daily` or `weekly`); `rank_by` and `limit`. Nothing is guessed, a bad value is a 400 with a message and never reaches the database.
+- **Report runner.** Each report runs in `BEGIN READ ONLY` with a 10 second statement limit, on the restricted reporting login when `REPORTING_DB_*` is set and otherwise on a read-only connection of the application's pool. A request the caller drops cancels its query and frees the connection. Failures answer a generic message, never SQL.
+- **Shared layer, additively.** `businessSummary` and `rankCities` take an optional `source`, and `rankCities` an optional `cityIds`; `coverageOf` follows the source. Their defaults are `null`, so the connector's tools return what they returned before (the existing reporting and connector tests pass unchanged). `inputs.js` gains `parseSource` and `parseCityIdsText`.
+
+**Database:** None new. It needs the reporting views migration of #224 (`2026-11-06-issue-220-reporting-views.sql`) applied to the database it reads. **Config and dependencies:** none (no new variable, no new package). **Money impact:** None. Nothing is calculated, changed or paid; the figures are stored amounts read as they are.
+
+**Tested.**
+- `tests/insightsApi.test.js`, 12 tests. Without a database (6): the four routes answer 401 without a token, 403 to an ordinary admin and a driver (with no report run), and 200 with `no-store` to the super admin; thirteen bad requests are refused with a message and run nothing; a SQL error shows no SQL and a timeout answers 504; the route file keeps `adminAuth`, then `requireRole('superadmin')`, before the first route, has no route that changes anything, and is mounted before `/admin`; the filter parsing; the definitions need no data.
+- With a disposable PostgreSQL copy (6, rolled back): daily + weekly add up to all (180 = 30 + 150 deliveries, revenue 510.00 = 60.00 + 450.00); a source and city filter combine and a mismatch is empty with N/A (not 0.00) and a warning; the previous period follows the same filters and says `incomplete` (with the reason), `complete` or `insufficient_data`; the city ranking takes the same filters and its shares add up; reads change no driver, record, amount or pay run; the runner refuses a write, stops a slow query at its limit and frees a cancelled one's connection.
+- With the disposable copy and a restricted reporting login: reporting, connector and Insights tests together, 57 of 57 pass; the runner uses the restricted login and returns the same totals.
+- **Totals against the Dashboard's own summary** (`getSummaryData`, same copy of the local data): for Shreveport GOFO 19 to 25 Oct, all cities that week, and all of October: 16,151 deliveries, $22,427.45 driver payment, $3,020.35 company earnings, identical; Insights' revenue is their sum, $25,447.80.
+- Full backend suite without a database: 165 pass, 0 fail, 59 skipped (before this change: 160 pass, 0 fail, 58 skipped). Removing the role check makes the access tests fail, and removing the source filter makes the database tests fail (checked).
+
+**Not tested.** In a browser (there is no screen yet), and on a database larger than the local copy. Only the Shreveport weekly city has data locally, so the daily-city and city-transfer cases are covered by the synthetic fixtures, as the existing reporting tests do.
+
+**Risks and follow-ups.** The Insights routes need the reporting views on the application database; without them the data routes answer a generic error (the log names the missing relation). Trends, drivers, weekdays, claims and "Needs attention" are the next PRs.
