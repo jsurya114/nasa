@@ -55,7 +55,7 @@ test('dashboard period summary: this payday, approved or preview, and what is st
     await t.test('before any run: nothing is deducted, and the outstanding penalties are shown apart', async () => {
       const s = await ask(cityAdmin);
       assert.equal(s.period.status, 'none');
-      assert.deepEqual(s.outstanding, { penalties: '340.00', other: '25.00', total: '365.00' }, 'the 25 carrier claim is not a hand-entered penalty');
+      assert.deepEqual(s.outstanding, { penalties: '365.00', other: '0.00', total: '365.00' }, 'the 25 carrier claim from the Excel is a penalty, like the 340 entered by hand');
       // no recovery limit is set, yet the dashboard still shows what each record asks for this payday: 25 claim, 40 in full, 35 of the 50 instalment, capped at the 100 earned
       assert.equal(s.payday.source, 'estimate');
       assert.deepEqual([s.payday.claimDeductions, s.payday.recoveries, s.payday.deducted], ['25.00', '75.00', '100.00']);

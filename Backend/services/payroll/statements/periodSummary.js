@@ -5,7 +5,7 @@
 //   used: finalized runs are approved and frozen, drafts are previews. If none exists, the same pay calculator that builds a
 //   run is run on a copy and nothing is saved (`estimate`), so the dashboard agrees with the run that will follow.
 // - Still outstanding: what the driver still owes after pay runs, settlements and repayments made outside payroll (the balance
-//   cards of the Payroll page), with the hand-entered penalties apart from the rest. The parts add up to the total exactly.
+//   cards of the Payroll page), with the penalties (hand-entered and carrier claims from the Excel) apart from the rest. The parts add up to the total exactly.
 // A run counts only when its whole period lies inside the range, so a deduction is never counted for two ranges or
 // spread over daily rows. A run that crosses the range edge is reported, not counted.
 
