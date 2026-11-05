@@ -16,8 +16,9 @@ import { InputError, addDays, centsToText, percentChange, toCents } from './inpu
 const MONEY = 'numeric(16,2)';
 const FACTS = 'reporting.delivery_facts f';
 
-// Shared WHERE for one period and an optional city list. Parameters: $1 start, $2 end, $3 city ids (or null).
-const SCOPE = 'f.business_date BETWEEN $1::date AND $2::date AND f.counts_for_city AND ($3::int[] IS NULL OR f.city_id = ANY($3::int[]))';
+// Shared WHERE for one period, an optional city list and an optional source. Parameters: $1 start, $2 end, $3 city ids (or null),
+// $4 source ('daily', 'weekly' or null for both).
+const SCOPE = 'f.business_date BETWEEN $1::date AND $2::date AND f.counts_for_city AND ($3::int[] IS NULL OR f.city_id = ANY($3::int[])) AND ($4::text IS NULL OR f.source = $4::text)';
 
 const num = (value) => (value === null || value === undefined ? null : Number(value));
 
@@ -57,7 +58,7 @@ async function assertCitiesExist(db, cityIds) {
 }
 
 // One pass over the period's records.
-async function aggregatePeriod(db, { startDate, endDate }, cityIds) {
+async function aggregatePeriod(db, { startDate, endDate }, cityIds, source = null) {
   const { rows } = await db.query(
     `SELECT (COALESCE(sum(f.delivered), 0))::bigint                                            AS deliveries,
             (count(*))::int                                                                     AS records,
@@ -73,7 +74,7 @@ async function aggregatePeriod(db, { startDate, endDate }, cityIds) {
             (count(DISTINCT (f.driver_id, f.business_date)) FILTER (WHERE f.delivered > 0))::int AS active_driver_days,
             (count(DISTINCT f.business_date))::int                                              AS days_with_records
        FROM ${FACTS} WHERE ${SCOPE}`,
-    [startDate, endDate, cityIds]
+    [startDate, endDate, cityIds, source]
   );
   const r = rows[0];
   const withAmounts = r.records_with_amounts > 0;
@@ -105,13 +106,13 @@ async function aggregatePeriod(db, { startDate, endDate }, cityIds) {
   };
 }
 
-async function coverageOf(db, { startDate, endDate }, cityIds) {
+async function coverageOf(db, { startDate, endDate }, cityIds, source = null) {
   const { rows } = await db.query(
     `SELECT to_char(min(f.business_date), 'YYYY-MM-DD') AS first_date, to_char(max(f.business_date), 'YYYY-MM-DD') AS last_date,
             (SELECT (count(*))::int FROM ${FACTS} WHERE f.business_date BETWEEN $1::date AND $2::date AND NOT f.counts_for_city
-                AND ($3::int[] IS NULL OR f.city_id = ANY($3::int[]))) AS excluded
-       FROM ${FACTS} WHERE f.counts_for_city AND ($3::int[] IS NULL OR f.city_id = ANY($3::int[]))`,
-    [startDate, endDate, cityIds]
+                AND ($3::int[] IS NULL OR f.city_id = ANY($3::int[])) AND ($4::text IS NULL OR f.source = $4::text)) AS excluded
+       FROM ${FACTS} WHERE f.counts_for_city AND ($3::int[] IS NULL OR f.city_id = ANY($3::int[])) AND ($4::text IS NULL OR f.source = $4::text)`,
+    [startDate, endDate, cityIds, source]
   );
   return { firstDate: rows[0].first_date, lastDate: rows[0].last_date, excludedByCityRule: rows[0].excluded };
 }
@@ -169,9 +170,9 @@ function compare(current, previous) {
   };
 }
 
-export async function businessSummary(db, { period, cityIds, comparePrevious = false }) {
+export async function businessSummary(db, { period, cityIds, comparePrevious = false, source = null }) {
   await assertCitiesExist(db, cityIds);
-  const [agg, coverage] = [await aggregatePeriod(db, period, cityIds), await coverageOf(db, period, cityIds)];
+  const [agg, coverage] = [await aggregatePeriod(db, period, cityIds, source), await coverageOf(db, period, cityIds, source)];
   const data = summaryData(period, cityIds, agg);
   const warnings = warningsFor(period, agg, coverage);
 
@@ -179,7 +180,7 @@ export async function businessSummary(db, { period, cityIds, comparePrevious = f
     const previousEnd = addDays(period.startDate, -1);
     const previousStart = addDays(previousEnd, -(period.days - 1));
     const previousPeriod = { startDate: previousStart, endDate: previousEnd, days: period.days };
-    const previousAgg = await aggregatePeriod(db, previousPeriod, cityIds);
+    const previousAgg = await aggregatePeriod(db, previousPeriod, cityIds, source);
     const incomplete = coverage.firstDate === null || previousStart < coverage.firstDate;
     const noPrevious = previousAgg.raw.records === 0;
     data.comparison = {
@@ -198,7 +199,7 @@ export async function businessSummary(db, { period, cityIds, comparePrevious = f
 
   return {
     data,
-    scope: { description: `Delivery records dated ${period.startDate} to ${period.endDate}, ${cityIds ? `cities ${cityIds.join(', ')}` : 'all cities'}.`, startDate: period.startDate, endDate: period.endDate },
+    scope: { description: `Delivery records dated ${period.startDate} to ${period.endDate}, ${cityIds ? `cities ${cityIds.join(', ')}` : 'all cities'}${source ? `, ${source} records only` : ''}.`, startDate: period.startDate, endDate: period.endDate },
     coverage: [{
       source: 'Dashboard delivery records (daily and weekly)',
       firstDate: coverage.firstDate, lastDate: coverage.lastDate,
@@ -211,9 +212,10 @@ export async function businessSummary(db, { period, cityIds, comparePrevious = f
 // The SQL column each ranking metric sorts by. Only these are ever put into the query text; the caller's word is never used.
 const RANK_COLUMN = { deliveries: 'deliveries', revenue: 'revenue', gross_margin: 'margin' };
 
-export async function rankCities(db, { period, rankBy, limit }) {
+export async function rankCities(db, { period, rankBy, limit, cityIds = null, source = null }) {
   const column = RANK_COLUMN[rankBy];
   if (!column) throw new InputError('rank_by is not supported');
+  await assertCitiesExist(db, cityIds);
   const { rows } = await db.query(
     `WITH per_city AS (
        SELECT f.city_id, f.city_name, f.city_code,
@@ -227,6 +229,7 @@ export async function rankCities(db, { period, rankBy, limit }) {
                    THEN (sum(f.company_margin) FILTER (WHERE f.amounts_complete))::${MONEY} END AS margin
          FROM ${FACTS}
         WHERE f.business_date BETWEEN $1::date AND $2::date AND f.counts_for_city
+          AND ($4::int[] IS NULL OR f.city_id = ANY($4::int[])) AND ($5::text IS NULL OR f.source = $5::text)
         GROUP BY f.city_id, f.city_name, f.city_code
      ), totals AS (
        SELECT sum(deliveries) AS t_deliveries, sum(revenue) AS t_revenue, sum(margin) AS t_margin, count(*)::int AS cities_with_data,
@@ -237,7 +240,7 @@ export async function rankCities(db, { period, rankBy, limit }) {
        FROM per_city p CROSS JOIN totals t
       ORDER BY p.${column} DESC NULLS LAST, p.city_id ASC
       LIMIT $3`,
-    [period.startDate, period.endDate, limit]
+    [period.startDate, period.endDate, limit, cityIds, source]
   );
 
   const ranked = rows.map((r, index) => {
@@ -275,7 +278,7 @@ export async function rankCities(db, { period, rankBy, limit }) {
         ? { deliveries: Number(first.t_deliveries), earnedDeliveryRevenue: first.t_revenue, grossMarginBeforeOverheads: first.t_margin, citiesWithData: first.cities_with_data }
         : { deliveries: 0, earnedDeliveryRevenue: null, grossMarginBeforeOverheads: null, citiesWithData: 0 },
     },
-    scope: { description: `Cities ranked by ${rankBy.replace('_', ' ')}, delivery records dated ${period.startDate} to ${period.endDate}.`, startDate: period.startDate, endDate: period.endDate },
+    scope: { description: `Cities ranked by ${rankBy.replace('_', ' ')}, delivery records dated ${period.startDate} to ${period.endDate}${cityIds ? `, cities ${cityIds.join(', ')}` : ''}${source ? `, ${source} records only` : ''}.`, startDate: period.startDate, endDate: period.endDate },
     coverage: [{ source: 'Dashboard delivery records (daily and weekly)', recordsInPeriod: first ? first.t_records : 0, citiesWithData: first ? first.cities_with_data : 0, daysInPeriod: period.days }],
     warnings,
   };
