@@ -51,6 +51,66 @@ tunnel (see the verification section: staging and mobile are still pending).
 
    The first must be `401` with a `WWW-Authenticate` header containing `resource_metadata`. The others must be JSON.
 
+## Reporting database role (data tools)
+
+The data tools read through a separate PostgreSQL login that can see only the `reporting` views (`reporting.cities`,
+`reporting.delivery_facts`). The views hold business totals and driver display names; they hold no password, email, phone, bank, tax,
+access code or sign-in record. Without the login below, the connector still works but offers only `get_metric_definitions`; it never
+falls back to the application's database login.
+
+1. As the database owner or a superuser, after a backup, run `Backend/migrations/2026-11-06-issue-220-reporting-views.sql`
+   (safe to repeat). Rollback: `...reporting-views.rollback.sql` (drop the login role first).
+2. Create the login (choose a long random password and keep it only in the server's environment):
+
+   ```sql
+   CREATE ROLE nasa_insights_ro LOGIN PASSWORD '<long random password>' CONNECTION LIMIT 8 IN ROLE nasa_reporting_reader;
+   ALTER ROLE nasa_insights_ro SET default_transaction_read_only = on;
+   ALTER ROLE nasa_insights_ro SET statement_timeout = '10s';
+   ALTER ROLE nasa_insights_ro SET idle_in_transaction_session_timeout = '15s';
+   ```
+
+   On PostgreSQL 14 or older, everyone may create tables in the `public` schema by default. The connector's read-only transaction and
+   read-only login setting already stop that, but also run `REVOKE CREATE ON SCHEMA public FROM PUBLIC;` if your application login owns
+   the schema (it keeps its rights). PostgreSQL 15 and newer already refuse it.
+3. Set `REPORTING_DB_HOST`, `REPORTING_DB_NAME`, `REPORTING_DB_USER=nasa_insights_ro`, `REPORTING_DB_PASSWORD` (and `REPORTING_DB_SSL=true`
+   if the database requires TLS), then restart. The log must not say `data tools are off`.
+4. Check as that login (for example with `psql`): `SELECT count(*) FROM reporting.delivery_facts;` works, and `SELECT 1 FROM drivers;`,
+   `SELECT 1 FROM admin;` and any `INSERT`, `UPDATE` or `DELETE` are refused.
+5. Rotate the password with `ALTER ROLE nasa_insights_ro PASSWORD '...'` and a restart. To switch the data tools off, remove
+   `REPORTING_DB_PASSWORD` and restart (or `REVOKE nasa_reporting_reader FROM nasa_insights_ro`).
+
+Limits: a pool of at most 3 connections (setting `REPORTING_DB_POOL_MAX`, up to 5), every report in a READ ONLY transaction with a
+10 second time limit, a result size cap, 60 calls a minute per connection, and a cancelled request cancels its query. Reports never
+write, so they cannot change pay, claims, deductions or payments.
+
+## What the numbers count
+
+- **Source:** the Dashboard's delivery records (`payment_dashboard`), the same rows its totals read, for daily and weekly cities.
+  Weekly imports and daily journeys both end up there.
+- **City:** the city of the record's route, as stored. A driver who changes city does not move old deliveries.
+- **City rule:** as on the Dashboard when a city is selected, a daily city counts records with sequence numbers and a weekly city
+  counts records without. Records that break the rule are left out and disclosed in the warnings.
+- **Deliveries:** the stored delivered counts. A record is an aggregate, not an order.
+- **Revenue:** stored gross driver earnings + stored company margin from the same records. Records with no stored amounts yet (still
+  open) or only one amount are counted in deliveries, left out of revenue and margin, and disclosed. Missing is never zero.
+- **Gross margin:** stored company margin, "gross profit before overheads". Margin percentage is margin / revenue, empty when
+  revenue is zero.
+- **Checked against the Dashboard:** for every city and two sample periods the tools' deliveries, driver earnings, margin and revenue
+  equal the Dashboard's own summary query (`getSummaryData`) exactly (an automated test).
+- **Known gaps:** claims, balances and payments are not in these tools yet. NASA has no overheads, so there is no net profit.
+
+## Tools
+
+| Tool | What it answers |
+|---|---|
+| `get_metric_definitions` | What the metrics mean and their limits |
+| `list_reporting_cities` | Cities, ids, type, first and last delivery date |
+| `get_business_summary` | A period: deliveries, revenue, margin, margin %, active drivers, per-delivery figures; optional city filter and comparison with the previous equal-length period |
+| `rank_cities` | Cities ranked by deliveries, revenue or gross margin, with share of total |
+
+Periods are `YYYY-MM-DD` business dates, inclusive, at most 1,096 days. Unknown cities, bad dates, unsupported arguments and
+unsupported ranking metrics are refused with a message, never guessed.
+
 ## Connect Claude (client guide, draft)
 
 1. Open Claude, then **Customize > Connectors > Add custom connector**.

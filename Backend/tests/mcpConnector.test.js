@@ -61,11 +61,11 @@ test('the consent page escapes what an app chose and names the redirect host', (
 });
 
 test('every tool is read-only by design: strict input, named scope, and no write-style tool exists', () => {
-  assert.deepEqual(TOOLS.map((t) => t.name), ['get_metric_definitions']);
+  assert.deepEqual(TOOLS.map((t) => t.name), ['get_metric_definitions', 'list_reporting_cities', 'get_business_summary', 'rank_cities']);
   for (const tool of TOOLS) {
     assert.equal(tool.requiredScope, MCP_SCOPE);
     assert.equal(tool.inputSchema.safeParse({ extra: 1 }).success, false, 'unsupported arguments are rejected');
-    assert.equal(tool.inputSchema.safeParse({}).success, true);
+    assert.equal(tool.inputSchema.safeParse({}).success, !['get_business_summary', 'rank_cities'].includes(tool.name), 'only the tools that need a period require arguments');
     assert.ok(!/pay|write|update|delete|sql|exec|shell|everee/i.test(tool.name));
   }
   assert.ok(METRIC_DEFINITIONS.find((m) => m.id === 'gross_margin').label.includes('before overheads'));
