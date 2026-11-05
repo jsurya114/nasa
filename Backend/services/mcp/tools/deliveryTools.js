@@ -236,6 +236,7 @@ export const getPaymentOverviewTool = {
     asOf: z.string(),
     cities: citiesField,
     pendingApproval: payBucket, approvedAwaitingPayment: payBucket, processing: payBucket, unconfirmed: payBucket, failed: payBucket, returned: payBucket,
+    returnedDepositsVisible: z.boolean(),
     paid: payBucket.extend({ paidInLast30Days: z.object({ statements: z.number().int(), amount: money }) }),
     byCity: z.array(z.object({ cityId: z.number().int(), name: z.string(), approvedAwaitingPayment: money, processing: money, failed: money, returned: money })),
     needsAttention: z.array(z.object({ statementId: z.number().int(), driver: z.string(), city: z.string(), periodStart: z.string(), periodEnd: z.string(), amount: money, state: z.string() })),

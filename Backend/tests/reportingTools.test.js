@@ -77,6 +77,10 @@ test('TLS to the reporting database verifies the certificate unless that is swit
   assert.deepEqual(seen[2].ssl, { rejectUnauthorized: true, ca: 'PEM' });
   assert.deepEqual(seen[3].ssl, { rejectUnauthorized: false });
   assert.match(seen[1].options, /default_transaction_read_only=on/);
+  const prod = createReportingDb({ ...base, NODE_ENV: 'production', REPORTING_DB_SSL: 'true', REPORTING_DB_SSL_VERIFY: 'false' }, { Pool: FakePool });
+  assert.equal(prod.enabled, false);
+  assert.match(prod.reason, /not allowed in production/);
+  assert.equal(seen.length, 4, 'no pool was created for the refused setting');
 });
 
 // ---------- the database: a disposable PostgreSQL copy with the app's tables and both reporting migrations (never production) ----------
@@ -436,11 +440,19 @@ test('over HTTP the tools list only with a reporting login, validate input, and 
       assert.ok(!Number.isNaN(Date.parse(pay.data.asOf)));
       assert.match(pay.meta.warnings.join(' '), /Approved is not paid/);
       const forecast = (await full.tool('forecast_deliveries', {})).structuredContent.data;
+      for (const start_date of ['banana', '2026-13-45', '10/01/2026']) {
+        const reply = (await full.rpc('tools/call', { name: 'forecast_deliveries', arguments: { start_date } })).body;
+        assert.ok(reply.error || reply.result?.isError, `a malformed start_date ${start_date} is refused whatever the history`);
+      }
       assert.equal(forecast.estimate, true);
       assert.ok(['ok', 'insufficient_data'].includes(forecast.status));
       if (forecast.status === 'ok') {
         assert.equal(forecast.forecast.length, 7);
         assert.ok(forecast.backtest.testWeeks >= 4);
+      }
+      if (forecast.status === 'ok') {
+        const early = (await full.rpc('tools/call', { name: 'forecast_deliveries', arguments: { start_date: '2001-01-01' } })).body;
+        assert.ok(early.error || early.result?.isError, 'a start before the data is refused when there is history to compare with');
       }
       const bad = [
         ['get_delivery_trends', { ...period, interval: 'year' }],
@@ -450,7 +462,6 @@ test('over HTTP the tools list only with a reporting login, validate input, and 
         ['get_claim_exposure', { start_date: '2026-10-01' }],
         ['get_payment_overview', { city_ids: [2147483000] }],
         ['forecast_deliveries', { days: 60 }],
-        ['forecast_deliveries', { start_date: '2001-01-01' }],
         ['forecast_deliveries', { anything: 1 }],
       ];
       for (const [name, args] of bad) {

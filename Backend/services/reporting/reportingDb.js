@@ -13,6 +13,7 @@
  * or change data even if a query were wrong. A cancelled request cancels its query and frees its connection.
  */
 import pg from 'pg';
+import logger from '../../utils/logger.js';
 
 const clamp = (value, low, high, fallback) => {
   const n = Number.parseInt(value, 10);
@@ -26,6 +27,10 @@ export function createReportingDb(env = process.env, { Pool = pg.Pool, Client = 
     return { enabled: false, reason: 'REPORTING_DB_USER must be a different, read-only login, not the application login' };
   }
 
+  if (env.REPORTING_DB_SSL === 'true' && env.REPORTING_DB_SSL_VERIFY === 'false') {
+    if (env.NODE_ENV === 'production') return { enabled: false, reason: 'REPORTING_DB_SSL_VERIFY=false is not allowed in production: give REPORTING_DB_SSL_CA instead' };
+    logger.warn('Reporting database TLS certificate verification is switched off (REPORTING_DB_SSL_VERIFY=false)');
+  }
   const timeoutMs = clamp(env.REPORTING_DB_TIMEOUT_MS, 1000, 30000, 10000);
   const settings = {
     host: env.REPORTING_DB_HOST,
@@ -33,7 +38,7 @@ export function createReportingDb(env = process.env, { Pool = pg.Pool, Client = 
     database: env.REPORTING_DB_NAME,
     user: env.REPORTING_DB_USER,
     password: env.REPORTING_DB_PASSWORD,
-    // TLS checks the server's certificate by default. Switching the check off must be asked for by name (and is logged).
+    // TLS checks the server's certificate by default. Switching the check off must be asked for by name; it is logged, and refused in production.
     ssl: env.REPORTING_DB_SSL === 'true'
       ? { rejectUnauthorized: env.REPORTING_DB_SSL_VERIFY !== 'false', ...(env.REPORTING_DB_SSL_CA ? { ca: env.REPORTING_DB_SSL_CA } : {}) }
       : undefined,

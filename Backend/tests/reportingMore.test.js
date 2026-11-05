@@ -6,6 +6,8 @@ import { forecastFromSeries, MAX_FORECAST_DAYS, METHODS, predict } from '../serv
 import { deliveryTrends, rankDrivers } from '../services/reporting/trendReports.js';
 import { claimExposure, paymentOverview } from '../services/reporting/claimPaymentReports.js';
 import { businessSummary } from '../services/reporting/deliveryReports.js';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 
 // ---------- forecast: pure rules on made-up series ----------
 const PATTERN = [100, 120, 110, 130, 150, 200]; // Monday to Saturday; Sunday is never worked
@@ -99,6 +101,13 @@ test('range of days and start date are validated, never clipped', () => {
   assert.equal(later.forecast[0].date, addDays(start, 14));
   const stale = forecastFromSeries(data, { days: 7, today: addDays(start, 100) });
   assert.match(stale.warnings.join(' '), /well before today/);
+});
+
+test('a malformed start_date is refused before any data is looked at', () => {
+  for (const startDate of ['banana', '2026-13-45', '10/01/2026', '2026-02-30']) {
+    assert.throws(() => forecastFromSeries([], { days: 7, startDate }), InputError, startDate);
+    assert.throws(() => forecastFromSeries(series({ weeks: 3 }), { days: 7, startDate }), InputError, `${startDate} with too little history`);
+  }
 });
 
 test('few backtest points give point estimates only, with a warning', () => {
@@ -336,6 +345,23 @@ test('trends, driver ranking, claims and payments follow the same rules and add 
       assert.ok(Number(all.approvedAwaitingPayment.amount) >= 100, 'all cities include this city');
       assert.equal((await paymentOverview(db, { cityIds: [cityB] })).data.approvedAwaitingPayment.statements, 0);
       await assert.rejects(paymentOverview(db, { cityIds: [2147483000] }), /Unknown city_id/);
+    });
+
+    await t.test('a payment view built before the Everee tables existed says returned deposits are not visible', async (sub) => {
+      if (!hasEveree) return sub.skip('this copy has no Everee tables');
+      const visible = await paymentOverview(db, { cityIds: [cityA] });
+      assert.equal(visible.data.returnedDepositsVisible, true);
+      assert.ok(!visible.warnings.join(' ').includes('NOT visible'));
+      // Rebuild the view the way the migration does when the table is missing, inside this rolled-back transaction.
+      await db.query('ALTER TABLE everee_payment_items RENAME TO everee_payment_items_hidden_by_test');
+      await db.query(readFileSync(fileURLToPath(new URL('../migrations/2026-11-06-issue-220-reporting-claims-payments.sql', import.meta.url)), 'utf8'));
+      const blind = await paymentOverview(db, { cityIds: [cityA] });
+      assert.equal(blind.data.returnedDepositsVisible, false);
+      assert.equal(blind.data.returned.statements, 0);
+      assert.match(blind.warnings.join(' '), /Returned deposits are NOT visible.*Re-run the claims-and-payments reporting migration after the Everee migrations/);
+      await db.query('ALTER TABLE everee_payment_items_hidden_by_test RENAME TO everee_payment_items');
+      await db.query(readFileSync(fileURLToPath(new URL('../migrations/2026-11-06-issue-220-reporting-claims-payments.sql', import.meta.url)), 'utf8'));
+      assert.equal((await paymentOverview(db, { cityIds: [cityA] })).data.returnedDepositsVisible, true, 're-running the migration restores it');
     });
 
     await t.test('reading these reports changes nothing', async () => {

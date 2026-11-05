@@ -65,6 +65,7 @@ export function forecastFromSeries(series, { days, startDate = null, today = nul
   const warnings = [];
   const insufficient = (reason, extra = {}) => ({ status: 'insufficient_data', estimate: true, reason, forecast: [], warnings, ...extra });
   if (!Number.isInteger(days) || days < 1 || days > MAX_FORECAST_DAYS) throw new InputError(`days must be a whole number from 1 to ${MAX_FORECAST_DAYS}`);
+  if (startDate) parseBusinessDate(startDate, 'start_date'); // the format is checked before any data is looked at
   if (series.length === 0) return insufficient('There are no delivery records for these cities.');
 
   const sorted = [...series].sort((a, b) => (a.date < b.date ? -1 : 1));
@@ -125,7 +126,6 @@ export function forecastFromSeries(series, { days, startDate = null, today = nul
   const defaultStart = addDays(lastUsable, 7);
   let start = defaultStart;
   if (startDate) {
-    parseBusinessDate(startDate, 'start_date');
     if (startDate < defaultStart) throw new InputError(`start_date must be ${defaultStart} or later: that is the first day after the last complete week of data (data ends on ${dataEndsOn}).`);
     if (startDate > addDays(defaultStart, MAX_START_GAP_DAYS)) throw new InputError(`start_date is too far after the data. The latest complete week ends ${addDays(lastUsable, 6)}; ask for a start within ${MAX_START_GAP_DAYS} days of ${defaultStart}.`);
     start = startDate;

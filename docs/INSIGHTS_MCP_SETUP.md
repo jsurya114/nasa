@@ -54,7 +54,8 @@ tunnel (see the verification section: staging and mobile are still pending).
 ## Reporting views
 
 Run in order after a backup: `2026-11-06-issue-220-reporting-views.sql`, then `2026-11-06-issue-220-reporting-claims-payments.sql`
-(rollbacks alongside). The second reads the Everee table only if it exists, so it can run before or after the Everee migrations.
+(rollbacks alongside). The second reads the Everee table only if it exists when it runs. **If the Everee migrations are run after it, run the claims-and-payments
+migration again afterwards**: until then returned deposits are not visible (the payment overview says so in a warning). Re-running is safe.
 
 ## Reporting database role (data tools)
 

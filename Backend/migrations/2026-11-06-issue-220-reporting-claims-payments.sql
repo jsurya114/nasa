@@ -1,5 +1,8 @@
 -- Issue #220 (NASA Insights connector), part 3: read-only reporting views for carrier claims and driver payments.
 -- Needs part 2 (reporting schema and role). Additive; nothing existing changes. No password, email, phone, bank or tax detail is exposed.
+-- IMPORTANT: if the Everee migrations are run AFTER this one, run this file again afterwards. The payment view is built from the tables that
+-- exist at the time; until it is re-run, returned deposits are not visible (the view says so in deposit_info_available, and the
+-- payment overview warns).
 -- WHO RUNS THIS: the database owner or a superuser, after a BACKUP. Safe to run more than once.
 
 -- One row per CURRENT carrier claim (the latest version of each claim), with the decision made about it.
@@ -31,15 +34,18 @@ SELECT c.id                                              AS claim_id,
 -- One row per pay statement of a draft or approved (finalized) pay run. Discarded and voided runs are not payments and are left out.
 --  * state: pending (draft run), approved (finalized, not sent yet), submitted, unconfirmed, failed, paid.
 --  * deposit_returned: the payment provider reported a paid deposit as returned. A returned deposit is NOT a successful payment.
+--  * deposit_info_available: false when the Everee table did not exist when this view was built, so returned deposits cannot be seen.
 -- The everee table is read only when it exists (it arrives with the Everee migrations), so this migration runs before or after them.
 DO $$
 DECLARE
   returned_expr text := 'false';
   returned_join text := '';
+  info_expr text := 'false';
 BEGIN
   IF to_regclass('public.everee_payment_items') IS NOT NULL THEN
     returned_expr := 'COALESCE(i.deposit_returned, false)';
     returned_join := 'LEFT JOIN everee_payment_items i ON i.pay_statement_id = s.id';
+    info_expr := 'true';
   END IF;
   EXECUTE format($view$
     CREATE OR REPLACE VIEW reporting.payment_facts AS
@@ -58,14 +64,15 @@ BEGIN
                 WHEN s.payout_status = 'not_submitted' THEN 'approved'
                 ELSE s.payout_status END AS state,
            s.paid_at,
-           %s                  AS deposit_returned
+           %s                  AS deposit_returned,
+           %s                  AS deposit_info_available
       FROM pay_statements s
       JOIN pay_runs r ON r.id = s.pay_run_id
       JOIN city c     ON c.id = r.city_id
       JOIN drivers d  ON d.id = s.driver_id
       %s
      WHERE r.status IN ('draft', 'finalized')
-  $view$, returned_expr, returned_join);
+  $view$, returned_expr, info_expr, returned_join);
 END $$;
 
 REVOKE ALL ON ALL TABLES IN SCHEMA reporting FROM PUBLIC;

@@ -108,6 +108,8 @@ export async function paymentOverview(db, { cityIds }) {
       ORDER BY f.period_end DESC, f.statement_id DESC LIMIT 20`,
     [cityIds]
   );
+  const { rows: info } = await db.query(`SELECT COALESCE(bool_and(f.deposit_info_available), true) AS available FROM reporting.payment_facts f WHERE ${cityScope('f')}`, [cityIds]);
+  const returnedVisible = info[0].available;
   const returned = shape('returned');
   const unconfirmed = shape('unconfirmed');
   const failed = shape('failed');
@@ -116,6 +118,7 @@ export async function paymentOverview(db, { cityIds }) {
   if (unconfirmed.statements > 0) warnings.push(`${plural(unconfirmed.statements, 'payment is', 'payments are')} unconfirmed (${unconfirmed.amount} USD): the request was sent but the result was not confirmed, so it must be checked before it is retried.`);
   if (failed.statements > 0) warnings.push(`${plural(failed.statements, 'payment has', 'payments have')} failed (${failed.amount} USD).`);
   if (returned.statements > 0) warnings.push(`${plural(returned.statements, 'deposit was', 'deposits were')} returned (${returned.amount} USD). A returned deposit is not a successful payment.`);
+  if (!returnedVisible) warnings.push('Returned deposits are NOT visible: the payment view was built before the Everee tables existed. Re-run the claims-and-payments reporting migration after the Everee migrations. Until then a returned deposit would be counted as paid.');
   warnings.push('These are current (as-of) figures from the pay run and payment status records, separate from delivery periods and not month-end balances. Approved is not paid: only the paid bucket means the money landed. Draft runs are shown as pending approval.');
   return {
     data: {
@@ -127,6 +130,7 @@ export async function paymentOverview(db, { cityIds }) {
       unconfirmed,
       failed,
       returned,
+      returnedDepositsVisible: returnedVisible,
       paid: { ...shape('paid'), paidInLast30Days: { statements: bucket('paid').recent_statements, amount: bucket('paid').recent_total } },
       byCity: byCity.map((r) => ({ cityId: r.city_id, name: r.city_name, approvedAwaitingPayment: r.approved, processing: r.processing, failed: r.failed, returned: r.returned })),
       needsAttention: attention.map((r) => ({ statementId: Number(r.statement_id), driver: r.driver_name, city: r.city_name, periodStart: r.period_start, periodEnd: r.period_end, amount: r.net, state: r.state })),

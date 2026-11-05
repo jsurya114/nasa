@@ -24,6 +24,13 @@ Review follow-ups from #224: the reporting connection now verifies the database'
 were allowed by the owner's brief ("driver rankings can include names and cities"); contact, bank, tax and login details are never exposed.
 The consent page now lists everything the connector can read.
 
+Review fixes on #228: the payment view now says whether Everee data was available (`deposit_info_available`) and the payment overview
+warns when returned deposits cannot be seen; the claims-and-payments migration must be re-run after the Everee migrations (stated in
+its header, the setup guide and here, with a test that builds the view without the table). A malformed `start_date` is refused before
+any data check, and that test no longer depends on how much history a database has. The reporting TLS opt-out is logged and refused
+in production. Names and amounts of up to 20 failed, returned or unconfirmed payments are returned by the payment overview, as the
+consent page says.
+
 Not included, on purpose: driver advances, debts and penalty balances (their rules live in the Payroll statement services and are
 intricate; Payroll stays the authority), route-level margin, a delivery success rate (no reliable denominator), a revenue forecast.
 Database: two views, additive. Money calculations in NASA: unchanged; everything only reads.
