@@ -350,7 +350,8 @@ export default function Dashboard() {
         <Header />
 
         <main className="max-w-[1450px] mx-auto p-2 sm:p-4 pb-20 sm:pb-40">
-          <PaymentRuns cities={cities ?? []} onRecorded={refreshAfterPayment} />
+          {/* The payment list is a super admin call on the server; an ordinary admin gets no card, no request and no pay run link. */}
+          {isSuperAdmin && <PaymentRuns cities={cities ?? []} onRecorded={refreshAfterPayment} />}
           <section className="card-surface mb-4">
             <div className="font-bold text-ink bg-brand-50/60 border-b border-line px-4 py-3 flex items-center justify-between">
               <span>Data Filters</span>
