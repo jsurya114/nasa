@@ -78,7 +78,8 @@ falls back to the application's database login.
    read-only login setting already stop that, but also run `REVOKE CREATE ON SCHEMA public FROM PUBLIC;` if your application login owns
    the schema (it keeps its rights). PostgreSQL 15 and newer already refuse it.
 3. Set `REPORTING_DB_HOST`, `REPORTING_DB_NAME`, `REPORTING_DB_USER=nasa_insights_ro`, `REPORTING_DB_PASSWORD` (and `REPORTING_DB_SSL=true`
-   if the database requires TLS), then restart. The log must not say `data tools are off`.
+   if the database requires TLS: the server certificate is then verified; add `REPORTING_DB_SSL_CA` with the database's CA certificate if it is
+   not publicly trusted), then restart. The log must not say `data tools are off`.
 4. Check as that login (for example with `psql`): `SELECT count(*) FROM reporting.delivery_facts;` works, and `SELECT 1 FROM drivers;`,
    `SELECT 1 FROM admin;` and any `INSERT`, `UPDATE` or `DELETE` are refused.
 5. Rotate the password with `ALTER ROLE nasa_insights_ro PASSWORD '...'` and a restart. To switch the data tools off, remove

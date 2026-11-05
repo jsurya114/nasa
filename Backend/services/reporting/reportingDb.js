@@ -4,7 +4,9 @@
  * database login: without its own REPORTING_DB_* settings, reporting is simply off.
  *
  *   REPORTING_DB_HOST, REPORTING_DB_NAME, REPORTING_DB_USER, REPORTING_DB_PASSWORD   all required
- *   REPORTING_DB_PORT (default 5432), REPORTING_DB_SSL ("true" to use TLS), REPORTING_DB_POOL_MAX (1 to 5, default 3),
+ *   REPORTING_DB_PORT (default 5432), REPORTING_DB_SSL ("true" to use TLS and verify the server certificate),
+ *   REPORTING_DB_SSL_CA (the database's CA certificate in PEM text, when it is not publicly trusted),
+ *   REPORTING_DB_SSL_VERIFY ("false" only if the certificate cannot be verified; not recommended), REPORTING_DB_POOL_MAX (1 to 5, default 3),
  *   REPORTING_DB_TIMEOUT_MS (query time limit, 1000 to 30000, default 10000)
  *
  * Every report runs in a READ ONLY transaction with a statement time limit, on a small pool, so reporting cannot slow payroll
@@ -31,7 +33,10 @@ export function createReportingDb(env = process.env, { Pool = pg.Pool, Client = 
     database: env.REPORTING_DB_NAME,
     user: env.REPORTING_DB_USER,
     password: env.REPORTING_DB_PASSWORD,
-    ssl: env.REPORTING_DB_SSL === 'true' ? { rejectUnauthorized: false } : undefined,
+    // TLS checks the server's certificate by default. Switching the check off must be asked for by name (and is logged).
+    ssl: env.REPORTING_DB_SSL === 'true'
+      ? { rejectUnauthorized: env.REPORTING_DB_SSL_VERIFY !== 'false', ...(env.REPORTING_DB_SSL_CA ? { ca: env.REPORTING_DB_SSL_CA } : {}) }
+      : undefined,
     connectionTimeoutMillis: 5000,
     application_name: 'nasa_insights',
     options: `-c default_transaction_read_only=on -c statement_timeout=${timeoutMs} -c idle_in_transaction_session_timeout=15000`,

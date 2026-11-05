@@ -64,6 +64,21 @@ test('the reporting connection is off without its own settings and refuses the a
   assert.equal(borrowed.enabled, false);
 });
 
+test('TLS to the reporting database verifies the certificate unless that is switched off by name', () => {
+  const seen = [];
+  class FakePool { constructor(config) { seen.push(config); } on() {} }
+  const base = { REPORTING_DB_HOST: 'h', REPORTING_DB_NAME: 'n', REPORTING_DB_USER: 'ro', REPORTING_DB_PASSWORD: 'p' };
+  createReportingDb(base, { Pool: FakePool });
+  createReportingDb({ ...base, REPORTING_DB_SSL: 'true' }, { Pool: FakePool });
+  createReportingDb({ ...base, REPORTING_DB_SSL: 'true', REPORTING_DB_SSL_CA: 'PEM' }, { Pool: FakePool });
+  createReportingDb({ ...base, REPORTING_DB_SSL: 'true', REPORTING_DB_SSL_VERIFY: 'false' }, { Pool: FakePool });
+  assert.equal(seen[0].ssl, undefined, 'no TLS unless asked');
+  assert.deepEqual(seen[1].ssl, { rejectUnauthorized: true }, 'verified by default');
+  assert.deepEqual(seen[2].ssl, { rejectUnauthorized: true, ca: 'PEM' });
+  assert.deepEqual(seen[3].ssl, { rejectUnauthorized: false });
+  assert.match(seen[1].options, /default_transaction_read_only=on/);
+});
+
 // ---------- the database: a disposable PostgreSQL copy with the app's tables and both reporting migrations (never production) ----------
 // MCP_TEST_DB=1, DB_* (owner), and REPORTING_DB_* (the read-only login). All data is made up and removed or rolled back.
 const hasDb = process.env.MCP_TEST_DB === '1';

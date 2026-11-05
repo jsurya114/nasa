@@ -19,6 +19,11 @@ Completes the tool set the client needs for a conversation about the business.
   with at least 20 backtest points; `insufficient_data` with a reason when history cannot support it; labelled an estimate.
 - Update the metric definitions (driver ranking, trend, forecast) and the setup guide.
 
+Review follow-ups from #224: the reporting connection now verifies the database's TLS certificate by default (`REPORTING_DB_SSL=true`;
+`REPORTING_DB_SSL_CA` for a private CA; switching it off needs `REPORTING_DB_SSL_VERIFY=false`, by name). Driver names in `rank_drivers`
+were allowed by the owner's brief ("driver rankings can include names and cities"); contact, bank, tax and login details are never exposed.
+The consent page now lists everything the connector can read.
+
 Not included, on purpose: driver advances, debts and penalty balances (their rules live in the Payroll statement services and are
 intricate; Payroll stays the authority), route-level margin, a delivery success rate (no reliable denominator), a revenue forecast.
 Database: two views, additive. Money calculations in NASA: unchanged; everything only reads.
