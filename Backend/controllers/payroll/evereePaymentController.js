@@ -8,6 +8,7 @@ import {
   getBatchView, getCitySettings, listRunBatches, PreviewChangedError, retryBatch, setCitySettings, submitBatch,
 } from '../../services/payments/everee/batchSubmit.js';
 import { checkBatch } from '../../services/payments/everee/paymentStatus.js';
+import { statementIdList } from './statementIdList.js';
 
 const id = (value) => (/^\d{1,12}$/.test(String(value ?? '')) && Number(value) > 0 ? Number(value) : null);
 
@@ -35,6 +36,7 @@ const need = (value, message) => {
 
 export const postBatch = run('submit', (req) => submitBatch(pool, req.admin, {
   runId: need(id(req.params.runId), 'unknown pay run'), requestId: req.body?.requestId, previewHash: req.body?.previewHash,
+  statementIds: statementIdList(req.body?.statementIds),
 }));
 export const getRunBatches = run('list', (req) => listRunBatches(pool, req.admin, need(id(req.params.runId), 'unknown pay run')));
 export const getBatch = run('read', (req) => getBatchView(pool, req.admin, need(id(req.params.batchId), 'unknown payment batch')));

@@ -305,8 +305,8 @@ const sendBatch = async (db, batchId, itemIds, deps, client) => {
 
 const clientFor = (config, deps) => deps.client ?? createEvereeClient(config);
 
-// requestId: made by the confirm click. previewHash: what the admin saw (from the preview endpoint).
-export const submitBatch = async (db, admin, { runId, requestId, previewHash }, deps = {}) => {
+// requestId: made by the confirm click. previewHash: what the admin saw (from the preview endpoint). statementIds: the drivers chosen, if not the whole run.
+export const submitBatch = async (db, admin, { runId, requestId, previewHash, statementIds }, deps = {}) => {
   requireSuperAdmin(admin);
   if (typeof requestId !== 'string' || !UUID.test(requestId)) throw new PayrollError(400, 'requestId must be a UUID made by the confirm click');
   if (typeof previewHash !== 'string' || !/^[0-9a-f]{64}$/.test(previewHash)) throw new PayrollError(400, 'previewHash must be the hash of the preview that was confirmed');
@@ -327,7 +327,7 @@ export const submitBatch = async (db, admin, { runId, requestId, previewHash }, 
       return { replay: true, batchId: prior.id, itemIds: [] };
     }
 
-    const { result, items, config, gate } = await computePreview(tx, admin, runId, { env });
+    const { result, items, config, gate } = await computePreview(tx, admin, runId, { env, statementIds });
     if (!gate.enabled) throw new PayrollError(409, `payments to Everee cannot be sent: ${gate.reason}`);
     const blocker = result.batchBlockers.find((b) => b.code !== 'payments_off');
     if (blocker) throw new PayrollError(409, blocker.message);

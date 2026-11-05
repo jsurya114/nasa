@@ -318,6 +318,24 @@ test('everee submit: reserve, send, payout request, replay, partial failure, ret
       await assert.rejects(submit(run.run, makeEveree().client, { who: cityAdmin }), { status: 403 }, 'a city admin still cannot');
     });
 
+    await t.test('only the chosen drivers are previewed and sent; a statement of another run is refused', async () => {
+      const run = await scenario('X1', [[dA, '10.00'], [dB, '11.00'], [dC, '12.00']]);
+      const other = await scenario('X2', [[dA, '5.00']]);
+      const [sa, sb] = [(await statement(run.run, dA)).id, (await statement(run.run, dB)).id];
+      const everyone = await previewEvereeBatch(db, sup1, run.run.id, { env: ARMED });
+      const some = await previewEvereeBatch(db, sup1, run.run.id, { env: ARMED, statementIds: [sa, sb] });
+      assert.deepEqual([everyone.summary.drivers, some.summary.drivers, some.summary.eligible, some.summary.total], [3, 2, 2, '21.00']);
+      assert.notEqual(some.previewHash, everyone.previewHash, 'the hash covers only what is paid');
+      await assert.rejects(previewEvereeBatch(db, sup1, run.run.id, { env: ARMED, statementIds: [sa, (await statement(other.run, dA)).id] }), { status: 400 });
+      await assert.rejects(previewEvereeBatch(db, sup1, run.run.id, { env: ARMED, statementIds: [] }), { status: 400 });
+      const fake = makeEveree();
+      const batch = await submitBatch(db, sup1, { runId: run.run.id, requestId: randomUUID(), previewHash: some.previewHash, statementIds: [sa, sb] }, deps(fake.client));
+      assert.deepEqual([batch.batch.drivers, batch.batch.total], [2, '21.00']);
+      assert.deepEqual(fake.state.creates.map((c) => c.workerId).sort(), ['EW-A', 'EW-B'], 'the driver who was not chosen is not sent');
+      assert.equal((await statement(run.run, dC)).payout_status, 'not_submitted');
+      await assert.rejects(submitBatch(db, sup1, { runId: run.run.id, requestId: randomUUID(), previewHash: everyone.previewHash }, deps(makeEveree().client)), (error) => error instanceof PreviewChangedError, 'a hash for the whole run does not fit the chosen drivers');
+    });
+
     await t.test('a rate limit is waited out and repeated (it means Everee did not run the request); one that never clears is "failed", not "unconfirmed"', async () => {
       const run = await scenario('L', [[dA, '10.00'], [dB, '11.00']]);
       sleeps.length = 0;

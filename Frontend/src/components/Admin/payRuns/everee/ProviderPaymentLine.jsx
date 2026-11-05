@@ -1,8 +1,8 @@
 import React from "react";
 
 const STATUS_TEXT = Object.freeze({
-  paid: "Paid through Everee",
-  submitted: "Sent to Everee, waiting for the deposit",
+  paid: "Transaction successful",
+  submitted: "Submitted to Everee",
   unconfirmed: "Unconfirmed at Everee",
   failed: "Not sent to Everee",
 });
