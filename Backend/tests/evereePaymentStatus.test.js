@@ -508,6 +508,21 @@ test('everee payment status: only a payment that landed marks a statement paid',
       assert.match((await item(scD, dA)).check_note, /did not say its pay date/);
       assert.equal((await stmt(scD, dA)).payout_status, 'submitted');
     });
+
+    await t.test('Everee gives the payment ID as a number in its payable answer: the payment is linked through the payable (not only through an event) and read', async () => {
+      const scN = await scenario('NI', [[dA, '10.00']]);
+      const fakeN = makeEveree();
+      await sent(scN, fakeN);
+      const iN = await item(scN, dA);
+      fakeN.state.payables[iN.external_id] = { externalId: iN.external_id, paymentStatus: 'PENDING_PAYMENT', paymentId: 12345678 };
+      // the payment exists at Everee but its payout is not settled: linked, still not paid
+      fakeN.state.payments['12345678'] = { workerId: workers[dA], status: 'PAID', netPayouts: [{ id: 'po', status: 'PENDING', netAmount: { amount: '10.00', currency: 'USD' } }] };
+      assert.equal(await check(fakeN, iN.id), 'pending');
+      const after = await item(scN, dA);
+      assert.deepEqual([after.everee_payment_id, after.payment_link, after.status], ['12345678', 'payable', 'submitted']);
+      fakeN.state.payments['12345678'].netPayouts[0].status = 'PAID';
+      assert.equal(await check(fakeN, iN.id), 'paid');
+    });
   } finally {
     await db.query('ROLLBACK');
     db.release();

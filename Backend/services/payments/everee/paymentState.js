@@ -10,12 +10,18 @@ const DATE_TEXT = /^\d{4}-\d{2}-\d{2}$/;
 
 export const isPaymentId = (value) => typeof value === 'string' && ID_TEXT.test(value);
 
+// Everee's payment ID is a number in its payable answer (and a string in its events and its Payment Data API); both are the same ID, kept as text.
+const paymentIdOf = (raw) => {
+  if (typeof raw === 'number') return Number.isSafeInteger(raw) && raw > 0 ? String(raw) : null;
+  return typeof raw === 'string' && ID_TEXT.test(raw) ? raw : null;
+};
+
 // The payment a payable belongs to, from Everee's answer for the payable: { paymentStatus, paymentId } (either may be null).
 export const readPayable = (data) => {
   const o = data && typeof data === 'object' && !Array.isArray(data) ? data : {};
   return {
     paymentStatus: typeof o.paymentStatus === 'string' ? o.paymentStatus.slice(0, 40) : null,
-    paymentId: typeof o.paymentId === 'string' && ID_TEXT.test(o.paymentId) ? o.paymentId : null,
+    paymentId: paymentIdOf(o.paymentId),
   };
 };
 

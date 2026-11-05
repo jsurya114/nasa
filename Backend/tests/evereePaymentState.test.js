@@ -32,3 +32,10 @@ test('a payable answer gives only a status and a safe payment ID', () => {
   assert.deepEqual(readPayable({ paymentStatus: 5, paymentId: 'bad id!' }), { paymentStatus: null, paymentId: null });
   assert.deepEqual(readPayable(null), { paymentStatus: null, paymentId: null });
 });
+
+test('the payment ID in Everee\'s payable answer is a number (the real answer): it is read as the same ID as text, and only a safe whole number counts', () => {
+  assert.deepEqual(readPayable({ paymentStatus: 'PENDING_PAYMENT', paymentId: 29684488 }), { paymentStatus: 'PENDING_PAYMENT', paymentId: '29684488' });
+  for (const bad of [0, -5, 1.5, NaN, Infinity, 2 ** 60, true, {}, [], 'bad id!', '']) {
+    assert.equal(readPayable({ paymentId: bad }).paymentId, null, `not an ID: ${String(bad)}`);
+  }
+});
