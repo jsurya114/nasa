@@ -68,8 +68,8 @@ test('everee submit: reserve, send, payout request, replay, partial failure, ret
 
     const tag = randomUUID();
     const admin = async (role, n) => one("INSERT INTO admin (password, name, email, role) VALUES ('x', $1, $2, $3) RETURNING id, role", [`Test ${n} ${tag}`, `${n}${tag}@example.com`, role]);
-    const sup1 = await admin('superadmin', 'one'); // finalizes the runs
-    const sup2 = await admin('superadmin', 'two'); // confirms the payments
+    const sup1 = await admin('superadmin', 'one'); // the owner: finalizes the runs, and may also confirm and retry them
+    const sup2 = await admin('superadmin', 'two'); // a second super admin; allowed, but never required
     const cityAdmin = await admin('admin', 'city');
     const [dA, dB, dC, dD, dE] = (await db.query('SELECT id FROM drivers ORDER BY id LIMIT 5')).rows.map((r) => r.id);
     const workers = { [dA]: 'EW-A', [dB]: 'EW-B', [dC]: 'EW-C', [dD]: 'EW-D', [dE]: 'EW-E' };
@@ -107,13 +107,12 @@ test('everee submit: reserve, send, payout request, replay, partial failure, ret
 
     const happy = await scenario('H', [[dA, '100.00'], [dB, '50.00']]);
 
-    await t.test('nothing is sent without the switch, a real super admin who did not finalize, a valid confirmation and an unchanged preview', async () => {
+    await t.test('nothing is sent without the switch, a real super admin, a valid confirmation and an unchanged preview', async () => {
       const fake = makeEveree();
       const hash = await hashOf(happy.run);
       const before = await counts();
       await assert.rejects(submit(happy.run, fake.client, { previewHash: hash, extra: { env: SANDBOX } }), { status: 409, message: /switched off/ });
       await assert.rejects(submit(happy.run, fake.client, { previewHash: hash, who: cityAdmin }), { status: 403 });
-      await assert.rejects(submit(happy.run, fake.client, { previewHash: hash, who: sup1 }), { status: 403, message: /finalized this run/ });
       await assert.rejects(submit(happy.run, fake.client, { previewHash: hash, requestId: 'not-a-uuid' }), { status: 400 });
       await assert.rejects(submit(happy.run, fake.client, { previewHash: 'abc' }), { status: 400 });
       await assert.rejects(submit(happy.run, fake.client, { previewHash: '0'.repeat(64) }), (error) => {
@@ -254,7 +253,6 @@ test('everee submit: reserve, send, payout request, replay, partial failure, ret
       assert.equal(view.counts.failed, 2);
       await db.query("UPDATE everee_workers SET terminated = false WHERE driver_id = $1 AND environment = 'sandbox'", [dB]);
       await assert.rejects(retryBatch(db, cityAdmin, batch.batch.id, deps(retry.client)), { status: 403 });
-      await assert.rejects(retryBatch(db, sup1, batch.batch.id, deps(retry.client)), { status: 403, message: /finalized this run/ });
       await assert.rejects(retryBatch(db, sup2, batch.batch.id, deps(retry.client, { env: SANDBOX })), { status: 409, message: /switched off/ });
     });
 
@@ -304,6 +302,20 @@ test('everee submit: reserve, send, payout request, replay, partial failure, ret
       const none = makeEveree();
       await assert.rejects(retryBatch(db, sup2, batch2.batch.id, deps(none.client)), { status: 409, message: /not finalized/ });
       assert.deepEqual(none.state.creates, []);
+    });
+
+    await t.test('one super admin does it all: finalizes the run, previews, confirms, and retries a failure; both roles are recorded', async () => {
+      const run = await scenario('O', [[dA, '10.00'], [dB, '11.00']]);
+      const hash = (await previewEvereeBatch(db, sup1, run.run.id, { env: ARMED })).previewHash;
+      const batch = await submit(run.run, makeEveree({ 'EW-A': 'refuse' }).client, { who: sup1, previewHash: hash });
+      assert.deepEqual([batch.counts.submitted, batch.counts.failed], [1, 1]);
+      const roles = await one('SELECT r.finalized_by, b.created_by FROM pay_runs r JOIN everee_payment_batches b ON b.pay_run_id = r.id WHERE b.id = $1', [batch.batch.id]);
+      assert.deepEqual([roles.finalized_by, roles.created_by], [sup1.id, sup1.id], 'the finalizer and the payment actor are both recorded, even when equal');
+      const retry = makeEveree();
+      const view = await retryBatch(db, sup1, batch.batch.id, deps(retry.client));
+      assert.equal(view.counts.failed, 0, 'the same super admin retries the definite failure');
+      assert.equal(retry.state.creates.length, 1, 'only the refused payable is sent again');
+      await assert.rejects(submit(run.run, makeEveree().client, { who: cityAdmin }), { status: 403 }, 'a city admin still cannot');
     });
 
     await t.test('a rate limit is waited out and repeated (it means Everee did not run the request); one that never clears is "failed", not "unconfirmed"', async () => {

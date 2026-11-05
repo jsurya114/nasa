@@ -134,9 +134,12 @@ test('everee batch preview: who can be paid and why not, one hash for what would
       assert.equal(none.canSubmit, false);
     });
 
-    await t.test('the person who finalized the run may not confirm it; another super admin may', async () => {
-      assert.deepEqual((await preview(sup1, main.id, ARMED)).confirm, { allowed: false, reason: 'you finalized this run; another super admin has to confirm the payment' });
-      assert.deepEqual((await preview(sup2, main.id, ARMED)).confirm, { allowed: true, reason: null });
+    await t.test('the super admin who finalized the run may preview it too; the preview carries no confirmer rule', async () => {
+      const own = await preview(sup1, main.id, ARMED);
+      assert.equal('confirm' in own, false);
+      assert.equal(own.canSubmit, true);
+      assert.equal(own.previewHash, (await preview(sup2, main.id, ARMED)).previewHash, 'the same for whoever looks');
+      await assert.rejects(preview(cityAdmin, main.id, ARMED), { status: 403 });
     });
 
     await t.test('the hash is the same until what would be paid changes: a driver, an amount or an Everee worker', async () => {

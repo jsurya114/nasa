@@ -15,7 +15,9 @@ import { driverIssues, readyToPay } from './workerRules.js';
 //   block: net below zero, a payment already submitted or unconfirmed, the run not finalized, the driver not linked to an Everee worker, or
 //          the worker not ready (onboarding incomplete, tax ID check failed, or left); also a net of exactly zero (nothing to pay).
 //   warn (do not block): claims still waiting in the city; earlier failed attempts; the statement's own flags.
-//   only a super admin confirms, and not the person who finalized the run.
+//   only a super admin confirms. There is one super admin (the NASA owner), so the same person may approve the run, preview it, confirm the
+//   payment and retry a failure. The run's finalizer (pay_runs.finalized_by) and the payment's actor (everee_payment_batches.created_by) are
+//   both recorded, even when they are the same person.
 // `previewHash` fingerprints exactly what would be paid. The confirming step sends it back; if anything changed the server answers 409
 // and shows a new preview.
 
@@ -55,7 +57,6 @@ export const computePreview = async (db, admin, runId, { env = process.env } = {
   const config = readEvereeConfig(env);
   const gate = paymentsGate(config, env);
 
-  const { rows: [meta] } = await db.query('SELECT finalized_by FROM pay_runs WHERE id = $1', [runId]);
   const driverIds = review.drivers.map((d) => d.driverId);
   const [{ rows: links }, { rows: people }] = await Promise.all([
     config.configured
@@ -111,11 +112,6 @@ export const computePreview = async (db, admin, runId, { env = process.env } = {
     batchBlockers.push({ code: 'city_settings_missing', message: 'this city has no Everee time zone and work location set; a live payment needs both' });
   }
 
-  const finalizedBy = meta?.finalized_by ?? null;
-  const confirm = finalizedBy !== null && Number(finalizedBy) === Number(admin.id)
-    ? { allowed: false, reason: 'you finalized this run; another super admin has to confirm the payment' }
-    : { allowed: true, reason: null };
-
   const previewHash = config.configured
     ? previewHashOf({
       runId, environment: config.environment,
@@ -140,7 +136,6 @@ export const computePreview = async (db, admin, runId, { env = process.env } = {
     batchBlockers,
     canSubmit: batchBlockers.length === 0,
     citySettings: settings,
-    confirm,
     previewHash,
   };
   // What the submit step sends, taken from the same facts as the preview (and the same hash).
