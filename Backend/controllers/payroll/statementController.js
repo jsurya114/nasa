@@ -78,5 +78,15 @@ export const getDriverDashboardSummary = async (req, res) => {
   const cityId = id(req.query.cityId);
   if (!driverId) return badRequest(res, 'unknown driver');
   if (!cityId) return badRequest(res, 'choose a city');
-  return send('summary', () => getDriverPeriodSummary(pool, req.admin, { driverId, cityId, from: String(req.query.from ?? ''), to: String(req.query.to ?? '') }))(req, res);
+  // The Dashboard's Payment status filter, so figures for unpaid runs are not shown over a table of paid history: "Paid", "Pending" or "All".
+  const status = String(req.query.paymentStatus ?? 'All').toLowerCase();
+  if (!['all', 'paid', 'pending'].includes(status)) return badRequest(res, 'paymentStatus must be Paid, Pending or All');
+  const paymentStatus = status === 'all' ? null : status;
+  // The Route filter (a route name) and the View tab (all, daily or weekly) the table is built with: the same reason, so a run's figures are
+  // not shown over a table that holds only some of its rows.
+  const route = typeof req.query.route === 'string' && req.query.route.trim() !== '' && req.query.route !== 'All' ? req.query.route.trim() : null;
+  const tab = String(req.query.dataType ?? 'all').toLowerCase();
+  if (!['all', 'daily', 'weekly'].includes(tab)) return badRequest(res, 'dataType must be all, daily or weekly');
+  if (route && route.length > 120) return badRequest(res, 'route must be a route name');
+  return send('summary', () => getDriverPeriodSummary(pool, req.admin, { driverId, cityId, from: String(req.query.from ?? ''), to: String(req.query.to ?? ''), paymentStatus, route, dataType: tab === 'all' ? null : tab }))(req, res);
 };

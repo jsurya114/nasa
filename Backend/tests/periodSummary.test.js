@@ -217,18 +217,16 @@ test('dashboard period summary: this payday, approved or preview, and what is st
       assert.deepEqual([estimate.claimDeductions, estimate.recoveries, estimate.deducted], [total('claim_deductions'), total('recoveries'), (Number(total('claim_deductions')) + Number(total('recoveries'))).toFixed(2)],
         'the estimate takes exactly what the two drafts took, not the instalment and the claim twice');
       assert.equal(estimate.net, total('net'), 'and its net is the calculator\'s own net, with the reimbursement in it');
-      // The same driver without dates: the estimate was worked out before the runs above, so it is gone now; ask again on a fresh
-      // driver below. Here the rows are on live statements, so nothing is eligible.
-      const after = (await getDriverPeriodSummary(db, superAdmin, { driverId: d2, cityId: city2 })).payday;
-      assert.deepEqual([after.source, after.deducted, after.net], ['estimate', '0.00', null]);
+      // Without dates the run's own figures replace "nothing can be taken" only when the run holds every pay row the driver has. A seeded driver may
+      // have unrelated historical rows, so that is checked with fresh drivers below (the two-route, Paid / Pending and approved-run cases), not here.
     });
 
     // A clean city, route and driver for a scenario of its own (the drivers above are used up). Weekly pay rows have no sequence numbers.
     let scenario = 0;
-    const freshScenario = async () => {
+    const freshScenario = async (cityType = 'DAILY') => {
       scenario += 1;
       const name = `Test Sum Scenario ${scenario}`;
-      const c = (await one("INSERT INTO city (job, city_code, city_type) VALUES ($1, $2, 'DAILY') RETURNING id", [name, `TSS${scenario}`])).id;
+      const c = (await one("INSERT INTO city (job, city_code, city_type) VALUES ($1, $2, $3) RETURNING id", [name, `TSS${scenario}`, cityType])).id;
       const r = (await one(`INSERT INTO routes (name, job, company_route_price, driver_route_price, company_doublestop_price, driver_doublestop_price, route_code_in_string)
         VALUES ($1, $2, 2, 1.6, 0.5, 0.25, $3) RETURNING id`, [`TS ${scenario}`, name, `TS-${scenario}`])).id;
       const tag = randomUUID();
@@ -279,7 +277,7 @@ test('dashboard period summary: this payday, approved or preview, and what is st
     });
 
     await t.test('with no dates, an instalment taken for an earlier period does not hold back this period\'s (relative to today, against the real draft)', async () => {
-      const sc = await freshScenario();
+      const sc = await freshScenario('WEEKLY');
       await sc.penalty({ amount: '300', recoveryPlan: 'installments', installmentAmount: '50' });
       const earlierDay = await sc.day(-14);
       const today = await sc.day(0);
@@ -298,7 +296,113 @@ test('dashboard period summary: this payday, approved or preview, and what is st
       assert.deepEqual([real.statements[0].recoveries, real.statements[0].net], ['50.00', '50.00'], 'and the same as the real following draft');
       // the once-per-overlapping-period protection is kept: with that draft in place the same work cannot be taken twice
       const again = await sc.estimate();
-      assert.deepEqual([again.deducted, again.net], ['0.00', null]);
+      // nothing is estimated twice; what the Dashboard shows now is what the two runs that hold all the pay took (50 each)
+      assert.deepEqual([again.source, again.deducted, again.net], ['draft', '100.00', '100.00']);
+    });
+
+    await t.test('with no dates, pay already on an approved run still shows what that run took; a record added later shows as owed; once paid it is history', async () => {
+      const sc = await freshScenario('WEEKLY');
+      await sc.penalty({ amount: '300', recoveryPlan: 'installments', installmentAmount: '50' });
+      const today = await sc.day(0);
+      await sc.row(today, '100.00');
+      const before = await sc.estimate();
+      assert.deepEqual([before.source, before.deducted], ['estimate', '50.00']);
+      const made = await sc.draft(await sc.day(-6), today, 'weekly');
+      await finalizeRun(db, superAdmin, made.run.id);
+      // all the pay is on the approved run now: the Dashboard still shows its deduction and net, not "nothing can be taken"
+      const onRun = await sc.estimate();
+      assert.deepEqual([onRun.source, onRun.deducted, onRun.net, onRun.flags], ['approved', '50.00', made.statements[0].net, []]);
+      // a record added after the run is owed, but it comes off a later payday: this payday's figure does not move, what is owed does
+      await sc.penalty({ amount: '20', recoveryPlan: 'full_next_payday' });
+      const added = await sc.estimate();
+      assert.deepEqual([added.source, added.deducted], ['approved', '50.00']);
+      const owed = (await getDriverPeriodSummary(db, superAdmin, { driverId: sc.d, cityId: sc.c })).outstanding;
+      assert.equal(owed.penalties, '270.00', '300 less the 50 the run took, plus the new 20');
+      // once the statement is paid it is history: nothing is left to take this payday
+      await db.query("UPDATE pay_statements SET paid_at = now(), payout_status = 'paid' WHERE id = $1", [made.statements[0].id]);
+      const paid = await sc.estimate();
+      assert.deepEqual([paid.source, paid.deducted], ['estimate', '0.00']);
+    });
+
+    await t.test('with no dates, an unpaid run stands in for the table only when the table shows exactly the rows that run holds (Paid, Pending and All)', async () => {
+      const sc = await freshScenario('WEEKLY');
+      const earlier = await sc.day(-14);
+      const today = await sc.day(0);
+      // paid history: $200 earned two weeks ago, on a finalized run that is already paid
+      await sc.row(earlier, '200.00');
+      const paidRun = await sc.draft(await sc.day(-20), earlier, 'weekly');
+      await finalizeRun(db, superAdmin, paidRun.run.id);
+      await db.query("UPDATE pay_statements SET paid_at = now(), payout_status = 'paid' WHERE pay_run_id = $1", [paidRun.run.id]);
+      await db.query('UPDATE payment_dashboard SET paid = true, payment_date = CURRENT_DATE WHERE driver_id = $1 AND journey_date = $2', [sc.d, earlier]);
+      // then a separate approved run, not yet paid: $100 earned, a $40 penalty taken, net $60
+      await sc.penalty({ amount: '40', recoveryPlan: 'full_next_payday' });
+      await sc.row(today, '100.00');
+      const open = await sc.draft(await sc.day(-6), today, 'weekly');
+      await finalizeRun(db, superAdmin, open.run.id);
+      assert.equal(open.statements[0].net, '60.00');
+      const ask = async (paymentStatus) => (await getDriverPeriodSummary(db, superAdmin, { driverId: sc.d, cityId: sc.c, ...(paymentStatus && { paymentStatus }) })).payday;
+      // a table of paid history only: the unpaid run's figures must not replace its net (the regression found in review)
+      const paid = await ask('paid');
+      assert.deepEqual([paid.source, paid.deducted, paid.net], ['estimate', '0.00', null]);
+      // a table of the unpaid rows only: those are exactly the rows the run holds, so its own figures are shown
+      const pending = await ask('pending');
+      assert.deepEqual([pending.source, pending.deducted, pending.net, pending.flags], ['approved', '40.00', '60.00', []]);
+      // paid and unpaid rows together: the run does not describe the whole table, so it is not shown as the table's net
+      const all = await ask(null);
+      assert.deepEqual([all.source, all.deducted, all.net], ['estimate', '0.00', null]);
+      await assert.rejects(ask('everything'), { status: 400 });
+    });
+
+    await t.test('with no dates, a run stands in for the table only when the table shows ALL its rows: a single route, or the other tab, keeps its own net (review of #219)', async () => {
+      const sc = await freshScenario('WEEKLY');
+      const today = await sc.day(0);
+      const yesterday = await sc.day(-1);
+      // one driver, two routes in the same weekly city: Route A $100 and Route B $200, one run, a $40 penalty taken, net $260
+      await sc.penalty({ amount: '40', recoveryPlan: 'full_next_payday' });
+      await sc.row(today, '100.00');
+      const job = (await one('SELECT job FROM city WHERE id = $1', [sc.c])).job;
+      const routeB = (await one(`INSERT INTO routes (name, job, company_route_price, driver_route_price, company_doublestop_price, driver_doublestop_price, route_code_in_string)
+        VALUES ($1, $2, 2, 1.6, 0.5, 0.25, $3) RETURNING id`, [`Route B of ${job}`, job, `RB-${sc.c}`])).id;
+      const dd = (await one('INSERT INTO dashboard_data (driver_id, route_id, start_seq, end_seq, journey_date, packages) VALUES ($1,$2,0,0,$3,10) RETURNING id', [sc.d, routeB, yesterday])).id;
+      await one('UPDATE payment_dashboard SET closed = true, paid = false, driver_payment = 200, insurance_deduction = 0 WHERE dashboard_data_id = $1 RETURNING id', [dd]);
+      const names = (await db.query(`SELECT rt.name FROM payment_dashboard p JOIN routes rt ON rt.id = p.route_id WHERE p.driver_id = $1 ORDER BY p.journey_date DESC`, [sc.d])).rows.map((r) => r.name);
+      const [routeA, routeBName] = names;
+      const run = await sc.draft(await sc.day(-6), today, 'weekly');
+      await finalizeRun(db, superAdmin, run.run.id);
+      assert.equal(run.statements[0].net, '260.00');
+      const ask = async (o = {}) => (await getDriverPeriodSummary(db, superAdmin, { driverId: sc.d, cityId: sc.c, paymentStatus: 'pending', ...o })).payday;
+      // both routes together (the whole run): the run's own figures
+      assert.deepEqual([(await ask()).source, (await ask()).deducted, (await ask()).net], ['approved', '40.00', '260.00']);
+      // each route on its own shows only part of the run's rows: the frozen run net must not be shown over it, nor the deduction spread over routes
+      for (const route of [routeA, routeBName]) {
+        const one = await ask({ route });
+        assert.deepEqual([one.source, one.deducted, one.net], ['estimate', '0.00', null], `route ${route}`);
+      }
+      // the daily tab holds none of these weekly rows; the weekly tab holds all of them
+      const daily = await ask({ dataType: 'daily' });
+      assert.deepEqual([daily.source, daily.net], ['estimate', null]);
+      const weekly = await ask({ dataType: 'weekly' });
+      assert.deepEqual([weekly.source, weekly.net], ['approved', '260.00']);
+      await assert.rejects(ask({ dataType: 'monthly' }), { status: 400 });
+      await assert.rejects(ask({ route: '' }), { status: 400 });
+    });
+
+    await t.test('with no dates, the table\'s own city-type rule decides which rows it shows: a DAILY city\'s table leaves out weekly rows, so the runs holding them do not replace its net (review of #219)', async () => {
+      const sc = await freshScenario('DAILY');
+      const today = await sc.day(0);
+      // a DAILY city with a daily pay row ($100) and a weekly one ($100), each on its own draft run: the two drafts together hold both rows
+      await sc.row(today, '100.00', { weekly: false });
+      await sc.row(await sc.day(-1), '100.00', { weekly: true });
+      const daily = await sc.draft(await sc.day(-6), today, 'daily');
+      const weekly = await sc.draft(await sc.day(-6), today, 'weekly');
+      assert.equal(Number(daily.statements[0].net) + Number(weekly.statements[0].net) > 100, true, 'the two drafts net more than the daily row alone');
+      const ask = async (o = {}) => (await getDriverPeriodSummary(db, superAdmin, { driverId: sc.d, cityId: sc.c, paymentStatus: 'pending', ...o })).payday;
+      // the real table of a DAILY city shows only the daily row (both sequence numbers non-zero), on every tab: it does not show what the weekly draft holds
+      for (const o of [{}, { dataType: 'daily' }, { dataType: 'weekly' }]) {
+        const got = await ask(o);
+        assert.equal(got.source, 'estimate', `tab ${o.dataType ?? 'all'}: the runs are not the table's rows`);
+        assert.equal(got.net, null);
+      }
     });
 
     await t.test('a penalty entered after the week the pay is for is still taken (no dates), the same as the real draft that ends today', async () => {
