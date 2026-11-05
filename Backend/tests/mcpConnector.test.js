@@ -173,11 +173,15 @@ test('sign-in, tokens and every tool call, end to end', { skip: !hasDb && 'set M
       assert.deepEqual(as.scopes_supported, [MCP_SCOPE]);
     });
 
-    await t.test('client registration accepts only Claude\'s exact redirect URL and only public clients', async () => {
+    await t.test('client registration accepts only Claude\'s exact redirect URL and always registers a public client', async () => {
       assert.equal((await register(['https://evil.example/cb'])).res.status, 400);
       assert.equal((await register([CLAUDE_REDIRECT_URI, 'https://evil.example/cb'])).res.status, 400);
       assert.equal((await register(['http://localhost:3118/callback'])).res.status, 400, 'loopback is off by default');
-      assert.equal((await register([CLAUDE_REDIRECT_URI], { token_endpoint_auth_method: 'client_secret_post' })).res.status, 400);
+      // Claude registers asking for client_secret_post (seen from a real Claude request). It is registered as a public client, with no secret.
+      const asClaude = await register([CLAUDE_REDIRECT_URI], { token_endpoint_auth_method: 'client_secret_post', scope: MCP_SCOPE, application_type: 'web' });
+      assert.equal(asClaude.res.status, 201);
+      assert.equal(asClaude.body.token_endpoint_auth_method, 'none');
+      assert.equal(asClaude.body.client_secret, undefined);
       const ok = await register([CLAUDE_REDIRECT_URI]);
       assert.equal(ok.res.status, 201);
       assert.equal(ok.body.token_endpoint_auth_method, 'none');

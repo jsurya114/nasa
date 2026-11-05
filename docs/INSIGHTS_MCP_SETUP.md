@@ -11,15 +11,15 @@ signs the owner in and offers one tool, `get_metric_definitions`. Business-data 
 | Protocol revision served | 2025-11-25 (the SDK also accepts 2025-06-18 and 2025-03-26) |
 | Transport | Streamable HTTP, stateless, JSON replies. `GET` and `DELETE` on `/mcp` answer 405. |
 | Authentication | OAuth authorization code with PKCE (S256), opaque tokens stored as hashes |
-| Client registration | Dynamic Client Registration, only Claude's exact redirect URL, public clients only |
+| Client registration | Dynamic Client Registration, only Claude's exact redirect URL; every client is registered as a public client (Claude asks for client_secret_post and is answered with none, no secret) |
 | Redirect URL | `https://claude.ai/api/mcp/auth_callback` |
 | Scope | `nasa:insights:read` |
 | Lifetimes | code 5 min (one use), access token 1 hour, refresh token 30 days (rotates), a connection ends after 180 days |
 | Who can connect | A NASA `admin` account with `role = 'superadmin'` and `is_active = true`, checked on every call |
 
 Tested against a disposable database with the official MCP SDK client (full flow: 401, discovery, registration, PKCE, NASA sign-in,
-code exchange, `initialize`, `tools/list`, `tools/call`) and with 21 automated tests. **Not yet tested with a real Claude account**:
-see the checklist below.
+code exchange, `initialize`, `tools/list`, `tools/call`), with 21 automated tests, and with a real Claude account through a public
+tunnel (see the verification section: staging and mobile are still pending).
 
 ## Turn it on (staging first)
 
@@ -59,23 +59,37 @@ see the checklist below.
 4. In a conversation, click **+ > Connectors** and switch **NASA Insights** on.
 5. Ask: "What do the NASA metrics mean?" Claude should call `get_metric_definitions` (the first time it asks your permission).
 
-## Staging verification with a real Claude account
+## Verification with a real Claude account
 
-Status: **pending**. This needs a Claude account and an HTTPS staging address, which are not available to the developer who wrote
-this change. Record the result here when done.
+Status: **works on a local test server behind a public tunnel (6 Nov 2026, claude.ai in a desktop browser). Not yet done on an HTTPS
+staging deployment, and not yet from the mobile app.** The tunnel run used a Cloudflare quick tunnel to a small test server that serves
+only the connector, with a scratch database and a test super-admin account.
 
 | Check | Result |
 |---|---|
-| Connector added by URL, sign-in page opens | pending |
-| Sign-in with a super-admin account succeeds; a city admin or driver account is refused | pending |
-| Claude shows the tool with its description, and `get_metric_definitions` returns the definitions | pending |
-| Token refresh works after one hour (call again after an hour) | pending |
+| Connector added by URL ("Sign in now" + "Register automatically"), registration succeeds | passed (after a fix, see below) |
+| NASA sign-in page opens; a wrong password is refused; the super-admin account is accepted and redirects to Claude | passed |
+| Claude shows the tool (title "NASA metric definitions") and `get_metric_definitions` returns the definitions | passed |
+| Claude reads the definitions correctly (margin is gross profit before overheads, revenue is not cash) | passed |
+| A city admin or driver account is refused on the real sign-in page | covered by automated tests only |
+| Token refresh after one hour | pending |
 | Disconnect in Claude, then the next call needs sign-in again | pending |
-| Which `client_id` and redirect Claude used (from the log or the `/register` call), and whether Claude offers "Use Claude's published identity" | pending |
-| Claude's `clientInfo` name in the `initialize` request (log only, never used for decisions) | pending |
+| The same flow on the mobile app | pending |
+| The same flow on an HTTPS staging deployment (real proxy, real domain) | pending |
+
+What Claude actually did (from the server log), for the record:
+
+- `POST /mcp` without a token, `GET /.well-known/oauth-protected-resource/mcp`, then `POST /register` from `python-httpx`.
+- The registration asked for `token_endpoint_auth_method: "client_secret_post"` (with `application_type: "web"`, scope
+  `nasa:insights:read`, redirect `https://claude.ai/api/mcp/auth_callback`). The first version refused this, which Claude showed as
+  "Couldn't register". The server now registers every client as a public client protected by PKCE and answers with `none` and no secret.
+- Claude then opened `/authorize` in the browser, exchanged the code at `/token`, and called `/mcp` with user agent `Claude-User`.
+- Each MCP session starts with a `server/discover` probe for the newer protocol era. The server answers 400, Claude falls back to
+  `initialize` (protocol 2025-11-25), `notifications/initialized` and `tools/list`, as the transport specification describes. Nothing to fix.
+- Claude did not use Client ID Metadata Documents, since the server does not advertise them.
 
 If Claude shows "Couldn't reach the MCP server" or "Authorization failed", follow Anthropic's troubleshooting page and keep the `ofid_`
-reference from the error.
+reference from the error. Quick-tunnel addresses change on every restart, so the connector has to be added again each time.
 
 ## Operations
 

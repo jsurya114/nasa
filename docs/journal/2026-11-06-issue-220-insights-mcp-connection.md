@@ -31,4 +31,6 @@ missing, expired, revoked and wrong-scope tokens, wrong resource, non-super-admi
 refresh rotation and reuse, origin and host checks, business tables unchanged. The full backend suite passes (155 passed, 54
 skipped for lack of a database, 0 failed). A run with the official MCP SDK client completed the whole flow, and the real
 `app.js` was started with the connector off, misconfigured and on. **Not done:** a test with a real Claude account on an HTTPS
-staging address (pending; see the setup guide).
+staging address is still pending. A real Claude account (claude.ai, desktop browser) did connect through a public tunnel to a local
+test server: that run found that Claude registers asking for `client_secret_post`, so registration now answers with a public client
+(no secret) instead of refusing; then sign-in, `initialize`, `tools/list` and `get_metric_definitions` all worked.

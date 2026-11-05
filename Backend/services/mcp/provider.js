@@ -73,13 +73,17 @@ export class NasaInsightsProvider {
 
   async registerClient(client) {
     const uris = (client.redirect_uris || []).map(String);
-    if (uris.length === 0 || uris.length > 5 || !uris.every((u) => redirectAllowed(this.config, u))) {
-      throw new InvalidClientMetadataError('redirect_uris must be the callback URL Claude documents for connectors');
-    }
     const method = client.token_endpoint_auth_method;
-    if (method !== undefined && method !== 'none') {
-      throw new InvalidClientMetadataError('Only public clients are supported: use token_endpoint_auth_method "none" with PKCE');
+    // Redirect URLs and the auth method are public client metadata, not secrets: logged so a refused registration can be explained.
+    const refuse = (message) => {
+      logger.warn('MCP client registration refused', { reason: message, redirectUris: uris.slice(0, 5), authMethod: method });
+      throw new InvalidClientMetadataError(message);
+    };
+    if (uris.length === 0 || uris.length > 5 || !uris.every((u) => redirectAllowed(this.config, u))) {
+      refuse('redirect_uris must be the callback URL Claude documents for connectors');
     }
+    // Claude asks for client_secret_post when it registers. The server may answer with different values (RFC 7591 section 3.2.1):
+    // every client here is registered as a public client, protected by PKCE and by the owner's sign-in, and no secret is issued.
     if (await store.countClients(this.db) >= this.config.maxClients) {
       await store.pruneUnusedClients(this.db);
       if (await store.countClients(this.db) >= this.config.maxClients) {
