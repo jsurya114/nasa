@@ -32,3 +32,19 @@ cancelled request cancels its query and frees its connection. HTTP tests through
 a reporting login, bad input explained, and the tools' deliveries, driver earnings, margin and revenue equal the Dashboard's own
 `getSummaryData` totals for every city and two periods. Full backend suite passes. **Not done:** claims, payment overview, trends,
 driver ranking (next pull requests); staging and mobile checks; comparison against the Insights page (not written yet).
+# Review follow-up — 6 November 2026
+
+- Resolved the conflicts caused by the connector dependency's squash merge
+  by merging current `develop`, preserving branch history. Before the consent
+  copy change, the resulting tree exactly matched current `develop` plus the
+  already-reviewed reporting-tools commit.
+- Corrected the consent page to name metric definitions and the available
+  city, delivery, revenue, gross-margin and city-ranking reports. Claims and
+  payment-status reports are not offered in this milestone.
+- Re-ran the complete backend suite on an isolated database with a separate
+  reporting login: 196 passed, zero failed, 54 skipped. MCP sign-in and the
+  reporting permission, cancellation and Dashboard-comparison checks ran with
+  their database settings enabled. Unrelated database suites stayed skipped.
+- Driver-name disclosure for a future ranking tool remains an owner decision.
+  Certificate-verification changes belong to a coordinated application and
+  reporting-connection follow-up. Neither behavior changed in this update.

@@ -1,0 +1,23 @@
+# Payments in progress: not "remaining", shown as processing, and "Submitted" in the table (issue #31)
+
+- **Date:** 2026-11-06
+- **Author:** Jayasoorya (with Claude Code)
+- **Issue / PR:** #31 / the pull request for `feat/show-processing-payments`
+- **Branch:** `feat/show-processing-payments` (from `develop`)
+- **Type and scope:** feat(payroll), backend and frontend
+- **Files touched:** backend `services/payroll/payRuns/paymentRecords.js` (the card's query), new `services/payroll/payRuns/processingRows.js`, `controllers/admin/dashboardController.js` (two table endpoints); frontend `PaymentRuns.jsx`, `RecordPaymentDialog.jsx`, `RunPaymentStatus.jsx`, `DashboardTable.jsx` (the Paid cell, in the Dashboard area Jasil owns); tests below. No reserved files: `dashboardQueries.js` is not edited.
+
+**What and why.** After a run is approved and the admin presses Pay with Bank transfer (Everee), a payment is "submitted" and the driver is paid only when Everee confirms the deposit. Until then the app treated that driver as still unpaid: the card's "Remaining driver pay" still counted them, the Pay dialog still selected them by default, and the Dashboard table's Paid column still said No. The owner asked that a driver whose payment is processing is not among the remaining ones and is shown as processing, and that the table says Submitted until the money is confirmed, then Yes.
+
+**What changed.**
+- **Card (Dashboard "Driver payments").** `remaining` now leaves out drivers whose statement is `submitted` or `unconfirmed`; a new `processing_total` (additive) is their amount. The card shows "Remaining driver pay" as before, a line "Processing, not counted above: $X (n drivers)", the badge "Payment processing" when some are processing and none is paid, and, when only processing is left, the button "View payment status" instead of "Pay to drivers". A driver leaves `remaining` for good only when Everee confirms (`paid`).
+- **Pay dialog and the run's payment status.** A processing driver is not selected by default, has no checkbox, is not brought back by "Select all unpaid", is labelled "Payment processing", and is not in "Selected: n of m unpaid drivers" (the processing count is shown beside it). The run's payment status on the Pay runs page counts paid, processing and left apart.
+- **Dashboard table.** The Paid column says **Yes** (confirmed), **Submitted** (the payment is with Everee, not confirmed) or **No**. The two table endpoints (`/admin/dashboard/paymentTable` and `paymentTableAll`) add `payout_state: "processing"` to rows already chosen, for rows of a finalized run whose statement is submitted or unconfirmed and which are not already paid. The table's query, rows and amounts are unchanged; if the payroll tables are absent (an older database) the rows are returned as before. The Payment status filter is unchanged: Pending still includes submitted rows.
+
+**Database / config / dependencies:** None (read-only queries on existing tables). **Money impact:** None; no amount is calculated, sent or changed. Only what is counted as "remaining" on a card, and labels.
+
+**Tested.** Backend (`processingPayments.test.js`, database, rolled back, 6 pass; with `paymentRecords.test.js`, 14 pass): nothing sent (all remaining, nothing marked); a submitted and an unconfirmed payment leave `remaining` and appear in `processing_total` while their rows are marked and the third is not; a paid row and a row of no run are never marked and only a field is added; when Everee confirms, the driver counts as paid and is no longer processing; a failed payment returns to `remaining`. Frontend (101 pass across the pay-run, Dashboard and Payroll tests; build passes): the card with a processing driver and with only processing left; the dialog (the old test "processing payments cannot be included in confirmation" is rewritten for the new rule, and checks no checkbox, label, count, default selection, Select all unpaid and Deselect all); the run panel's three states; the Dashboard's Paid column (Yes, Submitted, No). Each of the three frontend changes was reverted and its test failed (checked).
+
+**Not tested.** In a browser, and with a real submitted Everee payment; the sandbox deposits have not settled yet, so the move from Submitted to Yes was not seen with real data.
+
+**Risks and follow-ups.** `remaining` now means "left to pay, not counting payments in progress"; the card still shows the total of the run unchanged. A driver whose Everee payment later fails (returns to `failed`) goes back into `remaining` and can be paid again with Retry. The Paid cell's "Submitted" is only for drivers paid through Everee; a manual record (cash) is confirmed at once and shows Yes.

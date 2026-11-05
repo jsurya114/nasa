@@ -24,7 +24,9 @@ export default function RunPaymentStatus({ runId, cityName, onRecorded }) {
   }, [runId, version]);
   const drivers = state.data?.drivers ?? [];
   const paid = drivers.filter((d) => d.payoutStatus === "paid").length;
-  const remaining = drivers.length - paid;
+  // A payment already with Everee (submitted or unconfirmed) is neither paid nor left to pay: it waits for Everee to confirm the deposit.
+  const processing = drivers.filter((d) => ["submitted", "unconfirmed"].includes(d.payoutStatus)).length;
+  const remaining = drivers.length - paid - processing;
   return (
     <section
       className="mt-4 rounded-2xl border border-brand-200 bg-brand-50 p-4"
@@ -50,17 +52,20 @@ export default function RunPaymentStatus({ runId, cityName, onRecorded }) {
         (drivers.length ? (
           <>
             <p className="mt-1 text-sm">
-              {paid} of {drivers.length} drivers marked paid.{" "}
+              {paid} of {drivers.length} drivers marked paid.
+              {processing > 0 && ` ${processing} payment(s) processing.`}{" "}
               {remaining
                 ? "Choose the drivers and how they are paid."
-                : "All payments in this run are recorded."}
+                : processing
+                  ? "Waiting for Everee to confirm the deposits."
+                  : "All payments in this run are recorded."}
             </p>
             <button
               type="button"
               onClick={() => setOpen(true)}
               className={`${remaining ? primaryClass : buttonClass} mt-3`}
             >
-              {remaining ? "Pay to drivers" : "View payment records"}
+              {remaining ? "Pay to drivers" : processing ? "View payment status" : "View payment records"}
             </button>
           </>
         ) : (

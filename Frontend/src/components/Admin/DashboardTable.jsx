@@ -304,10 +304,12 @@ export default function PaymentDashboardTable({ penalty }) {
                     </td>
                     <td
                       className={`px-3 py-2 border-b border-gray-200 font-semibold whitespace-nowrap ${
-                        row.paid ? "text-green-600" : "text-red-600"
+                        row.paid ? "text-green-600" : row.payout_state === "processing" ? "text-amber-600" : "text-red-600"
                       }`}
+                      data-testid="paid-cell"
                     >
-                      {row.paid ? "Yes" : "No"}
+                      {/* "Submitted": the payment is with Everee and not confirmed yet; "Yes" only once the money is confirmed. */}
+                      {row.paid ? "Yes" : row.payout_state === "processing" ? "Submitted" : "No"}
                     </td>
                   </tr>
                 ))}

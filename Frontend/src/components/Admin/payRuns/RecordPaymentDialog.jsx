@@ -27,6 +27,9 @@ const EVEREE = "everee";
 const EVEREE_LABEL = "Bank transfer (Everee)";
 const EVEREE_BASE = "/admin/payroll";
 const paid = (d) => d.payoutStatus === "paid";
+// A payment already with Everee (submitted, or unconfirmed) is not left to pay: it is not selected or selectable, and it waits for Everee to confirm.
+const processing = (d) => d.payoutStatus === "submitted" || d.payoutStatus === "unconfirmed";
+const payable = (d) => !paid(d) && !processing(d);
 
 // "Pay to drivers": both entry points use this review. The method is chosen on purpose (nothing is pre-selected). Bank transfer (Everee) sends the
 // chosen drivers' approved amounts through Everee, and only that method calls Everee. Cash and Other record money paid outside NASA and send nothing.
@@ -83,7 +86,7 @@ export default function RecordPaymentDialog({
         if (controller.signal.aborted) return;
         setReview({ status: "ready", data });
         const unpaid = data.drivers
-          .filter((d) => !paid(d))
+          .filter(payable)
           .map((d) => String(d.statementId));
         setSelected((s) =>
           s === null ? unpaid : s.filter((id) => unpaid.includes(id)),
@@ -383,7 +386,9 @@ export default function RecordPaymentDialog({
                     <div>
                       <p className="text-sm text-ink-muted">
                         Selected: {chosen.length} of{" "}
-                        {drivers.filter((d) => !paid(d)).length} unpaid drivers
+                        {drivers.filter(payable).length} unpaid drivers
+                        {drivers.some(processing) &&
+                          ` · ${drivers.filter(processing).length} payment(s) processing, not counted`}
                       </p>
                       <p className="text-2xl font-bold text-brand">
                         {formatMoney(total)}
@@ -398,7 +403,7 @@ export default function RecordPaymentDialog({
                           onClick={() =>
                             selectDrivers(
                               drivers
-                                .filter((d) => !paid(d))
+                                .filter(payable)
                                 .map((d) => String(d.statementId)),
                             )
                           }
@@ -431,7 +436,7 @@ export default function RecordPaymentDialog({
                       {visible.map((d) => (
                         <li key={d.statementId} className="p-3">
                           <label className="flex min-h-11 items-center gap-3">
-                            {!paid(d) && (
+                            {payable(d) && (
                               <input
                                 type="checkbox"
                                 disabled={busy}
@@ -447,20 +452,22 @@ export default function RecordPaymentDialog({
                                 {d.driverName}
                               </span>
                               <span
-                                className={`text-xs ${paid(d) ? "text-green-700" : d.eligible ? "text-ink-muted" : "text-amber-800"}`}
+                                className={`text-xs ${paid(d) ? "text-green-700" : processing(d) ? "font-semibold text-amber-800" : d.eligible ? "text-ink-muted" : "text-amber-800"}`}
                               >
                                 {paid(d)
                                   ? "Paid"
-                                  : d.eligible
-                                    ? "Awaiting payment"
-                                    : "Needs review"}
+                                  : processing(d)
+                                    ? "Payment processing"
+                                    : d.eligible
+                                      ? "Awaiting payment"
+                                      : "Needs review"}
                               </span>
                             </span>
                             <span className="font-semibold tabular-nums">
                               {formatMoney(d.amounts.net)}
                             </span>
                           </label>
-                          {!paid(d) &&
+                          {payable(d) &&
                             d.blockers
                               .filter((b) => b.code !== "already_paid")
                               .map((b, i) => (

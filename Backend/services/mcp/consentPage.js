@@ -44,7 +44,7 @@ export function renderConsent({ requestId, clientName, redirectHost, scope, erro
     <p><strong>${app}</strong> is asking to read NASA Logistics business reports for you.</p>
     <p class="muted">It will return to <code>${escapeHtml(redirectHost)}</code>. The name above is whatever the app calls itself; check that address.</p>
     <p><strong>It can</strong> (permission <code>${escapeHtml(scope)}</code>):</p>
-    <ul><li>Read summaries: deliveries, revenue, gross margin, rankings, claims and payment status.</li></ul>
+    <ul><li>Read metric definitions and city lists.</li><li>Read delivery, revenue and gross-margin summaries, trends, and city and driver rankings (driver names and cities only).</li><li>Read carrier claim totals, driver payment status totals, and estimated future deliveries.</li></ul>
     <p><strong>It cannot:</strong></p>
     <ul><li>Change anything, pay anyone, or run payroll.</li><li>See passwords, bank details or tax details.</li></ul>
     <p class="muted">Only the NASA super admin can approve. You can disconnect at any time.</p>

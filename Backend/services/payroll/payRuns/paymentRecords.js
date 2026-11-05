@@ -268,7 +268,10 @@ export const listPaymentRuns = async (
             to_char(r.period_end,'YYYY-MM-DD') AS period_end,count(*)::int AS drivers,
             count(*) FILTER(WHERE s.payout_status='paid')::int AS paid,
             count(*) FILTER(WHERE s.payout_status IN ('submitted','unconfirmed'))::int AS processing,
-            COALESCE(sum(s.net) FILTER(WHERE s.payout_status<>'paid'),0)::text AS remaining,
+            -- What is still to be paid leaves out the drivers whose payment is already with Everee (processing): they are shown apart, so the
+            -- same money is not asked for twice. It leaves the remaining amount for good only when Everee confirms the deposit (paid).
+            COALESCE(sum(s.net) FILTER(WHERE s.payout_status NOT IN ('paid','submitted','unconfirmed')),0)::text AS remaining,
+            COALESCE(sum(s.net) FILTER(WHERE s.payout_status IN ('submitted','unconfirmed')),0)::text AS processing_total,
             sum(s.net)::text AS total
        FROM pay_runs r JOIN city c ON c.id=r.city_id JOIN pay_statements s ON s.pay_run_id=r.id
       WHERE r.status='finalized' AND ($1::int IS NULL OR r.city_id=$1)
