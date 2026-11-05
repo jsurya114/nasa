@@ -5,8 +5,8 @@ import { blockerLines, sentence } from "./evereeLabels.js";
 
 // What the confirm click would pay: taken from the server, never from this page. The button names the exact count and total.
 export default function EvereePreview({ preview, busy, message, onConfirm }) {
-  const { summary, drivers, batchBlockers, confirm, environment } = preview;
-  const canConfirm = preview.canSubmit && confirm.allowed && !busy;
+  const { summary, drivers, batchBlockers, environment } = preview;
+  const canConfirm = preview.canSubmit && !busy;
   const eligible = drivers.filter((d) => d.eligible);
   const blocked = drivers.filter((d) => !d.eligible);
   const claims = summary.pendingClaims?.total ?? 0;
@@ -19,7 +19,6 @@ export default function EvereePreview({ preview, busy, message, onConfirm }) {
           : "Sandbox: Everee's test environment. No real money moves."}
       </p>
       {batchBlockers.map((b) => <p key={b.code} role="alert" className="mt-2 rounded-xl bg-white p-3 text-sm text-red-700">{sentence(b.message)}</p>)}
-      {!confirm.allowed && <p role="alert" className="mt-2 rounded-xl bg-white p-3 text-sm text-red-700">{sentence(confirm.reason)}</p>}
       <p className="mt-3 text-sm">{summary.eligible} of {summary.drivers} drivers can be paid now, {formatMoney(summary.total)} in total.</p>
       {(claims > 0 || summary.withWarnings > 0) && (
         <div role="note" aria-label="Read before confirming" className="mt-2 rounded-xl bg-amber-50 p-3 text-sm text-amber-900">

@@ -13,7 +13,7 @@ const previewOf = (over = {}) => ({
     person(3, "Fay Test", "20.00", { eligible: false, blockers: [{ code: "no_everee_worker", severity: "blocking", message: "this driver is not linked to an Everee worker", hint: "link_worker" }] }),
   ],
   summary: { drivers: 3, eligible: 2, blocked: 1, total: "230.00" },
-  batchBlockers: [], canSubmit: true, confirm: { allowed: true, reason: null }, previewHash: "a".repeat(64), ...over,
+  batchBlockers: [], canSubmit: true, previewHash: "a".repeat(64), ...over,
 });
 const batchOf = (items, over = {}) => ({
   batch: { id: 5, runId: 17, drivers: items.length, total: "230.00", createdAt: "2026-11-04T12:00:00Z" },
@@ -122,13 +122,7 @@ describe("Pay with Everee", () => {
     expect(server.posts[1].requestId).not.toBe(server.posts[0].requestId);
   });
 
-  it("cannot be confirmed by the person who finalized the run, or when the batch is blocked, and says why", async () => {
-    await startServer({ preview: previewOf({ confirm: { allowed: false, reason: "you finalized this run; another super admin has to confirm the payment" } }) });
-    await mount();
-    await open();
-    expect((await screen.findByRole("button", { name: /Confirm and pay/ })).disabled).toBe(true);
-    expect(screen.getByText("You finalized this run; another super admin has to confirm the payment")).toBeTruthy();
-    cleanup();
+  it("cannot be confirmed when the batch is blocked, and says why", async () => {
     await startServer({ preview: previewOf({ canSubmit: false, batchBlockers: [{ code: "payments_off", message: "sending payments to Everee is switched off" }] }) });
     await mount();
     await open();

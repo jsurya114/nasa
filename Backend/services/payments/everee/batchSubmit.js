@@ -329,7 +329,6 @@ export const submitBatch = async (db, admin, { runId, requestId, previewHash }, 
 
     const { result, items, config, gate } = await computePreview(tx, admin, runId, { env });
     if (!gate.enabled) throw new PayrollError(409, `payments to Everee cannot be sent: ${gate.reason}`);
-    if (!result.confirm.allowed) throw new PayrollError(403, result.confirm.reason);
     const blocker = result.batchBlockers.find((b) => b.code !== 'payments_off');
     if (blocker) throw new PayrollError(409, blocker.message);
     if (result.previewHash !== previewHash) throw new PreviewChangedError(result);
@@ -385,14 +384,13 @@ export const retryBatch = async (db, admin, batchId, deps = {}) => {
   const prepared = await inTransaction(db, async (tx) => {
     const { rows: [batch] } = await tx.query('SELECT id, pay_run_id, city_id, environment FROM everee_payment_batches WHERE id = $1', [batchId]);
     if (!batch) throw new PayrollError(404, 'payment batch not found');
-    const { rows: [run] } = await tx.query('SELECT id, city_id, finalized_by FROM pay_runs WHERE id = $1 FOR UPDATE', [batch.pay_run_id]);
+    const { rows: [run] } = await tx.query('SELECT id, city_id FROM pay_runs WHERE id = $1 FOR UPDATE', [batch.pay_run_id]);
     await assertCityAllowed(tx, admin, run.city_id);
     await lockCityPayroll(tx, run.city_id);
 
     const config = readEvereeConfig(env);
     const { gate, result } = await computePreview(tx, admin, batch.pay_run_id, { env }).then((r) => ({ gate: r.gate, result: r.result }));
     if (!gate.enabled) throw new PayrollError(409, `payments to Everee cannot be sent: ${gate.reason}`);
-    if (!result.confirm.allowed) throw new PayrollError(403, result.confirm.reason);
     // The same batch-level rules as confirming (a voided run, or a live city without its time zone and work location). "Nobody to pay" is
     // not one of them: the statements of this batch are already in it, so the preview always calls them blocked.
     const batchBlocker = result.batchBlockers.find((b) => ['run_not_finalized', 'city_settings_missing'].includes(b.code));
