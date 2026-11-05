@@ -19,9 +19,11 @@ const ARMED = { EVEREE_API_TOKEN: 'tsk_test_ABCDEF123456', EVEREE_TENANT_ID: '43
 const KEY = 'whsec_test_key';
 const PRODUCTION = { EVEREE_API_TOKEN: 'tsk_prod_ABCDEF123456', EVEREE_TENANT_ID: '4321', EVEREE_ENVIRONMENT: 'production', EVEREE_PAYMENTS_ENABLED: 'true', EVEREE_PRODUCTION_PAYMENTS_APPROVED: 'true' };
 
+const PAY_DATE = '2026-11-09';
+
 // A fake Everee: payables and payments are whatever the test puts in `state`.
 const makeEveree = () => {
-  const state = { payables: {}, payments: {}, readFails: false, historyReads: 0, payableReads: 0, missing: new Set() };
+  const state = { payables: {}, payments: {}, readFails: false, historyReads: 0, dataReads: 0, dataFails: false, payableReads: 0, missing: new Set() };
   const client = {
     createPayable: async (body) => ({ status: 201, data: { externalId: body.externalId }, requestId: 'req-ok' }),
     requestPayout: async (ids) => ({ status: 201, data: { payableCount: ids.length, payableExternalIds: ids }, requestId: 'req-pay' }),
@@ -31,10 +33,22 @@ const makeEveree = () => {
       if (state.readFails) throw new EvereeError('Everee refused the token', { status: 401 });
       return { status: 200, data: state.payables[externalId] ?? { externalId, paymentStatus: 'PENDING_APPROVAL' }, requestId: 'req-get' };
     },
+    // The real payment history answer says the pay date, the worker and the amounts, and has no payout statuses.
     getPaymentHistoryItem: async (paymentId) => {
       state.historyReads += 1;
       if (!(paymentId in state.payments)) throw new EvereeError('Everee did not find what was asked for', { status: 404 });
-      return { status: 200, data: state.payments[paymentId], requestId: 'req-hist' };
+      const p = state.payments[paymentId];
+      return { status: 200, data: { paymentId, payDate: p.payDate ?? PAY_DATE, ...(p.noPayDate && { payDate: undefined }), deposits: [{ amount: { amount: '1.00', currency: 'USD' } }] }, requestId: 'req-hist' };
+    },
+    // The Payment Data API: the payments of one pay date, with the payouts (the test puts a payment's own answer in `state.payments`).
+    getPaymentData: async (payDate, after) => {
+      state.dataReads += 1;
+      if (state.dataFails) throw new EvereeError('Everee answered 500', { status: 500 });
+      const all = Object.entries(state.payments).map(([id, p]) => ({ id, ...p, payDate: p.payDate ?? PAY_DATE })).filter((p) => p.payDate === payDate && !p.unlisted);
+      const size = state.pageSize ?? 1000;
+      const start = after ? Number(after) : 0;
+      const items = all.slice(start, start + size);
+      return { status: 200, data: { items, pageSize: size, hasNextPage: start + size < all.length, ...(start + size < all.length && { nextCursor: String(start + size) }) }, requestId: 'req-data' };
     },
   };
   return { state, client };
@@ -435,6 +449,64 @@ test('everee payment status: only a payment that landed marks a statement paid',
       const iA2 = await item(sc, dA);
       await assert.rejects(db.query('SAVEPOINT g').then(() => db.query('UPDATE everee_payment_items SET amount = 1 WHERE id = $1', [iA2.id])).finally(() => db.query('ROLLBACK TO SAVEPOINT g')), /cannot be changed/);
       await db.query("UPDATE everee_payment_items SET check_note = 'x', last_checked_at = now() WHERE id = $1", [iA2.id]);
+    });
+
+    await t.test('the real answer shapes: a PAID payment whose payout is still PENDING is not paid; once the payout is PAID it is; unlisted, unreadable, paged and dateless answers change nothing', async () => {
+      const scR = await scenario('RS', [[dA, '100.00'], [dB, '50.00'], [dC, '25.00']]);
+      const fakeR = makeEveree();
+      await sent(scR, fakeR);
+      const [iRA, iRB, iRC] = [await item(scR, dA), await item(scR, dB), await item(scR, dC)];
+      // Everee's Payment Data API: the payment itself is PAID, and each bank payout has its own status.
+      const real = (driver, amount, payoutStatus) => ({ workerId: workers[driver], externalWorkerId: `nasa-sandbox-driver-${driver}`, status: 'PAID', totalNetPay: { amount, currency: 'USD' },
+        netPayouts: [{ id: `po-${driver}`, type: 'DIRECT_DEPOSIT', date: PAY_DATE, status: payoutStatus, netAmount: { amount, currency: 'USD' } }] });
+      for (const [it, id] of [[iRA, 'pay-RA'], [iRB, 'pay-RB'], [iRC, 'pay-RC']]) fakeR.state.payables[it.external_id] = { externalId: it.external_id, paymentStatus: 'PENDING_PAYMENT', paymentId: id };
+
+      // the case seen in the sandbox: the payment is PAID but the ACH payout has not settled
+      fakeR.state.payments['pay-RA'] = real(dA, '100.00', 'PENDING');
+      assert.equal(await check(fakeR, iRA.id), 'pending');
+      assert.deepEqual([(await item(scR, dA)).status, (await stmt(scR, dA)).payout_status], ['submitted', 'submitted']);
+      assert.match((await item(scR, dA)).check_note, /deposit is not complete yet/);
+      // the payout settles: now it is paid, once, with the amount verified
+      fakeR.state.payments['pay-RA'] = real(dA, '100.00', 'PAID');
+      assert.equal(await check(fakeR, iRA.id), 'paid');
+      assert.deepEqual([(await item(scR, dA)).status, (await stmt(scR, dA)).payout_status], ['paid', 'paid']);
+      assert.equal(await check(fakeR, iRA.id), 'unchanged');
+      // a bank return is read from the same answer
+      fakeR.state.payments['pay-RB'] = real(dB, '50.00', 'FAILED');
+      assert.equal(await check(fakeR, iRB.id), 'returned');
+      assert.deepEqual([(await item(scR, dB)).status, (await item(scR, dB)).deposit_returned], ['submitted', true]);
+
+      // Everee's payment data does not list the payment (yet): not paid, noted, looked at again later
+      fakeR.state.payments['pay-RC'] = { ...real(dC, '25.00', 'PAID'), unlisted: true };
+      assert.equal(await check(fakeR, iRC.id), 'not_processed');
+      assert.match((await item(scR, dC)).check_note, /does not list this payment yet/);
+      // the payment data cannot be read (a server error): nothing changes
+      fakeR.state.payments['pay-RC'] = real(dC, '25.00', 'PAID');
+      fakeR.state.dataFails = true;
+      assert.equal(await check(fakeR, iRC.id), 'unreadable');
+      assert.match((await item(scR, dC)).check_note, /payment data could not be read/);
+      assert.equal((await stmt(scR, dC)).payout_status, 'submitted');
+      fakeR.state.dataFails = false;
+      // the payment is on the second page of its pay date: it is still found
+      fakeR.state.pageSize = 1;
+      const reads = fakeR.state.dataReads;
+      assert.equal(await check(fakeR, iRC.id), 'paid');
+      assert.ok(fakeR.state.dataReads - reads >= 2, 'more than one page was read');
+      fakeR.state.pageSize = undefined;
+    });
+
+    await t.test('an answer without a pay date is not looked up and not paid', async () => {
+      const scD = await scenario('DS', [[dA, '10.00']]);
+      const fakeD = makeEveree();
+      await sent(scD, fakeD);
+      const iD = await item(scD, dA);
+      fakeD.state.payables[iD.external_id] = { externalId: iD.external_id, paymentStatus: 'PENDING_PAYMENT', paymentId: 'pay-D' };
+      fakeD.state.payments['pay-D'] = { noPayDate: true, workerId: workers[dA], netPayouts: [{ id: 'po', status: 'PAID', netAmount: { amount: '10.00', currency: 'USD' } }] };
+      const reads = fakeD.state.dataReads;
+      assert.equal(await check(fakeD, iD.id), 'unknown');
+      assert.equal(fakeD.state.dataReads, reads, 'the payment data is not asked for without a date');
+      assert.match((await item(scD, dA)).check_note, /did not say its pay date/);
+      assert.equal((await stmt(scD, dA)).payout_status, 'submitted');
     });
   } finally {
     await db.query('ROLLBACK');

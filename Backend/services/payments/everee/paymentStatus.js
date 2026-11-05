@@ -85,6 +85,23 @@ const markNeverCreated = (db, item) => inTransaction(db, async (tx) => {
   return 'never_created';
 });
 
+const MAX_PAYMENT_DATA_PAGES = 20;
+const DATE_TEXT = /^\d{4}-\d{2}-\d{2}$/;
+
+// One payment from the Payment Data API by its ID: the payments of the pay date, page by page (a few hundred at most in practice).
+const findPaymentData = async (client, payDate, paymentId, deps) => {
+  let after = null;
+  for (let page = 0; page < MAX_PAYMENT_DATA_PAGES; page += 1) {
+    const { data } = await withRateLimitRetry(() => client.getPaymentData(payDate, after), deps);
+    const items = Array.isArray(data?.items) ? data.items : [];
+    const hit = items.find((p) => p && String(p.id) === String(paymentId));
+    if (hit) return hit;
+    if (!data?.hasNextPage || typeof data.nextCursor !== 'string' || !data.nextCursor) return null;
+    after = data.nextCursor;
+  }
+  return null;
+};
+
 // Looks again at one item. Never throws for an Everee problem: it is written as a note and the item keeps its status.
 // `deps.environment` is the environment the Everee client belongs to; an item of another environment is never looked at with it.
 export const reconcileItem = async (db, itemId, deps = {}, client) => {
@@ -141,7 +158,28 @@ export const reconcileItem = async (db, itemId, deps = {}, client) => {
     return 'unreadable';
   }
 
-  const payout = readPayoutState(body);
+  // The payment history answer has the pay date and the amounts but not the payout statuses; those are in the Payment Data API, which lists the
+  // payments of one pay date. The payment is found there by its ID, and only that answer decides whether the deposit has landed.
+  const payDate = typeof body?.payDate === 'string' && DATE_TEXT.test(body.payDate) ? body.payDate : null;
+  if (!payDate) {
+    await note(db, item.id, "Everee's answer for this payment did not say its pay date, so it is not marked paid. Check it in Everee.");
+    return 'unknown';
+  }
+  let payment;
+  try {
+    payment = await findPaymentData(client, payDate, paymentId, deps);
+  } catch (error) {
+    const why = error instanceof EvereeError ? (error.status ?? 'no answer') : 'error';
+    logger.warn('Everee payment data could not be read', { itemId: item.id, reason: why });
+    await note(db, item.id, `Everee's payment data could not be read (${why}); it is looked at again later. Nothing was changed.`);
+    return 'unreadable';
+  }
+  if (!payment) {
+    await note(db, item.id, "Everee's payment data does not list this payment yet (it lists paid payments only); it is looked at again later.");
+    return 'not_processed';
+  }
+
+  const payout = readPayoutState(payment);
   if (payout.state === 'unknown') {
     await note(db, item.id, "Everee's answer for this payment was not understood, so it is not marked paid. Check it in Everee.");
     return 'unknown';
