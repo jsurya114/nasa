@@ -170,7 +170,7 @@ function removeComments(s) {
   return out + s.slice(i);
 }
 
-function legacyCredentialClean(str) {
+export function legacyCredentialClean(str) {
   let s = String(str);
   s = removeBlocks(s.replace(/<\/(script|style)>/gi, ""), ["script", "style"]);
   s = removeHandlers(s, "dq");
