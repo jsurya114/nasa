@@ -231,7 +231,7 @@ it("records selected drivers only, and retries a lost response with the same req
     await screen.findByRole("button", { name: "Pay to drivers" }),
   ).toBeTruthy();
 });
-it("processing payments cannot be included in confirmation", async () => {
+it("processing payments cannot be included in confirmation: the driver is not selectable and not counted, and is labelled as processing", async () => {
   const s = await setup({ blocked: true });
   fireEvent.click(
     await screen.findByRole("button", { name: "Pay to drivers" }),
@@ -239,13 +239,43 @@ it("processing payments cannot be included in confirmation", async () => {
   const submit = await screen.findByRole("button", {
     name: "Continue with payment",
   });
-  expect(submit.disabled).toBe(true);
-  fireEvent.click(screen.getByRole("checkbox", { name: /Dee Test/ }));
-  expect(
-    screen.getByRole("button", { name: "Continue with payment" })
-      .disabled,
-  ).toBe(false);
+  const dialog = screen.getByRole("dialog");
+  // the processing driver has no checkbox and says so; only the other driver is selected, and the total is theirs alone
+  expect(screen.queryByRole("checkbox", { name: /Dee Test/ })).toBeNull();
+  expect(within(dialog).getByText("Payment processing")).toBeTruthy();
+  expect(within(dialog).getByText(/Selected: 1 of 1 unpaid drivers · 1 payment\(s\) processing, not counted/)).toBeTruthy();
+  expect(screen.getByRole("checkbox", { name: /Eli Test/ }).checked).toBe(true);
+  expect(within(dialog).getByText("$190.00", { selector: "p" })).toBeTruthy();
+  expect(submit.disabled).toBe(false);
+  // "Select all unpaid" never brings the processing driver back
+  fireEvent.click(within(dialog).getByRole("button", { name: "Deselect all" }));
+  expect(screen.getByRole("button", { name: "Continue with payment" }).disabled).toBe(true);
+  fireEvent.click(within(dialog).getByRole("button", { name: "Select all unpaid" }));
+  expect(screen.queryByRole("checkbox", { name: /Dee Test/ })).toBeNull();
+  expect(screen.getByRole("checkbox", { name: /Eli Test/ }).checked).toBe(true);
   expect(s.posts).toHaveLength(0);
+});
+const CARD = { id: 17, city_id: 3, city: "Synthetic City", period_start: "2026-11-01", period_end: "2026-11-07", data_type: "weekly", status: "finalized", drivers: 2, paid: 0, total: "230.00" };
+const renderCard = async (run) => {
+  await installServer(async (config) => ({ status: 200, data: config.url === "/admin/payroll/payments/runs" ? { runs: [run], nextBeforeId: null } : {} }));
+  const { default: PaymentRuns } = await import("./PaymentRuns.jsx");
+  render(<MemoryRouter><PaymentRuns cities={[{ id: 3, job: "Synthetic City" }]} onRecorded={vi.fn()} /></MemoryRouter>);
+};
+it("the card keeps the processing payment out of the remaining pay and shows it apart; when only processing is left there is nothing to pay", async () => {
+  // Dee (40.00) is processing and Eli (190.00) is not: the server's remaining leaves Dee out and reports her apart
+  await renderCard({ ...CARD, processing: 1, remaining: "190.00", processing_total: "40.00" });
+  expect(await screen.findByText("$190.00")).toBeTruthy();
+  expect(screen.getByTestId("processing-amount").textContent).toContain("$40.00");
+  expect(screen.getByTestId("processing-amount").textContent).toContain("1 driver");
+  expect(screen.getByText("Payment processing", { selector: "span" })).toBeTruthy();
+  expect(screen.getByRole("button", { name: "Pay to drivers" })).toBeTruthy();
+  cleanup();
+  // both are processing: nothing is left to pay, and the card says so instead of offering to pay again
+  await renderCard({ ...CARD, processing: 2, remaining: "0.00", processing_total: "230.00" });
+  expect(await screen.findByText("$0.00")).toBeTruthy();
+  expect(screen.getByTestId("processing-amount").textContent).toContain("$230.00");
+  expect(screen.getByRole("button", { name: "View payment status" })).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "Pay to drivers" })).toBeNull();
 });
 it("paid history shows receipts without asking for another payment", async () => {
   await setup({ history: true });

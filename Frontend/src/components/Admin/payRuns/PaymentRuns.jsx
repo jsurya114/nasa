@@ -176,6 +176,9 @@ export default function PaymentRuns({ cities = [], onRecorded }) {
       <ul className="mt-4 grid gap-3 lg:grid-cols-2">
         {state.runs.map((r) => {
           const allPaid = r.paid === r.drivers;
+          // Drivers whose payment is already with Everee are not "remaining": they are shown apart until Everee confirms the deposit.
+          const processingTotal = Number(r.processing_total ?? 0);
+          const onlyProcessingLeft = !allPaid && r.processing > 0 && Number(r.remaining) === 0;
           return (
             <li
               key={r.id}
@@ -192,7 +195,7 @@ export default function PaymentRuns({ cities = [], onRecorded }) {
                 <span
                   className={`shrink-0 rounded-full px-2 py-1 text-xs font-semibold ${allPaid ? "bg-green-50 text-green-800" : r.paid ? "bg-amber-50 text-amber-900" : "bg-brand-50 text-brand"}`}
                 >
-                  {allPaid ? "Paid" : r.paid ? "Partly paid" : "Approved"}
+                  {allPaid ? "Paid" : r.paid ? "Partly paid" : r.processing > 0 ? "Payment processing" : "Approved"}
                 </span>
               </div>
               <p className="mt-4 text-sm text-ink-muted">
@@ -206,6 +209,11 @@ export default function PaymentRuns({ cities = [], onRecorded }) {
                 {r.processing > 0 &&
                   ` · ${r.processing} payment(s) processing or unconfirmed`}
               </p>
+              {r.processing > 0 && (
+                <p className="mt-1 text-sm font-semibold text-amber-800" data-testid="processing-amount">
+                  Processing, not counted above: {formatMoney(processingTotal)} ({r.processing} {r.processing === 1 ? "driver" : "drivers"})
+                </p>
+              )}
               <div className="mt-4 flex flex-wrap gap-2">
                 <Link
                   to={`/admin/pay-runs?cityId=${r.city_id}&runId=${r.id}`}
@@ -216,9 +224,9 @@ export default function PaymentRuns({ cities = [], onRecorded }) {
                 <button
                   type="button"
                   onClick={() => setOpened(r)}
-                  className={allPaid ? buttonClass : primaryClass}
+                  className={allPaid || onlyProcessingLeft ? buttonClass : primaryClass}
                 >
-                  {allPaid ? "View payment records" : "Pay to drivers"}
+                  {allPaid ? "View payment records" : onlyProcessingLeft ? "View payment status" : "Pay to drivers"}
                 </button>
               </div>
             </li>
