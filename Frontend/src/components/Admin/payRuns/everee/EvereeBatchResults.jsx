@@ -7,6 +7,9 @@ import { ITEM_STATUS, TONE_CLASS } from "./evereeLabels.js";
 export default function EvereeBatchResults({ view, busy, onCheck, onRetry }) {
   const { batch, counts, items } = view;
   const waiting = counts.submitted + counts.unconfirmed;
+  const returned = items.filter((i) => i.everee?.depositReturned);
+  const successful = Math.max(0, counts.paid - returned.filter((i) => i.status === "paid").length);
+  const needsCheck = waiting > 0 || returned.length > 0;
   return (
     <section aria-label="Everee payment results" className="rounded-2xl border border-line p-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -15,22 +18,24 @@ export default function EvereeBatchResults({ view, busy, onCheck, onRetry }) {
             Sent {new Date(batch.createdAt).toLocaleString()} · {batch.drivers} {batch.drivers === 1 ? "driver" : "drivers"} · {formatMoney(batch.total)}
           </h3>
           <p className="mt-1 text-sm text-ink-muted">
-            {counts.paid} paid · {counts.submitted} sent, waiting · {counts.unconfirmed} unconfirmed · {counts.failed} not sent
+            {successful} successful · {counts.submitted} sent, waiting · {counts.unconfirmed} unconfirmed · {counts.failed} not sent
+            {returned.length > 0 && ` · ${returned.length} returned`}
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
-          {waiting > 0 && <button type="button" disabled={busy} onClick={onCheck} className={buttonClass}>Check now</button>}
+          {needsCheck && <button type="button" disabled={busy} onClick={onCheck} className={buttonClass}>Check now</button>}
           {view.canRetry && <button type="button" disabled={busy} onClick={onRetry} className={buttonClass}>Retry what failed</button>}
         </div>
       </div>
-      {waiting > 0 && (
+      {needsCheck && (
         <p className="mt-3 rounded-xl bg-amber-50 p-3 text-sm text-amber-900">
-          A payment is paid only when Everee confirms the deposit. Approve the payroll run in the Everee portal. Everee is checked every 15 minutes and this window refreshes by itself every minute; or press Check now.
+          {waiting > 0 ? "Approve the payroll run in the Everee portal." : "The returned deposit needs attention in Everee."}{" "}
+          A payment is successful only when Everee confirms settlement. Everee is checked every 15 minutes and this window refreshes by itself every minute; or press Check now.
         </p>
       )}
       <ul className="mt-3 divide-y divide-line">
         {items.map((i) => {
-          const s = ITEM_STATUS[i.status] ?? ITEM_STATUS.not_submitted;
+          const s = ITEM_STATUS[i.everee?.depositReturned ? "returned" : i.status] ?? ITEM_STATUS.not_submitted;
           return (
             <li key={i.itemId} className="flex flex-wrap items-start justify-between gap-2 py-2 text-sm">
               <div>

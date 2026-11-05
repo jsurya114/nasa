@@ -51,9 +51,19 @@ export const previewHashOf = ({ runId, environment, items }) => {
   return createHash('sha256').update(JSON.stringify({ v: 1, runId, environment, items: canonical })).digest('hex');
 };
 
-export const computePreview = async (db, admin, runId, { env = process.env } = {}) => {
+// `statementIds` (optional): pay only these statements of the run. They must all belong to the run; the hash and the items then cover only
+// them. Without it the preview covers every statement of the run, as before.
+const narrowedTo = (review, statementIds) => {
+  if (statementIds === undefined || statementIds === null) return review;
+  const wanted = new Set(statementIds.map(String));
+  const drivers = review.drivers.filter((d) => wanted.has(String(d.statementId)));
+  if (wanted.size === 0 || drivers.length !== wanted.size) throw new PayrollError(400, 'choose statements that belong to this pay run');
+  return { ...review, drivers };
+};
+
+export const computePreview = async (db, admin, runId, { env = process.env, statementIds: selection } = {}) => {
   if (!isSuperAdmin(admin)) throw new PayrollError(403, 'only a super admin can preview or confirm a payment to Everee');
-  const review = await reviewRunAsBatch(db, admin, runId); // also checks the run exists and the admin's city
+  const review = narrowedTo(await reviewRunAsBatch(db, admin, runId), selection); // also checks the run exists and the admin's city
   const config = readEvereeConfig(env);
   const gate = paymentsGate(config, env);
 

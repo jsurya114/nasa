@@ -52,7 +52,7 @@ export default function RunPaymentStatus({ runId, cityName, onRecorded }) {
             <p className="mt-1 text-sm">
               {paid} of {drivers.length} drivers marked paid.{" "}
               {remaining
-                ? "Record payment after the drivers receive their money."
+                ? "Choose the drivers and how they are paid."
                 : "All payments in this run are recorded."}
             </p>
             <button
@@ -60,9 +60,7 @@ export default function RunPaymentStatus({ runId, cityName, onRecorded }) {
               onClick={() => setOpen(true)}
               className={`${remaining ? primaryClass : buttonClass} mt-3`}
             >
-              {remaining
-                ? `Mark ${remaining === drivers.length ? "all " : "remaining "}${remaining} as paid`
-                : "View payment records"}
+              {remaining ? "Pay to drivers" : "View payment records"}
             </button>
           </>
         ) : (

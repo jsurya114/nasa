@@ -4,8 +4,6 @@ import { CheckCircle2, Wallet } from "lucide-react";
 import axios from "../../../redux/slice/axiosInstance";
 import { formatMoney } from "../../../utils/money.js";
 import RecordPaymentDialog from "./RecordPaymentDialog.jsx";
-import PayWithEvereeButton from "./everee/PayWithEvereeButton.jsx";
-import useEvereeAvailable from "./everee/useEvereeAvailable.js";
 import { buttonClass, primaryClass } from "../payroll/formParts.jsx";
 
 // Independent of delivery-history filters: an approved run remains visible until its payment is recorded.
@@ -20,7 +18,6 @@ export default function PaymentRuns({ cities = [], onRecorded }) {
     next: null,
   });
   const [opened, setOpened] = useState(null);
-  const evereeAvailable = useEvereeAvailable();
   useEffect(() => {
     const refresh = () => {
       setCursor(null);
@@ -216,19 +213,12 @@ export default function PaymentRuns({ cities = [], onRecorded }) {
                 >
                   View breakdown
                 </Link>
-                {evereeAvailable && !allPaid && (
-                  <PayWithEvereeButton run={r} onChanged={recorded} />
-                )}
                 <button
                   type="button"
                   onClick={() => setOpened(r)}
                   className={allPaid ? buttonClass : primaryClass}
                 >
-                  {allPaid
-                    ? "View payment records"
-                    : r.paid
-                      ? `Mark remaining ${r.drivers - r.paid} as paid`
-                      : `Mark all ${r.drivers} as paid`}
+                  {allPaid ? "View payment records" : "Pay to drivers"}
                 </button>
               </div>
             </li>

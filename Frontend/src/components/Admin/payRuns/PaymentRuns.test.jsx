@@ -147,13 +147,13 @@ const setup = async ({
 };
 const fill = () => {
   const next = screen.queryByRole("button", {
-    name: "Continue to payment details",
+    name: "Continue with payment",
   });
   if (next) fireEvent.click(next);
   fireEvent.change(screen.getByLabelText("Payment method"), {
     target: { value: "cash" },
   });
-  fireEvent.change(screen.getByLabelText("Reference / payment note"), {
+  fireEvent.change(screen.getByLabelText("Payment note"), {
     target: { value: "Synthetic cash receipt" },
   });
   fireEvent.click(screen.getByRole("checkbox", { name: /I confirm/ }));
@@ -177,16 +177,16 @@ afterEach(() => {
 it("shows approved payments independently of delivery dates and records all with explicit confirmation", async () => {
   const s = await setup();
   fireEvent.click(
-    await screen.findByRole("button", { name: "Mark all 2 as paid" }),
+    await screen.findByRole("button", { name: "Pay to drivers" }),
   );
   fireEvent.click(
-    await screen.findByRole("button", { name: "Continue to payment details" }),
+    await screen.findByRole("button", { name: "Continue with payment" }),
   );
-  const submit = await screen.findByRole("button", { name: "Mark 2 as paid" });
+  const submit = await screen.findByRole("button", { name: "Pay" });
   fireEvent.click(submit);
   expect(s.posts).toHaveLength(0);
   expect(
-    await screen.findByText("Confirm receipt before recording payment."),
+    await screen.findByText("Choose how the drivers are paid."),
   ).toBeTruthy();
   fill();
   fireEvent.click(submit);
@@ -211,14 +211,14 @@ it("shows approved payments independently of delivery dates and records all with
 it("records selected drivers only, and retries a lost response with the same request ID", async () => {
   const s = await setup({ lostReply: true });
   fireEvent.click(
-    await screen.findByRole("button", { name: "Mark all 2 as paid" }),
+    await screen.findByRole("button", { name: "Pay to drivers" }),
   );
   await screen.findByRole("checkbox", { name: /Eli Test/ });
   fireEvent.click(screen.getByRole("checkbox", { name: /Eli Test/ }));
   fill();
-  fireEvent.click(screen.getByRole("button", { name: "Mark 1 as paid" }));
+  fireEvent.click(screen.getByRole("button", { name: "Pay" }));
   await screen.findByText(/result could not be confirmed/);
-  fireEvent.click(screen.getByRole("button", { name: "Mark 1 as paid" }));
+  fireEvent.click(screen.getByRole("button", { name: "Pay" }));
   await screen.findByRole("heading", { name: "Payment recorded" });
   expect(s.posts.map((p) => p.requestId)).toEqual([
     s.posts[0].requestId,
@@ -228,21 +228,21 @@ it("records selected drivers only, and retries a lost response with the same req
   expect(s.receipts.size).toBe(1);
   fireEvent.click(screen.getByRole("button", { name: "Done" }));
   expect(
-    await screen.findByRole("button", { name: "Mark remaining 1 as paid" }),
+    await screen.findByRole("button", { name: "Pay to drivers" }),
   ).toBeTruthy();
 });
 it("processing payments cannot be included in confirmation", async () => {
   const s = await setup({ blocked: true });
   fireEvent.click(
-    await screen.findByRole("button", { name: "Mark all 2 as paid" }),
+    await screen.findByRole("button", { name: "Pay to drivers" }),
   );
   const submit = await screen.findByRole("button", {
-    name: "Continue to payment details",
+    name: "Continue with payment",
   });
   expect(submit.disabled).toBe(true);
   fireEvent.click(screen.getByRole("checkbox", { name: /Dee Test/ }));
   expect(
-    screen.getByRole("button", { name: "Continue to payment details" })
+    screen.getByRole("button", { name: "Continue with payment" })
       .disabled,
   ).toBe(false);
   expect(s.posts).toHaveLength(0);
@@ -263,7 +263,7 @@ it("paid history shows receipts without asking for another payment", async () =>
 it("keeps payment details when going back but requires confirmation again if the drivers change", async () => {
   const s = await setup();
   fireEvent.click(
-    await screen.findByRole("button", { name: "Mark all 2 as paid" }),
+    await screen.findByRole("button", { name: "Pay to drivers" }),
   );
   fireEvent.click(await screen.findByRole("checkbox", { name: /Eli Test/ }));
   fill();
@@ -273,15 +273,15 @@ it("keeps payment details when going back but requires confirmation again if the
   );
   fireEvent.click(screen.getByRole("checkbox", { name: /Eli Test/ }));
   fireEvent.click(
-    screen.getByRole("button", { name: "Continue to payment details" }),
+    screen.getByRole("button", { name: "Continue with payment" }),
   );
   expect(screen.getByLabelText("Payment method").value).toBe("cash");
-  expect(screen.getByLabelText("Reference / payment note").value).toBe(
+  expect(screen.getByLabelText("Payment note").value).toBe(
     "Synthetic cash receipt",
   );
   expect(screen.getByRole("checkbox", { name: /I confirm/ }).checked).toBe(
     false,
   );
-  fireEvent.click(screen.getByRole("button", { name: "Mark 2 as paid" }));
+  fireEvent.click(screen.getByRole("button", { name: "Pay" }));
   expect(s.posts).toHaveLength(0);
 });
