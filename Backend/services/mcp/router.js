@@ -21,7 +21,7 @@ const rpcError = (res, status, code, message) => res.status(status).json({ jsonr
 // Limits are per client address and window. Tests raise them; production uses the defaults.
 export const DEFAULT_LIMITS = Object.freeze({ register: 20, authorize: 60, token: 60, revoke: 60 });
 
-export function createMcpRouter({ config, db, loginLimiter, limits = DEFAULT_LIMITS }) {
+export function createMcpRouter({ config, db, loginLimiter, limits = DEFAULT_LIMITS, reporting = null }) {
   if (typeof loginLimiter !== 'function') throw new Error('createMcpRouter needs a loginLimiter');
   const provider = new NasaInsightsProvider({ db, config });
   const router = express.Router();
@@ -74,7 +74,10 @@ export function createMcpRouter({ config, db, loginLimiter, limits = DEFAULT_LIM
       const requestId = randomUUID();
       const started = Date.now();
       res.set('X-Request-Id', requestId);
-      const server = buildMcpServer({ requestId });
+      // A request the caller gives up on cancels its report query and frees the connection.
+      const abort = new AbortController();
+      res.on('close', () => { if (!res.writableFinished) abort.abort(); });
+      const server = buildMcpServer({ requestId, reporting, signal: abort.signal });
       const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true });
       res.on('close', () => {
         transport.close().catch(() => {});

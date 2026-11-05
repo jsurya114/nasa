@@ -7,6 +7,7 @@
  */
 import { loadMcpConfig } from './config.js';
 import { createMcpRouter } from './router.js';
+import { createReportingDb } from '../reporting/reportingDb.js';
 import { loginRateLimit } from '../../middlewares/loginRateLimit.js';
 import logger from '../../utils/logger.js';
 
@@ -23,7 +24,10 @@ export function mountMcp(app, { env = process.env, db } = {}) {
     return { enabled: false };
   }
   try {
-    const { router } = createMcpRouter({ config, db, loginLimiter: loginRateLimit('admin') });
+    // Business-data tools need their own restricted database login. Without it they are not offered; the app's login is never used.
+    const reporting = createReportingDb(env);
+    if (!reporting.enabled) logger.warn(`NASA Insights data tools are off: ${reporting.reason}`);
+    const { router } = createMcpRouter({ config, db, loginLimiter: loginRateLimit('admin'), reporting });
     app.use(router);
     logger.info('NASA Insights connector is on', { resource: config.resourceUrl });
     return { enabled: true, config };

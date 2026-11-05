@@ -15,7 +15,11 @@ export const METRIC_DEFINITIONS = Object.freeze([
     label: 'Completed deliveries',
     unit: 'count',
     definition: 'The stored delivered count on eligible daily and weekly rows, using the same inclusion rules as the existing reports.',
-    caveats: ['One database row is an aggregate, not one order. NASA does not hold order-level identifiers, so "unique orders" is never claimed.'],
+    caveats: [
+      'One database row is an aggregate, not one order. NASA does not hold order-level identifiers, so "unique orders" is never claimed.',
+      'A record counts for its city only when its sequence numbers match the city type (daily cities have them, weekly cities do not): the Dashboard\'s own rule.',
+      'Records still open (no stored amounts yet) are counted in deliveries but not in revenue or margin.',
+    ],
   },
   {
     id: 'gross_driver_earnings',
@@ -37,6 +41,7 @@ export const METRIC_DEFINITIONS = Object.freeze([
     unit: CURRENCY,
     definition: 'Gross driver earnings plus company margin, from exactly the same rows.',
     caveats: [
+      'Only records with both amounts stored are included. A record with no stored amounts is disclosed in the warnings and is never treated as zero revenue.',
       'Revenue earned from deliveries. It is not proof that the carrier has paid NASA.',
       'Historical rows keep the amounts stored at the time. Nothing is recalculated from today\'s route rates.',
     ],

@@ -6,9 +6,14 @@
 import * as z from 'zod/v4';
 import { LATEST_PROTOCOL_VERSION } from '@modelcontextprotocol/sdk/types.js';
 import { getMetricDefinitions } from './metricDefinitions.js';
+import { getBusinessSummaryTool, listReportingCitiesTool, rankCitiesTool } from './deliveryTools.js';
+import { InputError } from '../../reporting/inputs.js';
 import logger from '../../../utils/logger.js';
 
-export const TOOLS = [getMetricDefinitions];
+export const TOOLS = [getMetricDefinitions, listReportingCitiesTool, getBusinessSummaryTool, rankCitiesTool];
+
+// Tools that read business data are offered only when the restricted reporting connection is configured.
+export const toolsFor = (reporting) => TOOLS.filter((tool) => !tool.needsReporting || reporting?.enabled);
 export const MAX_RESULT_CHARS = 100000; // Claude accepts about 150,000 characters; this leaves room
 
 const envelopeSchema = (dataSchema) => z.object({
@@ -24,9 +29,10 @@ const envelopeSchema = (dataSchema) => z.object({
 
 const failure = (text) => ({ isError: true, content: [{ type: 'text', text }] });
 
-export function registerTools(server, { requestId }) {
-  const toolNames = TOOLS.map((t) => t.name);
-  for (const tool of TOOLS) {
+export function registerTools(server, { requestId, reporting = null, signal }) {
+  const tools = toolsFor(reporting);
+  const toolNames = tools.map((t) => t.name);
+  for (const tool of tools) {
     server.registerTool(
       tool.name,
       {
@@ -46,7 +52,7 @@ export function registerTools(server, { requestId }) {
           return failure('This connection does not have permission to use this tool.');
         }
         try {
-          const result = await tool.run({ args, auth: extra.authInfo, toolNames, protocolRevision: LATEST_PROTOCOL_VERSION });
+          const result = await tool.run({ args, auth: extra.authInfo, toolNames, protocolRevision: LATEST_PROTOCOL_VERSION, reporting, signal });
           const payload = {
             meta: {
               generatedAt: new Date().toISOString(),
@@ -65,6 +71,15 @@ export function registerTools(server, { requestId }) {
           log('ok');
           return { content: [{ type: 'text', text }], structuredContent: payload };
         } catch (error) {
+          // A bad argument is explained so Claude can correct it. Anything else is logged and kept internal.
+          if (error instanceof InputError) {
+            log('invalid_input');
+            return failure(error.message);
+          }
+          if (error?.code === '57014' && !signal?.aborted) {
+            log('timeout');
+            return failure('This question took too long to answer. Try a shorter period or fewer cities.');
+          }
           logger.error('MCP tool failed', { requestId, tool: tool.name, message: error?.message });
           log('error');
           return failure('NASA Insights could not complete this request. Try again in a moment.');
