@@ -223,10 +223,10 @@ test('dashboard period summary: this payday, approved or preview, and what is st
 
     // A clean city, route and driver for a scenario of its own (the drivers above are used up). Weekly pay rows have no sequence numbers.
     let scenario = 0;
-    const freshScenario = async () => {
+    const freshScenario = async (cityType = 'DAILY') => {
       scenario += 1;
       const name = `Test Sum Scenario ${scenario}`;
-      const c = (await one("INSERT INTO city (job, city_code, city_type) VALUES ($1, $2, 'DAILY') RETURNING id", [name, `TSS${scenario}`])).id;
+      const c = (await one("INSERT INTO city (job, city_code, city_type) VALUES ($1, $2, $3) RETURNING id", [name, `TSS${scenario}`, cityType])).id;
       const r = (await one(`INSERT INTO routes (name, job, company_route_price, driver_route_price, company_doublestop_price, driver_doublestop_price, route_code_in_string)
         VALUES ($1, $2, 2, 1.6, 0.5, 0.25, $3) RETURNING id`, [`TS ${scenario}`, name, `TS-${scenario}`])).id;
       const tag = randomUUID();
@@ -277,7 +277,7 @@ test('dashboard period summary: this payday, approved or preview, and what is st
     });
 
     await t.test('with no dates, an instalment taken for an earlier period does not hold back this period\'s (relative to today, against the real draft)', async () => {
-      const sc = await freshScenario();
+      const sc = await freshScenario('WEEKLY');
       await sc.penalty({ amount: '300', recoveryPlan: 'installments', installmentAmount: '50' });
       const earlierDay = await sc.day(-14);
       const today = await sc.day(0);
@@ -301,7 +301,7 @@ test('dashboard period summary: this payday, approved or preview, and what is st
     });
 
     await t.test('with no dates, pay already on an approved run still shows what that run took; a record added later shows as owed; once paid it is history', async () => {
-      const sc = await freshScenario();
+      const sc = await freshScenario('WEEKLY');
       await sc.penalty({ amount: '300', recoveryPlan: 'installments', installmentAmount: '50' });
       const today = await sc.day(0);
       await sc.row(today, '100.00');
@@ -325,7 +325,7 @@ test('dashboard period summary: this payday, approved or preview, and what is st
     });
 
     await t.test('with no dates, an unpaid run stands in for the table only when the table shows exactly the rows that run holds (Paid, Pending and All)', async () => {
-      const sc = await freshScenario();
+      const sc = await freshScenario('WEEKLY');
       const earlier = await sc.day(-14);
       const today = await sc.day(0);
       // paid history: $200 earned two weeks ago, on a finalized run that is already paid
@@ -354,7 +354,7 @@ test('dashboard period summary: this payday, approved or preview, and what is st
     });
 
     await t.test('with no dates, a run stands in for the table only when the table shows ALL its rows: a single route, or the other tab, keeps its own net (review of #219)', async () => {
-      const sc = await freshScenario();
+      const sc = await freshScenario('WEEKLY');
       const today = await sc.day(0);
       const yesterday = await sc.day(-1);
       // one driver, two routes in the same weekly city: Route A $100 and Route B $200, one run, a $40 penalty taken, net $260
@@ -385,6 +385,24 @@ test('dashboard period summary: this payday, approved or preview, and what is st
       assert.deepEqual([weekly.source, weekly.net], ['approved', '260.00']);
       await assert.rejects(ask({ dataType: 'monthly' }), { status: 400 });
       await assert.rejects(ask({ route: '' }), { status: 400 });
+    });
+
+    await t.test('with no dates, the table\'s own city-type rule decides which rows it shows: a DAILY city\'s table leaves out weekly rows, so the runs holding them do not replace its net (review of #219)', async () => {
+      const sc = await freshScenario('DAILY');
+      const today = await sc.day(0);
+      // a DAILY city with a daily pay row ($100) and a weekly one ($100), each on its own draft run: the two drafts together hold both rows
+      await sc.row(today, '100.00', { weekly: false });
+      await sc.row(await sc.day(-1), '100.00', { weekly: true });
+      const daily = await sc.draft(await sc.day(-6), today, 'daily');
+      const weekly = await sc.draft(await sc.day(-6), today, 'weekly');
+      assert.equal(Number(daily.statements[0].net) + Number(weekly.statements[0].net) > 100, true, 'the two drafts net more than the daily row alone');
+      const ask = async (o = {}) => (await getDriverPeriodSummary(db, superAdmin, { driverId: sc.d, cityId: sc.c, paymentStatus: 'pending', ...o })).payday;
+      // the real table of a DAILY city shows only the daily row (both sequence numbers non-zero), on every tab: it does not show what the weekly draft holds
+      for (const o of [{}, { dataType: 'daily' }, { dataType: 'weekly' }]) {
+        const got = await ask(o);
+        assert.equal(got.source, 'estimate', `tab ${o.dataType ?? 'all'}: the runs are not the table's rows`);
+        assert.equal(got.net, null);
+      }
     });
 
     await t.test('a penalty entered after the week the pay is for is still taken (no dates), the same as the real draft that ends today', async () => {

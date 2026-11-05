@@ -119,7 +119,8 @@ const estimatePayday = async (db, driverId, cityId, rangeFrom, rangeTo) => {
 // They stand in for the table only when the table shows EXACTLY the pay rows those runs hold: no row more (the Dashboard can be filtered to
 // Paid or Pending, to one route, or to the daily or weekly tab) and none less (a frozen deduction is for the whole run and is never spread over
 // the routes). `scope` is { paymentStatus: 'paid' | 'pending' | null, route: a route name | null, dataType: 'daily' | 'weekly' | null }, the
-// same choices the table is built with; `covers` says whether the table's rows are the run's rows.
+// same choices the table is built with, and the rows are chosen as the table chooses them (see `shown` below); `covers` says whether the
+// table's rows are the run's rows. When the table leaves out some row of the run, the run's figures are not shown over its net.
 const openRunTotals = async (db, driverId, cityId, scope) => {
   const { rows } = await db.query(
     `SELECT r.status AS run_status, s.claim_deductions, s.recoveries, s.net
@@ -135,10 +136,17 @@ const openRunTotals = async (db, driverId, cityId, scope) => {
         AND l.active AND l.line_type = 'earning'`,
     [driverId, cityId]
   );
+  // The rows the Dashboard table shows for this driver and city, built with the table's own predicates (AdminDashboardQueries.getPaymentDashboardPaginated):
+  // the city is the route's (a route's `job` joined to `city`, as for historical rows), a chosen city applies its type on every tab (DAILY needs both
+  // sequence fields non-zero, WEEKLY needs both zero), then the Payment status, the Route and the View tab.
   const { rows: shown } = await db.query(
     `SELECT p.id
-       FROM payment_dashboard p JOIN drivers d ON d.id = p.driver_id LEFT JOIN routes rt ON rt.id = p.route_id
-      WHERE p.driver_id = $1 AND d.city_id = $2
+       FROM payment_dashboard p JOIN drivers d ON d.id = p.driver_id
+            LEFT JOIN routes rt ON rt.id = p.route_id LEFT JOIN city c ON rt.job = c.job
+      WHERE p.driver_id = $1 AND c.id = $2
+        AND (CASE WHEN c.city_type = 'DAILY' THEN p.start_seq != 0 AND p.end_seq != 0
+                  WHEN c.city_type = 'WEEKLY' THEN p.start_seq = 0 AND p.end_seq = 0
+                  ELSE TRUE END)
         AND ($3::boolean IS NULL OR p.paid = $3::boolean)
         AND ($4::text IS NULL OR rt.name = $4::text)
         AND ($5::text IS NULL OR CASE WHEN p.start_seq IS NULL OR p.end_seq IS NULL OR p.start_seq = 0 OR p.end_seq = 0 THEN 'weekly' ELSE 'daily' END = $5::text)`,
