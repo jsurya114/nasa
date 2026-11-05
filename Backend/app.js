@@ -8,6 +8,7 @@ import driverRoutes from "./routes/driverRoutes.js"
 import payrollRoutes from "./routes/payrollRoutes.js"
 import assignmentHistoryRoutes from "./routes/assignmentHistoryRoutes.js"
 import evereeWebhookRoutes from './routes/evereeWebhookRoutes.js'
+import { mountMcp } from './services/mcp/mountMcp.js';
 import cookieParser from 'cookie-parser';
 import sanitizeMiddleware from './middlewares/sanitize.js';
 import { notFound, errorHandler } from './middlewares/errorHandler.js';
@@ -30,6 +31,10 @@ const app = express();
 // Login limits use the client address, which is only correct when this matches reality.
 assertTrustProxyConfigured();
 app.set('trust proxy', trustProxyHops() || false);
+
+// NASA Insights connector for Claude (issue #220). Off unless MCP_ENABLED=true. Mounted first so its own parser and limits
+// apply and the general sanitizer never rewrites an MCP message. A bad setting turns only the connector off.
+mountMcp(app, { db: pool });
 
 // CORS configuration - credentials set to false since we're using localStorage
 app.use(cors({
