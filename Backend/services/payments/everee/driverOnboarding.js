@@ -3,6 +3,7 @@ import logger from '../../../utils/logger.js';
 import { readEvereeConfig, driverOnboardingGate } from './evereeConfig.js';
 import { createEvereeClient, EvereeError } from './evereeClient.js';
 import { inTransaction } from './batchSubmit.js';
+import { lockDriver } from './driverLock.js';
 import { LINK_COLUMNS, refreshLinkRow, stateOfWorker } from './workerStore.js';
 import { enforcement } from './onboardingGate.js';
 import { matchWorkers, MAX_SEARCH_RESULTS, normalizeEmail, normalizePhone, readyToPay, splitName } from './workerRules.js';
@@ -27,7 +28,6 @@ export const EVENT_HANDLER_NAME = EVENT_HANDLER_NAMES.web;
 export const LEASE_SECONDS = 60;
 export const UNCERTAIN_COOLDOWN_MINUTES = 10;
 export const SESSION_LIMIT = { count: 10, minutes: 10 };
-const LOCK_NAMESPACE = 424242; // for pg_advisory_xact_lock(namespace, driverId)
 
 // The screens a driver may open. Each has the version Everee documents for it, and the state a worker must be in.
 export const EXPERIENCES = Object.freeze({
@@ -212,7 +212,7 @@ const isDefiniteRefusal = (error) => error instanceof EvereeError && error.statu
 
 // Takes the lease for this driver, writing the intent first. Returns { row, mine }: `mine` is true when this request may talk to Everee.
 const claim = (db, driverId, config) => inTransaction(db, async (tx) => {
-  await tx.query('SELECT pg_advisory_xact_lock($1, $2)', [LOCK_NAMESPACE, driverId]);
+  await lockDriver(tx, driverId);
   const external = `${EXTERNAL_PREFIX}${driverId}`;
   const inserted = await tx.query(
     `INSERT INTO everee_onboarding (driver_id, environment, tenant_id, external_worker_id, state, request_id, attempts, lease_until)
@@ -256,7 +256,7 @@ const resolveWorkerId = async (client, external) => {
 //  - revoked: an admin unlinked this driver in the meantime -> review (the admin's decision stands);
 //  - already linked (an admin linked them meanwhile, or the worker belongs to someone else) -> nothing is written.
 const saveLink = (db, driverId, config, row, worker, workerId) => inTransaction(db, async (tx) => {
-  await tx.query('SELECT pg_advisory_xact_lock($1, $2)', [LOCK_NAMESPACE, driverId]);
+  await lockDriver(tx, driverId);
   const { rows: [driver] } = await tx.query('SELECT id, driver_type, enabled, agreement_signed FROM drivers WHERE id = $1 FOR SHARE', [driverId]);
   const { rows: [mine] } = await tx.query('SELECT id, state, attempts FROM everee_onboarding WHERE id = $1 FOR UPDATE', [row.id]);
   if (!mine || mine.attempts !== row.attempts || mine.state === 'needs_review') return 'superseded';

@@ -6,7 +6,7 @@ import {
 } from "../../utils/timezoneUtils.js";
 import logger from '../../utils/logger.js';
 import pool from "../../config/db.js";
-import { assertMayWork, OnboardingRequiredError, refusal, turnsWorkOn } from "../../services/payments/everee/onboardingGate.js";
+import { OnboardingRequiredError, refusal, turnsWorkOn, withWorkGate } from "../../services/payments/everee/onboardingGate.js";
 
 const adminAvailabilityController = {
   getAllDriversAvailability: async (req, res) => {
@@ -193,18 +193,14 @@ const adminAvailabilityController = {
         });
       }
 
-      // Turning a day ON allows work, so it is held for a Local driver who has not finished Everee onboarding. Turning days off stays allowed.
-      if (turnsWorkOn(availability, currentAvailability)) await assertMayWork(pool, parseInt(driverId, 10));
-
       logger.debug(`Admin validation passed. Updating availability for driver ${driverId}`);
 
-      const updated =
-        await availabilityService.updateDriverAvailabilityByAdmin(
-          parseInt(driverId, 10),
-          availability,
-          adminId,
-          adminRole
-        );
+      // Turning a day ON allows work, so it is held for a Local driver who has not finished Everee onboarding (turning days off stays allowed).
+      // The check and the write are one transaction, so a concurrent unlink cannot slip between them.
+      const id = parseInt(driverId, 10);
+      const updated = turnsWorkOn(availability, currentAvailability)
+        ? await withWorkGate(pool, id, (db) => availabilityService.updateDriverAvailabilityByAdmin(id, availability, adminId, adminRole, db))
+        : await availabilityService.updateDriverAvailabilityByAdmin(id, availability, adminId, adminRole);
 
       logger.info(`Driver ${driverId} availability updated successfully by admin ${adminId}`);
 

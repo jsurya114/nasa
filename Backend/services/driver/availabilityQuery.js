@@ -60,8 +60,9 @@ export const availabilityService = {
   },
 
   // Driver: update own availability
-  updateDriverAvailability: async (driverId, availability) => {
-    const result = await pool.query(
+  // `db` is the pool, or the client of a transaction the caller owns (the onboarding gate's).
+  updateDriverAvailability: async (driverId, availability, db = pool) => {
+    const result = await db.query(
       `
       UPDATE drivers
       SET
@@ -361,7 +362,8 @@ export const availabilityService = {
     driverId,
     availability,
     adminId,
-    adminRole
+    adminRole,
+    db = pool
   ) => {
     let accessQuery;
     let accessParams;
@@ -386,13 +388,13 @@ export const availabilityService = {
       throw new Error("Unauthorized role");
     }
 
-    const accessResult = await pool.query(accessQuery, accessParams);
+    const accessResult = await db.query(accessQuery, accessParams);
 
     if (accessResult.rows.length === 0) {
       throw new Error("Driver not found or access denied");
     }
 
-    const result = await pool.query(
+    const result = await db.query(
       `
       UPDATE drivers
       SET
