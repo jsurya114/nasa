@@ -99,18 +99,9 @@ function AddAdminForm({ onSubmit, editData, isEdit, onCancel }) {
       delete adminData.password;
     }
     
+    // The form lives in a dialog that closes when the save worked, so nothing is cleared here: a failed save keeps what was typed.
     onSubmit(adminData);
-    
-    if (!isEdit) {
-      setForm({
-        name: "",
-        email: "",
-        password: "",
-        confirmPassword: "",
-        role: "admin",
-        cities: [],
-      });
-    }
+
     setErrors({});
   };
 
@@ -266,15 +257,13 @@ function AddAdminForm({ onSubmit, editData, isEdit, onCancel }) {
           {loading ? (isEdit ? 'Updating Admin' : 'Adding Admin') : (isEdit ? 'Update Admin' : 'Add Admin')}
         </button>
 
-        {isEdit && (
-          <button
-            type="button"
-            onClick={handleCancel}
-            className="px-6 py-2 bg-gray-300 text-gray-800 rounded-lg hover:bg-gray-400 transition-colors"
-          >
-            Cancel
-          </button>
-        )}
+        <button
+          type="button"
+          onClick={handleCancel}
+          className="px-6 py-2 bg-gray-300 text-gray-800 rounded-lg hover:bg-gray-400 transition-colors"
+        >
+          Cancel
+        </button>
       </div>
     </form>
   );

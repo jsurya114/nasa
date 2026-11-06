@@ -2,6 +2,7 @@ import usePersistentState from "../../hooks/usePersistentState.js";
 import React, { useState, useEffect } from 'react';
 import Header from '../../reuse/Header';
 import Nav from '../../reuse/Nav';
+import Modal from '../../reuse/Modal';
 import AddAdminForm from '../../reuse/AddAdminForm';
 import AddDriverForm from '../../reuse/AddDriverForm';
 import AdminsList from '../../reuse/AdminsList';
@@ -26,6 +27,10 @@ const AddUsers = () => {
   const [activeTab, setActiveTab] = usePersistentState("admin", "users", "tab", "drivers");
   const [editDriver, setEditDriver] = useState(null);
   const [editAdmin, setEditAdmin] = useState(null);
+  // Each form opens in its own dialog. Adding opens it empty; Edit on a row opens it filled in.
+  const [driverFormOpen, setDriverFormOpen] = useState(false);
+  const [adminFormOpen, setAdminFormOpen] = useState(false);
+  const [saving, setSaving] = useState(false);
 
   // Fetch cities on mount - use getAdminCities which handles both superadmin and regular admin
   useEffect(() => {
@@ -57,38 +62,46 @@ const AddUsers = () => {
     // Clear edit states when switching tabs
     setEditDriver(null);
     setEditAdmin(null);
+    setDriverFormOpen(false);
+    setAdminFormOpen(false);
     setActiveTab(tab);
   };
 
-  // Handle driver form submission
-  const handleDriverSubmit = (form) => {
-    if (editDriver) {
-      dispatch(updateDriver({ id: editDriver.id, formData: form }))
-        .unwrap()
-        .then(() => {
-          setEditDriver(null);
-        })
-        .catch(() => {
-          // The users slice keeps the error and the screen shows it.
-        });
-    } else {
-      dispatch(addDriver(form));
+  const closeDriverForm = () => {
+    setDriverFormOpen(false);
+    setEditDriver(null);
+  };
+
+  const closeAdminForm = () => {
+    setAdminFormOpen(false);
+    setEditAdmin(null);
+  };
+
+  // Handle driver form submission. The dialog closes only when the save worked; when it fails it stays open with what was typed.
+  const handleDriverSubmit = async (form) => {
+    setSaving(true);
+    try {
+      if (editDriver) await dispatch(updateDriver({ id: editDriver.id, formData: form })).unwrap();
+      else await dispatch(addDriver(form)).unwrap();
+      closeDriverForm();
+    } catch {
+      // The users slice keeps the error and the screen shows it.
+    } finally {
+      setSaving(false);
     }
   };
 
-  // Handle admin form submission
-  const handleAdminSubmit = (form) => {
-    if (editAdmin) {
-      dispatch(updateAdmin({ id: editAdmin.id, formData: form }))
-        .unwrap()
-        .then(() => {
-          setEditAdmin(null);
-        })
-        .catch(() => {
-          // The users slice keeps the error and the screen shows it.
-        });
-    } else {
-      dispatch(addAdmin(form));
+  // Handle admin form submission (same rule as the driver form)
+  const handleAdminSubmit = async (form) => {
+    setSaving(true);
+    try {
+      if (editAdmin) await dispatch(updateAdmin({ id: editAdmin.id, formData: form })).unwrap();
+      else await dispatch(addAdmin(form)).unwrap();
+      closeAdminForm();
+    } catch {
+      // The users slice keeps the error and the screen shows it.
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -154,40 +167,23 @@ const AddUsers = () => {
       <div className="flex-1 p-4 sm:p-6 pb-24">
         {activeTab === "drivers" ? (
           <div className="space-y-6">
-            {/* Add / Edit Driver */}
-            <div className="card-surface p-4 sm:p-6">
-              <div className="flex items-center justify-between mb-4">
-                <h2 className="text-xl font-bold text-gray-800">
-                  {editDriver ? "Edit Driver" : "Add New Driver"}
-                </h2>
-                {editDriver && (
-                  <button
-                    onClick={() => setEditDriver(null)}
-                    className="text-sm text-gray-600 hover:text-gray-800 underline"
-                  >
-                    Cancel Edit
-                  </button>
-                )}
-              </div>
-
-              <AddDriverForm
-                isEdit={!!editDriver}
-                editData={editDriver}
-                onSubmit={handleDriverSubmit}
-                onCancel={() => setEditDriver(null)}
-              />
-            </div>
-
             {/* Drivers List */}
             <div className="card-surface overflow-hidden">
-              <div className="bg-gray-50 border-b border-line px-4 sm:px-6 py-4">
+              <div className="flex items-center justify-between gap-3 bg-gray-50 border-b border-line px-4 sm:px-6 py-4">
                 <h3 className="text-lg font-semibold text-gray-800">
                   All Drivers
                 </h3>
+                <button
+                  type="button"
+                  onClick={() => { setEditDriver(null); setDriverFormOpen(true); }}
+                  className="min-h-11 rounded-lg bg-brand px-4 py-2 text-sm font-medium text-white hover:bg-brand-900"
+                >
+                  + Add Driver
+                </button>
               </div>
 
               <div>
-                <DriversList onEdit={(driver) => {setEditDriver(driver); window.scrollTo({ top: 0, behavior: 'smooth' });}} />
+                <DriversList onEdit={(driver) => { setEditDriver(driver); setDriverFormOpen(true); }} />
               </div>
             </div>
           </div>
@@ -195,40 +191,23 @@ const AddUsers = () => {
           <>
             {isSuperAdmin ? (
               <div className="space-y-6">
-                {/* Add / Edit Admin */}
-                <div className="card-surface p-4 sm:p-6">
-                  <div className="flex items-center justify-between mb-4">
-                    <h2 className="text-xl font-bold text-gray-800">
-                      {editAdmin ? "Edit Admin" : "Add New Admin"}
-                    </h2>
-                    {editAdmin && (
-                      <button
-                        onClick={() => setEditAdmin(null)}
-                        className="text-sm text-gray-600 hover:text-gray-800 underline"
-                      >
-                        Cancel Edit
-                      </button>
-                    )}
-                  </div>
-
-                  <AddAdminForm 
-                    isEdit={!!editAdmin}
-                    editData={editAdmin}
-                    onSubmit={handleAdminSubmit}
-                    onCancel={() => setEditAdmin(null)}
-                  />
-                </div>
-
                 {/* Admins List */}
                 <div className="card-surface overflow-hidden">
-                  <div className="bg-gray-50 border-b border-line px-4 sm:px-6 py-4">
+                  <div className="flex items-center justify-between gap-3 bg-gray-50 border-b border-line px-4 sm:px-6 py-4">
                     <h3 className="text-lg font-semibold text-gray-800">
                       All Administrators
                     </h3>
+                    <button
+                      type="button"
+                      onClick={() => { setEditAdmin(null); setAdminFormOpen(true); }}
+                      className="min-h-11 rounded-lg bg-brand px-4 py-2 text-sm font-medium text-white hover:bg-brand-900"
+                    >
+                      + Add Admin
+                    </button>
                   </div>
 
                   <div>
-                    <AdminsList onEdit={(admin) => setEditAdmin(admin)} />
+                    <AdminsList onEdit={(admin) => { setEditAdmin(admin); setAdminFormOpen(true); }} />
                   </div>
                 </div>
               </div>
@@ -250,6 +229,26 @@ const AddUsers = () => {
           </>
         )}
       </div>
+      {driverFormOpen && activeTab === "drivers" && (
+        <Modal title={editDriver ? "Edit Driver" : "Add Driver"} onClose={closeDriverForm} busy={saving}>
+          <AddDriverForm
+            isEdit={!!editDriver}
+            editData={editDriver}
+            onSubmit={handleDriverSubmit}
+            onCancel={closeDriverForm}
+          />
+        </Modal>
+      )}
+      {adminFormOpen && activeTab === "admins" && isSuperAdmin && (
+        <Modal title={editAdmin ? "Edit Admin" : "Add Admin"} onClose={closeAdminForm} busy={saving}>
+          <AddAdminForm
+            isEdit={!!editAdmin}
+            editData={editAdmin}
+            onSubmit={handleAdminSubmit}
+            onCancel={closeAdminForm}
+          />
+        </Modal>
+      )}
       <Nav />
     </div>
   );
