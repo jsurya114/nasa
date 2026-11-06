@@ -153,9 +153,9 @@ export const linkDriver = async (db, admin, { cityId, driverId, workerId }, deps
   const state = stateOfWorker(worker);
   try {
     const { rows } = await db.query(
-      `INSERT INTO everee_workers (driver_id, environment, everee_worker_id, external_worker_id, link_source, onboarding_complete, tin_status, terminated, last_checked_at, linked_by)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, now(), $9) RETURNING ${LINK_COLUMNS}`,
-      [driverId, config.environment, match.workerId, match.externalWorkerId, linkSourceOf(match.matchedOn), state.onboardingComplete, state.tinStatus, state.terminated, admin.id]
+      `INSERT INTO everee_workers (driver_id, environment, tenant_id, everee_worker_id, external_worker_id, link_source, onboarding_complete, tin_status, terminated, last_checked_at, linked_by)
+       VALUES ($1, $2, $10, $3, $4, $5, $6, $7, $8, now(), $9) RETURNING ${LINK_COLUMNS}`,
+      [driverId, config.environment, match.workerId, match.externalWorkerId, linkSourceOf(match.matchedOn), state.onboardingComplete, state.tinStatus, state.terminated, admin.id, config.tenantId]
     );
     logger.info('Driver linked to an Everee worker', { driverId, source: rows[0].link_source, environment: config.environment });
     return { link: viewOfLink(rows[0]) };
@@ -277,9 +277,9 @@ export const createSandboxWorker = async (db, admin, { cityId, driverId }, deps 
   const state = stateOfWorker(worker);
   try {
     const { rows } = await db.query(
-      `INSERT INTO everee_workers (driver_id, environment, everee_worker_id, external_worker_id, link_source, onboarding_complete, tin_status, terminated, last_checked_at, linked_by)
-       VALUES ($1, 'sandbox', $2, $3, 'created_sandbox', $4, $5, $6, now(), $7) RETURNING ${LINK_COLUMNS}`,
-      [driverId, String(found.workerId), external, state.onboardingComplete, state.tinStatus, state.terminated, admin.id]
+      `INSERT INTO everee_workers (driver_id, environment, tenant_id, everee_worker_id, external_worker_id, link_source, onboarding_complete, tin_status, terminated, last_checked_at, linked_by)
+       VALUES ($1, 'sandbox', $8, $2, $3, 'created_sandbox', $4, $5, $6, now(), $7) RETURNING ${LINK_COLUMNS}`,
+      [driverId, String(found.workerId), external, state.onboardingComplete, state.tinStatus, state.terminated, admin.id, config.tenantId]
     );
     logger.info('Sandbox test worker linked', { driverId, reused: !created });
     return { link: viewOfLink(rows[0]), reused: !created };

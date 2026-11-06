@@ -48,6 +48,7 @@ test('everee workers: lookup by email or phone only, link only from one exact ma
   try {
     await db.query('BEGIN');
     await db.query(migration('2026-11-04-issue-031-everee-workers.sql'));
+    await db.query(migration('2026-11-07-issue-242-everee-driver-onboarding.sql')); // the admin writers record the tenant of a new link
     const city = (await one("INSERT INTO city (job, city_code, city_type) VALUES ('Test Workers City', 'TSTWRK', 'WEEKLY') RETURNING id")).id;
     const otherCity = (await one("INSERT INTO city (job, city_code, city_type) VALUES ('Test Other City', 'TSTOTC', 'WEEKLY') RETURNING id")).id;
     const ids = (await db.query('SELECT id FROM drivers ORDER BY id LIMIT 7')).rows.map((r) => r.id);
