@@ -3,7 +3,9 @@ import { act, cleanup, fireEvent, render, screen, within } from "@testing-librar
 import { installServer, installShell, removeShell, resetBrowser } from "../../../test/fakeShell";
 
 // The driver's Pay page with the Everee transfers and the Everee account actions, with the real provider, a fake server and made-up money.
-const SESSION = { url: "https://embed.everee.com/s/single-use-token", origin: "https://embed.everee.com", expiresAt: new Date(Date.now() + 60_000).toISOString(), eventHandlerName: "nasaEvereeEmbed" };
+// Built when used, so the link's expiry is always a minute from now on a slow machine too.
+const freshSession = () => ({ url: "https://embed.everee.com/s/single-use-token", origin: "https://embed.everee.com", expiresAt: new Date(Date.now() + 60_000).toISOString(), eventHandlerName: "nasaEvereeEmbed" });
+const SESSION = { url: "https://embed.everee.com/s/single-use-token" };
 const setupStatus = (over = {}) => ({ state: "complete", required: false, canStart: false, enforced: true, driverType: "LOCAL", agreementSigned: true, needsFromDriver: [], ...over });
 const TRANSFERS = [
   { id: 5, statementId: 12, periodStart: "2026-11-01", periodEnd: "2026-11-07", amount: "100.10", status: "completed", sentAt: "2026-11-08T12:00:00Z", lastCheckedAt: "2026-11-09T12:00:00Z", paidAt: "2026-11-09T11:00:00Z" },
@@ -23,7 +25,7 @@ const startServer = async ({ setup = setupStatus(), transfers = TRANSFERS, onTra
     if (config.url === "/driver/payroll/balances") return { status: 200, data: { entries: [], claims: [], totals: { owedByDriver: "0.00", owedPenalties: "0.00", owedOther: "0.00", owedToDriver: "0.00" } } };
     if (config.url === "/driver/everee/status") return { status: 200, data: setup };
     if (config.url === "/driver/everee/transfers") return onTransfers ? onTransfers(state) : { status: 200, data: { transfers: state.transfers, lastCheckedAt: state.transfers.length ? "2026-11-09T12:00:00Z" : null } };
-    if (config.url === "/driver/everee/session") { state.posts.push(JSON.parse(config.data)); return onSession ? onSession() : { status: 200, data: SESSION }; }
+    if (config.url === "/driver/everee/session") { state.posts.push(JSON.parse(config.data)); return onSession ? onSession() : { status: 200, data: freshSession() }; }
     return { status: 200, data: {} };
   });
   return state;
