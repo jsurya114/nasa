@@ -55,3 +55,12 @@ export function describeRange({ start, end }) {
   const fmt = (iso, withYear) => new Date(dayOf(iso)).toLocaleDateString("en-US", { month: "short", day: "numeric", ...(withYear && { year: "numeric" }), timeZone: "UTC" });
   return start.slice(0, 4) === end.slice(0, 4) ? `${fmt(start, false)} – ${fmt(end, true)}` : `${fmt(start, true)} – ${fmt(end, true)}`;
 }
+
+// The most days a daily trend and the calendar can cover (the server's limit).
+export const DAILY_MAX = 366;
+
+// The bucket size a period gets unless the person chooses one: days for about six weeks, weeks for about a year, months beyond.
+export const autoInterval = (days) => (days <= 45 ? "day" : days <= 420 ? "week" : "month");
+
+// The bucket size to use: the person's choice when it is allowed (a daily trend needs a period of a year or less), else the automatic one.
+export const effectiveInterval = (choice, days) => (choice === "auto" || (choice === "day" && days > DAILY_MAX) || !["day", "week", "month"].includes(choice) ? autoInterval(days) : choice);

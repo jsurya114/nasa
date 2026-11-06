@@ -5,6 +5,7 @@
  */
 import { InputError, parseCityIdsText, parseLimit, parseRange, parseRankBy, parseSource } from '../reporting/inputs.js';
 import { businessSummary, listReportingCities, rankCities } from '../reporting/deliveryReports.js';
+import { parseInterval, trendSeries } from './trendSeries.js';
 import { CURRENCY, DEFINITIONS_VERSION, METRIC_DEFINITIONS, REPORTING_LIMITATIONS } from '../reporting/metricDefinitions.js';
 
 const UNITS = Object.freeze({ currency: CURRENCY, deliveries: 'count', percentages: 'percent, two decimals', dates: 'business dates, YYYY-MM-DD' });
@@ -44,6 +45,13 @@ export async function getCityRanking(run, query, options) {
   const rankBy = parseRankBy(query.rank_by ?? 'revenue');
   const limit = parseLimit(wholeNumber(query.limit), { fallback: 10, max: 50 });
   return respond(await run((db) => rankCities(db, { period: filters.period, rankBy, limit, cityIds: filters.cityIds, source: filters.source }), options));
+}
+
+export async function getTrends(run, query, options) {
+  const filters = parseFilters(query);
+  // The interval is required: the page chooses it from the length of the period, the server never guesses.
+  const interval = parseInterval(query.interval, filters.period);
+  return respond(await run((db) => trendSeries(db, { ...filters, interval }), options));
 }
 
 export async function getCities(run, options) {

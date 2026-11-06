@@ -3,6 +3,12 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-li
 import { installServer, removeShell, resetBrowser } from "../../test/fakeShell";
 import { daysInRange, rangeForPreset } from "./insights/insightsDates.js";
 
+// Recharts draws nothing in a window with no layout, so every chart gets a fixed size here.
+vi.mock("recharts", async (original) => {
+  const React = await import("react");
+  const real = await original();
+  return { ...real, ResponsiveContainer: ({ children }) => React.cloneElement(children, { width: 700, height: 240 }) };
+});
 vi.mock("../../utils/toast", () => ({ toast: { success: vi.fn(), error: vi.fn(), info: vi.fn(), warn: vi.fn() } }));
 
 // The real Insights page with made-up figures from a fake server. Every request is recorded, so the tests can say exactly what was asked.
@@ -21,6 +27,30 @@ const ROWS = [
   { rank: 2, cityId: 4, name: "Beta City", code: "BET", deliveries: 650, earnedDeliveryRevenue: "2000.00", grossMarginBeforeOverheads: "300.00", marginPercentage: "15.00", shareOfTotalPercent: "33.33", records: 10, recordsWithoutStoredAmounts: 2 },
 ];
 
+
+// Made-up trends like the server's: one bucket per day, week (Monday start) or month of the requested period; every third day has no records.
+const isoOf = (ms) => new Date(ms).toISOString().slice(0, 10);
+const msOf = (iso) => Date.UTC(+iso.slice(0, 4), +iso.slice(5, 7) - 1, +iso.slice(8, 10));
+const trends = ({ start_date: start, end_date: end, interval }) => {
+  const days = [];
+  for (let ms = msOf(start), i = 0; ms <= msOf(end); ms += 86400000, i += 1) days.push({ date: isoOf(ms), i, has: i % 3 !== 2, deliveries: 10 + i });
+  const startOf = (iso) => (interval === "day" ? iso : interval === "week" ? isoOf(msOf(iso) - ((new Date(msOf(iso)).getUTCDay() + 6) % 7) * 86400000) : `${iso.slice(0, 7)}-01`);
+  const groups = new Map();
+  days.forEach((d) => { const k = startOf(d.date); groups.set(k, [...(groups.get(k) ?? []), d]); });
+  const series = [...groups].map(([k, ds]) => {
+    const got = ds.filter((d) => d.has);
+    const n = got.reduce((a, d) => a + d.deliveries, 0);
+    const end2 = interval === "day" ? k : interval === "week" ? isoOf(msOf(k) + 6 * 86400000) : isoOf(msOf(`${k.slice(0, 7)}-28`) + 10 * 86400000).slice(0, 7) + "-01";
+    return got.length === 0
+      ? { bucketStart: k, bucketEnd: end2, partialBucket: false, daysInBucketWithinPeriod: ds.length, hasRecords: false, deliveries: null, earnedDeliveryRevenue: null, grossDriverEarnings: null, grossMarginBeforeOverheads: null, activeDrivers: null, daysWithRecords: 0, recordsWithoutStoredAmounts: 0 }
+      : { bucketStart: k, bucketEnd: end2, partialBucket: false, daysInBucketWithinPeriod: ds.length, hasRecords: true, deliveries: n, earnedDeliveryRevenue: (n * 4).toFixed(2), grossDriverEarnings: (n * 3.4).toFixed(2), grossMarginBeforeOverheads: (n * 0.6).toFixed(2), activeDrivers: 3, daysWithRecords: got.length, recordsWithoutStoredAmounts: 0 };
+  });
+  const weekdays = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"].map((weekday, i) => (i === 6
+    ? { weekday, totalDeliveries: 0, daysWithRecords: 0, averageDeliveriesPerDayWithRecords: null, rank: null }
+    : { weekday, totalDeliveries: 100 + i * 10, daysWithRecords: 2, averageDeliveriesPerDayWithRecords: String(50 + i * 5), rank: 6 - i }));
+  return { meta: meta({ warnings: ["3 days in the period have no delivery records; they are gaps in the charts, not zero-delivery days."] }), data: { period: { startDate: start, endDate: end, days: days.length }, interval, cities: "all", series, weekdays, busiestWeekday: "Saturday", peakDates: [] } };
+};
+
 const startServer = async (handlers = {}) => {
   const calls = [];
   await installServer(async (config) => {
@@ -30,6 +60,7 @@ const startServer = async (handlers = {}) => {
     if (path === "cities") return { status: 200, data: { meta: meta(), data: { cities: CITIES } } };
     if (path === "definitions") return { status: 200, data: { meta: meta(), data: { definitions: DEFINITIONS } } };
     if (path === "overview") return { status: 200, data: overview() };
+    if (path === "trends") return { status: 200, data: trends(config.params) };
     if (path === "rankings/cities") {
       // like the real API: only the chosen cities are ranked
       const chosen = config.params?.city_ids ? config.params.city_ids.split(",").map(Number) : null;
@@ -309,5 +340,126 @@ describe("Insights: top cities", () => {
     await screen.findByTestId("kpi-margin");
     fireEvent.click(within(screen.getByTestId("kpi-margin")).getByRole("button", { name: "About Gross profit before overheads" }));
     expect(await screen.findByText(/Company margin after driver earnings\. It is not net profit\./)).toBeTruthy();
+  });
+});
+
+describe("Insights: trends, weekdays and calendar", () => {
+  const CUSTOM = "/admin/insights?preset=custom&start=2026-10-19&end=2026-11-01";
+
+  it("draws the line charts, the weekday bars and the calendar for the period, by day for a short period", async () => {
+    const server = await startServer();
+    await mount(CUSTOM);
+    expect(await screen.findByTestId("trend-deliveries")).toBeTruthy();
+    expect(screen.getByTestId("trend-revenue")).toBeTruthy();
+    expect(server.of("trends")[0].params).toMatchObject({ start_date: "2026-10-19", end_date: "2026-11-01", interval: "day" });
+    expect(screen.getByRole("img", { name: /^Deliveries from Oct 19 to Nov 1: 10 of 14 periods have records/ })).toBeTruthy();
+    expect(screen.getByRole("img", { name: /^Revenue and gross margin/ })).toBeTruthy();
+    expect(document.querySelectorAll("[data-testid='trend-revenue'] .recharts-line").length).toBe(2);
+    expect(screen.getByRole("list", { name: "Legend" }).textContent).toContain("Gross margin");
+    expect(await screen.findByTestId("weekday-busiest")).toHaveProperty("textContent", "Busiest weekday: Saturday");
+    expect(document.querySelectorAll("[data-testid='weekday-title'], .recharts-bar-rectangle").length).toBeGreaterThan(0);
+    // a short period asked for the daily trend once, and the calendar reuses it
+    expect(server.of("trends")).toHaveLength(1);
+    const grid = await screen.findByTestId("calendar-grid");
+    expect(grid.querySelectorAll("[data-status='records']").length).toBe(10);
+    expect(grid.querySelectorAll("[data-status='empty']").length).toBe(4);
+    expect(screen.getByTestId("trends-notes").textContent).toContain("gaps in the charts, not zero");
+  });
+
+  it("the weekday and calendar cards can shrink inside their grid, so a long calendar scrolls inside its own card and never widens the phone page", async () => {
+    // jsdom has no layout, so this guards the cause: a grid item keeps `min-width: auto` (as wide as its content, a year of weeks) unless it
+    // has min-w-0. Checked in a real browser at 390 px for 2025-11-01 to 2026-10-31: the page was 977 px wide before, 390 px after.
+    const server = await startServer();
+    await mount(CUSTOM);
+    await screen.findByTestId("calendar-grid");
+    const calendar = screen.getByRole("region", { name: "Calendar" });
+    const weekdays = screen.getByRole("region", { name: "Busiest weekdays" });
+    for (const card of [calendar, weekdays]) expect(card.classList.contains("min-w-0")).toBe(true);
+    expect(calendar.parentElement).toBe(weekdays.parentElement); // they are the two items of the same grid
+    expect(calendar.querySelector("[data-testid='calendar-grid']").parentElement.classList.contains("overflow-x-auto")).toBe(true);
+    expect(server.of("trends").length).toBeGreaterThan(0);
+  });
+
+  it("a day with no records is a dashed square, not the lightest shade, and pointing at a day reads out its deliveries", async () => {
+    await startServer();
+    await mount(CUSTOM);
+    const grid = await screen.findByTestId("calendar-grid");
+    const empty = grid.querySelector("[data-status='empty']");
+    expect(empty.getAttribute("data-level")).toBeNull();
+    expect(empty.className).toContain("border-dashed");
+    fireEvent.mouseEnter(empty);
+    expect(screen.getByTestId("calendar-readout").textContent).toMatch(/no delivery records/);
+    const busy = grid.querySelector("[data-status='records']");
+    fireEvent.mouseEnter(busy);
+    expect(screen.getByTestId("calendar-readout").textContent).toMatch(/Oct 19, 2026: 10 deliveries/);
+    expect(screen.getByTestId("calendar-legend").textContent).toContain("No records");
+  });
+
+  it("every chart has a table with the exact figures, and a gap shows N/A rather than 0", async () => {
+    await startServer();
+    await mount(CUSTOM);
+    await screen.findByTestId("trend-deliveries");
+    fireEvent.click(screen.getByRole("button", { name: "Show as table, trends" }));
+    const table = await screen.findByTestId("trends-table");
+    const rows = within(table).getAllByRole("row").slice(1);
+    expect(rows).toHaveLength(14);
+    expect(within(rows[0]).getAllByRole("cell").map((c) => c.textContent)).toEqual(["10", "$40.00", "$6.00", "3"]);
+    const gap = rows.find((r) => within(r).getByRole("rowheader").textContent.startsWith("Oct 21, 2026"));
+    expect(within(gap).getAllByRole("cell").map((c) => c.textContent)).toEqual(["N/A", "N/A", "N/A", "N/A"]);
+    cleanup();
+  });
+
+  it("the weekday table shows N/A for a weekday with no records", async () => {
+    await startServer();
+    await mount(CUSTOM);
+    await screen.findByTestId("weekday-busiest");
+    fireEvent.click(screen.getByRole("button", { name: "Show as table, weekdays" }));
+    const rows = within(await screen.findByTestId("weekday-table")).getAllByRole("row").slice(1);
+    expect(within(rows[6]).getAllByRole("cell").map((c) => c.textContent)).toEqual(["N/A", "0", "N/A"]);
+    expect(within(rows[5]).getAllByRole("cell")[0].textContent).toBe("75.00");
+  });
+
+  it("a longer period is grouped by week, the calendar asks for its own daily answer, and the choice of bucket size is honoured", async () => {
+    const server = await startServer();
+    await mount("/admin/insights?preset=custom&start=2026-08-01&end=2026-11-01");
+    await screen.findByTestId("trend-deliveries");
+    expect(server.of("trends").map((c) => c.params.interval).sort()).toEqual(["day", "week"]);
+    fireEvent.click(screen.getByRole("button", { name: "Month" }));
+    await waitFor(() => expect(server.of("trends").at(-1).params.interval).toBe("month"));
+    expect(screen.getByRole("button", { name: "Month" }).getAttribute("aria-pressed")).toBe("true");
+    expect(screen.getByRole("button", { name: "Auto" }).getAttribute("aria-pressed")).toBe("false");
+  });
+
+  it("over a year there is no daily trend and no calendar, only a plain explanation", async () => {
+    const server = await startServer();
+    await mount("/admin/insights?preset=custom&start=2025-06-01&end=2026-11-01");
+    expect(await screen.findByTestId("calendar-too-long")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Day" }).disabled).toBe(true);
+    await screen.findByTestId("trend-deliveries");
+    expect(server.of("trends").every((c) => c.params.interval !== "day")).toBe(true);
+  });
+
+  it("with no records the charts say so instead of drawing empty axes, and a failed trend shows its own error", async () => {
+    await startServer({ trends: (params) => ({ status: 200, data: { ...trends(params), data: { ...trends(params).data, series: trends(params).data.series.map((p) => ({ ...p, hasRecords: false, deliveries: null, earnedDeliveryRevenue: null, grossMarginBeforeOverheads: null })), weekdays: [], busiestWeekday: null } } }) });
+    await mount(CUSTOM);
+    expect(await screen.findByTestId("trends-empty")).toBeTruthy();
+    expect(await screen.findByTestId("weekday-empty")).toBeTruthy();
+    expect(await screen.findByTestId("calendar-empty")).toBeTruthy();
+    expect(screen.queryByTestId("trend-deliveries")).toBeNull();
+    cleanup();
+    await startServer({ trends: () => ({ status: 500, data: {} }) });
+    await mount(CUSTOM);
+    expect((await screen.findAllByText(/Insights could not be loaded/)).length).toBeGreaterThanOrEqual(3);
+    expect(await screen.findByTestId("kpi-revenue")).toBeTruthy();
+  });
+
+  it("changing the city asks for new trends and never shows the old ones in between", async () => {
+    const server = await startServer();
+    await mount(CUSTOM);
+    await screen.findByTestId("trend-deliveries");
+    fireEvent.change(screen.getByLabelText("City"), { target: { value: "4" } });
+    expect(await screen.findByRole("status", { name: "Loading trends" })).toBeTruthy();
+    await screen.findByTestId("trend-deliveries");
+    expect(server.of("trends").at(-1).params.city_ids).toBe("4");
   });
 });
