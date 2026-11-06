@@ -28,7 +28,7 @@ const reviewOf = (drivers) => ({
   summary: { pendingClaims: { total: 0 } },
 });
 
-const startServer = async ({ preview = previewOf(), batches = [], post, configured = true, review = reviewOf() } = {}) => {
+const startServer = async ({ preview = previewOf(), batches = [], post, act, configured = true, review = reviewOf() } = {}) => {
   const state = { preview, batches, posts: [], records: [], previews: [], calls: [] };
   await installServer(async (config) => {
     state.calls.push(`${config.method} ${config.url}`);
@@ -40,6 +40,8 @@ const startServer = async ({ preview = previewOf(), batches = [], post, configur
       state.posts.push(body);
       return post ? post(state, body) : { status: 200, data: {} };
     }
+    const acting = config.url.match(/\/everee-batches\/(\d+)\/(check|retry)$/);
+    if (acting && config.method === "post" && act) return act(state, Number(acting[1]), acting[2]);
     if (config.url.endsWith("/record") && config.method === "post") {
       const body = JSON.parse(config.data);
       state.records.push(body);
@@ -276,6 +278,43 @@ describe("Pay to drivers: Bank transfer (Everee)", () => {
     fireEvent.click(within(results).getByRole("button", { name: "Retry what failed" }));
     await waitFor(() => expect(server.calls).toContain("post /admin/payroll/everee-batches/6/retry"));
     expect(server.calls).not.toContain("post /admin/payroll/everee-batches/7/retry");
+  });
+
+  const batchSix = () => batchOf([item(2, "Eli Test", "failed")], { batch: { id: 6, runId: 17, drivers: 1, total: "100.00", createdAt: "2026-11-05T12:00:00Z" } });
+  const batchSeven = () => batchOf([item(3, "Gus Test", "failed")], { batch: { id: 7, runId: 17, drivers: 1, total: "100.00", createdAt: "2026-11-06T12:00:00Z" } });
+  const paidAfter = (state, id, name) => { state.batches = state.batches.map((b) => (b.batch.id === id ? batchOf([item(id, name, "paid")], { batch: b.batch }) : b)); return { status: 200, data: {} }; };
+
+  it("a batch the server refuses does not stop the others: the later batch is still tried, the refusal is shown with its words, and the results refresh", async () => {
+    const server = await startServer({
+      batches: [batchSeven(), batchSix()],
+      act: (state, id) => (id === 7 ? { status: 409, data: { message: "Review the earnings before retrying" } } : paidAfter(state, 6, "Eli Test")),
+    });
+    await mount();
+    const results = await screen.findByRole("region", { name: "Everee payment results" });
+    fireEvent.click(within(results).getByRole("button", { name: "Retry what failed" }));
+    await waitFor(() => expect(server.calls).toContain("post /admin/payroll/everee-batches/6/retry"));
+    expect(server.calls).toContain("post /admin/payroll/everee-batches/7/retry");
+    expect((await screen.findByRole("alert")).textContent).toMatch(/Gus Test: Review the earnings before retrying/);
+    expect(screen.getByRole("alert").textContent).not.toMatch(/Eli Test/);
+    expect(screen.getByRole("alert").textContent).toMatch(/The others were tried/);
+    expect(await within(results).findByText("Transaction successful")).toBeTruthy(); // Eli, read again after the partial failure
+    expect(server.calls.filter((c) => c === "post /admin/payroll/everee-batches/7/retry")).toHaveLength(1); // not tried again by itself
+  });
+
+  it("when an earlier batch goes through and a later one fails, the results still refresh and the failure names the driver", async () => {
+    const waiting = (id, name, at) => batchOf([item(id, name, "submitted")], { batch: { id, runId: 17, drivers: 1, total: "100.00", createdAt: at } });
+    const server = await startServer({
+      batches: [waiting(7, "Gus Test", "2026-11-06T12:00:00Z"), waiting(6, "Eli Test", "2026-11-05T12:00:00Z")],
+      act: (state, id) => (id === 7 ? paidAfter(state, 7, "Gus Test") : { status: 500, data: { message: "Everee could not be reached" } }),
+    });
+    await mount();
+    const results = await screen.findByRole("region", { name: "Everee payment results" });
+    fireEvent.click(within(results).getByRole("button", { name: "Check now" }));
+    expect((await screen.findByRole("alert")).textContent).toMatch(/Eli Test: Everee could not be reached/);
+    expect(await within(results).findByText("Transaction successful")).toBeTruthy(); // Gus, refreshed although Eli failed
+    expect(server.calls).toContain("post /admin/payroll/everee-batches/7/check");
+    expect(server.calls).toContain("post /admin/payroll/everee-batches/6/check");
+    expect(within(results).getByRole("button", { name: "Check now" }).disabled).toBe(false); // Eli can still be checked
   });
 
   it("the results re-read themselves while payments wait, and tell the page when one succeeds", async () => {

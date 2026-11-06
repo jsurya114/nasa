@@ -14,7 +14,7 @@ export const REFRESH_MS = 60_000; // how often the open window re-reads the resu
 export default function EvereeRunResults({ runId, onChanged, refreshMs = REFRESH_MS, reloadKey = 0, showApprovalLink = true }) {
   const [batches, setBatches] = useState([]);
   const [busy, setBusy] = useState(false);
-  const [message, setMessage] = useState("");
+  const [messages, setMessages] = useState([]);
   const mounted = useRef(true);
   const paidCount = useRef(0);
   const returnedCount = useRef(0);
@@ -51,28 +51,42 @@ export default function EvereeRunResults({ runId, onChanged, refreshMs = REFRESH
     return () => { clearInterval(timer); controller.abort(); };
   }, [waiting, busy, load, refreshMs]);
 
-  const act = async (paths, failure) => {
+  // Each batch is tried on its own: a refusal for one (the server's answer is kept as it is) never stops the others, and the results are read
+  // again afterwards whatever happened, so the list shows what really went through. Nothing refused is tried again by itself.
+  const act = async (targets, action, failure) => {
     if (busy) return;
     setBusy(true);
-    setMessage("");
-    try {
-      for (const path of paths) await axios.post(path);
-      await load();
-      onChanged?.();
-    } catch (error) {
-      setMessage(readableError(error, failure));
-    } finally {
-      if (mounted.current) setBusy(false);
+    setMessages([]);
+    const refused = [];
+    let done = 0;
+    for (const target of targets) {
+      try {
+        await axios.post(`${base}/everee-batches/${target.batch.id}/${action}`);
+        done += 1;
+      } catch (error) {
+        refused.push(`${target.items.slice(0, 3).map((i) => i.driverName).join(", ")}${target.items.length > 3 ? ` and ${target.items.length - 3} more` : ""}: ${readableError(error, failure)}`);
+      }
+    }
+    await load();
+    if (done > 0) onChanged?.();
+    if (mounted.current) {
+      setMessages(refused);
+      setBusy(false);
     }
   };
 
   if (batches.length === 0) return null;
   return (
     <div className="space-y-3">
-      {message && <p role="alert" className="rounded-xl bg-red-50 p-3 text-sm text-red-700">{message}</p>}
+      {messages.length > 0 && (
+        <div role="alert" className="rounded-xl bg-red-50 p-3 text-sm text-red-700">
+          <p className="font-semibold">{messages.length === 1 ? "One payment could not be completed. The others were tried." : `${messages.length} payments could not be completed. The others were tried.`}</p>
+          <ul className="mt-1 list-disc pl-5">{messages.map((m) => <li key={m}>{m}</li>)}</ul>
+        </div>
+      )}
       <EvereeBatchResults view={mergeBatches(batches)} busy={busy}
-        onCheck={() => act(batches.filter(needsCheck).map((b) => `${base}/everee-batches/${b.batch.id}/check`), "Everee could not be checked. Try again in a moment.")}
-        onRetry={() => act(batches.filter(needsRetry).map((b) => `${base}/everee-batches/${b.batch.id}/retry`), "The retry could not be completed. Check the results before trying again.")} />
+        onCheck={() => act(batches.filter(needsCheck), "check", "Everee could not be checked. Try again in a moment.")}
+        onRetry={() => act(batches.filter(needsRetry), "retry", "The retry could not be completed. Check the results before trying again.")} />
       {showApprovalLink && waiting && <EvereeApprovalLink label={pending ? "Open Everee to approve" : "Open Everee for deposit details"} />}
     </div>
   );
