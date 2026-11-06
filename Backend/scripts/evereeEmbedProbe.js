@@ -44,7 +44,15 @@ try {
   say('worker.externalWorkerId echoed', worker?.externalWorkerId === EXTERNAL);
   say('worker.onboardingComplete', worker?.onboardingComplete);
 
-  const { data: session, status } = await client.createEmbeddedSession({ workerId: String(worker.id), experience: 'ONBOARDING', experienceVersion: 'V2_0', eventHandlerName: 'nasaEvereeEmbed' });
+  // The application uses Everee's canonical worker ID, which is the `workerId` of the search result whose externalWorkerId is exactly ours
+  // (the Worker answer's own `id` can be our external ID as an alias). The probe does the same, so it proves the flow the application really runs.
+  const { data: found } = await client.searchWorkers(EXTERNAL);
+  const ours = (Array.isArray(found) ? found : found?.items ?? []).filter((w) => w.externalWorkerId === EXTERNAL && w.workerId != null);
+  say('canonical workerId found by exact external ID (one result)', ours.length === 1);
+  say('canonical workerId differs from worker.id', ours.length === 1 && String(ours[0].workerId) !== String(worker.id));
+  if (ours.length !== 1) throw new Error('the canonical worker ID could not be resolved from the search');
+
+  const { data: session, status } = await client.createEmbeddedSession({ workerId: String(ours[0].workerId), experience: 'ONBOARDING', experienceVersion: 'V2_0', eventHandlerName: 'nasaEvereeEmbed' });
   say('session http status', status);
   say('session fields', shape(session));
   let host = null;
