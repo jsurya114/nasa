@@ -9,7 +9,8 @@ export const isRouteAvailable = async (route_id) => {
 };
 
 // ✅ Insert Journey
-export const insertJourney = async (data) => {
+// `db` is the pool, or the client of a transaction when the caller needs this write to be part of it (the onboarding gate does).
+export const insertJourney = async (data, db = pool) => {
   const { driver_id, route_id, packages, start_seq, end_seq, journey_date } = data;
 
   if (!journey_date) {
@@ -37,7 +38,7 @@ export const insertJourney = async (data) => {
     `;
     const values = [driver_id, journey_date, route_id, packages, start_seq, end_seq];
 
-    const result = await pool.query(query, values);
+    const result = await db.query(query, values);
     return result.rows[0];
   } catch (error) {
     logger.error("insertJourney failed", error);
@@ -108,7 +109,7 @@ export const getTodayJourney = async (driver_id) => {
 };
 
 // ✅ Add Deliveries by Sequence Range
-export const addRangeOfSqeunceToDeliveries = async (driver_id, route_id, start_seq, end_seq, dashboard_data_id) => {
+export const addRangeOfSqeunceToDeliveries = async (driver_id, route_id, start_seq, end_seq, dashboard_data_id, db = pool) => {
   try {
     const query = `
       INSERT INTO deliveries (
@@ -132,7 +133,7 @@ export const addRangeOfSqeunceToDeliveries = async (driver_id, route_id, start_s
     `;
 
     const values = [Number(driver_id), Number(route_id), Number(start_seq), Number(end_seq), Number(dashboard_data_id)];
-    const result = await pool.query(query, values);
+    const result = await db.query(query, values);
     return result.rows;
 
   } catch (error) {
@@ -162,7 +163,8 @@ export const addRangeOfSequenceToDeliveriesForAdmin = async (
   start_seq,
   end_seq,
   dashboard_data_id,
-  journey_date
+  journey_date,
+  db = pool
 ) => {
   const query = `
     INSERT INTO deliveries (
@@ -193,7 +195,7 @@ export const addRangeOfSequenceToDeliveriesForAdmin = async (
     journey_date
   ];
 
-  await pool.query(query, values);
+  await db.query(query, values);
 };
 
 
@@ -201,11 +203,13 @@ export const addRangeOfSequenceToDeliveriesForAdmin = async (
 
 
 // ✅ Sync Deliveries when Journey is Updated
-export const  syncJourneyDeliveries = async (journey_id, driver_id, route_id, start_seq, end_seq, journey_date) => {
-  const client = await pool.connect();
+// With `db` (the client of a transaction the caller owns) the sync takes part in that transaction; without it, it runs in its own as before.
+export const  syncJourneyDeliveries = async (journey_id, driver_id, route_id, start_seq, end_seq, journey_date, db = null) => {
+  const own = !db;
+  const client = db ?? await pool.connect();
   
   try {
-    await client.query('BEGIN');
+    if (own) await client.query('BEGIN');
 
     // 1. Prune: Delete deliveries that are no longer in the new Sequence Range
     // (e.g., if range changed from 10-20 to 10-15, delete 16-20)
@@ -267,14 +271,14 @@ export const  syncJourneyDeliveries = async (journey_id, driver_id, route_id, st
         journey_id
       ]);
 
-    await client.query('COMMIT');
+    if (own) await client.query('COMMIT');
     return { success: true };
 
   } catch (error) {
-    await client.query('ROLLBACK');
+    if (own) await client.query('ROLLBACK');
     logger.error("syncJourneyDeliveries failed", error);
     throw new Error(`Failed to sync deliveries: ${error.message}`);
   } finally {
-    client.release();
+    if (own) client.release();
   }
 };

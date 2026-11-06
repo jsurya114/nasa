@@ -1,4 +1,5 @@
 import { readEvereeConfig } from './evereeConfig.js';
+import { withDriverLock } from './driverLock.js';
 
 // The hard gate of Everee onboarding (issue #242, PR B). A LOCAL driver whose Everee onboarding is not verified complete cannot work and cannot be
 // the subject of ANY new payment, Cash in Hand included. Desi drivers and drivers with no type are not affected by this gate (their own type rules stay).
@@ -56,6 +57,18 @@ export class OnboardingRequiredError extends Error {
 export const assertMayWork = async (db, driverId, deps = {}) => {
   const blocked = await blockedDriverIds(db, [driverId], deps);
   if (blocked.size > 0) throw new OnboardingRequiredError([...blocked]);
+};
+
+// A work write that must not be undone by a concurrent eligibility change. With the gate off it simply runs `fn(pool)` as before. With the gate on, the check
+// and the write are ONE transaction: it takes the driver's lock (driverLock.js), checks the driver with the driver row and the live links share-locked, and
+// runs `fn(tx)` on the same connection, so an administrator's unlink, a classification change or a link refresh is either completely before it (and
+// refuses the work) or waits until the work has committed. `fn` must do every write through the `db` it is given.
+export const withWorkGate = async (pool, driverId, fn, deps = {}) => {
+  if (!enforcement(deps.env ?? process.env).enforced) return fn(pool);
+  return withDriverLock(pool, driverId, async (tx) => {
+    await assertMayWork(tx, driverId, { ...deps, lock: true });
+    return fn(tx);
+  });
 };
 
 // For a set of drivers about to be paid. The whole set is refused when any one is held (never a partial payment of a mixed selection).

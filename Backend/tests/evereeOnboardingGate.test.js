@@ -36,19 +36,26 @@ test('turning a day ON allows work; turning days off or leaving them as they are
   assert.equal(turnsWorkOn({ ...all(false), monday: true }, all(false)), true, 'a plain current object works too');
 });
 
-test('every work and payment path calls the gate before it writes', () => {
-  const before = (file, gate, write) => {
-    const text = source(file);
+test('every work and payment path runs its check and its write together, the check first', () => {
+  const before = (file, gate, write, from = '') => {
+    const whole = source(file);
+    const text = from ? whole.slice(whole.indexOf(from)) : whole;
+    assert.ok(from === '' || whole.includes(from), `${file} must contain ${from}`);
     const g = text.indexOf(gate);
     const w = text.indexOf(write);
     assert.ok(g > -1, `${file} must call ${gate}`);
     assert.ok(w > -1 && g < w, `${file}: ${gate} must come before ${write}`);
   };
-  before('controllers/driver/journeyController.js', 'assertMayWork(', 'await insertJourney(');
-  before('controllers/admin/adminJourneyController.js', 'assertMayWork(pool, driver_id);\n\n      // A new journey', 'AdminJourneyQuery.addJourney(');
-  before('controllers/admin/adminJourneyController.js', 'assertMayWork(pool, driver_id);\n\n      // 3. STRICT', 'AdminJourneyQuery.updateJourneyById(');
-  before('controllers/driver/driveravailabilityController.js', 'assertMayWork(', 'availabilityService.updateDriverAvailability(');
-  before('controllers/admin/adminavailabilityController.js', 'assertMayWork(', 'availabilityService.updateDriverAvailabilityByAdmin(');
+  // Work: the writes are the arguments of withWorkGate (one transaction with the check), never a separate call after a separate check.
+  before('controllers/driver/journeyController.js', 'withWorkGate(', 'await insertJourney(');
+  before('controllers/driver/journeyController.js', 'withWorkGate(', 'await addRangeOfSqeunceToDeliveries(');
+  before('controllers/admin/adminJourneyController.js', 'withWorkGate(pool, driver_id', 'AdminJourneyQuery.addJourney(', 'addJourney: async');
+  before('controllers/admin/adminJourneyController.js', 'withWorkGate(pool, driver_id', 'AdminJourneyQuery.updateJourneyById(', 'updateJourney: async');
+  before('controllers/driver/driveravailabilityController.js', 'withWorkGate(', 'availabilityService.updateDriverAvailability(driverId, availability, db)');
+  before('controllers/admin/adminavailabilityController.js', 'withWorkGate(', 'availabilityService.updateDriverAvailabilityByAdmin(id, availability, adminId, adminRole, db)');
+  for (const file of ['controllers/driver/journeyController.js', 'controllers/admin/adminJourneyController.js', 'controllers/driver/driveravailabilityController.js', 'controllers/admin/adminavailabilityController.js']) {
+    assert.doesNotMatch(source(file), /assertMayWork\(/, `${file} must not check on one connection and write on another`);
+  }
   before('services/payroll/payRuns/paymentRecords.js', 'blockedDriverIds(', 'INSERT INTO pay_run_payment_records');
   before('services/payments/everee/batchSubmit.js', 'blockedDriverIds(tx, typed', 'INSERT INTO everee_payment_items');
   assert.match(source('services/payroll/payRuns/payBatchReview.js'), /blockedDriverIds\(db, driverIds\)/);
