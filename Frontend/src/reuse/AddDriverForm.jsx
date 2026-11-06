@@ -100,11 +100,8 @@ function AddDriverForm({ onSubmit, editData, isEdit, onCancel }) {
     // No type chosen: send none, so a new driver is "Not set" and an edited driver keeps the type they have.
     if (!driverData.driverType) delete driverData.driverType;
     
+    // The form lives in a dialog that closes when the save worked, so nothing is cleared here: a failed save keeps what was typed.
     onSubmit(driverData);
-
-    if (!isEdit) {
-      setForm(EMPTY_FORM);
-    }
 
     setErrors({});
   };
@@ -280,15 +277,14 @@ function AddDriverForm({ onSubmit, editData, isEdit, onCancel }) {
           {isEdit ? "Update Driver" : "Add Driver"}
         </button>
 
-        {isEdit && (
-          <button
-            type="button"
-            onClick={handleCancel}
-            className="px-6 py-2 bg-gray-300 text-gray-800 rounded-lg hover:bg-gray-400 transition-colors"
-          >
-            Cancel
-          </button>
-        )}
+        <button
+          type="button"
+          onClick={handleCancel}
+          disabled={loading}
+          className="px-6 py-2 bg-gray-300 text-gray-800 rounded-lg hover:bg-gray-400 transition-colors disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          Cancel
+        </button>
       </div>
     </form>
   );

@@ -9,6 +9,7 @@ import { fetchRoutes, addRoute, toggleRouteStatus, updateRoute } from "../../red
 import { fetchPaginatedJobs } from "../../redux/slice/admin/jobSlice";
 import Pagination from "../../reuse/Pagination.jsx";
 import SearchBar from "../../reuse/Search.jsx";
+import Modal from "../../reuse/Modal.jsx";
 
 const ROUTES_PER_PAGE = 10;
 
@@ -28,6 +29,9 @@ export default function RoutesForm() {
     enabled: false,
   });
   const [editingId, setEditingId] = useState(null);
+  // The Add / Edit form opens in a dialog; `saving` keeps it from being dismissed while a save runs.
+  const [formOpen, setFormOpen] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [submitError, setSubmitError] = useState(null);
   const [submitSuccess] = useState(null);
   const [searchTerm, setSearchTerm] = usePersistentState("admin", "routes", "search", "");
@@ -82,7 +86,13 @@ export default function RoutesForm() {
     });
     setEditingId(route.id);
     setSubmitError(null);
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+    setFormOpen(true);
+  }, []);
+
+  const handleAdd = useCallback(() => {
+    setEditingId(null);
+    setSubmitError(null);
+    setFormOpen(true);
   }, []);
 
   // Memoized cancel edit handler
@@ -99,6 +109,7 @@ export default function RoutesForm() {
     });
     setEditingId(null);
     setSubmitError(null);
+    setFormOpen(false);
   }, []);
 
   // ✅ ENHANCED: Submit handler with city filter
@@ -118,6 +129,7 @@ export default function RoutesForm() {
       return;
     }
 
+    setSaving(true);
     try {
       if (editingId) {
         await dispatch(updateRoute({ id: editingId, routeData: formData })).unwrap();
@@ -145,6 +157,7 @@ export default function RoutesForm() {
         enabled: false,
       });
       setSubmitError(null);
+      setFormOpen(false);
       
       // Refresh with current filters
       dispatch(fetchRoutes({ page: page || 1, limit: ROUTES_PER_PAGE, search: searchTerm, city: cityFilter }));
@@ -154,6 +167,8 @@ export default function RoutesForm() {
         position: "top-right",
         autoClose: 3000,
       });
+    } finally {
+      setSaving(false);
     }
   }, [formData, editingId, dispatch, page, searchTerm, cityFilter]);
 
@@ -201,122 +216,20 @@ export default function RoutesForm() {
     <div className="min-h-dvh bg-canvas text-ink">
       <Header />
       <main className="max-w-[1450px] mx-auto p-4 pb-40">
-        {/* Form Section */}
-        <section className="card-surface mb-4 p-4 sm:p-6">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="font-bold text-ink bg-brand-50/60 border-b border-line px-4 sm:px-6 py-3 -mx-4 -mt-4 sm:-mx-6 sm:-mt-6 rounded-t-[var(--radius-card)] flex-1">
-              {editingId ? 'Edit Route' : 'Add Route'}
-            </h2>
-            {editingId && (
-              <button
-                onClick={handleCancelEdit}
-                className="ml-4 px-3 py-1.5 text-sm bg-gray-500 text-white rounded-md hover:bg-gray-600 transition-colors"
-              >
-                Cancel Edit
-              </button>
-            )}
-          </div>
-          <form onSubmit={handleSubmit} className="flex flex-col gap-4 mt-6">
-            <div>
-              <label className="block mb-1 font-medium">Route</label>
-              <input
-                type="text"
-                placeholder="Enter route name"
-                value={formData.route}
-                onChange={(e) => handleInputChange("route", e.target.value)}
-                className="bg-white text-ink placeholder:text-ink-muted/70 focus:outline-none transition-shadow border-line min-h-11 w-full px-3 py-3 sm:py-2 border rounded-xl focus:ring-4 focus:ring-brand-500/20"
-              />
-            </div>
-
-            <div>
-              <label className="block mb-1 font-medium">Route Code (String)</label>
-              <input
-                type="text"
-                placeholder="Enter route code string (optional)"
-                value={formData.routeCodeInString}
-                onChange={(e) => handleInputChange("routeCodeInString", e.target.value)}
-                className="bg-white text-ink placeholder:text-ink-muted/70 focus:outline-none transition-shadow border-line min-h-11 w-full px-3 py-3 sm:py-2 border rounded-xl focus:ring-4 focus:ring-brand-500/20"
-              />
-            </div>
-
-            <div>
-              <label className="block mb-1 font-medium">Job (City)</label>
-              <select
-                value={formData.job}
-                onChange={(e) => handleInputChange("job", e.target.value)}
-                className="text-ink placeholder:text-ink-muted/70 focus:outline-none transition-shadow border-line min-h-11 w-full px-3 py-3 sm:py-2 border rounded-xl focus:ring-4 focus:ring-brand-500/20 bg-white"
-              >
-                <option value="">Select City</option>
-                {enabledJobs.length > 0 ? (
-                  enabledJobs.map((city) => (
-                    <option key={city.id} value={city.job}>
-                      {city.job}
-                    </option>
-                  ))
-                ) : (
-                  <option disabled>No cities available</option>
-                )}
-              </select>
-              {jobsStatus === "loading" && (
-                <div className="flex items-center mt-1">
-                  <svg className="animate-spin h-6 w-6 mr-2 text-purple-600" viewBox="0 0 24 24">
-                    <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
-                    <path fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
-                  </svg>
-                  <p className="text-purple-600 font-medium">Loading cities...</p>
-                </div>
-              )}
-              {jobsStatus === "failed" && (
-                <p className="text-red-500 mt-1">Error loading cities: {jobsError || "Unknown error"}</p>
-              )}
-            </div>
-
-            {priceFields.map(({ label, field }) => (
-              <div key={field}>
-                <label className="block mb-1 font-medium">{label}</label>
-                <input
-                  type="number"
-                  value={formData[field]}
-                  onChange={(e) => handleInputChange(field, e.target.value)}
-                  className="bg-white text-ink placeholder:text-ink-muted/70 focus:outline-none transition-shadow border-line min-h-11 w-full px-3 py-3 sm:py-2 border rounded-xl focus:ring-4 focus:ring-brand-500/20"
-                  min="0"
-                  step="0.01"
-                />
-              </div>
-            ))}
-
-            <div className="flex items-center space-x-2">
-              <input
-                type="checkbox"
-                checked={formData.enabled}
-                onChange={(e) => handleInputChange("enabled", e.target.checked)}
-                className="w-4 h-4 text-purple-600"
-              />
-              <label className="font-medium">Enabled (to save)</label>
-            </div>
-
-            {submitError && <p className="text-red-500">{submitError}</p>}
-            {submitSuccess && <p className="text-green-500">{submitSuccess}</p>}
-
-            <div className="flex justify-end gap-2">
-              <button
-                type="submit"
-                className={`px-4 py-1.5 text-sm bg-purple-700 text-white rounded-md shadow hover:bg-purple-800 transition-colors ${
-                  !formData.enabled ? "opacity-50 cursor-not-allowed" : ""
-                }`}
-                disabled={!formData.enabled}
-              >
-                {editingId ? 'Update Route' : 'Add Route'}
-              </button>
-            </div>
-          </form>
-        </section>
-
         {/* Table Section */}
         <section className="card-surface">
-          <h2 className="font-bold text-gray-900 bg-gray-50 border-b border-line px-4 py-3 rounded-t-xl">
-            Route List
-          </h2>
+          <div className="flex items-center justify-between gap-3 bg-gray-50 border-b border-line px-4 py-3 rounded-t-xl">
+            <h2 className="font-bold text-gray-900">
+              Route List
+            </h2>
+            <button
+              type="button"
+              onClick={handleAdd}
+              className="px-4 py-2 text-sm bg-purple-700 text-white rounded-md shadow hover:bg-purple-800 transition-colors"
+            >
+              + Add Route
+            </button>
+          </div>
           
           {/* ✅ NEW: Filter Section */}
           <div className="px-4 py-2 border-b border-line bg-gray-50">
@@ -500,6 +413,112 @@ export default function RoutesForm() {
         <Pagination page={page} totalPages={totalPages} onPageChange={handlePageChange} />
       </main>
 
+      {formOpen && (
+        <Modal title={editingId ? 'Edit Route' : 'Add Route'} onClose={handleCancelEdit} busy={saving}>
+          <form onSubmit={handleSubmit} className="flex flex-col gap-4 mt-4">
+            <div>
+              <label className="block mb-1 font-medium">Route</label>
+              <input
+                type="text"
+                placeholder="Enter route name"
+                value={formData.route}
+                onChange={(e) => handleInputChange("route", e.target.value)}
+                className="bg-white text-ink placeholder:text-ink-muted/70 focus:outline-none transition-shadow border-line min-h-11 w-full px-3 py-3 sm:py-2 border rounded-xl focus:ring-4 focus:ring-brand-500/20"
+              />
+            </div>
+
+            <div>
+              <label className="block mb-1 font-medium">Route Code (String)</label>
+              <input
+                type="text"
+                placeholder="Enter route code string (optional)"
+                value={formData.routeCodeInString}
+                onChange={(e) => handleInputChange("routeCodeInString", e.target.value)}
+                className="bg-white text-ink placeholder:text-ink-muted/70 focus:outline-none transition-shadow border-line min-h-11 w-full px-3 py-3 sm:py-2 border rounded-xl focus:ring-4 focus:ring-brand-500/20"
+              />
+            </div>
+
+            <div>
+              <label className="block mb-1 font-medium">Job (City)</label>
+              <select
+                value={formData.job}
+                onChange={(e) => handleInputChange("job", e.target.value)}
+                className="text-ink placeholder:text-ink-muted/70 focus:outline-none transition-shadow border-line min-h-11 w-full px-3 py-3 sm:py-2 border rounded-xl focus:ring-4 focus:ring-brand-500/20 bg-white"
+              >
+                <option value="">Select City</option>
+                {enabledJobs.length > 0 ? (
+                  enabledJobs.map((city) => (
+                    <option key={city.id} value={city.job}>
+                      {city.job}
+                    </option>
+                  ))
+                ) : (
+                  <option disabled>No cities available</option>
+                )}
+              </select>
+              {jobsStatus === "loading" && (
+                <div className="flex items-center mt-1">
+                  <svg className="animate-spin h-6 w-6 mr-2 text-purple-600" viewBox="0 0 24 24">
+                    <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                    <path fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
+                  </svg>
+                  <p className="text-purple-600 font-medium">Loading cities...</p>
+                </div>
+              )}
+              {jobsStatus === "failed" && (
+                <p className="text-red-500 mt-1">Error loading cities: {jobsError || "Unknown error"}</p>
+              )}
+            </div>
+
+            {priceFields.map(({ label, field }) => (
+              <div key={field}>
+                <label className="block mb-1 font-medium">{label}</label>
+                <input
+                  type="number"
+                  value={formData[field]}
+                  onChange={(e) => handleInputChange(field, e.target.value)}
+                  className="bg-white text-ink placeholder:text-ink-muted/70 focus:outline-none transition-shadow border-line min-h-11 w-full px-3 py-3 sm:py-2 border rounded-xl focus:ring-4 focus:ring-brand-500/20"
+                  min="0"
+                  step="0.01"
+                />
+              </div>
+            ))}
+
+            <div className="flex items-center space-x-2">
+              <input
+                type="checkbox"
+                checked={formData.enabled}
+                onChange={(e) => handleInputChange("enabled", e.target.checked)}
+                className="w-4 h-4 text-purple-600"
+              />
+              <label className="font-medium">Enabled (to save)</label>
+            </div>
+
+            {submitError && <p className="text-red-500">{submitError}</p>}
+            {submitSuccess && <p className="text-green-500">{submitSuccess}</p>}
+
+            <div className="flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={handleCancelEdit}
+                disabled={saving}
+                className="px-4 py-1.5 text-sm bg-gray-500 text-white rounded-md hover:bg-gray-600 transition-colors disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                className={`px-4 py-1.5 text-sm bg-purple-700 text-white rounded-md shadow hover:bg-purple-800 transition-colors ${
+                  !formData.enabled || saving ? "opacity-50 cursor-not-allowed" : ""
+                }`}
+                disabled={!formData.enabled || saving}
+              >
+                {editingId ? 'Update Route' : 'Add Route'}
+              </button>
+            </div>
+          </form>
+        </Modal>
+      )}
       <Nav />
     </div>
   );

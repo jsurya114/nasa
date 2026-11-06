@@ -8,6 +8,7 @@ import Header from "../../reuse/Header";
 import Nav from "../../reuse/Nav";
 import SearchBar from "../../reuse/Search.jsx";
 import Pagination from "../../reuse/Pagination.jsx";
+import Modal from "../../reuse/Modal.jsx";
 import {
   addJob,
   jobStatus,
@@ -130,6 +131,9 @@ export default function Jobs() {
   });
   const [errors, setErrors] = useState({});
   const [editingId, setEditingId] = useState(null);
+  // The Add / Edit form opens in a dialog; `saving` keeps it from being dismissed while a save runs.
+  const [formOpen, setFormOpen] = useState(false);
+  const [saving, setSaving] = useState(false);
 
   const [search, setSearch] = usePersistentState("admin", "jobs", "search", '');
   const [currentPage, setCurrentPage] = useState(1);
@@ -150,6 +154,11 @@ export default function Jobs() {
     setErrors({});
     setEditingId(null);
   }, []);
+
+  const closeForm = useCallback(() => {
+    resetForm();
+    setFormOpen(false);
+  }, [resetForm]);
 
   const validate = useCallback(() => {
     const e = {};
@@ -229,15 +238,14 @@ export default function Jobs() {
       city_type: payload.city_type || 'DAILY'
     });
     setEditingId(payload.id);
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+    setFormOpen(true);
   }, []);
-
-  const onCancelEdit = useCallback(() => resetForm(), [resetForm]);
 
   const onSubmit = useCallback(async () => {
     const eObj = validate();
     if (Object.keys(eObj).length) return setErrors(eObj);
 
+    setSaving(true);
     try {
       if (isEditing) {
         
@@ -250,7 +258,7 @@ export default function Jobs() {
         
         if (updateJob.fulfilled.match(res)) {
           toast.success("City updated");
-          resetForm();
+          closeForm();
           fetchJobs({ pageNum: currentPage, q: search, statusFilter: filter });
         } else {
           toast.error("Failed to update city");
@@ -264,15 +272,17 @@ export default function Jobs() {
         }));
         if (addJob.fulfilled.match(res)) {
           toast.success("City added");
-          resetForm();
+          closeForm();
           setCurrentPage(1);
           fetchJobs({ pageNum: 1, q: search, statusFilter: filter });
         }
       }
     } catch {
       toast.error("Failed to save city");
+    } finally {
+      setSaving(false);
     }
-  }, [validate, isEditing, editingId, form, dispatch, resetForm, fetchJobs, currentPage, search, filter]);
+  }, [validate, isEditing, editingId, form, dispatch, closeForm, fetchJobs, currentPage, search, filter]);
 
   const onToggleStatus = useCallback(async (id) => {
     try {
@@ -307,102 +317,30 @@ export default function Jobs() {
       <Header />
       <main className="max-w-[1450px] mx-auto p-4 pb-40">
 
-        {isSuperAdmin && (
-          <section className="card-surface mb-4 p-4 sm:p-6">
-            <h2 className="font-bold text-ink bg-brand-50/60 border-b border-line px-4 sm:px-6 py-3 -mx-4 -mt-4 sm:-mx-6 sm:-mt-6 rounded-t-[var(--radius-card)]">
-              {isEditing ? 'Edit City' : 'Add City'}
-            </h2>
-
-            <div className="flex flex-col gap-4 mt-6">
-              <div>
-                <label className="block mb-1 font-medium">City</label>
-                <input
-                  name="job"
-                  value={form.job}
-                  onChange={onChangeField}
-                  placeholder="Enter City"
-                  className={`bg-white text-ink placeholder:text-ink-muted/70 focus:outline-none transition-shadow min-h-11 w-full px-3 py-3 sm:py-2 border rounded-xl focus:ring-4 focus:ring-brand-500/20 ${errors.job ? 'border-red-500' : 'border-line'}`}
-                />
-                {errors.job && <p className="text-red-500 text-sm mt-1">{errors.job}</p>}
-              </div>
-
-              <div>
-                <label className="block mb-1 font-medium">City Code</label>
-                <input
-                  name="city_code"
-                  value={form.city_code}
-                  onChange={onChangeField}
-                  placeholder="Enter city code"
-                  className={`bg-white text-ink placeholder:text-ink-muted/70 focus:outline-none transition-shadow min-h-11 w-full px-3 py-3 sm:py-2 border rounded-xl focus:ring-4 focus:ring-brand-500/20 ${errors.city_code ? 'border-red-500' : 'border-line'}`}
-                />
-                {errors.city_code && <p className="text-red-500 text-sm mt-1">{errors.city_code}</p>}
-              </div>
-
-              <div>
-                <label className="block mb-1 font-medium">City Type</label>
-                <select
-                  name="city_type"
-                  value={form.city_type}
-                  onChange={onChangeField}
-                  className={`bg-white text-ink placeholder:text-ink-muted/70 focus:outline-none transition-shadow min-h-11 w-full px-3 py-3 sm:py-2 border rounded-xl focus:ring-4 focus:ring-brand-500/20 ${errors.city_type ? 'border-red-500' : 'border-line'}`}
-                >
-                  <option value="DAILY">Daily</option>
-                  <option value="WEEKLY">Weekly</option>
-                </select>
-                {errors.city_type && <p className="text-red-500 text-sm mt-1">{errors.city_type}</p>}
-                <p className="text-xs text-gray-500 mt-1 flex items-start gap-1.5">
-                  {form.city_type === 'WEEKLY'
-                    ? <TriangleAlert className="w-3.5 h-3.5 mt-0.5 text-amber-600 flex-shrink-0" aria-hidden="true" />
-                    : <Info className="w-3.5 h-3.5 mt-0.5 flex-shrink-0" aria-hidden="true" />}
-                  <span>
-                    {form.city_type === 'WEEKLY'
-                      ? 'Weekly cities have predefined routes and drivers cannot create journeys manually'
-                      : 'Daily cities allow manual journey creation by drivers'}
-                  </span>
-                </p>
-              </div>
-
-              {!isEditing && (
-                <div className="flex items-center space-x-2">
-                  <input 
-                    type="checkbox" 
-                    name="enabled" 
-                    checked={form.enabled} 
-                    onChange={onChangeField} 
-                    className="w-4 h-4 text-purple-600" 
-                  />
-                  <label className="font-medium">Enabled</label>
-                </div>
-              )}
-
-              <div className="flex justify-end gap-2">
-                {isEditing && (
-                  <button onClick={onCancelEdit} className="px-6 py-2 bg-gray-500 text-white rounded-lg">
-                    Cancel
-                  </button>
-                )}
-                <button onClick={onSubmit} className="px-6 py-2.5 bg-brand hover:bg-brand-dark text-white rounded-lg">
-                  {isEditing ? 'Update City' : 'Add City'}
-                </button>
-              </div>
-            </div>
-          </section>
-        )}
-
         <section className="card-surface">
           <div className="flex items-center justify-between bg-gray-50 border-b border-line px-4 py-3 rounded-t-xl">
             <h2 className="font-bold text-gray-900">
               {isSuperAdmin ? 'All Cities' : 'Assigned Cities'}
             </h2>
 
-            <button
-              onClick={handleRefresh}
-              disabled={loading}
-              className={`flex items-center gap-2 px-4 py-2.5 bg-brand hover:bg-brand-dark text-white rounded-lg ${loading ? 'opacity-50 cursor-not-allowed' : ''}`}
-            >
-              <IconRefresh spinning={isRefreshing} />
-              <span>Refresh</span>
-            </button>
+            <div className="flex items-center gap-2">
+              {isSuperAdmin && (
+                <button
+                  onClick={() => { resetForm(); setFormOpen(true); }}
+                  className="px-4 py-2.5 bg-brand hover:bg-brand-dark text-white rounded-lg"
+                >
+                  + Add City
+                </button>
+              )}
+              <button
+                onClick={handleRefresh}
+                disabled={loading}
+                className={`flex items-center gap-2 px-4 py-2.5 bg-brand hover:bg-brand-dark text-white rounded-lg ${loading ? 'opacity-50 cursor-not-allowed' : ''}`}
+              >
+                <IconRefresh spinning={isRefreshing} />
+                <span>Refresh</span>
+              </button>
+            </div>
           </div>
 
           <div className="flex items-center gap-3 px-4 py-3 border-b border-line bg-gray-50">
@@ -491,6 +429,81 @@ export default function Jobs() {
         <Pagination page={page} totalPages={totalPages} onPageChange={page => setCurrentPage(page)} />
 
       </main>
+      {isSuperAdmin && formOpen && (
+        <Modal title={isEditing ? 'Edit City' : 'Add City'} onClose={closeForm} busy={saving}>
+          <div className="flex flex-col gap-4 mt-4">
+            <div>
+              <label className="block mb-1 font-medium">City</label>
+              <input
+                name="job"
+                value={form.job}
+                onChange={onChangeField}
+                placeholder="Enter City"
+                className={`bg-white text-ink placeholder:text-ink-muted/70 focus:outline-none transition-shadow min-h-11 w-full px-3 py-3 sm:py-2 border rounded-xl focus:ring-4 focus:ring-brand-500/20 ${errors.job ? 'border-red-500' : 'border-line'}`}
+              />
+              {errors.job && <p className="text-red-500 text-sm mt-1">{errors.job}</p>}
+            </div>
+
+            <div>
+              <label className="block mb-1 font-medium">City Code</label>
+              <input
+                name="city_code"
+                value={form.city_code}
+                onChange={onChangeField}
+                placeholder="Enter city code"
+                className={`bg-white text-ink placeholder:text-ink-muted/70 focus:outline-none transition-shadow min-h-11 w-full px-3 py-3 sm:py-2 border rounded-xl focus:ring-4 focus:ring-brand-500/20 ${errors.city_code ? 'border-red-500' : 'border-line'}`}
+              />
+              {errors.city_code && <p className="text-red-500 text-sm mt-1">{errors.city_code}</p>}
+            </div>
+
+            <div>
+              <label className="block mb-1 font-medium">City Type</label>
+              <select
+                name="city_type"
+                value={form.city_type}
+                onChange={onChangeField}
+                className={`bg-white text-ink placeholder:text-ink-muted/70 focus:outline-none transition-shadow min-h-11 w-full px-3 py-3 sm:py-2 border rounded-xl focus:ring-4 focus:ring-brand-500/20 ${errors.city_type ? 'border-red-500' : 'border-line'}`}
+              >
+                <option value="DAILY">Daily</option>
+                <option value="WEEKLY">Weekly</option>
+              </select>
+              {errors.city_type && <p className="text-red-500 text-sm mt-1">{errors.city_type}</p>}
+              <p className="text-xs text-gray-500 mt-1 flex items-start gap-1.5">
+                {form.city_type === 'WEEKLY'
+                  ? <TriangleAlert className="w-3.5 h-3.5 mt-0.5 text-amber-600 flex-shrink-0" aria-hidden="true" />
+                  : <Info className="w-3.5 h-3.5 mt-0.5 flex-shrink-0" aria-hidden="true" />}
+                <span>
+                  {form.city_type === 'WEEKLY'
+                    ? 'Weekly cities have predefined routes and drivers cannot create journeys manually'
+                    : 'Daily cities allow manual journey creation by drivers'}
+                </span>
+              </p>
+            </div>
+
+            {!isEditing && (
+              <div className="flex items-center space-x-2">
+                <input 
+                  type="checkbox" 
+                  name="enabled" 
+                  checked={form.enabled} 
+                  onChange={onChangeField} 
+                  className="w-4 h-4 text-purple-600" 
+                />
+                <label className="font-medium">Enabled</label>
+              </div>
+            )}
+
+            <div className="flex justify-end gap-2">
+              <button onClick={closeForm} disabled={saving} className="px-6 py-2 bg-gray-500 text-white rounded-lg disabled:opacity-50">
+                Cancel
+              </button>
+              <button onClick={onSubmit} disabled={saving} className="px-6 py-2.5 bg-brand hover:bg-brand-dark text-white rounded-lg disabled:opacity-50">
+                {isEditing ? 'Update City' : 'Add City'}
+              </button>
+            </div>
+          </div>
+        </Modal>
+      )}
       <Nav />
     </div>
   );

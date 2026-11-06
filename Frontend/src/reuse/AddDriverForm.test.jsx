@@ -46,7 +46,7 @@ describe("Add driver form: Driver Type", () => {
     expect(onSubmit.mock.calls[0][0]).toMatchObject({ name: "Dee Test", driverType: "DESI" });
   });
 
-  it("sends no type when none is chosen, and the form clears its choice after adding", () => {
+  it("sends no type when none is chosen, and keeps what was chosen after Add (the dialog closes it on success)", () => {
     const onSubmit = mount({});
     fillNewDriver();
     fireEvent.click(screen.getByRole("button", { name: "Add Driver" }));
@@ -54,7 +54,7 @@ describe("Add driver form: Driver Type", () => {
     fillNewDriver();
     fireEvent.change(screen.getByLabelText("Driver Type"), { target: { value: "LOCAL" } });
     fireEvent.click(screen.getByRole("button", { name: "Add Driver" }));
-    expect(screen.getByLabelText("Driver Type").value).toBe("");
+    expect(screen.getByLabelText("Driver Type").value).toBe("LOCAL");
   });
 
   it("editing shows the driver's current type, and saving without touching it sends it back unchanged", () => {
