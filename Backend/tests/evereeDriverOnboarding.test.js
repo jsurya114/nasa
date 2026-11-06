@@ -337,6 +337,30 @@ test('driver onboarding: intent first, one worker, self only', { skip: !hasDb &&
       });
     });
 
+    await t.test('former Local drivers retain only their own verified history; bank changes and onboarding remain Local-only', async () => {
+      await savepoint(async () => {
+        await person(a);
+        const fake = withEveree();
+        await start(fake, a);
+        await db.query("UPDATE everee_workers SET onboarding_complete = true WHERE driver_id = $1", [a]);
+        await db.query("UPDATE drivers SET driver_type = 'DESI' WHERE id = $1", [a]);
+        const status = await getStatus(db, a, fake.deps);
+        assert.equal(status.state, 'not-required');
+        assert.equal(status.canViewPaymentHistory, true);
+        assert.equal(status.canManageBankDetails, false);
+        await createSession(db, a, {experience: 'PAYMENT_HISTORY', workerId: 'someone_else'}, fake.deps);
+        assert.equal(fake.state.sessions.at(-1).workerId, `CAN-nasa-driver-${a}`);
+        await refused(createSession(db, a, {experience: 'PAYMENT_DEPOSIT'}, fake.deps), 403, 'not_local');
+        await refused(createSession(db, a, {experience: 'ONBOARDING'}, fake.deps), 403, 'not_local');
+        const otherTenant = {...fake.deps, env: {...ENV, EVEREE_TENANT_ID: '9999'}};
+        assert.equal((await getStatus(db, a, otherTenant)).canViewPaymentHistory, false);
+        await refused(createSession(db, a, {experience: 'PAYMENT_HISTORY'}, otherTenant), 409, 'link_not_verified_for_tenant');
+        await db.query('UPDATE drivers SET enabled = false WHERE id = $1', [a]);
+        assert.equal((await getStatus(db, a, fake.deps)).canViewPaymentHistory, false);
+        await refused(createSession(db, a, {experience: 'PAYMENT_HISTORY'}, fake.deps), 403, 'driver_disabled');
+      });
+    });
+
     await t.test('sessions: another tenant’s or an unverified link is refused, an unsafe link from Everee is never passed on, and the rate is limited', async () => {
       await savepoint(async () => {
         await person(a);

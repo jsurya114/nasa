@@ -144,6 +144,15 @@ describe("payment history and bank details", () => {
     expect(screen.queryByRole("button", { name: "Bank details" })).toBeNull();
   });
 
+  it("keeps verified historical statements accessible after a Local driver becomes Desi, without bank management", async () => {
+    const server = await startServer({ setup: setupStatus({ state: "not-required", driverType: "DESI", canViewPaymentHistory: true, canManageBankDetails: false }) });
+    await mount();
+    fireEvent.click(await screen.findByRole("button", { name: "Payment history" }));
+    await screen.findByTitle("Everee payment setup", { selector: "iframe" });
+    expect(screen.queryByRole("button", { name: "Bank details" })).toBeNull();
+    expect(server.posts.at(-1)).toEqual({ experience: "PAYMENT_HISTORY", platform: "web" });
+  });
+
   it("show the server's refusal in words", async () => {
     await startServer({ onSession: () => ({ status: 409, data: { code: "not_complete", message: "finish your payment setup first" } }) });
     await mount();

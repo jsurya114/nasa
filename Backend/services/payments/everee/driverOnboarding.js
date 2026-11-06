@@ -147,18 +147,24 @@ export const getStatus = async (db, driverId, deps = {}) => {
   const unlinked = config.configured && !link ? await wasUnlinked(db, driverId, config) : false;
   const status = stateOf({ driver, on, configured: config.configured, link, row, tenantId: config.tenantId, unlinked });
   // `enforced` tells the screens whether work and payments are really on hold, so they never say so when the hard gate is off.
-  return { ...status, enforced: enforcement(env).enforced, driverType: driver.driver_type ?? null, agreementSigned: Boolean(driver.agreement_signed), needsFromDriver: status.canStart || status.state === STATES.NOT_STARTED ? profileGaps(driver) : [] };
+  const verified = on && config.configured && driver.enabled && driver.agreement_signed && link?.tenant_id === config.tenantId && link?.onboarding_complete === true;
+  return { ...status, canViewPaymentHistory: Boolean(verified), canManageBankDetails: Boolean(verified && driver.driver_type === 'LOCAL'), enforced: enforcement(env).enforced, driverType: driver.driver_type ?? null, agreementSigned: Boolean(driver.agreement_signed), needsFromDriver: status.canStart || status.state === STATES.NOT_STARTED ? profileGaps(driver) : [] };
 };
 
 // ---------- preconditions shared by the actions ----------
 
-const requireLocalDriver = async (db, driverId, deps) => {
+const requireEnabledDriver = async (db, driverId, deps) => {
   const env = deps.env ?? process.env;
   const config = readEvereeConfig(env);
   const gate = driverOnboardingGate(config, env);
   if (!gate.enabled) throw new OnboardingError(409, 'onboarding_unavailable', gate.reason);
   const driver = await loadDriver(db, driverId);
   if (!driver.enabled) throw new OnboardingError(403, 'driver_disabled', 'this driver account is disabled');
+  return { config, driver };
+};
+
+const requireLocalDriver = async (db, driverId, deps) => {
+  const { config, driver } = await requireEnabledDriver(db, driverId, deps);
   if (!driver.driver_type) throw new OnboardingError(409, 'classification_required', 'an admin must set your driver type first');
   if (driver.driver_type !== 'LOCAL') throw new OnboardingError(403, 'not_local', 'Everee onboarding is only for Local drivers');
   return { config, driver };
@@ -391,7 +397,9 @@ export const startOnboarding = async (db, driverId, input = {}, deps = {}) => {
 const EVEREE_HOST = /(^|\.)everee\.com$/i;
 
 export const createSession = async (db, driverId, input = {}, deps = {}) => {
-  const { config, driver } = await requireLocalDriver(db, driverId, deps);
+  // Reclassification never removes access to the driver's own historical statements. Only this read-only experience bypasses the Local-type rule;
+  // identity, tenant, completed onboarding, agreement, enabled account and feature checks remain unchanged. Bank management remains Local-only.
+  const { config, driver } = await (input.experience === 'PAYMENT_HISTORY' ? requireEnabledDriver : requireLocalDriver)(db, driverId, deps);
   const experience = typeof input.experience === 'string' ? input.experience : '';
   const wanted = Object.hasOwn(EXPERIENCES, experience) ? EXPERIENCES[experience] : null;
   const platform = input.platform === undefined ? 'web' : input.platform;
