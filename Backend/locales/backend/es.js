@@ -59,6 +59,10 @@ export const backendEs = {
   },
 
   // Journey errors
+  onboarding: {
+    required: "Tu configuración de pagos no está completa. El trabajo queda en pausa hasta que la termines en la página de Configuración de pagos.",
+  },
+
   journey: {
     routeRequired: "La ruta es requerida",
     routeUnavailable: "Esta ruta ya no está disponible. Elija otra ruta.",

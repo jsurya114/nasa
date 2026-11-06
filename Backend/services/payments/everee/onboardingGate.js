@@ -1,4 +1,5 @@
 import { readEvereeConfig } from './evereeConfig.js';
+import { translateError } from '../../../utils/backendI18n.js';
 
 // The hard gate of Everee onboarding (issue #242, PR B). A LOCAL driver whose Everee onboarding is not verified complete cannot work and cannot be
 // the subject of ANY new payment, Cash in Hand included. Desi drivers and drivers with no type are not affected by this gate (their own type rules stay).
@@ -65,7 +66,8 @@ export const assertMayBePaid = async (db, driverIds, deps = {}) => {
 };
 
 // The answer a driver or admin screen gets for a refused work action.
-export const refusal = () => ({ success: false, code: ONBOARDING_REQUIRED.code, message: ONBOARDING_REQUIRED.message });
+// A driver sees it in their own language (en or es); anything else falls back to English.
+export const refusal = (lang = 'en') => ({ success: false, code: ONBOARDING_REQUIRED.code, message: translateError(lang === 'es' ? 'es' : 'en', 'onboarding.required') });
 
 // An availability update "allows work" when it turns a day ON that was off. Turning days off, or leaving them as they are, stays allowed.
 const DAYS = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];

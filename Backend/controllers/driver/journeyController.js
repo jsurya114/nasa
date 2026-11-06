@@ -107,7 +107,7 @@ export const saveJourney = async (req, res) => {
 
     return res.status(201).json({ success: true, data: journey });
   } catch (error) {
-    if (error instanceof OnboardingRequiredError) return res.status(error.status).json(refusal());
+    if (error instanceof OnboardingRequiredError) return res.status(error.status).json(refusal(getLang(req)));
     const lang = getLang(req);
     logger.error("saveJourney error", error);
     return res.status(500).json({

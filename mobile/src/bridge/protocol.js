@@ -27,6 +27,13 @@ const originOf = (url) => {
 
 const isHttpsUrl = (url) => originOf(url)?.startsWith("https://") === true;
 
+const EVEREE_HOST = /^(?:[a-z0-9-]+\.)*everee\.com$/i;
+const isEvereeHost = (url) => {
+  const origin = originOf(url);
+  if (!origin || !origin.startsWith("https://")) return false;
+  return EVEREE_HOST.test(origin.slice("https://".length).replace(/:\d+$/, ""));
+};
+
 // True only when the page's address is exactly the configured web origin.
 const isTrustedOrigin = (url, webOrigin) => {
   const origin = originOf(url);
@@ -42,6 +49,8 @@ const PAYLOAD_RULES = {
   "session.refresh": (p) => hasOnly(p, ["area"]) && AREAS.includes(p.area),
   "session.clear": (p) => hasOnly(p, ["area"]) && AREAS.includes(p.area),
   "link.openExternal": (p) => hasOnly(p, ["url"]) && isHttpsUrl(p.url),
+  // Opens Everee's own screens in a separate window (see src/everee). Only an https address on everee.com is accepted.
+  "everee.open": (p) => hasOnly(p, ["url"]) && isEvereeHost(p.url),
   "push.status": (p) => hasOnly(p, []),
   "push.requestPermission": (p) => hasOnly(p, []),
   "push.getToken": (p) => hasOnly(p, []),

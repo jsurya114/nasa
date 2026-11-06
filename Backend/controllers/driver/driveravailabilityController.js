@@ -135,7 +135,7 @@ const driverAvailabilityController = {
                 data: updatedAvailability
             });
         } catch (err) {
-            if (err instanceof OnboardingRequiredError) return res.status(err.status).json(refusal());
+            if (err instanceof OnboardingRequiredError) return res.status(err.status).json(refusal(getLang(req)));
             const lang = getLang(req);
             logger.error('updateAvailability failed', err);
             res.status(500).json({

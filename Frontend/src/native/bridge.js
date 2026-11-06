@@ -16,6 +16,7 @@ export const ACTIONS = Object.freeze([
   "file.pickDocument",
   "file.share",
   "link.openExternal",
+  "everee.open",
   "push.status",
   "push.requestPermission",
   "push.getToken",

@@ -1,5 +1,6 @@
 import usePersistentState from "../../hooks/usePersistentState.js";
 import React from "react";
+import { useNavigate } from "react-router-dom";
 import Header from "../../reuse/driver/Header";
 import Nav from "../../reuse/driver/Nav";
 import { SkeletonList } from "../../reuse/Skeleton.jsx";
@@ -8,10 +9,12 @@ import usePayStatements from "../../hooks/usePayStatements.js";
 import StatementList from "./pay/StatementList.jsx";
 import StatementDetail from "./pay/StatementDetail.jsx";
 import BalanceSummary from "./pay/BalanceSummary.jsx";
+import PaymentSetupCard from "./everee/PaymentSetupCard.jsx";
 
 // "My pay" (#145): the driver's approved statements and open balances, read-only, straight from the server.
 export default function Pay() {
   const { t } = useTranslation();
+  const navigate = useNavigate();
   const { statements, balances, status, reload } = usePayStatements();
   // The statement the driver had open is still open when they come back.
   const [openId, setOpenId] = usePersistentState("driver", "pay", "openId", null);
@@ -48,6 +51,7 @@ export default function Pay() {
           <h2 className="text-xl font-semibold text-gray-800">{t("myPay")}</h2>
           <p className="mt-1 text-sm text-gray-500">{t("myPayHint")}</p>
         </div>
+        {!openId && <PaymentSetupCard onOpen={() => navigate("/driver/payment-setup")} />}
         {body}
       </main>
       <Nav />

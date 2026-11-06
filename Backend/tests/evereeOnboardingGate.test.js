@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { assertMayBePaid, assertMayWork, blockedDriverIds, enforcement, ONBOARDING_REQUIRED, OnboardingRequiredError, turnsWorkOn } from '../services/payments/everee/onboardingGate.js';
+import { assertMayBePaid, assertMayWork, blockedDriverIds, enforcement, ONBOARDING_REQUIRED, OnboardingRequiredError, refusal, turnsWorkOn } from '../services/payments/everee/onboardingGate.js';
 
 // The hard gate of Everee onboarding (issue #242, PR B): a Local driver without verified onboarding cannot work and cannot be paid by any method.
 // The first tests need no database. The later ones need a disposable PostgreSQL copy (PAYROLL_TEST_DB=1), run in a transaction that is rolled back.
@@ -60,6 +60,15 @@ test('deleting a journey and importing delivery evidence are not gated; the lega
     assert.doesNotMatch(source(file), /onboardingGate/, `${file} (imported evidence) must not be gated`);
   }
   assert.match(source('controllers/admin/dashboardController.js'), /export const payDriver = \(_req, res\) => res\.status\(HttpStatus\.CONFLICT\)/);
+});
+
+test('a driver is told in their own language, with the same stable code', () => {
+  assert.equal(refusal('en').code, 'onboarding_required');
+  assert.equal(refusal('es').code, 'onboarding_required');
+  assert.match(refusal('en').message, /payment setup is not complete/i);
+  assert.match(refusal('es').message, /configuración de pagos no está completa/i);
+  assert.equal(refusal('fr').message, refusal('en').message, 'an unknown language falls back to English');
+  assert.equal(refusal().success, false);
 });
 
 test('the stable reason', () => {

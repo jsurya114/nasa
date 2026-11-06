@@ -59,6 +59,10 @@ export const backendEn = {
   },
 
   // Journey errors
+  onboarding: {
+    required: "Your payment setup is not complete. Work is on hold until you finish it in the Payment setup page.",
+  },
+
   journey: {
     routeRequired: "Route is required",
     routeUnavailable: "This route is no longer available. Please choose another route.",
