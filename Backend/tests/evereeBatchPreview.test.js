@@ -33,6 +33,7 @@ test('everee batch preview: who can be paid and why not, one hash for what would
     const draftCity = await mkCity('D');
     const mainCity = await mkCity('M');
     const ids = (await db.query('SELECT id FROM drivers ORDER BY id LIMIT 9')).rows.map((r) => r.id);
+    await db.query("UPDATE drivers SET driver_type = 'LOCAL' WHERE id = ANY($1::int[])", [ids]); // payments need a driver type (rolled back with the rest)
     const [dA, dB, dC, dD, dF, dG, dH, dN1, dN2] = ids;
     const tag = randomUUID();
     const admin = async (role, n) => one("INSERT INTO admin (password, name, email, role) VALUES ('x', $1, $2, $3) RETURNING id, role", [`Test ${n} ${tag}`, `${n}${tag}@example.com`, role]);

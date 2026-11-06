@@ -5,6 +5,7 @@ import { lockCityPayroll } from "../claims/claimsStore.js";
 import { blockersFor, reviewRunAsBatch } from "./payBatchReview.js";
 import { fromCents, toCents } from "./payCalculator.js";
 import { parseDate } from "../ledger/ledgerRules.js";
+import { CASH, methodAllowed, typeBlockers } from "./driverPaymentRules.js";
 
 const UUID =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -20,8 +21,8 @@ export const parsePaymentRecord = (body = {}) => {
   if (!UUID.test(requestId))
     errors.requestId = "Refresh the payment form and try again.";
   if (!paidOn) errors.paidOn = "Choose the date the drivers were paid.";
-  if (!["bank_transfer", "cash", "other"].includes(body.method))
-    errors.method = "Choose how the drivers were paid.";
+  // Recording by hand is for Cash in Hand only. Local drivers can also be paid through Everee (its own route); nothing else is offered.
+  if (body.method !== CASH) errors.method = "Choose how the drivers were paid.";
   if (reference.length < 3 || reference.length > 200)
     errors.reference = "Add a payment reference or note (3–200 characters).";
   if (body.confirmed !== true)
@@ -190,9 +191,10 @@ export const recordRunPayment = async (db, admin, runId, request) => {
   ).rows[0].d;
   if (request.paidOn > today)
     throw new PayrollError(400, "Payment date cannot be in the future.");
+  // The driver rows are share-locked, so a driver's type cannot be changed by another admin between this check and the record below.
   const { rows: selected } = await db.query(
-    `SELECT s.*,(SELECT count(*) FROM pay_statement_lines l WHERE l.statement_id=s.id AND l.active AND l.line_type='earning')::int AS earning_lines
-       FROM pay_statements s WHERE s.pay_run_id=$1 AND ($2::bigint[] IS NULL OR s.id=ANY($2)) ORDER BY s.id FOR UPDATE`,
+    `SELECT s.*,d.driver_type,(SELECT count(*) FROM pay_statement_lines l WHERE l.statement_id=s.id AND l.active AND l.line_type='earning')::int AS earning_lines
+       FROM pay_statements s JOIN drivers d ON d.id=s.driver_id WHERE s.pay_run_id=$1 AND ($2::bigint[] IS NULL OR s.id=ANY($2)) ORDER BY s.id FOR UPDATE OF s FOR SHARE OF d`,
     [runId, request.statementIds],
   );
   if (request.statementIds && selected.length !== request.statementIds.length)
@@ -214,6 +216,15 @@ export const recordRunPayment = async (db, admin, runId, request) => {
       409,
       "A selected payment is processing, unconfirmed or needs review. Resolve it before marking these drivers paid.",
     );
+  // The type rules are checked here too, not only on the screen: a driver with no type is never paid, and the method must suit the type.
+  if (targets.some((s) => typeBlockers(s.driver_type).length > 0))
+    throw new PayrollError(
+      409,
+      "Some selected drivers have no driver type. Set Local or Desi for them on the Drivers page, then pay.",
+    );
+  // Recording by hand is Cash in Hand only (Everee has its own route), and the type must allow it.
+  if (request.method !== CASH || targets.some((s) => !methodAllowed(s.driver_type, request.method)))
+    throw new PayrollError(409, "This payment method is not allowed for a selected driver.");
   const ids = targets.map((s) => s.id);
   // Lock source rows before derived pay rows, matching the upload's lock order.
   const earnings = await lockApprovedEarnings(db, ids);
@@ -238,9 +249,10 @@ export const recordRunPayment = async (db, admin, runId, request) => {
     )
   ).rows[0];
   if (!inserted) return replay(await priorRecord(db, request.requestId));
+  // One row per driver, with the driver and the type they had at this moment (history is never rewritten when a type changes later).
   await db.query(
-    `INSERT INTO pay_run_payment_items(payment_record_id,statement_id,amount)
-    SELECT $1,id,net FROM pay_statements WHERE id=ANY($2::bigint[])`,
+    `INSERT INTO pay_run_payment_items(payment_record_id,statement_id,amount,driver_id,driver_type)
+    SELECT $1,s.id,s.net,s.driver_id,d.driver_type FROM pay_statements s JOIN drivers d ON d.id=s.driver_id WHERE s.id=ANY($2::bigint[])`,
     [inserted.id, ids],
   );
   await settlePaidStatements(db, { statementIds: ids, earnings, paidOn: request.paidOn, reference: request.reference });
@@ -340,7 +352,7 @@ export const reviewRunPayments = async (db, admin, runId) => {
   const review = await reviewRunAsBatch(db, admin, runId);
   const history = (
     await db.query(
-      `SELECT i.statement_id,p.id,to_char(p.paid_on,'YYYY-MM-DD') AS paid_on,p.method,p.reference,p.created_at,a.name AS recorded_by_name
+      `SELECT i.statement_id,i.driver_type,p.id,to_char(p.paid_on,'YYYY-MM-DD') AS paid_on,p.method,p.reference,p.created_at,a.name AS recorded_by_name
        FROM pay_run_payment_records p JOIN pay_run_payment_items i ON i.payment_record_id=p.id
        JOIN admin a ON a.id=p.recorded_by WHERE p.pay_run_id=$1 ORDER BY p.id`,
       [runId],

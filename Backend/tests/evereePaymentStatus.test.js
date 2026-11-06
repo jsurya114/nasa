@@ -69,6 +69,7 @@ test('everee payment status: only a payment that landed marks a statement paid',
     const sup2 = await admin('superadmin', 'two');
     const cityAdmin = await admin('admin', 'city');
     const drivers = (await db.query('SELECT id FROM drivers ORDER BY id LIMIT 6')).rows.map((r) => r.id);
+    await db.query("UPDATE drivers SET driver_type = 'LOCAL' WHERE id = ANY($1::int[])", [drivers]); // payments need a driver type (rolled back with the rest)
     const [dA, dB, dC, dD, dE, dF] = drivers;
     const workers = { [dA]: 'EW-A', [dB]: 'EW-B', [dC]: 'EW-C', [dD]: 'EW-D', [dE]: 'EW-E', [dF]: 'EW-F' };
     for (const [driver, worker] of Object.entries(workers)) {
@@ -161,7 +162,7 @@ test('everee payment status: only a payment that landed marks a statement paid',
     });
 
     await t.test('manual recording cannot pay a statement Everee already paid, and cannot pay one Everee is processing', async () => {
-      const manual = async (ids) => recordRunPayment(db, sup2, sc.run.id, { requestId: randomUUID(), paidOn: (await one("SELECT to_char(now(), 'YYYY-MM-DD') AS d")).d, method: 'other', reference: 'manual test', confirmed: true, statementIds: ids });
+      const manual = async (ids) => recordRunPayment(db, sup2, sc.run.id, { requestId: randomUUID(), paidOn: (await one("SELECT to_char(now(), 'YYYY-MM-DD') AS d")).d, method: 'cash', reference: 'manual test', confirmed: true, statementIds: ids });
       assert.equal((await manual([(await stmt(sc, dA)).id])).alreadyPaid, true);
       await assert.rejects(manual([(await stmt(sc, dB)).id]), { status: 409, message: /processing, unconfirmed or needs review/ });
     });
@@ -432,7 +433,7 @@ test('everee payment status: only a payment that landed marks a statement paid',
           // 2. even if the queued item WERE released (as an older recovery did), and its statement paid by hand, the sender must not send it
           await db.query("UPDATE everee_payment_items SET status = 'failed', send_lease_until = NULL WHERE id = $1", [last.id]);
           await db.query("UPDATE pay_statements SET payout_status = 'failed' WHERE id = $1", [last.pay_statement_id]);
-          await recordRunPayment(db, sup2, scW.run.id, { requestId: randomUUID(), paidOn: (await one("SELECT to_char(now(), 'YYYY-MM-DD') AS d")).d, method: 'other', reference: 'manual test', confirmed: true, statementIds: [last.pay_statement_id] });
+          await recordRunPayment(db, sup2, scW.run.id, { requestId: randomUUID(), paidOn: (await one("SELECT to_char(now(), 'YYYY-MM-DD') AS d")).d, method: 'cash', reference: 'manual test', confirmed: true, statementIds: [last.pay_statement_id] });
         }
         return { status: 201, data: { externalId: body.externalId }, requestId: 'req-ok' };
       };

@@ -107,7 +107,7 @@ test(
         drivers.push(
           (
             await one(
-              "INSERT INTO drivers(name,email,password,driver_code,city_id) VALUES($1,$2,'x',$3,$4) RETURNING id",
+              "INSERT INTO drivers(name,email,password,driver_code,city_id,driver_type) VALUES($1,$2,'x',$3,$4,'LOCAL') RETURNING id",
               [
                 `Synthetic Payment Driver ${i}`,
                 `${randomUUID()}@example.test`,
@@ -175,7 +175,7 @@ test(
         parsePaymentRecord({
           requestId: randomUUID(),
           paidOn: today,
-          method: "bank_transfer",
+          method: "cash",
           reference: "Synthetic batch reference",
           confirmed: true,
           ...extra,
@@ -229,6 +229,94 @@ test(
                 request({ paidOn: "2999-01-01" }),
               ),
               { status: 400 },
+            );
+          }),
+      );
+      await t.test(
+        "Local and Desi drivers are paid in Cash in Hand with one row per driver; the type is kept as it was and a later change does not rewrite it",
+        async () =>
+          isolated(async () => {
+            await db.query("UPDATE drivers SET driver_type='DESI' WHERE id=$1", [drivers[0]]);
+            await db.query("UPDATE drivers SET driver_type='LOCAL' WHERE id=$1", [drivers[1]]);
+            const review = await reviewRunPayments(db, admin, run.id);
+            const typeOf = (driver) => review.drivers.find((d) => d.driverId === driver).driverType;
+            assert.deepEqual([typeOf(drivers[0]), typeOf(drivers[1])], ["DESI", "LOCAL"]);
+            const done = await recordRunPayment(db, admin, run.id, request());
+            assert.equal(done.receipt.drivers, 2);
+            const rows = (
+              await db.query(
+                "SELECT driver_id,driver_type,amount::text FROM pay_run_payment_items WHERE payment_record_id=$1 ORDER BY driver_id",
+                [done.receipt.id],
+              )
+            ).rows;
+            assert.deepEqual(
+              rows.map((r) => [r.driver_id, r.driver_type]),
+              [[drivers[0], "DESI"], [drivers[1], "LOCAL"]].sort((a, b) => a[0] - b[0]),
+              "one row per driver, each with the type the driver had when paid",
+            );
+            await db.query("UPDATE drivers SET driver_type='LOCAL' WHERE id=$1", [drivers[0]]);
+            const after = (
+              await db.query(
+                "SELECT driver_id,driver_type FROM pay_run_payment_items WHERE payment_record_id=$1 AND driver_id=$2",
+                [done.receipt.id, drivers[0]],
+              )
+            ).rows[0];
+            assert.equal(after.driver_type, "DESI", "changing the type later does not rewrite history");
+            const history = await reviewRunPayments(db, admin, run.id);
+            assert.equal(
+              history.drivers.find((d) => d.driverId === drivers[0]).payment.driver_type,
+              "DESI",
+            );
+          }),
+      );
+      await t.test(
+        "a driver with no type is never paid: review blocks them, and recording one refuses the whole selection and writes nothing",
+        async () =>
+          isolated(async () => {
+            await db.query("UPDATE drivers SET driver_type='LOCAL' WHERE id=$1", [drivers[0]]);
+            await db.query("UPDATE drivers SET driver_type=NULL WHERE id=$1", [drivers[1]]);
+            const review = await reviewRunPayments(db, admin, run.id);
+            const untyped = review.drivers.find((d) => d.driverId === drivers[1]);
+            assert.equal(untyped.eligible, false);
+            assert.ok(untyped.blockers.some((b) => b.code === "driver_type_not_set" && b.severity === "blocking"));
+            assert.equal(review.drivers.find((d) => d.driverId === drivers[0]).eligible, true);
+            // One good driver and one untyped: all or nothing.
+            await assert.rejects(recordRunPayment(db, admin, run.id, request()), { status: 409 });
+            await assert.rejects(
+              recordRunPayment(db, admin, run.id, request({ statementIds: [second.id] })),
+              { status: 409 },
+            );
+            assert.equal(
+              Number((await one("SELECT count(*) n FROM pay_run_payment_records WHERE pay_run_id=$1", [run.id])).n),
+              0,
+            );
+            assert.deepEqual(
+              (await db.query("SELECT payout_status FROM pay_statements WHERE pay_run_id=$1 ORDER BY id", [run.id])).rows.map((r) => r.payout_status),
+              ["not_submitted", "not_submitted"],
+            );
+            // The good driver alone can still be paid.
+            const ok = await recordRunPayment(db, admin, run.id, request({ statementIds: [first.id] }));
+            assert.equal(ok.receipt.drivers, 1);
+          }),
+      );
+      await t.test(
+        "only Cash in Hand can be recorded by hand: the request check and the server both refuse any other method",
+        async () =>
+          isolated(async () => {
+            for (const method of ["bank_transfer", "other", "everee", "CASH", ""])
+              assert.ok(parsePaymentRecord({ requestId: randomUUID(), paidOn: today, method, reference: "Synthetic note", confirmed: true }).errors?.method, method);
+            await db.query("UPDATE drivers SET driver_type='LOCAL' WHERE id=ANY($1::int[])", [drivers]);
+            await assert.rejects(
+              recordRunPayment(db, admin, run.id, { ...request(), method: "other" }),
+              { status: 409 },
+            );
+            await assert.rejects(
+              recordRunPayment(db, admin, run.id, { ...request(), method: "everee" }),
+              { status: 409 },
+            );
+            assert.equal(
+              Number((await one("SELECT count(*) n FROM pay_run_payment_records WHERE pay_run_id=$1", [run.id])).n),
+              0,
             );
           }),
       );
