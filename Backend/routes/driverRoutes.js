@@ -10,6 +10,7 @@ import getDeliverySummary from "../controllers/driver/deliveryController.js";
 import driverAuth from '../middlewares/driverAuth.js';
 import validateCityType, { attachCityType } from '../middlewares/validateCityType.js';
 import { requireSelf } from '../middlewares/requireSelf.js';
+import { createOnboardingSession, getOnboardingStatus, refreshOnboarding, startDriverOnboarding } from "../controllers/driver/evereeOnboardingController.js";
 import { loginRateLimit } from '../middlewares/loginRateLimit.js';
 import driverAvailabilityController from "../controllers/driver/driveravailabilityController.js";
 import passwordController from "../controllers/driver/updatepasswordController.js";
@@ -30,6 +31,12 @@ router.get("/access-driver", driverController.getDriver)
 router.get("/city-type", jobController.getDriverCityType)
 router.post("/logout", driverController.Logout)
 router.post("/agreement", driverController.submitAgreement)
+
+// Everee onboarding of the signed-in Local driver (issue #242). Self only: the driver comes from the token, never from the URL or the body.
+router.get("/everee/status", getOnboardingStatus)
+router.post("/everee/onboarding", startDriverOnboarding)
+router.post("/everee/session", createOnboardingSession)
+router.post("/everee/refresh", refreshOnboarding)
 
 // ============================================
 // JOURNEY ROUTES - PROTECTED BY CITY TYPE VALIDATION

@@ -79,6 +79,12 @@ export const createEvereeClient = (config, { fetchImpl = fetch, timeoutMs = REQU
     getWorker: (id) => request('GET', `/integration/v1/workers/${encodeURIComponent(id)}`),
     // Creates a 1099 contractor with the complete record (sandbox test workers only; see workerStore.js).
     createContractor: (body) => request('POST', '/integration/v1/workers/contractor', body),
+    // Embedded onboarding (issue #242). Creates a 1099 contractor from the few fields a driver can give (name, email, 10-digit phone, start date, home
+    // address); Everee collects the tax and bank details itself inside the embedded screens. The answer is the Worker, with Everee's own `id`.
+    createEmbeddedContractor: (body) => request('POST', '/integration/v1/embedded/workers/contractor', body),
+    // A short-lived, single-use link to one Everee screen (experience) for one worker. The answer holds `url`, `origin` and `expiresInMs`. It is a
+    // bearer credential: callers must not log it or keep it.
+    createEmbeddedSession: (body) => request('POST', '/integration/v1/embedded/session', body),
     // A payable item: an amount owed to a worker. The same externalId again updates the item while it is unpaid (that is what makes a retry safe).
     createPayable: (body) => request('POST', '/integration/v1/payables', body),
     // Asks Everee to turn the named unpaid payables into payments (contractors are paid only after this). Limited to the given external IDs.

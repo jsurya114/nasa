@@ -2,6 +2,7 @@ import { PayrollError, assertCityAllowed, isSuperAdmin } from '../../payroll/pay
 import logger from '../../../utils/logger.js';
 import { readEvereeConfig } from './evereeConfig.js';
 import { createEvereeClient, EvereeError } from './evereeClient.js';
+import { withDriverLock } from './driverLock.js';
 import { driverIssues, linkSourceOf, matchWorkers, MAX_SEARCH_RESULTS, normalizeEmail, normalizePhone, readyToPay, splitName } from './workerRules.js';
 
 // Linking NASA drivers to Everee workers (issue #31). Super admin only. Every action checks the city and the driver on the server.
@@ -38,10 +39,10 @@ const loadDriver = async (db, cityId, driverId) => {
   return rows[0];
 };
 
-const LINK_COLUMNS = `id, driver_id, environment, everee_worker_id, external_worker_id, link_source, onboarding_complete, tin_status, terminated,
+export const LINK_COLUMNS = `id, driver_id, environment, everee_worker_id, external_worker_id, link_source, onboarding_complete, tin_status, terminated,
   last_checked_at, linked_at`;
 
-const viewOfLink = (row) => (row ? {
+export const viewOfLink = (row) => (row ? {
   workerId: row.everee_worker_id,
   externalWorkerId: row.external_worker_id,
   source: row.link_source,
@@ -53,7 +54,7 @@ const viewOfLink = (row) => (row ? {
   lastCheckedAt: row.last_checked_at,
 } : null);
 
-const stateOfWorker = (worker) => ({
+export const stateOfWorker = (worker) => ({
   onboardingComplete: worker?.onboardingComplete === true,
   tinStatus: typeof worker?.tinVerificationStatus === 'string' ? worker.tinVerificationStatus : null,
   terminated: Boolean(worker?.terminationDate),
@@ -152,11 +153,12 @@ export const linkDriver = async (db, admin, { cityId, driverId, workerId }, deps
   const { data: worker } = await viaEveree(() => client.getWorker(match.externalWorkerId ?? match.workerId));
   const state = stateOfWorker(worker);
   try {
-    const { rows } = await db.query(
-      `INSERT INTO everee_workers (driver_id, environment, everee_worker_id, external_worker_id, link_source, onboarding_complete, tin_status, terminated, last_checked_at, linked_by)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, now(), $9) RETURNING ${LINK_COLUMNS}`,
-      [driverId, config.environment, match.workerId, match.externalWorkerId, linkSourceOf(match.matchedOn), state.onboardingComplete, state.tinStatus, state.terminated, admin.id]
-    );
+    // The write holds the driver's lock (driverLock.js), so it cannot interleave with the driver's own onboarding save or with an unlink.
+    const { rows } = await withDriverLock(db, driverId, (tx) => tx.query(
+      `INSERT INTO everee_workers (driver_id, environment, tenant_id, everee_worker_id, external_worker_id, link_source, onboarding_complete, tin_status, terminated, last_checked_at, linked_by)
+       VALUES ($1, $2, $10, $3, $4, $5, $6, $7, $8, now(), $9) RETURNING ${LINK_COLUMNS}`,
+      [driverId, config.environment, match.workerId, match.externalWorkerId, linkSourceOf(match.matchedOn), state.onboardingComplete, state.tinStatus, state.terminated, admin.id, config.tenantId]
+    ));
     logger.info('Driver linked to an Everee worker', { driverId, source: rows[0].link_source, environment: config.environment });
     return { link: viewOfLink(rows[0]) };
   } catch (error) {
@@ -207,11 +209,12 @@ export const unlinkDriver = async (db, admin, { cityId, driverId, reason }, deps
   await loadDriver(db, cityId, driverId);
   const why = typeof reason === 'string' ? reason.trim().replace(/\s+/g, ' ').slice(0, 300) : '';
   if (why.length < MIN_UNLINK_REASON) throw new PayrollError(400, 'give a reason for unlinking');
-  const { rowCount } = await db.query(
+  // Under the driver's lock (driverLock.js): an onboarding save that was waiting sees the revocation when it gets its turn.
+  const { rowCount } = await withDriverLock(db, driverId, (tx) => tx.query(
     `UPDATE everee_workers SET unlinked_by = $3, unlinked_at = now(), unlink_reason = $4
       WHERE driver_id = $1 AND environment = $2 AND unlinked_at IS NULL`,
     [driverId, config.environment, admin.id, why]
-  );
+  ));
   if (rowCount === 0) throw new PayrollError(404, 'this driver is not linked to an Everee worker');
   logger.info('Driver unlinked from an Everee worker', { driverId, environment: config.environment });
   return { unlinked: true };
@@ -276,11 +279,11 @@ export const createSandboxWorker = async (db, admin, { cityId, driverId }, deps 
   const { data: worker } = created ? { data: created } : await viaEveree(() => client.getWorker(external));
   const state = stateOfWorker(worker);
   try {
-    const { rows } = await db.query(
-      `INSERT INTO everee_workers (driver_id, environment, everee_worker_id, external_worker_id, link_source, onboarding_complete, tin_status, terminated, last_checked_at, linked_by)
-       VALUES ($1, 'sandbox', $2, $3, 'created_sandbox', $4, $5, $6, now(), $7) RETURNING ${LINK_COLUMNS}`,
-      [driverId, String(found.workerId), external, state.onboardingComplete, state.tinStatus, state.terminated, admin.id]
-    );
+    const { rows } = await withDriverLock(db, driverId, (tx) => tx.query(
+      `INSERT INTO everee_workers (driver_id, environment, tenant_id, everee_worker_id, external_worker_id, link_source, onboarding_complete, tin_status, terminated, last_checked_at, linked_by)
+       VALUES ($1, 'sandbox', $8, $2, $3, 'created_sandbox', $4, $5, $6, now(), $7) RETURNING ${LINK_COLUMNS}`,
+      [driverId, String(found.workerId), external, state.onboardingComplete, state.tinStatus, state.terminated, admin.id, config.tenantId]
+    ));
     logger.info('Sandbox test worker linked', { driverId, reused: !created });
     return { link: viewOfLink(rows[0]), reused: !created };
   } catch (error) {
