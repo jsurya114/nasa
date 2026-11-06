@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { EvereeError } from '../services/payments/everee/evereeClient.js';
+import { lookupDriver, linkDriver } from '../services/payments/everee/workerStore.js';
 import { createSession, getStatus, OnboardingError, refreshStatus, startOnboarding, UNCERTAIN_COOLDOWN_MINUTES } from '../services/payments/everee/driverOnboarding.js';
 
 // Needs a PostgreSQL copy with the app's tables (never production). Run with PAYROLL_TEST_DB=1 and the DB_* variables. Everything, the migrations
@@ -16,23 +17,26 @@ const ADDRESS = { line1: '1 Test Street', city: 'Austin', state: 'TX', postalCod
 const makeEveree = () => {
   const state = { workers: new Map(), posts: [], sessions: [], searches: [], failPost: null, getFails: null, completeAfterCreate: false };
   const client = {
+    // As the real Worker API does: looked up by our external ID it answers with that same alias as `id`. The canonical worker ID is only in the search result.
     getWorker: async (id) => {
       if (state.getFails) throw state.getFails;
       const worker = state.workers.get(id);
       if (!worker) throw new EvereeError('Everee did not find what was asked for', { status: 404 });
-      return { data: worker };
+      return { data: { ...worker, id: worker.externalWorkerId ?? worker.id } };
     },
     searchWorkers: async (term) => {
       state.searches.push(term);
-      const items = [...state.workers.values()].filter((w) => [w.email, w.phoneNumber].includes(term)).map((w) => ({ workerId: w.id, externalWorkerId: w.externalWorkerId, email: w.email, phoneNumber: w.phoneNumber }));
+      if (state.searchHidesOurs && String(term).startsWith('nasa-driver-')) return { data: { items: [], totalItems: 0 } };
+      const items = [...state.workers.values()].filter((w) => [w.email, w.phoneNumber, w.externalWorkerId].includes(term)).map((w) => ({ workerId: w.id, externalWorkerId: w.externalWorkerId, email: w.email, phoneNumber: w.phoneNumber }));
       return { data: { items, totalItems: items.length } };
     },
     createEmbeddedContractor: async (body) => {
       state.posts.push(body);
-      if (state.failPost) { const error = state.failPost; state.failPost = null; if (error.after) state.workers.set(body.externalWorkerId, { id: `W-${body.externalWorkerId}`, externalWorkerId: body.externalWorkerId, onboardingComplete: false }); throw error.error; }
-      const worker = { id: `W-${body.externalWorkerId}`, externalWorkerId: body.externalWorkerId, email: body.email, phoneNumber: body.phoneNumber, onboardingComplete: state.completeAfterCreate };
+      if (state.failPost) { const error = state.failPost; state.failPost = null; if (error.after) state.workers.set(body.externalWorkerId, { id: `CAN-${body.externalWorkerId}`, externalWorkerId: body.externalWorkerId, onboardingComplete: false }); throw error.error; }
+      const worker = { id: `CAN-${body.externalWorkerId}`, externalWorkerId: body.externalWorkerId, email: body.email, phoneNumber: body.phoneNumber, onboardingComplete: state.completeAfterCreate };
+      // the create answer is the alias too, as with the lookup; the canonical id is what a search shows
       state.workers.set(body.externalWorkerId, worker);
-      return { data: worker };
+      return { data: { ...worker, id: body.externalWorkerId } };
     },
     createEmbeddedSession: async (body) => { state.sessions.push(body); return { data: state.sessionAnswer ?? { url: 'https://embed.everee.com/s/abc', origin: 'https://embed.everee.com', expiresInMs: 60000 } }; },
   };
@@ -111,6 +115,7 @@ test('driver onboarding: intent first, one worker, self only', { skip: !hasDb &&
         assert.equal(fake.state.posts[0].externalWorkerId, `nasa-driver-${a}`);
         const link = await one('SELECT * FROM everee_workers WHERE driver_id = $1', [a]);
         assert.deepEqual([link.linked_by, link.linked_by_driver_id, link.link_source, link.tenant_id, link.environment], [null, a, 'embedded_onboarding', '4321', 'sandbox']);
+        assert.deepEqual([link.everee_worker_id, link.external_worker_id], [`CAN-nasa-driver-${a}`, `nasa-driver-${a}`], 'the canonical Everee worker ID is stored, not the external alias the create answer carries; the alias is kept separately');
         const again = await start(fake, a);
         assert.deepEqual([again.started, fake.state.posts.length], [false, 1], 'starting again creates nothing');
         assert.equal((await one('SELECT count(*)::int AS n FROM everee_workers WHERE driver_id = $1', [a])).n, 1);
@@ -181,6 +186,7 @@ test('driver onboarding: intent first, one worker, self only', { skip: !hasDb &&
         await db.query('UPDATE everee_onboarding SET lease_until = NULL WHERE driver_id = $1', [a]);
         const found = await start(fake, a);
         assert.deepEqual([found.state, fake.state.posts.length], ['in-progress', 1], 'found by its ID, no second create');
+        assert.deepEqual((await one('SELECT everee_worker_id, external_worker_id FROM everee_workers WHERE driver_id = $1', [a])), { everee_worker_id: `CAN-nasa-driver-${a}`, external_worker_id: `nasa-driver-${a}` }, 'recovery stores the canonical ID too');
       });
       await savepoint(async () => {
         await person(b);
@@ -193,6 +199,93 @@ test('driver onboarding: intent first, one worker, self only', { skip: !hasDb &&
         await db.query(`UPDATE everee_onboarding SET post_uncertain_at = now() - make_interval(mins => $2) WHERE driver_id = $1`, [b, UNCERTAIN_COOLDOWN_MINUTES + 1]);
         const retried = await start(fake, b);
         assert.deepEqual([retried.state, fake.state.posts.length], ['in-progress', 2], 'after the cooldown, with no worker found, one more create');
+      });
+    });
+
+    await t.test('when the canonical worker ID cannot be read yet, nothing is linked; the next press links it with the right ID', async () => {
+      await savepoint(async () => {
+        await person(a);
+        const fake = withEveree();
+        fake.state.searchHidesOurs = true;
+        const first = await start(fake, a);
+        assert.deepEqual([first.state, fake.state.posts.length], ['creating', 1]);
+        assert.equal((await one('SELECT count(*)::int AS n FROM everee_workers WHERE driver_id = $1', [a])).n, 0, 'no link with an alias as the worker ID');
+        fake.state.searchHidesOurs = false;
+        const second = await start(fake, a);
+        assert.deepEqual([second.state, fake.state.posts.length], ['in-progress', 1], 'found by its ID, not created again');
+        assert.equal((await one('SELECT everee_worker_id FROM everee_workers WHERE driver_id = $1', [a])).everee_worker_id, `CAN-nasa-driver-${a}`);
+      });
+    });
+
+    await t.test('admin recovery through the real admin writers: a driver sent to review is linked by a super admin and then works (tenant recorded)', async () => {
+      await savepoint(async () => {
+        await person(a, { email: 'review.me@example.com', phone: '5557770001' });
+        const admin = await one("INSERT INTO admin (password, name, email, role) VALUES ('x', $1, $2, 'superadmin') RETURNING id, role", [`Review Admin ${a}`, `review${a}@example.com`]);
+        const fake = withEveree();
+        fake.state.workers.set('qb-1', { id: 'EXISTING-7', externalWorkerId: 'qb-1', email: 'review.me@example.com', phoneNumber: '5557770001', onboardingComplete: false });
+        assert.equal((await start(fake, a)).state, 'needs-review');
+        const found = await lookupDriver(db, admin, { cityId: city, driverId: a }, { client: fake.client, env: ENV });
+        assert.equal(found.result, 'match');
+        await linkDriver(db, admin, { cityId: city, driverId: a, workerId: found.matches[0].workerId }, { client: fake.client, env: ENV });
+        assert.equal((await one('SELECT tenant_id FROM everee_workers WHERE driver_id = $1 AND unlinked_at IS NULL', [a])).tenant_id, '4321', 'the verified link records its tenant');
+        assert.equal((await getStatus(db, a, { env: ENV })).state, 'in-progress', 'no longer link_not_verified_for_tenant');
+        const session = await createSession(db, a, { experience: 'ONBOARDING' }, fake.deps);
+        assert.equal(session.experience, 'ONBOARDING');
+        assert.equal(fake.state.sessions.at(-1).workerId, 'EXISTING-7');
+      });
+    });
+
+    await t.test('a decision made while Everee was being asked is not overwritten: revocation, classification, takeover and a link made meanwhile', async () => {
+      const meanwhile = (fake, action) => { // runs `action` after Everee created the worker but before the link is saved
+        const original = fake.client.createEmbeddedContractor;
+        fake.client.createEmbeddedContractor = async (body) => { const answer = await original(body); await action(); return answer; };
+      };
+      const liveLinks = async (id) => (await one('SELECT count(*)::int AS n FROM everee_workers WHERE driver_id = $1 AND unlinked_at IS NULL', [id])).n;
+      const admin = async () => (await one('SELECT id FROM admin ORDER BY id LIMIT 1')).id;
+      await savepoint(async () => { // an admin links and then revokes
+        await person(a);
+        const fake = withEveree();
+        meanwhile(fake, async () => {
+          const id = await admin();
+          await db.query("INSERT INTO everee_workers (driver_id, environment, tenant_id, everee_worker_id, link_source, linked_by, unlinked_by, unlinked_at, unlink_reason) VALUES ($1, 'sandbox', '4321', 'OTHER', 'matched_email', $2, $2, now(), 'revoked')", [a, id]);
+        });
+        const out = await start(fake, a);
+        assert.deepEqual([out.state, out.reason, await liveLinks(a)], ['needs-review', 'previously_unlinked', 0], 'the admin’s decision stands');
+      });
+      await savepoint(async () => { // the driver is reclassified
+        await person(a);
+        const fake = withEveree();
+        meanwhile(fake, async () => { await db.query("UPDATE drivers SET driver_type = 'DESI' WHERE id = $1", [a]); });
+        await start(fake, a);
+        assert.equal(await liveLinks(a), 0);
+        assert.equal((await one('SELECT review_reason FROM everee_onboarding WHERE driver_id = $1', [a])).review_reason, 'no_longer_eligible');
+        await db.query("UPDATE drivers SET driver_type = 'LOCAL' WHERE id = $1", [a]);
+      });
+      await savepoint(async () => { // the agreement is no longer signed, or the account is disabled
+        await person(a);
+        const fake = withEveree();
+        meanwhile(fake, async () => { await db.query('UPDATE drivers SET enabled = false WHERE id = $1', [a]); });
+        await start(fake, a);
+        assert.equal(await liveLinks(a), 0);
+      });
+      await savepoint(async () => { // another attempt took over (its lease ran out): this one is fenced out
+        await person(a);
+        const fake = withEveree();
+        meanwhile(fake, async () => { await db.query('UPDATE everee_onboarding SET attempts = attempts + 1 WHERE driver_id = $1', [a]); });
+        const out = await start(fake, a);
+        assert.equal(await liveLinks(a), 0, 'a superseded attempt writes no link');
+        assert.equal(out.started, false);
+      });
+      await savepoint(async () => { // an admin linked the driver meanwhile: that link stays, nothing is added
+        await person(a);
+        const fake = withEveree();
+        meanwhile(fake, async () => {
+          const id = await admin();
+          await db.query("INSERT INTO everee_workers (driver_id, environment, tenant_id, everee_worker_id, link_source, linked_by) VALUES ($1, 'sandbox', '4321', 'ADMIN-LINK', 'matched_email', $2)", [a, id]);
+        });
+        await start(fake, a);
+        const links = (await db.query('SELECT everee_worker_id, linked_by FROM everee_workers WHERE driver_id = $1', [a])).rows;
+        assert.deepEqual(links.map((l) => l.everee_worker_id), ['ADMIN-LINK']);
       });
     });
 
@@ -226,9 +319,9 @@ test('driver onboarding: intent first, one worker, self only', { skip: !hasDb &&
         await refused(createSession(db, a, { experience: 'WORKER_HOME' }, fake.deps), 400, 'experience_not_allowed');
         await refused(createSession(db, a, { experience: '__proto__' }, fake.deps), 400, 'experience_not_allowed');
         await refused(createSession(db, a, { experience: 'PAYMENT_HISTORY' }, fake.deps), 409, 'not_complete');
-        const session = await createSession(db, a, { experience: 'ONBOARDING', workerId: `W-nasa-driver-${b}`, driverId: b }, fake.deps);
+        const session = await createSession(db, a, { experience: 'ONBOARDING', workerId: `CAN-nasa-driver-${b}`, driverId: b }, fake.deps);
         assert.equal(fake.state.sessions.length, 1);
-        assert.deepEqual(fake.state.sessions[0], { workerId: `W-nasa-driver-${a}`, experience: 'ONBOARDING', experienceVersion: 'V2_0', eventHandlerName: 'nasaEvereeEmbed' }, 'a worker or driver ID in the request is ignored');
+        assert.deepEqual(fake.state.sessions[0], { workerId: `CAN-nasa-driver-${a}`, experience: 'ONBOARDING', experienceVersion: 'V2_0', eventHandlerName: 'nasaEvereeEmbed' }, 'a worker or driver ID in the request is ignored');
         assert.deepEqual([session.url.startsWith('https://embed.everee.com/'), session.experience], [true, 'ONBOARDING']);
         await db.query("UPDATE everee_workers SET onboarding_complete = true WHERE driver_id = $1", [a]);
         await refused(createSession(db, a, { experience: 'ONBOARDING' }, fake.deps), 409, 'already_complete');

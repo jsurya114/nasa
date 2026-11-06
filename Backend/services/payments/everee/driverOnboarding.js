@@ -224,33 +224,59 @@ const claim = (db, driverId, config) => inTransaction(db, async (tx) => {
   return { row: taken, mine: true };
 });
 
-const release = (db, rowId, fields = {}) => db.query(
+// Every write to the onboarding row is fenced by `attempts`: only the attempt that took the lease can change it, so a request that was superseded (its
+// lease ran out and another attempt took over) can never overwrite the newer attempt's state or let go of its lease.
+const release = (db, row, fields = {}) => db.query(
   `UPDATE everee_onboarding SET lease_until = NULL, updated_at = now(),
-     state = COALESCE($2, state), review_reason = $3, last_error = $4, post_uncertain_at = CASE WHEN $5::boolean THEN now() WHEN $6::boolean THEN NULL ELSE post_uncertain_at END
-   WHERE id = $1`,
-  [rowId, fields.state ?? null, fields.reason ?? null, fields.error ? String(fields.error).slice(0, 300) : null, false, Boolean(fields.clearUncertain)]);
+     state = COALESCE($3, state), review_reason = $4, last_error = $5, post_uncertain_at = CASE WHEN $6::boolean THEN NULL ELSE post_uncertain_at END
+   WHERE id = $1 AND attempts = $2`,
+  [row.id, row.attempts, fields.state ?? null, fields.reason ?? null, fields.error ? String(fields.error).slice(0, 300) : null, Boolean(fields.clearUncertain)]);
 
-// Saves the link for a worker that exists in Everee. The driver is the actor; the tenant is recorded with the link.
-const saveLink = async (db, driver, config, row, worker) => {
-  const state = stateOfWorker(worker);
-  const workerId = String(worker.id ?? worker.workerId);
-  try {
-    await inTransaction(db, async (tx) => {
-      await tx.query(
-        `INSERT INTO everee_workers (driver_id, environment, tenant_id, everee_worker_id, external_worker_id, link_source, onboarding_complete, tin_status, terminated, last_checked_at, linked_by_driver_id)
-         VALUES ($1, $2, $3, $4, $5, 'embedded_onboarding', $6, $7, $8, now(), $1)`,
-        [driver.id, config.environment, config.tenantId, workerId, row.external_worker_id, state.onboardingComplete, state.tinStatus, state.terminated]);
-      await tx.query(
-        `UPDATE everee_onboarding SET state = $2, lease_until = NULL, post_uncertain_at = NULL, review_reason = NULL, last_error = NULL,
-                verified_at = CASE WHEN $2 = 'complete' THEN now() ELSE verified_at END, updated_at = now() WHERE id = $1`,
-        [row.id, state.onboardingComplete ? 'complete' : 'in_progress']);
-    });
-  } catch (error) {
-    if (error.code !== '23505') throw error;
-    // The driver or the worker was linked in the meantime (another tab, or an admin): nothing is created, the state is read again.
-    await release(db, row.id, { state: 'needs_review', reason: 'worker_already_linked' });
-  }
+// Everee's worker lookup by our stable ID returns an `id` that is that same alias, not Everee's own worker ID. The canonical ID is the `workerId` of the
+// search result whose externalWorkerId is exactly ours. That ID is what is stored (it is what the session and the payment-status check compare with);
+// the alias is kept separately as external_worker_id. Returns { workerId } or { unresolved: true } (not visible yet) or { ambiguous: true }.
+const resolveWorkerId = async (client, external) => {
+  const { data } = await client.searchWorkers(external);
+  const items = Array.isArray(data) ? data : Array.isArray(data?.items) ? data.items : [];
+  const ours = items.filter((w) => w.externalWorkerId === external && w.workerId !== undefined && w.workerId !== null);
+  if (ours.length === 1) return { workerId: String(ours[0].workerId) };
+  return ours.length > 1 ? { ambiguous: true } : { unresolved: true };
 };
+
+// Saves the link for a worker that exists in Everee. The driver is the actor; the tenant is recorded with the link. The provider calls are over by
+// now; this one short transaction re-reads everything that decides whether the link may be written, under locks that serialise it with admin changes
+// (the driver row, the driver's links, the onboarding row), and writes nothing if the situation changed while Everee was being asked:
+//  - superseded: another attempt took over or the record went to review -> nothing is written;
+//  - ineligible: the driver is no longer an enabled Local driver who signed the agreement -> review;
+//  - revoked: an admin unlinked this driver in the meantime -> review (the admin's decision stands);
+//  - already linked (an admin linked them meanwhile, or the worker belongs to someone else) -> nothing is written.
+const saveLink = (db, driverId, config, row, worker, workerId) => inTransaction(db, async (tx) => {
+  await tx.query('SELECT pg_advisory_xact_lock($1, $2)', [LOCK_NAMESPACE, driverId]);
+  const { rows: [driver] } = await tx.query('SELECT id, driver_type, enabled, agreement_signed FROM drivers WHERE id = $1 FOR SHARE', [driverId]);
+  const { rows: [mine] } = await tx.query('SELECT id, state, attempts FROM everee_onboarding WHERE id = $1 FOR UPDATE', [row.id]);
+  if (!mine || mine.attempts !== row.attempts || mine.state === 'needs_review') return 'superseded';
+  const { rows: links } = await tx.query(
+    'SELECT id, unlinked_at FROM everee_workers WHERE driver_id = $1 AND environment = $2 ORDER BY id FOR SHARE', [driverId, config.environment]);
+  const toReview = (reason) => tx.query(
+    "UPDATE everee_onboarding SET state = 'needs_review', review_reason = $2, lease_until = NULL, updated_at = now() WHERE id = $1", [row.id, reason]);
+  if (!driver || !driver.enabled || driver.driver_type !== 'LOCAL' || !driver.agreement_signed) { await toReview('no_longer_eligible'); return 'ineligible'; }
+  if (links.some((l) => l.unlinked_at)) { await toReview('previously_unlinked'); return 'revoked'; }
+  if (links.some((l) => !l.unlinked_at)) {
+    await tx.query("UPDATE everee_onboarding SET lease_until = NULL, post_uncertain_at = NULL, updated_at = now() WHERE id = $1", [row.id]);
+    return 'already_linked';
+  }
+  const state = stateOfWorker(worker);
+  const { rowCount } = await tx.query(
+    `INSERT INTO everee_workers (driver_id, environment, tenant_id, everee_worker_id, external_worker_id, link_source, onboarding_complete, tin_status, terminated, last_checked_at, linked_by_driver_id)
+     VALUES ($1, $2, $3, $4, $5, 'embedded_onboarding', $6, $7, $8, now(), $1) ON CONFLICT DO NOTHING`,
+    [driverId, config.environment, config.tenantId, workerId, row.external_worker_id, state.onboardingComplete, state.tinStatus, state.terminated]);
+  if (rowCount === 0) { await toReview('worker_already_linked'); return 'already_linked'; }
+  await tx.query(
+    `UPDATE everee_onboarding SET state = $2, lease_until = NULL, post_uncertain_at = NULL, review_reason = NULL, last_error = NULL,
+            verified_at = CASE WHEN $2 = 'complete' THEN now() ELSE verified_at END, updated_at = now() WHERE id = $1`,
+    [row.id, state.onboardingComplete ? 'complete' : 'in_progress']);
+  return 'linked';
+});
 
 export const startOnboarding = async (db, driverId, input = {}, deps = {}) => {
   const { config, driver } = await requireLocalDriver(db, driverId, deps);
@@ -270,6 +296,18 @@ export const startOnboarding = async (db, driverId, input = {}, deps = {}) => {
 
   const client = deps.client ?? createEvereeClient(config);
   const external = row.external_worker_id;
+  // The worker exists but its Everee worker ID cannot be read yet (the search has not caught up, or is not unambiguous): nothing is linked, and the next
+  // press reads it again. An ambiguous answer goes to a person.
+  const unresolved = async (resolved) => {
+    if (resolved.ambiguous) {
+      await release(db, row, { state: 'needs_review', reason: 'ambiguous_worker_identity', clearUncertain: true });
+      await record(db, driverId, 'needs_review', 'more than one worker with our ID');
+    } else {
+      await release(db, row, { error: 'the worker exists but its Everee ID is not visible yet', clearUncertain: true });
+      await record(db, driverId, 'worker_id_unresolved', null);
+    }
+    return { ...(await getStatus(db, driverId, deps)), started: true };
+  };
   try {
     // 1. A worker with our stable ID may exist already (an earlier attempt whose answer was lost). Look it up by that exact ID.
     let worker = null;
@@ -279,14 +317,16 @@ export const startOnboarding = async (db, driverId, input = {}, deps = {}) => {
       if (!(error instanceof EvereeError) || error.status !== 404) throw error;
     }
     if (worker?.id) {
-      await saveLink(db, driver, config, row, worker);
-      await record(db, driverId, 'worker_found', 'existing worker with our ID linked');
-      return { ...(await getStatus(db, driverId, deps)), started: true };
+      const resolved = await resolveWorkerId(client, external);
+      if (!resolved.workerId) return await unresolved(resolved);
+      const outcome = await saveLink(db, driverId, config, row, worker, resolved.workerId);
+      if (outcome === 'linked') await record(db, driverId, 'worker_found', 'existing worker with our ID linked');
+      return { ...(await getStatus(db, driverId, deps)), started: outcome === 'linked' };
     }
 
     // 2. No worker with our ID. A worker for this driver's own email or phone must be reviewed by a person, never created over or linked here.
     if (await existingWorkerFor(client, driver)) {
-      await release(db, row.id, { state: 'needs_review', reason: 'possible_existing_worker' });
+      await release(db, row, { state: 'needs_review', reason: 'possible_existing_worker' });
       await record(db, driverId, 'needs_review', 'possible existing worker');
       return { ...(await getStatus(db, driverId, deps)), started: false };
     }
@@ -294,42 +334,48 @@ export const startOnboarding = async (db, driverId, input = {}, deps = {}) => {
     // 3. An earlier create got no clear answer a short while ago: wait, do not post again yet.
     const cooling = row.post_uncertain_at && Date.now() - new Date(row.post_uncertain_at).getTime() < UNCERTAIN_COOLDOWN_MINUTES * 60_000;
     if (cooling) {
-      await release(db, row.id, {});
+      await release(db, row, {});
       return { ...(await getStatus(db, driverId, deps)), started: false };
     }
 
     // 4. Create it. The moment is recorded BEFORE the request, so a lost answer is recognised next time.
-    await db.query('UPDATE everee_onboarding SET post_uncertain_at = now(), lease_until = now() + make_interval(secs => $2), updated_at = now() WHERE id = $1', [row.id, LEASE_SECONDS]);
+    const fenced = await db.query('UPDATE everee_onboarding SET post_uncertain_at = now(), lease_until = now() + make_interval(secs => $3), updated_at = now() WHERE id = $1 AND attempts = $2', [row.id, row.attempts, LEASE_SECONDS]);
+    if (fenced.rowCount === 0) return { ...(await getStatus(db, driverId, deps)), started: false }; // another attempt took over: do not create anything
     let created;
     try {
       ({ data: created } = await client.createEmbeddedContractor({ externalWorkerId: external, ...profile }));
     } catch (error) {
       if (isDefiniteRefusal(error)) {
         // Everee said no and created nothing: the intent is removed so the driver can correct the details and try again.
-        await db.query('DELETE FROM everee_onboarding WHERE id = $1', [row.id]);
+        await db.query('DELETE FROM everee_onboarding WHERE id = $1 AND attempts = $2', [row.id, row.attempts]);
         throw new OnboardingError(422, 'everee_refused', error.message.slice(0, 200));
       }
       if (error instanceof EvereeError && [401, 403, 429].includes(error.status)) {
-        await release(db, row.id, { clearUncertain: true, error: error.message });
+        await release(db, row, { clearUncertain: true, error: error.message });
         throw new OnboardingError(503, 'service_unavailable', 'Everee is not available right now; try again in a moment');
       }
       // No clear answer (timeout, network, 5xx): the worker may exist. It is looked for by its ID next time, and nothing is posted again before the cooldown.
-      await release(db, row.id, { error: error?.message ?? 'no clear answer' });
+      await release(db, row, { error: error?.message ?? 'no clear answer' });
       await record(db, driverId, 'create_uncertain', 'no clear answer from Everee');
       return { ...(await getStatus(db, driverId, deps)), started: true };
     }
-    if (!created?.id) {
-      await release(db, row.id, { error: 'Everee answered without a worker ID' });
+    if (!created) {
+      await release(db, row, { error: 'Everee answered without a worker' });
       return { ...(await getStatus(db, driverId, deps)), started: true };
     }
-    await saveLink(db, driver, config, row, created);
-    await record(db, driverId, 'worker_created', null);
-    logger.info('Everee onboarding worker created', { driverId, environment: config.environment });
-    return { ...(await getStatus(db, driverId, deps)), started: true };
+    // The create worked. The canonical Everee worker ID comes from the search result for our exact external ID, never from the create answer's `id`.
+    const resolved = await resolveWorkerId(client, external);
+    if (!resolved.workerId) return await unresolved(resolved);
+    const outcome = await saveLink(db, driverId, config, row, created, resolved.workerId);
+    if (outcome === 'linked') {
+      await record(db, driverId, 'worker_created', null);
+      logger.info('Everee onboarding worker created', { driverId, environment: config.environment });
+    }
+    return { ...(await getStatus(db, driverId, deps)), started: outcome === 'linked' };
   } catch (error) {
     if (error instanceof OnboardingError) throw error;
     // Anything else (a read failing, a database problem) leaves nothing half-done: the lease is let go and the driver can try again.
-    await release(db, row.id, { error: error?.message ?? 'failed' }).catch(() => {});
+    await release(db, row, { error: error?.message ?? 'failed' }).catch(() => {});
     if (error instanceof EvereeError) throw new OnboardingError(503, 'service_unavailable', 'Everee is not available right now; try again in a moment');
     throw error;
   }
