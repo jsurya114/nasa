@@ -421,6 +421,68 @@ test(
           }),
       );
       await t.test(
+        "the Everee onboarding gate holds a Local driver for cash too: the whole selection is refused with a stable reason and nothing is written",
+        async () =>
+          isolated(async () => {
+            for (const file of [
+              "2026-11-04-issue-031-everee-workers.sql",
+              "2026-11-07-issue-242-everee-driver-onboarding.sql",
+            ])
+              await db.query(readFileSync(new URL(`../migrations/${file}`, import.meta.url), "utf8"));
+            const keys = ["EVEREE_API_TOKEN", "EVEREE_TENANT_ID", "EVEREE_DRIVER_ONBOARDING_ENABLED", "EVEREE_ONBOARDING_ENFORCED"];
+            const saved = Object.fromEntries(keys.map((k) => [k, process.env[k]]));
+            const records = async () => Number((await one("SELECT count(*) n FROM pay_run_payment_records WHERE pay_run_id=$1", [run.id])).n);
+            const link = (driverId, complete, tenant = "4321") =>
+              db.query(
+                `INSERT INTO everee_workers(driver_id,environment,tenant_id,everee_worker_id,link_source,onboarding_complete,linked_by)
+                 VALUES($1,'sandbox',$2,$3,'matched_email',$4,$5)`,
+                [driverId, tenant, `W-${driverId}-${tenant}`, complete, admin.id],
+              );
+            const eligible = async (statement) =>
+              (await reviewRunPayments(db, admin, run.id)).drivers.find((d) => String(d.statementId) === String(statement.id));
+            try {
+              // Off (flags absent): nobody is held, as before.
+              assert.equal((await eligible(first)).eligible, true);
+              Object.assign(process.env, {
+                EVEREE_API_TOKEN: "tsk_test_ABCDEF123456",
+                EVEREE_TENANT_ID: "4321",
+                EVEREE_DRIVER_ONBOARDING_ENABLED: "true",
+                EVEREE_ONBOARDING_ENFORCED: "true",
+              });
+              await link(drivers[1], true);
+              const held = await eligible(first);
+              assert.equal(held.eligible, false);
+              assert.ok(held.blockers.some((b) => b.code === "onboarding_required" && b.severity === "blocking"));
+              assert.equal((await eligible(second)).eligible, true);
+              const before = await records();
+              // A mixed selection is refused whole: the verified driver is not paid either.
+              await assert.rejects(recordRunPayment(db, admin, run.id, request()), { status: 409, code: "onboarding_required" });
+              await assert.rejects(recordRunPayment(db, admin, run.id, request({ statementIds: [Number(first.id)] })), { status: 409, code: "onboarding_required" });
+              assert.equal(await records(), before);
+              assert.equal((await one("SELECT payout_status FROM pay_statements WHERE id=$1", [second.id])).payout_status, "not_submitted");
+              // An incomplete link, a legacy link with no tenant and a link of another tenant do not count.
+              await link(drivers[0], false);
+              await assert.rejects(recordRunPayment(db, admin, run.id, request()), { code: "onboarding_required" });
+              await db.query("UPDATE everee_workers SET onboarding_complete = true WHERE driver_id = $1", [drivers[0]]);
+              await db.query("UPDATE everee_workers SET unlinked_by = $2, unlinked_at = now(), unlink_reason = 'test' WHERE driver_id = $1", [drivers[0], admin.id]);
+              await link(drivers[0], true, null);
+              await assert.rejects(recordRunPayment(db, admin, run.id, request()), { code: "onboarding_required" });
+              // The verified driver alone can be paid; the held one cannot be.
+              const paid = await recordRunPayment(db, admin, run.id, request({ statementIds: [Number(second.id)] }));
+              assert.equal(paid.receipt.drivers, 1);
+              await assert.rejects(recordRunPayment(db, admin, run.id, request({ statementIds: [Number(first.id)] })), { code: "onboarding_required" });
+              // A Desi driver is not held by this gate (its own cash-only rule applies).
+              await db.query("UPDATE drivers SET driver_type='DESI' WHERE id=$1", [drivers[0]]);
+              assert.equal((await eligible(first)).eligible, true);
+            } finally {
+              for (const k of keys) {
+                if (saved[k] === undefined) delete process.env[k];
+                else process.env[k] = saved[k];
+              }
+            }
+          }),
+      );
+      await t.test(
         "partial payment, replay and completion update only included work, preserving the debt",
         async () => {
           const partial = request({ statementIds: [Number(first.id)] });

@@ -257,6 +257,48 @@ test('everee submit: reserve, send, payout request, replay, partial failure, ret
       await assert.rejects(retryBatch(db, sup2, batch.batch.id, deps(retry.client, { env: SANDBOX })), { status: 409, message: /switched off/ });
     });
 
+    await t.test('the onboarding gate: a Local driver without verified onboarding is never sent (the batch is refused whole), and a retry leaves them failed with the reason', async () => {
+      await savepoint(async () => {
+        await db.query(migration('2026-11-07-issue-242-everee-driver-onboarding.sql'));
+        const GATED = { ...ARMED, EVEREE_DRIVER_ONBOARDING_ENABLED: 'true', EVEREE_ONBOARDING_ENFORCED: 'true' };
+        const keys = Object.keys(GATED);
+        const saved = Object.fromEntries(keys.map((k) => [k, process.env[k]]));
+        try {
+          // First send while the gate is off: dA's payment fails (refused by Everee), so there is something to retry.
+          const run = await scenario('G', [[dA, '10.00'], [dB, '11.00']]);
+          const first = makeEveree({ 'EW-A': 'refuse' });
+          const batch = await submit(run.run, first.client);
+          assert.deepEqual([batch.counts.failed, batch.counts.submitted], [1, 1]);
+          // The gate comes on. Nobody has a tenant on their link yet, so every Local driver is held.
+          Object.assign(process.env, GATED);
+          const held = makeEveree();
+          const afterRun = await scenario('G2', [[dA, '12.00'], [dB, '13.00']]);
+          const before = await counts();
+          const preview = await previewEvereeBatch(db, sup2, afterRun.run.id, { env: GATED });
+          assert.ok(preview.drivers.every((d) => d.blockers.some((b) => b.code === 'onboarding_required' && b.severity === 'blocking')), 'the preview names the stable reason for each held driver');
+          assert.equal(preview.canSubmit, false);
+          await assert.rejects(
+            submitBatch(db, sup2, { runId: afterRun.run.id, requestId: randomUUID(), previewHash: preview.previewHash }, deps(held.client, { env: GATED })),
+            { status: 409 },
+          );
+          assert.deepEqual(await counts(), before, 'nothing was reserved or sent');
+          assert.deepEqual(held.state.creates, []);
+          // A retry does not send the held driver; the payment stays failed and says why.
+          const retry = makeEveree();
+          const view = await retryBatch(db, sup2, batch.batch.id, deps(retry.client, { env: GATED }));
+          assert.deepEqual(retry.state.creates, []);
+          assert.equal(view.counts.failed, 1);
+          assert.match((await item(run.run, dA)).error_message, /Everee payment setup is not complete/);
+          // Once the link is verified for this tenant and complete, the retry goes out.
+          await db.query("UPDATE everee_workers SET tenant_id = '4321', onboarding_complete = true WHERE driver_id = $1 AND environment = 'sandbox'", [dA]);
+          const ok = makeEveree();
+          assert.equal((await retryBatch(db, sup2, batch.batch.id, deps(ok.client, { env: GATED }))).counts.failed, 0);
+        } finally {
+          for (const k of keys) { if (saved[k] === undefined) delete process.env[k]; else process.env[k] = saved[k]; }
+        }
+      });
+    });
+
     await t.test('a retry goes only to the worker saved on the payment: a driver linked to another worker since is not sent to', async () => {
       const run = await scenario('N', [[dA, '10.00']]);
       const batch = await submit(run.run, makeEveree({ 'EW-A': 'refuse' }).client);
@@ -468,7 +510,7 @@ test('everee submit: reserve, send, payout request, replay, partial failure, ret
       await savepoint(() => assert.rejects(db.query('UPDATE everee_payment_batches SET total = 1'), /cannot be changed/));
       const first = await item(happy.run, dA);
       await savepoint(() => assert.rejects(db.query('UPDATE everee_payment_items SET amount = 1 WHERE id = $1', [first.id]), /cannot be changed/));
-      await savepoint(() => assert.rejects(db.query("UPDATE everee_payment_items SET external_id = 'nasa-stmt-1' WHERE id = $1", [first.id]), /cannot be changed/));
+      await savepoint(() => assert.rejects(db.query("UPDATE everee_payment_items SET external_id = external_id || '0' WHERE id = $1", [first.id]), /cannot be changed/));
       await savepoint(() => assert.rejects(db.query("UPDATE everee_payment_attempts SET outcome = 'refused' WHERE outcome = 'accepted'"), /once finished/));
       await savepoint(() => assert.rejects(db.query(
         `INSERT INTO everee_payment_items (batch_id, pay_statement_id, driver_id, everee_worker_id, external_id, amount) VALUES ($1, $2, $3, 'EW-A', 'nasa-stmt-777777', 1)`,

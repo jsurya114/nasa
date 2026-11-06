@@ -8,6 +8,7 @@
 import { fromCents, toCents } from './payCalculator.js';
 import { assertCityAllowed, PayrollError } from './payRunStore.js';
 import { typeBlockers } from './driverPaymentRules.js';
+import { blockedDriverIds, ONBOARDING_REQUIRED } from '../../payments/everee/onboardingGate.js';
 
 // blocking: this driver cannot be paid from this batch. disclose: shown to the person confirming; does not block.
 export const BLOCKERS = Object.freeze({
@@ -51,6 +52,8 @@ export const reviewRunAsBatch = async (db, admin, runId) => {
        FROM pay_statements s JOIN drivers d ON d.id = s.driver_id
       WHERE s.pay_run_id = $1 ORDER BY d.name, s.id`, [runId]);
   const driverIds = statements.map((s) => s.driver_id);
+  // A Local driver whose Everee onboarding is not complete is held for every payment method (empty while the gate is off).
+  const onboardingHeld = await blockedDriverIds(db, driverIds);
 
   // Claims of this city that are not decided yet. A claim with no decision has no driver (#141), so these are shown for
   // the whole city and never attributed to a driver. They are not deducted in any statement of this batch.
@@ -64,7 +67,8 @@ export const reviewRunAsBatch = async (db, admin, runId) => {
 
   const drivers = statements.map((s) => {
     // A driver with no type (or a type that is not Local or Desi) is blocked for every payment method until an admin sets one.
-    const blockers = [...blockersFor({ statement: s, runStatus: run.status }), ...typeBlockers(s.driver_type)];
+    const blockers = [...blockersFor({ statement: s, runStatus: run.status }), ...typeBlockers(s.driver_type),
+      ...(onboardingHeld.has(s.driver_id) ? [{ code: ONBOARDING_REQUIRED.code, severity: 'blocking', message: ONBOARDING_REQUIRED.message }] : [])];
     return {
       statementId: s.id,
       driverId: s.driver_id,

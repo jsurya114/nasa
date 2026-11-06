@@ -13,7 +13,7 @@ import { notifyDriverPaid } from "../../services/push/pushEvents.js";
 
 const fail = (res, error) => {
   if (error instanceof PayrollError)
-    return res.status(error.status).json({ message: error.message });
+    return res.status(error.status).json({ message: error.message, ...(error.code === 'onboarding_required' && { code: error.code }) });
   if (error.code === "23505")
     return res
       .status(409)

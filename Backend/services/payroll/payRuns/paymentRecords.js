@@ -6,6 +6,7 @@ import { blockersFor, reviewRunAsBatch } from "./payBatchReview.js";
 import { fromCents, toCents } from "./payCalculator.js";
 import { parseDate } from "../ledger/ledgerRules.js";
 import { CASH, methodAllowed, typeBlockers } from "./driverPaymentRules.js";
+import { blockedDriverIds, ONBOARDING_REQUIRED } from "../../payments/everee/onboardingGate.js";
 
 const UUID =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -222,6 +223,10 @@ export const recordRunPayment = async (db, admin, runId, request) => {
       409,
       "Some selected drivers have no driver type. Set Local or Desi for them on the Drivers page, then pay.",
     );
+  // A Local driver who has not finished Everee onboarding cannot be paid by any method. The whole selection is refused, never a part of it, and the
+  // drivers and their links are share-locked, so nothing changes between this check and the record below.
+  const held = await blockedDriverIds(db, targets.map((s) => s.driver_id), { lock: true });
+  if (held.size > 0) throw Object.assign(new PayrollError(409, ONBOARDING_REQUIRED.message), { code: ONBOARDING_REQUIRED.code });
   // Recording by hand is Cash in Hand only (Everee has its own route), and the type must allow it.
   if (request.method !== CASH || targets.some((s) => !methodAllowed(s.driver_type, request.method)))
     throw new PayrollError(409, "This payment method is not allowed for a selected driver.");

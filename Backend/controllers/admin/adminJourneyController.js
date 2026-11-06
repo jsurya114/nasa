@@ -5,6 +5,8 @@ import HttpStatus from "../../utils/statusCodes.js";
 import { getAllottedDrivers } from "../../services/admin/dashboardService.js";
 import { canAccessDriver, canAccessRoute, getJourneyDriverId, isRouteActive } from "../../services/admin/journeyAccess.js";
 import logger from '../../utils/logger.js';
+import pool from "../../config/db.js";
+import { OnboardingRequiredError, refusal, withWorkGate } from "../../services/payments/everee/onboardingGate.js";
 
 // The journey id from the URL, as a positive whole number, or null. The same number is used for
 // the city check and for the change itself, so the two can never look at different journeys.
@@ -78,18 +80,23 @@ const adminJourneyController = {
       }
 
       // 3. Proceed to Add
-      const newJourney = await AdminJourneyQuery.addJourney({
-        driver_id,
-        route_id,
-        start_seq,
-        end_seq,
-        journey_date
+      // New work cannot be given to a Local driver who has not finished Everee onboarding. The check and the writes are one transaction (with the gate off
+      // this runs exactly as before), so a concurrent unlink cannot slip between them.
+      const newJourney = await withWorkGate(pool, driver_id, async (db) => {
+        const created = await AdminJourneyQuery.addJourney({
+          driver_id,
+          route_id,
+          start_seq,
+          end_seq,
+          journey_date
+        }, db);
+        await addRangeOfSequenceToDeliveriesForAdmin(driver_id, route_id, start_seq, end_seq, created.id, journey_date, db);
+        return created;
       });
-            
-     await addRangeOfSequenceToDeliveriesForAdmin(driver_id, route_id, start_seq, end_seq, newJourney.id,journey_date);
       res.status(HttpStatus.CREATED).json({ success: true, data: newJourney });
 
     } catch (error) {
+      if (error instanceof OnboardingRequiredError) return res.status(error.status).json(refusal());
       res.status(HttpStatus.INTERNAL_SERVER_ERROR).json({ success: false, message: error.message });
     }
   },
@@ -153,16 +160,19 @@ const adminJourneyController = {
         });
       }
 
-      // 4. Update Journey
-      const updatedJourney = await AdminJourneyQuery.updateJourneyById(
-        journey_id,
-        { start_seq, end_seq, route_id, driver_id }
-      );
-
-      // 5. Sync Deliveries (If using the logic from previous request)
-      if (typeof syncJourneyDeliveries === 'function') {
-          await syncJourneyDeliveries(journey_id, driver_id, route_id, start_seq, end_seq, journey_date);
-      }
+      // 4. Update Journey, and 5. sync its deliveries. Work cannot be changed or reassigned for a Local driver who has not finished Everee onboarding
+      // (deleting a journey stays allowed). The check and the writes are one transaction (with the gate off this runs exactly as before).
+      const updatedJourney = await withWorkGate(pool, driver_id, async (db) => {
+        const updated = await AdminJourneyQuery.updateJourneyById(
+          journey_id,
+          { start_seq, end_seq, route_id, driver_id },
+          db
+        );
+        if (typeof syncJourneyDeliveries === 'function') {
+          await syncJourneyDeliveries(journey_id, driver_id, route_id, start_seq, end_seq, journey_date, db === pool ? null : db);
+        }
+        return updated;
+      });
 
       res.status(HttpStatus.OK).json({
         success: true,
@@ -170,6 +180,7 @@ const adminJourneyController = {
       });
 
     } catch (error) {
+      if (error instanceof OnboardingRequiredError) return res.status(error.status).json(refusal());
       logger.error("updateJourney error", error);
       res.status(HttpStatus.INTERNAL_SERVER_ERROR).json({
         success: false,
