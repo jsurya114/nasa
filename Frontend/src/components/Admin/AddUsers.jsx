@@ -77,6 +77,10 @@ const AddUsers = () => {
     setEditAdmin(null);
   };
 
+  // The Cancel buttons inside the forms are user dismissals too: like X, Escape and the backdrop, they do nothing while a save is running.
+  const cancelDriverForm = () => { if (!saving) closeDriverForm(); };
+  const cancelAdminForm = () => { if (!saving) closeAdminForm(); };
+
   // Handle driver form submission. The dialog closes only when the save worked; when it fails it stays open with what was typed.
   const handleDriverSubmit = async (form) => {
     setSaving(true);
@@ -235,7 +239,7 @@ const AddUsers = () => {
             isEdit={!!editDriver}
             editData={editDriver}
             onSubmit={handleDriverSubmit}
-            onCancel={closeDriverForm}
+            onCancel={cancelDriverForm}
           />
         </Modal>
       )}
@@ -245,7 +249,7 @@ const AddUsers = () => {
             isEdit={!!editAdmin}
             editData={editAdmin}
             onSubmit={handleAdminSubmit}
-            onCancel={closeAdminForm}
+            onCancel={cancelAdminForm}
           />
         </Modal>
       )}

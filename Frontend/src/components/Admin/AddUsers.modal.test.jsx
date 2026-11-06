@@ -166,6 +166,26 @@ describe("Drivers page: Add Driver in a dialog", () => {
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
   });
 
+  it("the form's own Cancel does nothing while the save runs, keeps what was typed, and works again after a failed save", async () => {
+    let settle;
+    await startServer({ createDriver: () => new Promise((resolve) => { settle = resolve; }) });
+    await mount();
+    fireEvent.click(screen.getByRole("button", { name: "+ Add Driver" }));
+    fillDriver();
+    const dialog = () => screen.getByRole("dialog");
+    fireEvent.click(within(dialog()).getByRole("button", { name: "Add Driver" }));
+    await waitFor(() => expect(within(dialog()).getByRole("button", { name: "Cancel" }).disabled).toBe(true));
+    fireEvent.click(within(dialog()).getByRole("button", { name: "Cancel" }));
+    expect(dialog()).toBeTruthy();
+    expect(within(dialog()).getByPlaceholderText("Driver Name").value).toBe("New Driver");
+    settle({ status: 409, data: { message: "User already Exists" } });
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith("User already Exists"));
+    expect(within(dialog()).getByPlaceholderText("Driver Name").value).toBe("New Driver");
+    await waitFor(() => expect(within(dialog()).getByRole("button", { name: "Cancel" }).disabled).toBe(false));
+    fireEvent.click(within(dialog()).getByRole("button", { name: "Cancel" }));
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
   it("Edit on a row opens the same dialog, filled in and titled Edit Driver", async () => {
     await startServer();
     await mount();
@@ -224,6 +244,30 @@ describe("Admins tab", () => {
     fireEvent.click(within(dialog()).getByRole("button", { name: "Add Admin" }));
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
     expect(server.posts).toHaveLength(2);
+    expect(screen.getByText("Bo Boss")).toBeTruthy();
+  });
+
+  it("the admin form's own Cancel does nothing while the save runs, then the save completes and closes the dialog", async () => {
+    let settle;
+    const server = await startServer({ createAdmin: (body) => new Promise((resolve) => { settle = () => resolve({ status: 200, data: { message: "Admin Added", insertAdmin: { id: 10, admin_name: body.name, admin_email: body.email, admin_role: body.role, is_active: true, cities: "" } } }); }) });
+    await mount();
+    fireEvent.click(screen.getByRole("button", { name: "Admins" }));
+    await waitFor(() => expect(screen.getByText("Ann Admin")).toBeTruthy());
+    fireEvent.click(screen.getByRole("button", { name: "+ Add Admin" }));
+    const dialog = () => screen.getByRole("dialog");
+    fireEvent.change(within(dialog()).getByPlaceholderText("Admin Name"), { target: { value: "Bo Boss" } });
+    fireEvent.change(within(dialog()).getByPlaceholderText("Email"), { target: { value: "bo@example.com" } });
+    fireEvent.change(within(dialog()).getByPlaceholderText("Password"), { target: { value: "secret1" } });
+    fireEvent.change(within(dialog()).getByPlaceholderText("Confirm Password"), { target: { value: "secret1" } });
+    fireEvent.change(dialog().querySelector("select[name=role]"), { target: { value: "superadmin" } });
+    fireEvent.click(within(dialog()).getByRole("button", { name: /Add Admin/ }));
+    await waitFor(() => expect(within(dialog()).getByRole("button", { name: "Cancel" }).disabled).toBe(true));
+    fireEvent.click(within(dialog()).getByRole("button", { name: "Cancel" }));
+    expect(dialog()).toBeTruthy();
+    expect(within(dialog()).getByPlaceholderText("Admin Name").value).toBe("Bo Boss");
+    settle();
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(server.posts).toHaveLength(1);
     expect(screen.getByText("Bo Boss")).toBeTruthy();
   });
 
