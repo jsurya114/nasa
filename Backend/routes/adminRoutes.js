@@ -7,6 +7,7 @@ import adminController from '../controllers/admin/adminController.js'
 import jobController from '../controllers/admin/jobController.js';
 import { createRoute, getRouteById, updateRoute, deleteRoute, toggleRouteStatus, fetchPaginatedRoutes, getAdminRoutes, getRoutesByDriver } from "../controllers/admin/routeController.js"
 import { changeStatusUser, createUsers, getUsers, updateUser } from '../controllers/admin/addUserController.js';
+import { changeDriverTypes } from '../controllers/admin/driverTypeController.js';
 import { createAccessCode, deleteAccessCode } from '../controllers/admin/accessCodeControllers.js';
 import { DailyExcelUpload, getUpdatedTempDashboardData } from '../controllers/admin/fileUploadsController.js';
 import { getAccessCodes, updateAccessCode, } from '../controllers/admin/accessCodeControllers.js';
@@ -47,6 +48,8 @@ router.post('/create-users', createUsers);
 router.get('/get-users', getUsers);
 router.patch('/toggle-user/:id', changeStatusUser);
 router.put('/update-user/:id', updateUser);
+// Local or Desi for one or many drivers at once, all in one transaction (any admin, own cities only).
+router.patch('/drivers/type', changeDriverTypes);
 
 router.get('/get-cities', jobController.getCities);
 router.get('/get-admin-cities', getAdminCities);
