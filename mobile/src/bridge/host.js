@@ -16,9 +16,10 @@ const BASE_CAPABILITIES = ["session", "openExternal"];
 // session: from createSession. openExternal: async (https url) => void. webOrigin: the one page allowed to talk.
 // nonce: the secret injected into the main frame for this page load (see protocol.js).
 // push: from createPush, or left out when this build has no push support (the "push" capability is then not offered).
-const createBridgeHost = ({ info, session, openExternal, webOrigin, nonce, push }) => {
+// everee: opens Everee's screens in a separate window, or left out (the "everee" capability is then not offered).
+const createBridgeHost = ({ info, session, openExternal, webOrigin, nonce, push, everee }) => {
   const tracker = new IdTracker();
-  const capabilities = push ? [...BASE_CAPABILITIES, "push"] : BASE_CAPABILITIES;
+  const capabilities = [...BASE_CAPABILITIES, ...(push ? ["push"] : []), ...(everee ? ["everee"] : [])];
   const requirePush = () => {
     if (!push) throw Object.assign(new Error("unsupported_action"), { code: "unsupported_action" });
     return push;
@@ -41,6 +42,10 @@ const createBridgeHost = ({ info, session, openExternal, webOrigin, nonce, push 
       case "link.openExternal":
         await openExternal(payload.url);
         return {};
+      case "everee.open":
+        // everee: { open: async (url) => ({ outcome }) } from the app. The page learns only how the window ended, never what was in it.
+        if (!everee) throw Object.assign(new Error("unsupported_action"), { code: "unsupported_action" });
+        return await everee.open(payload.url);
       case "push.status":
         return await requirePush().status();
       case "push.requestPermission":

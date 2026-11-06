@@ -5,6 +5,7 @@ import { createEvereeClient, EvereeError } from './evereeClient.js';
 import { inTransaction } from './batchSubmit.js';
 import { lockDriver } from './driverLock.js';
 import { LINK_COLUMNS, refreshLinkRow, stateOfWorker } from './workerStore.js';
+import { enforcement } from './onboardingGate.js';
 import { matchWorkers, MAX_SEARCH_RESULTS, normalizeEmail, normalizePhone, readyToPay, splitName } from './workerRules.js';
 
 // A Local driver finishes Everee onboarding from inside NASA (issue #242, PR A). Everything here is about ONE driver, and that driver is always
@@ -20,7 +21,10 @@ import { matchWorkers, MAX_SEARCH_RESULTS, normalizeEmail, normalizePhone, ready
 // - "Complete" is Everee's own onboardingComplete, read from Everee; a screen event or a browser flag never sets it.
 
 export const EXTERNAL_PREFIX = 'nasa-driver-';
-export const EVENT_HANDLER_NAME = 'nasaEvereeEmbed';
+// The name Everee puts on every event of a session. On the web the page reads events from a private MessageChannel; in the phone app Everee's
+// documented handler for a React Native WebView is `ReactNativeWebView`. The platform is chosen from this fixed list only.
+export const EVENT_HANDLER_NAMES = Object.freeze({ web: 'nasaEvereeEmbed', native: 'ReactNativeWebView' });
+export const EVENT_HANDLER_NAME = EVENT_HANDLER_NAMES.web;
 export const LEASE_SECONDS = 60;
 export const UNCERTAIN_COOLDOWN_MINUTES = 10;
 export const SESSION_LIMIT = { count: 10, minutes: 10 };
@@ -142,7 +146,8 @@ export const getStatus = async (db, driverId, deps = {}) => {
   const row = config.configured ? await findRow(db, driverId, config) : null;
   const unlinked = config.configured && !link ? await wasUnlinked(db, driverId, config) : false;
   const status = stateOf({ driver, on, configured: config.configured, link, row, tenantId: config.tenantId, unlinked });
-  return { ...status, driverType: driver.driver_type ?? null, agreementSigned: Boolean(driver.agreement_signed), needsFromDriver: status.canStart || status.state === STATES.NOT_STARTED ? profileGaps(driver) : [] };
+  // `enforced` tells the screens whether work and payments are really on hold, so they never say so when the hard gate is off.
+  return { ...status, enforced: enforcement(env).enforced, driverType: driver.driver_type ?? null, agreementSigned: Boolean(driver.agreement_signed), needsFromDriver: status.canStart || status.state === STATES.NOT_STARTED ? profileGaps(driver) : [] };
 };
 
 // ---------- preconditions shared by the actions ----------
@@ -389,6 +394,9 @@ export const createSession = async (db, driverId, input = {}, deps = {}) => {
   const { config, driver } = await requireLocalDriver(db, driverId, deps);
   const experience = typeof input.experience === 'string' ? input.experience : '';
   const wanted = Object.hasOwn(EXPERIENCES, experience) ? EXPERIENCES[experience] : null;
+  const platform = input.platform === undefined ? 'web' : input.platform;
+  if (!Object.hasOwn(EVENT_HANDLER_NAMES, platform)) throw new OnboardingError(400, 'platform_not_allowed', 'that platform is not supported');
+  const eventHandlerName = EVENT_HANDLER_NAMES[platform];
   if (!wanted) throw new OnboardingError(400, 'experience_not_allowed', 'that screen is not available');
   if (!driver.agreement_signed) throw new OnboardingError(409, 'agreement_required', 'sign the NASA agreement first');
   const link = await findLink(db, driverId, config);
@@ -406,7 +414,7 @@ export const createSession = async (db, driverId, input = {}, deps = {}) => {
   let answer;
   try {
     ({ data: answer } = await client.createEmbeddedSession({
-      workerId: link.everee_worker_id, experience, experienceVersion: wanted.version, eventHandlerName: EVENT_HANDLER_NAME,
+      workerId: link.everee_worker_id, experience, experienceVersion: wanted.version, eventHandlerName,
     }));
   } catch (error) {
     if (error instanceof EvereeError) throw new OnboardingError(503, 'service_unavailable', 'Everee is not available right now; try again in a moment');
@@ -422,7 +430,7 @@ export const createSession = async (db, driverId, input = {}, deps = {}) => {
   await record(db, driverId, 'session_issued', experience);
   const expiresInMs = Number.isFinite(Number(answer.expiresInMs)) ? Number(answer.expiresInMs) : null;
   // The link is a bearer credential: it is returned once, never logged and never stored.
-  return { url: url.toString(), origin: url.origin, expiresAt: expiresInMs ? new Date(Date.now() + expiresInMs).toISOString() : null, experience, eventHandlerName: EVENT_HANDLER_NAME };
+  return { url: url.toString(), origin: url.origin, expiresAt: expiresInMs ? new Date(Date.now() + expiresInMs).toISOString() : null, experience, eventHandlerName };
 };
 
 // ---------- refresh (read the worker from Everee again) ----------

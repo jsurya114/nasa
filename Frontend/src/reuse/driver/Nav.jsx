@@ -1,10 +1,12 @@
 import React from "react";
-import { LayoutDashboard, KeyRound, Truck, CalendarDays, Wallet, FileText, Lock } from "lucide-react";
+import { LayoutDashboard, KeyRound, Truck, CalendarDays, Wallet, FileText, Lock, CreditCard } from "lucide-react";
+import { useEvereeSetup } from "../../hooks/useEvereeSetup.js";
 import useTranslation from "../../hooks/useTranslation.js";
 import GlassTabBar from "../GlassTabBar.jsx";
 
 function Nav() {
   const { t, currentLanguage } = useTranslation();
+  const { required } = useEvereeSetup();
 
   const links = [
     { to: "/driver/dashboard", Icon: LayoutDashboard, label: t('dashboard') },
@@ -14,6 +16,8 @@ function Nav() {
     { to: "/driver/pay", Icon: Wallet, label: t('payTab') },
     { to: "/driver/view-agreement", Icon: FileText, label: t('agreementTab') },
     { to: "/driver/update-password", Icon: Lock, label: t('password') },
+    // A permanent entry while the payment setup is unfinished, so it cannot be lost by closing a popup.
+    ...(required ? [{ to: "/driver/payment-setup", Icon: CreditCard, label: t('psetTitle') }] : []),
   ];
 
   return (

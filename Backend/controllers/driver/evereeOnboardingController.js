@@ -25,5 +25,5 @@ const answer = (action) => async (req, res) => {
 
 export const getOnboardingStatus = answer((driverId) => getStatus(pool, driverId));
 export const startDriverOnboarding = answer((driverId, body) => startOnboarding(pool, driverId, { startDate: body.startDate, homeAddress: body.homeAddress }));
-export const createOnboardingSession = answer((driverId, body) => createSession(pool, driverId, { experience: body.experience }));
+export const createOnboardingSession = answer((driverId, body) => createSession(pool, driverId, { experience: body.experience, platform: body.platform }));
 export const refreshOnboarding = answer((driverId) => refreshStatus(pool, driverId));

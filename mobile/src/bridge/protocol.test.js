@@ -80,6 +80,7 @@ test("accepts good payloads for each implemented action", () => {
     "session.refresh": { area: "driver" },
     "session.clear": { area: "admin" },
     "link.openExternal": { url: "https://example.com/help" },
+    "everee.open": { url: "https://embed.everee.com/s/abc" },
     "push.status": {},
     "push.requestPermission": {},
     "push.getToken": {},

@@ -3,13 +3,15 @@ import { useDispatch, useSelector } from 'react-redux';
 import { submitDriverAgreement } from '../../redux/slice/driver/driverSlice';
 import { toast } from "../../utils/toast";
 import useTranslation from "../../hooks/useTranslation.js";
-import { useNavigate } from 'react-router-dom';
+import { Navigate, useNavigate } from 'react-router-dom';
+import { useEvereeSetup } from '../../hooks/useEvereeSetup.js';
 
 const DriverAgreement = () => {
   const { t } = useTranslation();
   const dispatch = useDispatch();
   const navigate = useNavigate();
   const { loading, driver } = useSelector(state => state.driver);
+  const setup = useEvereeSetup();
 
   const [formData, setFormData] = useState({
     name: '',
@@ -17,11 +19,8 @@ const DriverAgreement = () => {
     agreed: false
   });
 
-  // If already signed, they shouldn't be here, but just in case:
-  if (driver?.agreement_signed) {
-    navigate('/driver/dashboard');
-    return null;
-  }
+  // Already signed (also the moment right after signing): on to the payment setup, which sends a driver with nothing to set up to the dashboard.
+  if (driver?.agreement_signed) return <Navigate to="/driver/payment-setup" replace />;
 
   const handleChange = (e) => {
     const { name, value, type, checked } = e.target;
@@ -49,7 +48,9 @@ const DriverAgreement = () => {
       })).unwrap();
       
       toast.success(t('agreementSigned'));
-      navigate('/driver/dashboard');
+      // The setup state is read again now that the agreement is signed, so the next page does not show the old "sign the agreement" state.
+      setup.reload();
+      navigate('/driver/payment-setup', { replace: true });
     } catch (error) {
       toast.error(error.message || t('agreementSubmitFailed'));
     }

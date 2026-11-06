@@ -14,6 +14,7 @@ import { request } from "./src/native/api";
 import { secureStorage } from "./src/native/secureStorage";
 import ConnectionBanner from "./src/screens/ConnectionBanner";
 import ErrorScreen from "./src/screens/ErrorScreen";
+import EvereeModal from "./src/everee/EvereeModal";
 import { createPush } from "./src/push";
 import { createSession } from "./src/session";
 
@@ -57,6 +58,25 @@ function Shell() {
       }),
     []
   );
+  // Everee's screens open in a window of their own (see src/everee). One at a time; the page learns only how the window ended.
+  const [evereeUri, setEvereeUri] = useState(null);
+  const evereeDone = useRef(null);
+  const everee = useMemo(
+    () => ({
+      open: (url) =>
+        new Promise((resolve, reject) => {
+          if (evereeDone.current) return reject(Object.assign(new Error("busy"), { code: "busy" }));
+          evereeDone.current = (outcome) => {
+            evereeDone.current = null;
+            setEvereeUri(null);
+            resolve({ outcome });
+          };
+          setEvereeUri(url);
+        }),
+    }),
+    []
+  );
+  const endEveree = useCallback((outcome) => evereeDone.current?.(outcome), []);
   const nonce = useMemo(() => newNonce(), [attempt]);
   const host = useMemo(
     () =>
@@ -67,8 +87,9 @@ function Shell() {
         webOrigin: WEB_ORIGIN,
         nonce,
         push,
+        everee,
       }),
-    [session, nonce, push]
+    [session, nonce, push, everee]
   );
 
   // Android Back goes back inside the web app first, and leaves the app only when there is nothing to go back to
@@ -171,6 +192,7 @@ function Shell() {
           webviewDebuggingEnabled={APP_ENV === "development"}
         />
         {failure ? <ConnectionBanner kind={failure} onRetry={retry} /> : null}
+        <EvereeModal uri={evereeUri} onEnd={endEveree} />
         </>
       )}
     </View>
