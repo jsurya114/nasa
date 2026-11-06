@@ -51,6 +51,12 @@ test('complete means Everee said so; payment readiness is separate (a failed tax
   assert.deepEqual([failedTin.state, failedTin.paymentReady], [STATES.COMPLETE, false]);
 });
 
+test('an unlinked driver goes to review, not back to onboarding on their own', () => {
+  const gone = view({ unlinked: true });
+  assert.deepEqual([gone.state, gone.reason, gone.canStart], [STATES.NEEDS_REVIEW, 'previously_unlinked', false]);
+  assert.equal(view({ unlinked: true, link: link() }).state, STATES.IN_PROGRESS, 'a live link wins: an admin linked them again');
+});
+
 test('a link without this tenant is never trusted', () => {
   const legacy = view({ link: link({ tenant_id: null, onboarding_complete: true }) });
   assert.deepEqual([legacy.state, legacy.reason, legacy.required], [STATES.NEEDS_REVIEW, 'link_not_verified_for_tenant', true]);

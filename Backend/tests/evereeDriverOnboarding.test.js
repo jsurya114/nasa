@@ -137,6 +137,28 @@ test('driver onboarding: intent first, one worker, self only', { skip: !hasDb &&
       });
     });
 
+    await t.test('a driver an admin unlinked cannot link themselves again by starting; a super admin does that on purpose', async () => {
+      await savepoint(async () => {
+        await person(a);
+        const fake = withEveree();
+        await start(fake, a);
+        const admin = (await one('SELECT id FROM admin ORDER BY id LIMIT 1')).id;
+        await db.query("UPDATE everee_workers SET unlinked_by = $2, unlinked_at = now(), unlink_reason = 'wrong person' WHERE driver_id = $1", [a, admin]);
+        const posts = fake.state.posts.length;
+        let reads = 0;
+        const counting = { ...fake.client, getWorker: async (id) => { reads += 1; return fake.client.getWorker(id); } };
+        const again = await startOnboarding(db, a, { homeAddress: ADDRESS }, { client: counting, env: ENV });
+        assert.deepEqual([again.state, again.reason, again.started], ['needs-review', 'previously_unlinked', false]);
+        assert.deepEqual([fake.state.posts.length, reads], [posts, 0], 'Everee was not asked anything, even though the old worker still exists there');
+        assert.equal((await one('SELECT count(*)::int AS n FROM everee_workers WHERE driver_id = $1 AND unlinked_at IS NULL', [a])).n, 0, 'no new link');
+        assert.equal((await getStatus(db, a, { env: ENV })).state, 'needs-review');
+        await refused(createSession(db, a, { experience: 'ONBOARDING' }, fake.deps), 409, 'not_started');
+        // the admin links again on purpose (the admin flow inserts a live row): the driver is then simply in progress or complete
+        await db.query("INSERT INTO everee_workers (driver_id, environment, tenant_id, everee_worker_id, link_source, linked_by) VALUES ($1, 'sandbox', '4321', 'RELINKED', 'matched_email', $2)", [a, admin]);
+        assert.equal((await getStatus(db, a, { env: ENV })).state, 'in-progress');
+      });
+    });
+
     await t.test('a worker with the same NAME but other contacts does not stop onboarding (names are never matched)', async () => {
       await savepoint(async () => {
         await person(a, { name: 'Alice Namesake', email: 'alice.new@example.com' });

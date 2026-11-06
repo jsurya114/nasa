@@ -77,6 +77,20 @@ const findRow = async (db, driverId, config) => {
   return rows[0] ?? null;
 };
 
+// An admin unlinked this driver at some point in this environment. A driver can never undo that by starting again: the old worker may still exist in
+// Everee, and finding it by its ID must not re-link it. A super admin links the driver again, on purpose, from the admin screen.
+const wasUnlinked = async (db, driverId, config) => {
+  const { rows } = await db.query(
+    'SELECT 1 FROM everee_workers WHERE driver_id = $1 AND environment = $2 AND unlinked_at IS NOT NULL LIMIT 1', [driverId, config.environment]);
+  return rows.length > 0;
+};
+
+const sendToReview = (db, driverId, config, reason) => db.query(
+  `INSERT INTO everee_onboarding (driver_id, environment, tenant_id, external_worker_id, state, request_id, review_reason)
+   VALUES ($1, $2, $3, $4, 'needs_review', $5, $6)
+   ON CONFLICT (driver_id, environment, tenant_id) DO UPDATE SET state = 'needs_review', review_reason = EXCLUDED.review_reason, lease_until = NULL, updated_at = now()`,
+  [driverId, config.environment, config.tenantId, `${EXTERNAL_PREFIX}${driverId}`, crypto.randomUUID(), reason]);
+
 const record = (db, driverId, event, detail = null) => db.query(
   'INSERT INTO everee_onboarding_events (driver_id, event, detail) VALUES ($1, $2, $3)', [driverId, event, detail ? String(detail).slice(0, 200) : null]);
 
@@ -94,7 +108,7 @@ export const profileGaps = (driver) => {
 };
 
 // Pure. link: the driver's live everee_workers row for this environment (or null); row: their everee_onboarding row (or null).
-export const stateOf = ({ driver, on, configured, link, row, tenantId }) => {
+export const stateOf = ({ driver, on, configured, link, row, tenantId, unlinked = false }) => {
   const base = { required: false, canStart: false, blockedBy: null, paymentReady: false, verifiedAt: null, reason: null };
   if (!on) return { ...base, state: STATES.NOT_REQUIRED, reason: 'switched_off' };
   if (!driver.enabled) return { ...base, state: STATES.NOT_REQUIRED, reason: 'disabled' };
@@ -109,6 +123,7 @@ export const stateOf = ({ driver, on, configured, link, row, tenantId }) => {
     if (link.onboarding_complete) return { ...mine, required: false, state: STATES.COMPLETE, paymentReady, verifiedAt: row?.verified_at ?? link.last_checked_at ?? null };
     return { ...mine, state: STATES.IN_PROGRESS, canStart: false };
   }
+  if (unlinked) return { ...mine, state: STATES.NEEDS_REVIEW, reason: 'previously_unlinked' };
   if (row?.state === 'needs_review') return { ...mine, state: STATES.NEEDS_REVIEW, reason: row.review_reason ?? 'needs_review' };
   if (row?.state === 'creating') return { ...mine, state: STATES.CREATING };
   if (row?.state === 'verifying') return { ...mine, state: STATES.VERIFYING };
@@ -125,7 +140,8 @@ export const getStatus = async (db, driverId, deps = {}) => {
   const on = switchedOn(env);
   const link = config.configured ? await findLink(db, driverId, config) : null;
   const row = config.configured ? await findRow(db, driverId, config) : null;
-  const status = stateOf({ driver, on, configured: config.configured, link, row, tenantId: config.tenantId });
+  const unlinked = config.configured && !link ? await wasUnlinked(db, driverId, config) : false;
+  const status = stateOf({ driver, on, configured: config.configured, link, row, tenantId: config.tenantId, unlinked });
   return { ...status, driverType: driver.driver_type ?? null, agreementSigned: Boolean(driver.agreement_signed), needsFromDriver: status.canStart || status.state === STATES.NOT_STARTED ? profileGaps(driver) : [] };
 };
 
@@ -240,6 +256,11 @@ export const startOnboarding = async (db, driverId, input = {}, deps = {}) => {
   const { config, driver } = await requireLocalDriver(db, driverId, deps);
   if (!driver.agreement_signed) throw new OnboardingError(409, 'agreement_required', 'sign the NASA agreement first');
   if (await findLink(db, driverId, config)) return { ...(await getStatus(db, driverId, deps)), started: false };
+  if (await wasUnlinked(db, driverId, config)) {
+    await sendToReview(db, driverId, config, 'previously_unlinked');
+    await record(db, driverId, 'needs_review', 'previously unlinked by an admin');
+    return { ...(await getStatus(db, driverId, deps)), started: false };
+  }
 
   // The details are checked first, with no side effect: a missing field is answered before anything is written or asked of Everee.
   const profile = buildProfile(driver, input);
