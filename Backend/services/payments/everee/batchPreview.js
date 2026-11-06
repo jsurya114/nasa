@@ -5,6 +5,7 @@ import { reviewRunAsBatch } from '../../payroll/payRuns/payBatchReview.js';
 import { paymentsGate, readEvereeConfig } from './evereeConfig.js';
 import { DEFAULT_TIME_ZONE } from './payableRules.js';
 import { driverIssues, readyToPay } from './workerRules.js';
+import { evereeTypeBlockers } from '../../payroll/payRuns/driverPaymentRules.js';
 
 // The preview of paying a finalized pay run through Everee (issue #31, part 3). READ-ONLY: it calls nothing at Everee, writes nothing and
 // pays no one. It is what the person confirming looks at (#144: no blind transfer): who would be paid, how much, the total, and what blocks
@@ -87,6 +88,8 @@ export const computePreview = async (db, admin, runId, { env = process.env, stat
     const blockers = [...d.blockers];
     const add = (code, extra = {}) => blockers.push({ code, ...EVEREE_BLOCKERS[code], ...extra });
     const amountCents = toCents(d.amounts.net);
+    // Only Local drivers go to Everee. A Desi driver is blocked here (a driver with no type is already blocked by the review).
+    blockers.push(...evereeTypeBlockers(d.driverType));
     if (amountCents === 0) add('nothing_to_pay');
     if (sentOf.has(String(d.statementId))) add('in_everee_batch', { itemStatus: sentOf.get(String(d.statementId)) });
 
@@ -104,7 +107,7 @@ export const computePreview = async (db, admin, runId, { env = process.env, stat
       if (!ready) add('worker_not_ready', { problems: problems.map((code) => ({ code, message: WORKER_PROBLEMS[code] })) });
     }
     return {
-      statementId: d.statementId, driverId: d.driverId, driverName: d.driverName, amount: d.amounts.net, amounts: d.amounts,
+      statementId: d.statementId, driverId: d.driverId, driverName: d.driverName, driverType: d.driverType, amount: d.amounts.net, amounts: d.amounts,
       payoutStatus: d.payoutStatus, worker, blockers, eligible: !blockers.some((b) => b.severity === 'blocking'),
       _workerId: link?.everee_worker_id ?? null,
       _externalWorkerId: link?.external_worker_id ?? null,

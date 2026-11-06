@@ -72,6 +72,7 @@ test('everee submit: reserve, send, payout request, replay, partial failure, ret
     const sup2 = await admin('superadmin', 'two'); // a second super admin; allowed, but never required
     const cityAdmin = await admin('admin', 'city');
     const [dA, dB, dC, dD, dE] = (await db.query('SELECT id FROM drivers ORDER BY id LIMIT 5')).rows.map((r) => r.id);
+    await db.query("UPDATE drivers SET driver_type = 'LOCAL' WHERE id = ANY($1::int[])", [[dA, dB, dC, dD, dE]]); // payments need a driver type (rolled back with the rest)
     const workers = { [dA]: 'EW-A', [dB]: 'EW-B', [dC]: 'EW-C', [dD]: 'EW-D', [dE]: 'EW-E' };
     for (const [driver, worker] of Object.entries(workers)) {
       await db.query(`INSERT INTO everee_workers (driver_id, environment, everee_worker_id, link_source, onboarding_complete, tin_status, linked_by)
@@ -179,7 +180,7 @@ test('everee submit: reserve, send, payout request, replay, partial failure, ret
 
     await t.test('while a batch is submitted manual recording is blocked, and a second batch for the same statements is refused', async () => {
       await assert.rejects(recordRunPayment(db, sup2, happy.run.id, {
-        requestId: randomUUID(), paidOn: new Date().toISOString().slice(0, 10), method: 'bank_transfer', reference: 'Test reference', statementIds: null,
+        requestId: randomUUID(), paidOn: new Date().toISOString().slice(0, 10), method: 'cash', reference: 'Test reference', statementIds: null,
       }), { status: 409, message: /processing/ });
       const fake = makeEveree();
       await assert.rejects(submit(happy.run, fake.client), { status: 409, message: /no driver in this run can be paid/ });
@@ -483,6 +484,53 @@ test('everee submit: reserve, send, payout request, replay, partial failure, ret
       const view = await getBatchView(db, sup2, happyBatch.batch.id);
       assert.deepEqual(view.items.map((i) => i.status), ['submitted', 'submitted']);
       assert.ok(!JSON.stringify(view).includes('EW-A'), 'no Everee worker ID is shown');
+    });
+
+    await t.test('only Local drivers ever go to Everee: a Desi driver and a driver with no type are blocked and never sent, and a driver changed to Desi after a failure is not retried', async () => {
+      try {
+        await db.query("UPDATE drivers SET driver_type = 'DESI' WHERE id = $1", [dB]);
+        await db.query('UPDATE drivers SET driver_type = NULL WHERE id = $1', [dC]);
+        const run = await scenario('DL', [[dA, '10.00'], [dB, '11.00'], [dC, '12.00']]);
+        const preview = await previewEvereeBatch(db, sup1, run.run.id, { env: ARMED });
+        const by = (driver) => preview.drivers.find((d) => d.driverId === driver);
+        assert.equal(by(dA).eligible, true);
+        assert.deepEqual([by(dB).eligible, by(dB).blockers.map((b) => b.code).filter((c) => c.includes('desi') || c.includes('type'))], [false, ['desi_not_everee']]);
+        assert.deepEqual([by(dC).eligible, by(dC).blockers.map((b) => b.code).filter((c) => c.includes('desi') || c.includes('type'))], [false, ['driver_type_not_set']]);
+        assert.deepEqual([preview.summary.eligible, preview.summary.total], [1, '10.00']);
+
+        const ids = [];
+        for (const driver of [dA, dB, dC]) ids.push((await statement(run.run, driver)).id);
+        // Choosing only the Desi driver leaves nobody to pay: nothing is sent.
+        const onlyDesi = await previewEvereeBatch(db, sup1, run.run.id, { env: ARMED, statementIds: [ids[1]] });
+        assert.equal(onlyDesi.canSubmit, false);
+        const before = await counts();
+        await assert.rejects(submitBatch(db, sup1, { runId: run.run.id, requestId: randomUUID(), previewHash: onlyDesi.previewHash ?? '0'.repeat(64), statementIds: [ids[1]] }, deps(makeEveree().client)), { status: 409 });
+        assert.deepEqual(await counts(), before, 'nothing was reserved');
+
+        // Everyone chosen: only the Local driver is sent, and the type is kept on its payment item.
+        const fake = makeEveree();
+        const batch = await submitBatch(db, sup1, { runId: run.run.id, requestId: randomUUID(), previewHash: preview.previewHash, statementIds: ids }, deps(fake.client));
+        assert.deepEqual(fake.state.creates.map((c) => c.workerId), ['EW-A']);
+        assert.equal((await item(run.run, dA)).driver_type, 'LOCAL');
+        assert.equal(await item(run.run, dB), undefined);
+        assert.equal(await item(run.run, dC), undefined);
+        assert.deepEqual([(await statement(run.run, dB)).payout_status, (await statement(run.run, dC)).payout_status], ['not_submitted', 'not_submitted']);
+        assert.equal(batch.batch.drivers, 1);
+
+        // A failure, then the driver is changed to Desi: the retry does not send them to Everee.
+        const failing = await scenario('DR', [[dD, '10.00']]);
+        const refusing = makeEveree({ 'EW-D': 'refuse' });
+        const failed = await submit(failing.run, refusing.client);
+        assert.equal(failed.items.find((i) => i.driverId === dD).status, 'failed');
+        await db.query("UPDATE drivers SET driver_type = 'DESI' WHERE id = $1", [dD]);
+        const again = makeEveree();
+        const view = await retryBatch(db, sup2, failed.batch.id, deps(again.client));
+        assert.deepEqual(again.state.creates, [], 'a driver who is no longer Local is not sent');
+        assert.equal(view.items.find((i) => i.driverId === dD).status, 'failed');
+        assert.match((await item(failing.run, dD)).error_message, /no longer a Local driver/);
+      } finally {
+        await db.query("UPDATE drivers SET driver_type = 'LOCAL' WHERE id = ANY($1::int[])", [[dA, dB, dC, dD]]);
+      }
     });
   } finally {
     await db.query('ROLLBACK');

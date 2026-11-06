@@ -9,7 +9,7 @@ import express from 'express';
 import rateLimit from '../../middlewares/rateLimit.js';
 import HttpStatus from '../../utils/statusCodes.js';
 import logger from '../../utils/logger.js';
-import { InputError, getCities, getCityRanking, getDefinitions, getOverview } from './insightsService.js';
+import { InputError, getCities, getCityRanking, getDefinitions, getOverview, getTrends } from './insightsService.js';
 
 export function createInsightsRouter({ adminAuth, requireRole, run }) {
   if (typeof adminAuth !== 'function' || typeof requireRole !== 'function' || typeof run !== 'function') {
@@ -42,6 +42,7 @@ export function createInsightsRouter({ adminAuth, requireRole, run }) {
   router.get('/definitions', handle('definitions', async () => getDefinitions()));
   router.get('/cities', handle('cities', (_req, options) => getCities(run, options)));
   router.get('/overview', handle('overview', (req, options) => getOverview(run, req.query, options)));
+  router.get('/trends', handle('trends', (req, options) => getTrends(run, req.query, options)));
   router.get('/rankings/cities', handle('city ranking', (req, options) => getCityRanking(run, req.query, options)));
 
   return router;

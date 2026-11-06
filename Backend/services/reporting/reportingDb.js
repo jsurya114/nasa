@@ -4,13 +4,16 @@
  * database login: without its own REPORTING_DB_* settings, reporting is simply off.
  *
  *   REPORTING_DB_HOST, REPORTING_DB_NAME, REPORTING_DB_USER, REPORTING_DB_PASSWORD   all required
- *   REPORTING_DB_PORT (default 5432), REPORTING_DB_SSL ("true" to use TLS), REPORTING_DB_POOL_MAX (1 to 5, default 3),
+ *   REPORTING_DB_PORT (default 5432), REPORTING_DB_SSL ("true" to use TLS and verify the server certificate),
+ *   REPORTING_DB_SSL_CA (the database's CA certificate in PEM text, when it is not publicly trusted),
+ *   REPORTING_DB_SSL_VERIFY ("false" only if the certificate cannot be verified; not recommended), REPORTING_DB_POOL_MAX (1 to 5, default 3),
  *   REPORTING_DB_TIMEOUT_MS (query time limit, 1000 to 30000, default 10000)
  *
  * Every report runs in a READ ONLY transaction with a statement time limit, on a small pool, so reporting cannot slow payroll
  * or change data even if a query were wrong. A cancelled request cancels its query and frees its connection.
  */
 import pg from 'pg';
+import logger from '../../utils/logger.js';
 
 const clamp = (value, low, high, fallback) => {
   const n = Number.parseInt(value, 10);
@@ -24,6 +27,10 @@ export function createReportingDb(env = process.env, { Pool = pg.Pool, Client = 
     return { enabled: false, reason: 'REPORTING_DB_USER must be a different, read-only login, not the application login' };
   }
 
+  if (env.REPORTING_DB_SSL === 'true' && env.REPORTING_DB_SSL_VERIFY === 'false') {
+    if (env.NODE_ENV === 'production') return { enabled: false, reason: 'REPORTING_DB_SSL_VERIFY=false is not allowed in production: give REPORTING_DB_SSL_CA instead' };
+    logger.warn('Reporting database TLS certificate verification is switched off (REPORTING_DB_SSL_VERIFY=false)');
+  }
   const timeoutMs = clamp(env.REPORTING_DB_TIMEOUT_MS, 1000, 30000, 10000);
   const settings = {
     host: env.REPORTING_DB_HOST,
@@ -31,7 +38,10 @@ export function createReportingDb(env = process.env, { Pool = pg.Pool, Client = 
     database: env.REPORTING_DB_NAME,
     user: env.REPORTING_DB_USER,
     password: env.REPORTING_DB_PASSWORD,
-    ssl: env.REPORTING_DB_SSL === 'true' ? { rejectUnauthorized: false } : undefined,
+    // TLS checks the server's certificate by default. Switching the check off must be asked for by name; it is logged, and refused in production.
+    ssl: env.REPORTING_DB_SSL === 'true'
+      ? { rejectUnauthorized: env.REPORTING_DB_SSL_VERIFY !== 'false', ...(env.REPORTING_DB_SSL_CA ? { ca: env.REPORTING_DB_SSL_CA } : {}) }
+      : undefined,
     connectionTimeoutMillis: 5000,
     application_name: 'nasa_insights',
     options: `-c default_transaction_read_only=on -c statement_timeout=${timeoutMs} -c idle_in_transaction_session_timeout=15000`,

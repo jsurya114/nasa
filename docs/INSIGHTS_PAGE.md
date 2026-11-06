@@ -3,7 +3,7 @@
 | Field | Value |
 |---|---|
 | Issue | #227 |
-| Status | In progress. PR 1 (the API, #229) and PR 4 (the page foundation) are done; the rest is the plan below. |
+| Status | In progress. The API (#229, merged), the page foundation, and the trend charts, weekday bars and calendar are done; the rest is the plan below. |
 | Owner | Jayasoorya |
 | Related | `docs/INSIGHTS_MCP.md` (the Claude connector, #220). Both read the same reporting layer. |
 
@@ -34,10 +34,10 @@ Every answer is `{ meta, data }`. `meta` holds `generatedAt`, `definitionsVersio
 
 Jasil's #228 (trends, driver ranking, claim exposure, payment overview, forecast) already builds the reporting functions that the original steps 2 and 3 would have written, as plain functions in `Backend/services/reporting/`. Insights does not repeat them: it wraps them, so the page and Claude share one set of definitions. The order, with what each step needs:
 
-1. **API foundation** (#229, open): the guarded router, the report runner, overview, city ranking, cities and definitions; an optional `source` filter and a city filter on the shared functions.
-2. **Page foundation** (this document's PR, stacked on #229): the lazy-loaded super-admin route and menu entry, the header filters (presets Last 7, Last 30, This month, Last month, Custom; default Last 30 days and All cities; the city; the record source), the KPI cards with the previous-period comparison, the top cities ranking with a table alternative and click-to-filter, the data-as-of panel, and every state (loading, empty, error, refused). No chart library yet.
-3. **API: trends and drivers** (needs #228 merged): `/admin/insights/trends` and `/admin/insights/rankings/drivers` wrapping `deliveryTrends` and `rankDrivers`, with the same `source` filter added to them.
-4. **UI charts**: revenue and margin trend and delivered-volume charts, the driver leaderboard, the calendar heatmap and the weekday bars, each with a table alternative. Adds Recharts (pinned; React 19 and bundle size checked) only here, where it is used.
+1. **API foundation** (#229, merged): the guarded router, the report runner, overview, city ranking, cities and definitions; an optional `source` filter and a city filter on the shared functions.
+2. **Page foundation** (merged with the charts' branch base): the lazy-loaded super-admin route and menu entry, the header filters (presets Last 7, Last 30, This month, Last month, Custom; default Last 30 days and All cities; the city; the record source), the KPI cards with the previous-period comparison, the top cities ranking with a table alternative and click-to-filter, the data-as-of panel, and every state (loading, empty, error, refused). No chart library yet.
+3. **Trends API and charts** (done in the charts PR): `GET /admin/insights/trends` returns deliveries, earned revenue and gross margin per day, week (Monday start) or month, the weekday pattern and the busiest dates, from `Backend/services/insights/trendSeries.js`. It has the same rules and output shape as the connector's `get_delivery_trends` in #228, so the two can share one implementation once #228 is merged; it was written here so the charts did not wait for that review. Every bucket of the period is present; a bucket with no records has `null` figures and `hasRecords: false` (a gap, never zero). The bucket size is required (`interval=day|week|month`; a daily trend is limited to 366 days). The page draws the lines, the weekday bars and a calendar heatmap with Recharts (pinned 3.10.1, MIT, React 19, no known vulnerabilities), each with a table alternative with the exact figures. Colours follow the validated palette (blue and orange for the two money lines, the brand violet elsewhere). The calendar asks for daily buckets and shows up to a year.
+4. **API and UI: the driver ranking and leaderboard** (needs #228 merged): `/admin/insights/rankings/drivers` wrapping `rankDrivers`, with the same `source` filter added to it.
 5. **API and UI: claims and "Needs attention"** (needs #228): claim exposure, payment backlog and data completeness, with "as of" labels; driver advances, debts and penalty balances through the canonical Payroll services, which #228 leaves out on purpose.
 6. **Polish and acceptance**: mobile and accessibility review, reduced motion, validation against the Dashboard's own totals, documented limits.
 

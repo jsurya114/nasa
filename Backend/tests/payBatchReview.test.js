@@ -49,6 +49,7 @@ test('the batch review reads a run read-only, by city, and tells who can be paid
     const route = (await one(`INSERT INTO routes (name, job, company_route_price, driver_route_price, company_doublestop_price, driver_doublestop_price, route_code_in_string)
       VALUES ('TB 1', 'Test Batch City', 2, 1.6, 0.5, 0.25, 'TB-1') RETURNING id`)).id;
     const [d1, d2] = (await db.query('SELECT id FROM drivers ORDER BY id LIMIT 2')).rows.map((r) => r.id);
+    await db.query("UPDATE drivers SET driver_type = 'LOCAL' WHERE id = ANY($1::int[])", [[d1, d2]]); // payments need a driver type (rolled back with the rest)
     const tag = randomUUID();
     const superAdmin = await one("INSERT INTO admin (password, name, email, role) VALUES ('x', $1, $2, 'superadmin') RETURNING id, role", [`Test ${tag}`, `${tag}@example.com`]);
     const cityAdmin = await one("INSERT INTO admin (password, name, email, role) VALUES ('x', $1, $2, 'admin') RETURNING id, role", [`Test c ${tag}`, `c${tag}@example.com`]);

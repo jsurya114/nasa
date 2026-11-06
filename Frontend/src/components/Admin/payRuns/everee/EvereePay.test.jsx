@@ -24,7 +24,7 @@ const item = (id, name, status, extra = {}) => ({ itemId: id, driverName: name, 
 // What the manual review (the same dialog) returns for the run: three unpaid drivers.
 const reviewOf = (drivers) => ({
   run: RUN,
-  drivers: drivers ?? [1, 2, 3].map((id) => ({ statementId: id, driverId: id, driverName: ["", "Dee Test", "Eli Test", "Fay Test"][id], payoutStatus: "not_submitted", eligible: true, amounts: { net: ["", "100.00", "130.00", "20.00"][id] }, blockers: [], payment: null, providerPayment: null })),
+  drivers: drivers ?? [1, 2, 3].map((id) => ({ statementId: id, driverId: id, driverName: ["", "Dee Test", "Eli Test", "Fay Test"][id], driverType: "LOCAL", payoutStatus: "not_submitted", eligible: true, amounts: { net: ["", "100.00", "130.00", "20.00"][id] }, blockers: [], payment: null, providerPayment: null })),
   summary: { pendingClaims: { total: 0 } },
 });
 
@@ -72,18 +72,18 @@ describe("Pay to drivers: Bank transfer (Everee)", () => {
     await mount();
     await toPayment();
     expect(screen.getByLabelText("Payment method").value).toBe("");
-    await waitFor(() => expect(methods()).toEqual(["Choose a method", "Bank transfer (Everee)", "Cash", "Other"]));
+    await waitFor(() => expect(methods()).toEqual(["Choose a method", "Bank transfer (Everee)", "Cash in Hand"]));
     expect(screen.queryByLabelText("Reference / payment note")).toBeNull();
     cleanup();
     await startServer();
     await mount({ superAdmin: false });
     await toPayment();
-    expect(methods()).toEqual(["Choose a method", "Cash", "Other"]);
+    expect(methods()).toEqual(["Choose a method", "Cash in Hand"]);
     cleanup();
     await startServer({ configured: false });
     await mount();
     await toPayment();
-    expect(methods()).toEqual(["Choose a method", "Cash", "Other"]);
+    expect(methods()).toEqual(["Choose a method", "Cash in Hand"]);
   });
 
   it("choosing Everee previews the chosen drivers, names method, count and total, and only Pay sends them", async () => {
@@ -128,7 +128,7 @@ describe("Pay to drivers: Bank transfer (Everee)", () => {
     expect(server.posts[0].statementIds).toEqual([1, 2]);
   });
 
-  it("Cash and Other call no Everee; they need a payment note and record as before", async () => {
+  it("Cash in Hand calls no Everee; it needs a payment note and records the chosen drivers by ID", async () => {
     const server = await startServer();
     await mount();
     await toPayment();
@@ -143,7 +143,7 @@ describe("Pay to drivers: Bank transfer (Everee)", () => {
     expect(await screen.findByText("Payment recorded")).toBeTruthy();
     expect(server.records).toHaveLength(1);
     expect(server.records[0]).toMatchObject({ method: "cash", reference: "Cash handed over" });
-    expect(server.records[0].statementIds).toBeNull();
+    expect(server.records[0].statementIds).toEqual([1, 2, 3]); // always the chosen drivers, never "everyone left"
     expect(server.previews).toEqual([]);
     expect(server.posts).toEqual([]);
     expect(screen.getByText(/Note: Cash handed over/)).toBeTruthy();
@@ -291,9 +291,9 @@ describe("Pay to drivers: Bank transfer (Everee)", () => {
     const review = {
       run: RUN,
       drivers: [
-        { statementId: 1, driverId: 1, driverName: "Dee Test", payoutStatus: "paid", eligible: false, amounts: { net: "100.00" }, blockers: [], payment: null,
+        { statementId: 1, driverId: 1, driverName: "Dee Test", driverType: "LOCAL", payoutStatus: "paid", eligible: false, amounts: { net: "100.00" }, blockers: [], payment: null,
           providerPayment: { provider: "everee", systemVerified: true, status: "paid", environment: "sandbox", providerReference: "pay-A", paidOn: "2026-11-09", confirmedAt: "2026-11-09T15:00:00Z", requestedByName: "Sam Super", initiatedAt: "2026-11-08T12:00:00Z", lastCheckedAt: "2026-11-09T15:05:00Z", returned: true, needsReview: true, note: null } },
-        { statementId: 2, driverId: 2, driverName: "Eli Test", payoutStatus: "paid", eligible: false, amounts: { net: "50.00" }, blockers: [],
+        { statementId: 2, driverId: 2, driverName: "Eli Test", driverType: "LOCAL", payoutStatus: "paid", eligible: false, amounts: { net: "50.00" }, blockers: [],
           payment: { paid_on: "2026-11-04", method: "cash", reference: "Cash handed over", recorded_by_name: "Sam Super" }, providerPayment: null },
       ],
       summary: { pendingClaims: { total: 0 } },
