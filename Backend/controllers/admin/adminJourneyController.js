@@ -5,6 +5,8 @@ import HttpStatus from "../../utils/statusCodes.js";
 import { getAllottedDrivers } from "../../services/admin/dashboardService.js";
 import { canAccessDriver, canAccessRoute, getJourneyDriverId, isRouteActive } from "../../services/admin/journeyAccess.js";
 import logger from '../../utils/logger.js';
+import pool from "../../config/db.js";
+import { assertMayWork, OnboardingRequiredError, refusal } from "../../services/payments/everee/onboardingGate.js";
 
 // The journey id from the URL, as a positive whole number, or null. The same number is used for
 // the city check and for the change itself, so the two can never look at different journeys.
@@ -51,6 +53,9 @@ const adminJourneyController = {
         return res.status(HttpStatus.FORBIDDEN).json(CITY_FORBIDDEN);
       }
 
+      // New work cannot be given to a Local driver who has not finished Everee onboarding.
+      await assertMayWork(pool, driver_id);
+
       // A new journey cannot use an archived (deleted) route.
       if (!(await isRouteActive(route_id))) {
         return res.status(HttpStatus.BAD_REQUEST).json({
@@ -90,6 +95,7 @@ const adminJourneyController = {
       res.status(HttpStatus.CREATED).json({ success: true, data: newJourney });
 
     } catch (error) {
+      if (error instanceof OnboardingRequiredError) return res.status(error.status).json(refusal());
       res.status(HttpStatus.INTERNAL_SERVER_ERROR).json({ success: false, message: error.message });
     }
   },
@@ -133,6 +139,9 @@ const adminJourneyController = {
         return res.status(HttpStatus.FORBIDDEN).json(CITY_FORBIDDEN);
       }
 
+      // Work cannot be changed or reassigned for a Local driver who has not finished Everee onboarding (deleting a journey stays allowed).
+      await assertMayWork(pool, driver_id);
+
       // 3. STRICT ROUTE OVERLAP CHECK (With Excluded ID)
       // This ensures 10-55 is rejected if 51-100 exists
       const conflictSequences = await checkSequenceConflict(
@@ -170,6 +179,7 @@ const adminJourneyController = {
       });
 
     } catch (error) {
+      if (error instanceof OnboardingRequiredError) return res.status(error.status).json(refusal());
       logger.error("updateJourney error", error);
       res.status(HttpStatus.INTERNAL_SERVER_ERROR).json({
         success: false,

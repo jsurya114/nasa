@@ -6,6 +6,8 @@ import {
 } from "../../utils/timezoneUtils.js";
 import { translateError } from "../../utils/backendI18n.js";
 import logger from '../../utils/logger.js';
+import pool from '../../config/db.js';
+import { assertMayWork, OnboardingRequiredError, refusal, turnsWorkOn } from '../../services/payments/everee/onboardingGate.js';
 
 // Helper to get language from request
 const getLang = (req) => {
@@ -114,6 +116,9 @@ const driverAvailabilityController = {
                 });
             }
 
+            // Turning a day ON allows work, so it is held for a Local driver who has not finished Everee onboarding. Turning days off stays allowed.
+            if (turnsWorkOn(availability, currentAvailability)) await assertMayWork(pool, driverId);
+
             logger.debug('Availability update checks passed', { driverId });
 
             const updatedAvailability = await availabilityService.updateDriverAvailability(
@@ -130,6 +135,7 @@ const driverAvailabilityController = {
                 data: updatedAvailability
             });
         } catch (err) {
+            if (err instanceof OnboardingRequiredError) return res.status(err.status).json(refusal());
             const lang = getLang(req);
             logger.error('updateAvailability failed', err);
             res.status(500).json({

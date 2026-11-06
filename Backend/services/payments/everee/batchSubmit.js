@@ -7,6 +7,7 @@ import { readEvereeConfig } from './evereeConfig.js';
 import { createEvereeClient, EvereeError } from './evereeClient.js';
 import { computePreview } from './batchPreview.js';
 import { methodAllowed, EVEREE } from '../../payroll/payRuns/driverPaymentRules.js';
+import { blockedDriverIds, ONBOARDING_REQUIRED } from './onboardingGate.js';
 import { DEFAULT_TIME_ZONE, externalIdOf, isTimeZone, payableBody } from './payableRules.js';
 import { readyToPay } from './workerRules.js';
 
@@ -338,10 +339,13 @@ export const submitBatch = async (db, admin, { runId, requestId, previewHash, st
     // Defence in depth: whatever the preview said, the drivers are read again here under a share lock (their type cannot change until this
     // transaction ends) and only a driver whose type allows Everee, that is a Local driver, is ever sent. The type is kept on the payment item.
     const { rows: typed } = await tx.query(
-      `SELECT s.id, d.driver_type FROM pay_statements s JOIN drivers d ON d.id = s.driver_id WHERE s.id = ANY($1::bigint[]) ORDER BY s.id FOR SHARE OF d`, [ids]);
+      `SELECT s.id, s.driver_id, d.driver_type FROM pay_statements s JOIN drivers d ON d.id = s.driver_id WHERE s.id = ANY($1::bigint[]) ORDER BY s.id FOR SHARE OF d`, [ids]);
     if (typed.length !== ids.length || typed.some((r) => !methodAllowed(r.driver_type, EVEREE))) {
       throw new PayrollError(409, 'only Local drivers can be paid through Everee; a selected driver is Desi or has no driver type');
     }
+    // A Local driver who has not finished Everee onboarding is never sent: the whole batch is refused, with the stable reason.
+    const held = await blockedDriverIds(tx, typed.map((r) => r.driver_id), { env, lock: true });
+    if (held.size > 0) throw Object.assign(new PayrollError(409, ONBOARDING_REQUIRED.message), { code: ONBOARDING_REQUIRED.code });
     const typeOfStatement = new Map(typed.map((r) => [String(r.id), r.driver_type]));
     const { rows: locked } = await tx.query(
       `SELECT s.id, s.payout_status, (SELECT count(*) FROM pay_statement_lines l WHERE l.statement_id = s.id AND l.active AND l.line_type = 'earning')::int AS earning_lines
@@ -411,9 +415,15 @@ export const retryBatch = async (db, admin, batchId, deps = {}) => {
          FROM everee_payment_items i JOIN pay_statements s ON s.id = i.pay_statement_id JOIN drivers d ON d.id = i.driver_id
         WHERE i.batch_id = $1 AND i.status = 'failed' ORDER BY i.id FOR UPDATE OF i, s FOR SHARE OF d`, [batchId]);
     const retryable = [];
+    const held = await blockedDriverIds(tx, failed.map((i) => i.driver_id), { env, lock: true });
     for (const item of failed) {
       // A statement marked paid by hand in the meantime is never sent; a worker who is no longer ready is not sent either.
       if (item.payout_status !== 'failed') continue;
+      // A Local driver whose onboarding is not complete is not sent; the payment stays failed, with the reason on it.
+      if (held.has(item.driver_id)) {
+        await tx.query('UPDATE everee_payment_items SET error_message = $2, updated_at = now() WHERE id = $1', [item.id, ONBOARDING_REQUIRED.message]);
+        continue;
+      }
       // A driver who is no longer Local (the type was changed after the first attempt) is never sent to Everee again.
       if (!methodAllowed(item.driver_type, EVEREE)) {
         await tx.query("UPDATE everee_payment_items SET error_message = $2, updated_at = now() WHERE id = $1",

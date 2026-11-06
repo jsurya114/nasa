@@ -5,6 +5,8 @@ import {
   getCurrentTimeInTimezone 
 } from "../../utils/timezoneUtils.js";
 import logger from '../../utils/logger.js';
+import pool from "../../config/db.js";
+import { assertMayWork, OnboardingRequiredError, refusal, turnsWorkOn } from "../../services/payments/everee/onboardingGate.js";
 
 const adminAvailabilityController = {
   getAllDriversAvailability: async (req, res) => {
@@ -191,6 +193,9 @@ const adminAvailabilityController = {
         });
       }
 
+      // Turning a day ON allows work, so it is held for a Local driver who has not finished Everee onboarding. Turning days off stays allowed.
+      if (turnsWorkOn(availability, currentAvailability)) await assertMayWork(pool, parseInt(driverId, 10));
+
       logger.debug(`Admin validation passed. Updating availability for driver ${driverId}`);
 
       const updated =
@@ -209,6 +214,7 @@ const adminAvailabilityController = {
         data: updated
       });
     } catch (err) {
+      if (err instanceof OnboardingRequiredError) return res.status(err.status).json(refusal());
       logger.error("updateDriverAvailability error", err);
 
       if (err.message === "Driver not found or access denied") {

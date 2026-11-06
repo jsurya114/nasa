@@ -14,7 +14,7 @@ const id = (value) => (/^\d{1,12}$/.test(String(value ?? '')) && Number(value) >
 
 const fail = (res, error, action) => {
   if (error instanceof PreviewChangedError) return res.status(error.status).json({ message: error.message, preview: error.preview });
-  if (error instanceof PayrollError) return res.status(error.status).json({ message: error.message });
+  if (error instanceof PayrollError) return res.status(error.status).json({ message: error.message, ...(error.code === 'onboarding_required' && { code: error.code }) });
   // Two requests for the same statements at once: the database lets only one through.
   if (error.code === '23505') return res.status(HttpStatus.CONFLICT).json({ message: 'a payment for these statements was already started; refresh and look at the batch' });
   logger.error(`Everee payment ${action} failed`, { code: error.code, message: error.message });

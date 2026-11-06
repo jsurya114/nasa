@@ -10,6 +10,8 @@ import { jobService } from "../../services/admin/jobQueries.js";
 import HttpStatus from "../../utils/statusCodes.js";
 import { translateError } from "../../utils/backendI18n.js";
 import logger from '../../utils/logger.js';
+import pool from "../../config/db.js";
+import { assertMayWork, OnboardingRequiredError, refusal } from "../../services/payments/everee/onboardingGate.js";
 
 // Helper to get language from request
 const getLang = (req) => {
@@ -31,6 +33,9 @@ export const saveJourney = async (req, res) => {
     start_seq = Number(start_seq);
     end_seq = Number(end_seq);
     packages = end_seq - start_seq + 1;
+
+    // A Local driver who has not finished Everee onboarding cannot start new work (the token's driver; requireSelf already made driver_id match it).
+    await assertMayWork(pool, req.driver?.id ?? driver_id);
 
     const errors = {};
     if (!driver_id) errors.driver_id = translateError(lang, 'driver.driverIdRequired');
@@ -102,6 +107,7 @@ export const saveJourney = async (req, res) => {
 
     return res.status(201).json({ success: true, data: journey });
   } catch (error) {
+    if (error instanceof OnboardingRequiredError) return res.status(error.status).json(refusal());
     const lang = getLang(req);
     logger.error("saveJourney error", error);
     return res.status(500).json({
