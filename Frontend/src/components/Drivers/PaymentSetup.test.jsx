@@ -4,7 +4,9 @@ import { installServer, installShell, removeShell, resetBrowser } from "../../te
 
 // The driver's payment setup page, popup, banner and card with the real provider, a fake server and a made-up driver. No real Everee screen is
 // opened: the iframe points at a made-up address and the private channel is replaced by a fake one the test can speak through.
-const SESSION = { url: "https://embed.everee.com/s/single-use-token", origin: "https://embed.everee.com", expiresAt: new Date(Date.now() + 60_000).toISOString(), experience: "ONBOARDING", eventHandlerName: "nasaEvereeEmbed" };
+// Built when used, so the link's expiry is always a minute from now whatever time the test run took to get here (a module-level value could already be expired on a slow machine).
+const freshSession = () => ({ url: "https://embed.everee.com/s/single-use-token", origin: "https://embed.everee.com", expiresAt: new Date(Date.now() + 60_000).toISOString(), experience: "ONBOARDING", eventHandlerName: "nasaEvereeEmbed" });
+const SESSION = { url: "https://embed.everee.com/s/single-use-token" };
 const status = (over = {}) => ({ state: "not-started", required: true, canStart: true, blockedBy: null, paymentReady: false, verifiedAt: null, reason: null, enforced: true, driverType: "LOCAL", agreementSigned: true, needsFromDriver: ["homeAddress"], ...over });
 const ADDRESS = { homeAddress: { line1: "1 Test Street", city: "Austin", state: "TX", postalCode: "78701" } };
 
@@ -18,7 +20,7 @@ const startServer = async ({ initial = status(), onStart, onSession, onRefresh, 
     if (config.url === "/driver/payroll/balances") return { status: 200, data: { entries: [], claims: [], totals: { owedByDriver: "0.00", owedPenalties: "0.00", owedOther: "0.00", owedToDriver: "0.00" } } };
     if (config.url === "/driver/everee/status") return { status: 200, data: state.status };
     if (config.url === "/driver/everee/onboarding") { const body = JSON.parse(config.data); state.posts.push(["onboarding", body]); return onStart ? onStart(state, body) : { status: 200, data: (state.status = status({ state: "in-progress", canStart: false })) }; }
-    if (config.url === "/driver/everee/session") { const body = JSON.parse(config.data); state.posts.push(["session", body]); return onSession ? onSession(state, body) : { status: 200, data: SESSION }; }
+    if (config.url === "/driver/everee/session") { const body = JSON.parse(config.data); state.posts.push(["session", body]); return onSession ? onSession(state, body) : { status: 200, data: freshSession() }; }
     if (config.url === "/driver/everee/refresh") { state.posts.push(["refresh"]); return onRefresh ? onRefresh(state) : { status: 200, data: { ...state.status, refreshed: true } }; }
     return { status: 200, data: {} };
   });
@@ -260,7 +262,7 @@ describe("Everee’s screen", () => {
   });
 
   it("a link that is not https on an Everee host is never opened in a frame", async () => {
-    await startServer({ initial: status({ state: "in-progress", canStart: false }), onSession: () => ({ status: 200, data: { ...SESSION, url: "https://evil.example.com/s", origin: "https://evil.example.com" } }) });
+    await startServer({ initial: status({ state: "in-progress", canStart: false }), onSession: () => ({ status: 200, data: { ...freshSession(), url: "https://evil.example.com/s", origin: "https://evil.example.com" } }) });
     await mount();
     fireEvent.click(await screen.findByRole("button", { name: "Continue setup" }));
     expect(await screen.findByText(/could not be opened safely/)).toBeTruthy();
