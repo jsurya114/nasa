@@ -10,12 +10,16 @@ import StatementList from "./pay/StatementList.jsx";
 import StatementDetail from "./pay/StatementDetail.jsx";
 import BalanceSummary from "./pay/BalanceSummary.jsx";
 import PaymentSetupCard from "./everee/PaymentSetupCard.jsx";
+import EvereeAccount from "./pay/EvereeAccount.jsx";
+import EvereeTransfers from "./pay/EvereeTransfers.jsx";
+import useEvereeTransfers from "../../hooks/useEvereeTransfers.js";
 
 // "My pay" (#145): the driver's approved statements and open balances, read-only, straight from the server.
 export default function Pay() {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const { statements, balances, status, reload } = usePayStatements();
+  const transfers = useEvereeTransfers();
   // The statement the driver had open is still open when they come back.
   const [openId, setOpenId] = usePersistentState("driver", "pay", "openId", null);
 
@@ -52,7 +56,9 @@ export default function Pay() {
           <p className="mt-1 text-sm text-gray-500">{t("myPayHint")}</p>
         </div>
         {!openId && <PaymentSetupCard onOpen={() => navigate("/driver/payment-setup")} />}
+        {!openId && <EvereeAccount onClosed={transfers.reload} />}
         {body}
+        {!openId && <EvereeTransfers {...transfers} />}
       </main>
       <Nav />
     </div>

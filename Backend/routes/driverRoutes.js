@@ -11,6 +11,7 @@ import driverAuth from '../middlewares/driverAuth.js';
 import validateCityType, { attachCityType } from '../middlewares/validateCityType.js';
 import { requireSelf } from '../middlewares/requireSelf.js';
 import { createOnboardingSession, getOnboardingStatus, refreshOnboarding, startDriverOnboarding } from "../controllers/driver/evereeOnboardingController.js";
+import { getOwnTransfers } from "../controllers/driver/evereeTransfersController.js";
 import { loginRateLimit } from '../middlewares/loginRateLimit.js';
 import driverAvailabilityController from "../controllers/driver/driveravailabilityController.js";
 import passwordController from "../controllers/driver/updatepasswordController.js";
@@ -37,6 +38,8 @@ router.get("/everee/status", getOnboardingStatus)
 router.post("/everee/onboarding", startDriverOnboarding)
 router.post("/everee/session", createOnboardingSession)
 router.post("/everee/refresh", refreshOnboarding)
+// The driver's own Everee transfers and where each stands, from NASA's records (read only).
+router.get("/everee/transfers", getOwnTransfers)
 
 // ============================================
 // JOURNEY ROUTES - PROTECTED BY CITY TYPE VALIDATION

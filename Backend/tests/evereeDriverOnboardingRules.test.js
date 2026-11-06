@@ -101,3 +101,14 @@ test('the driver routes sit below the sign-in check and the controller reads onl
   assert.match(controller, /req\.driver\?\.id/);
   assert.match(controller, /no-store/);
 });
+
+test('the driver transfers route sits below the sign-in check and reads only the token', () => {
+  const routes = readFileSync(new URL('../routes/driverRoutes.js', import.meta.url), 'utf8');
+  assert.ok(routes.indexOf('"/everee/transfers"') > routes.indexOf('router.use(driverAuth)') && routes.indexOf('router.use(driverAuth)') > -1);
+  const controller = readFileSync(new URL('../controllers/driver/evereeTransfersController.js', import.meta.url), 'utf8');
+  assert.doesNotMatch(controller, /req\.params|req\.query|req\.body/);
+  assert.match(controller, /req\.driver\?\.id/);
+  assert.match(controller, /no-store/);
+  const service = readFileSync(new URL('../services/payments/everee/driverTransfers.js', import.meta.url), 'utf8');
+  assert.doesNotMatch(service, /createEvereeClient|getPaymentData|payment-data/, 'it reads NASA’s own records and asks Everee nothing');
+});
