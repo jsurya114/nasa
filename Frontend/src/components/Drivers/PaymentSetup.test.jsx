@@ -193,9 +193,11 @@ describe("Everee’s screen", () => {
     const { speak } = await openEmbed();
     speak({ eventType: "MESSAGE_PORT_REGISTERED", eventHandlerName: "nasaEvereeEmbed" }); // hides the "Opening Everee…" line: a re-render
     await act(async () => { await vi.advanceTimersByTimeAsync(15_000); }); // past the 10 s connection wait
+    if (!screen.queryByRole("dialog", { name: "Everee payment setup" })) console.error("DIAG after 15s:", screen.queryAllByRole("alert").map((a) => a.textContent), "channels", channels.length, "now", new Date().toISOString());
     expect(screen.getByRole("dialog", { name: "Everee payment setup" })).toBeTruthy();
     speak({ eventType: "ONBOARDING_DOCUMENTS_COMPLETE", eventHandlerName: "nasaEvereeEmbed" }); // another re-render path, nothing else happens
     await act(async () => { await vi.advanceTimersByTimeAsync(120_000); }); // past the link's expiry too
+    if (!screen.queryByRole("dialog", { name: "Everee payment setup" })) console.error("DIAG after 120s:", screen.queryAllByRole("alert").map((a) => a.textContent), "now", new Date().toISOString());
     expect(screen.getByRole("dialog", { name: "Everee payment setup" })).toBeTruthy();
     expect(screen.queryByText(/did not connect|expired before it opened/)).toBeNull();
     expect(problems).not.toHaveBeenCalled();
