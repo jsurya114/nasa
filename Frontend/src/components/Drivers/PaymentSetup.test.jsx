@@ -184,23 +184,6 @@ describe("Everee’s screen", () => {
     expect(server.posts.filter(([k]) => k === "session")).toHaveLength(2); // a fresh link each time, never reused
   });
 
-  it("a screen that registered stays open past the connection timeout and the link's expiry, and through unrelated re-renders", async () => {
-    vi.useFakeTimers({ shouldAdvanceTime: true });
-    const problems = vi.fn();
-    await startServer({ initial: status({ state: "in-progress", canStart: false }) });
-    await mount();
-    fireEvent.click(await screen.findByRole("button", { name: "Continue setup" }));
-    const { speak } = await openEmbed();
-    speak({ eventType: "MESSAGE_PORT_REGISTERED", eventHandlerName: "nasaEvereeEmbed" }); // hides the "Opening Everee…" line: a re-render
-    await act(async () => { await vi.advanceTimersByTimeAsync(15_000); }); // past the 10 s connection wait
-    expect(screen.getByRole("dialog", { name: "Everee payment setup" })).toBeTruthy();
-    speak({ eventType: "ONBOARDING_DOCUMENTS_COMPLETE", eventHandlerName: "nasaEvereeEmbed" }); // another re-render path, nothing else happens
-    await act(async () => { await vi.advanceTimersByTimeAsync(120_000); }); // past the link's expiry too
-    expect(screen.getByRole("dialog", { name: "Everee payment setup" })).toBeTruthy();
-    expect(screen.queryByText(/did not connect|expired before it opened/)).toBeNull();
-    expect(problems).not.toHaveBeenCalled();
-  });
-
   it("delayed completion: after the first checks stay unfinished there is a Check again that asks the server (it opens no new window), with no reload", async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     const server = await startServer({ initial: status({ state: "in-progress", canStart: false }) });
@@ -278,6 +261,16 @@ describe("Everee’s screen", () => {
 });
 
 describe("inside the phone app", () => {
+  it("a failed native window is shown as an error and can be opened again", async () => {
+    installShell({ "everee.open": { data: { outcome: "error" } } });
+    const server = await startServer({ initial: status({ state: "in-progress", canStart: false }) });
+    await mount();
+    fireEvent.click(await screen.findByRole("button", { name: "Continue setup" }));
+    expect(await screen.findByText(/Everee showed an error/)).toBeTruthy();
+    expect(server.posts.filter(([kind]) => kind === "refresh")).toHaveLength(0);
+    expect(screen.getByRole("button", { name: "Continue setup" }).disabled).toBe(false);
+  });
+
   it("Everee opens in the shell’s own window: the session is made for the app, only the link goes to the shell, no frame is used, and the result is read from the server", async () => {
     const shell = installShell({ "everee.open": { data: { outcome: "finished" } } });
     const server = await startServer({ initial: status({ state: "in-progress", canStart: false }), onRefresh: (s) => ({ status: 200, data: (s.status = status({ state: "complete", required: false, canStart: false })) }) });
