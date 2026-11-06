@@ -69,35 +69,6 @@ const accessCodeQueries = {
       throw error;
     }
   },
-
-  createAccessCode: async (zipCode, address, accessCode, imageUrls = []) => {
-    try {
-      // Check if access code already exists
-      const checkQuery = `
-        SELECT id FROM public.access_codes WHERE access_code = $1;
-      `;
-      const checkResult = await pool.query(checkQuery, [accessCode]);
-      if (checkResult.rowCount > 0) {
-        throw new Error('Access code already exists');
-      }
-
-      // Insert new access code
-      const insertQuery = `
-        INSERT INTO public.access_codes (
-          zip_code, address, access_code, image_url1, image_url2, image_url3
-        )
-        VALUES ($1, $2, $3, $4, $5, $6)
-        RETURNING *;
-      `;
-      const [u1, u2, u3] = imageUrls;
-      const result = await pool.query(insertQuery, [zipCode, address, accessCode, u1 || null, u2 || null, u3 || null]);
-
-      return result.rows[0];
-    } catch (error) {
-      logger.error('Driver Database error in createAccessCode', error);
-      throw error;
-    }
-  },
 };
 
 export default accessCodeQueries;

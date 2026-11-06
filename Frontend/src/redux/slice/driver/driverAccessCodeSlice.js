@@ -25,51 +25,6 @@ export const fetchAccessCodes = createAsyncThunk(
   }
 );
 
-// Create an access code
-export const createAccessCode = createAsyncThunk(
-  "driverAccessCodes/createAccessCode",
-  async (accessCodeData, { rejectWithValue, dispatch, getState }) => {
-    try {
-      const lang = getCurrentLanguage();
-      let body;
-      if (typeof FormData !== 'undefined' && accessCodeData instanceof FormData) {
-        body = accessCodeData; // browser will set multipart boundaries
-      } else {
-        const form = new FormData();
-        if (accessCodeData && typeof accessCodeData === 'object') {
-          if (accessCodeData.zip_code) form.append('zip_code', accessCodeData.zip_code);
-          if (accessCodeData.address) form.append('address', accessCodeData.address);
-          if (accessCodeData.access_code) form.append('access_code', accessCodeData.access_code);
-          const images = accessCodeData.images || [];
-          images.slice(0, 3).forEach((f) => form.append('images', f));
-        }
-        body = form;
-      }
-
-      const res = await axios.post(`/driver/access-codes`, body, {
-        headers: {
-          'Content-Type': 'multipart/form-data',
-          'X-Language': lang
-        }
-      });
-
-      // Refetch with current pagination settings
-      const { currentPage, pageLimit, searchTerm, zipCodeFilter } = getState().driverAccessCodes;
-      dispatch(fetchAccessCodes({
-        page: currentPage,
-        limit: pageLimit,
-        search: searchTerm,
-        zipCodeFilter
-      }));
-
-      return res.data.data;
-    } catch (error) {
-      const lang = getCurrentLanguage();
-      return rejectWithValue(error.response?.data?.message || error.message || translateError(lang, 'accessCode.failedToCreate'));
-    }
-  }
-);
-
 const driverAccessCodeSlice = createSlice({
   name: "driverAccessCodes",
   initialState: {
@@ -126,20 +81,6 @@ const driverAccessCodeSlice = createSlice({
         state.status = "failed";
         const lang = getCurrentLanguage();
         state.error = action.payload || action.error.message || translateError(lang, 'accessCode.failedToFetch');
-      })
-      // Create access code
-      .addCase(createAccessCode.pending, (state) => {
-        state.status = "loading";
-        state.error = null;
-      })
-      .addCase(createAccessCode.fulfilled, (state) => {
-        state.status = "succeeded";
-        state.error = null;
-      })
-      .addCase(createAccessCode.rejected, (state, action) => {
-        state.status = "failed";
-        const lang = getCurrentLanguage();
-        state.error = action.payload || action.error.message || translateError(lang, 'accessCode.failedToCreate');
       });
   },
 });

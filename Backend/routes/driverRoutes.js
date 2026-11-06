@@ -1,10 +1,9 @@
 import express from "express"
 import { sanitizeRouterParams } from '../middlewares/sanitize.js';
-import { uploadAccessCodeImages } from "../middlewares/multerConfig.js";
 import driverController from "../controllers/driver/driverController.js";
 import jobController from "../controllers/admin/jobController.js";
 import { saveJourney, fetchTodayJourney } from "../controllers/driver/journeyController.js";
-import { getAccessCodes, createAccessCode } from '../controllers/driver/accessCodeControllers.js';
+import { getAccessCodes } from '../controllers/driver/accessCodeControllers.js';
 import { getDriverRoutes } from "../controllers/admin/routeController.js";
 import getDeliverySummary from "../controllers/driver/deliveryController.js";
 import driverAuth from '../middlewares/driverAuth.js';
@@ -49,8 +48,7 @@ router.get("/routes-list", attachCityType, getDriverRoutes)
 
 router.get("/deliveries/:driverId", requireSelf('driverId'), getDeliverySummary)
 
-// AccessCode Management 
-router.post("/access-codes", uploadAccessCodeImages.array('images', 3), createAccessCode)
+// Access codes: a driver can only look them up. Admins add, change and delete them (adminRoutes).
 router.get("/access-codes/list", getAccessCodes)
 
 // Driver Availability Management

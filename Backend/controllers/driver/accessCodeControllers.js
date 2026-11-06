@@ -1,8 +1,6 @@
 // controllers/driver/accessCodeControllers.js
 import accessCodeQueries from "../../services/driver/accessCodeQueries.js";
-import { translateError } from "../../utils/backendI18n.js";
 import logger from '../../utils/logger.js';
-import { notifyAccessCodeSubmitted } from '../../services/push/pushEvents.js';
 
 // Helper to get language from request
 const getLang = (req) => {
@@ -32,72 +30,5 @@ export const getAccessCodes = async (req, res) => {
     const lang = getLang(req);
     logger.error("Driver Controller error in getAccessCodes", err);
     res.status(500).json({ message: err.message });
-  }
-};
-
-export const createAccessCode = async (req, res) => {
-  const lang = getLang(req);
-  const { zip_code, address, access_code } = req.body;
-  const files = Array.isArray(req.files) ? req.files : [];
-
-  // Validation
-  if (!zip_code || !address || !access_code) {
-    return res.status(400).json({ 
-      message: translateError(lang, 'accessCode.allFieldsRequired')
-    });
-  }
-
-  if (!/^\d{5}(-\d{4})?$/.test(zip_code)) {
-    return res.status(400).json({ 
-      message: translateError(lang, 'accessCode.invalidZipCode')
-    });
-  }
-
-  try {
-    // ✅ FIXED: Use Cloudinary URLs from f.path instead of local paths
-    // Cloudinary URLs are globally accessible from any device
-    const imageUrls = files.map((f) => f.path); // Cloudinary URL
-    
-    // ✅ VALIDATION: Ensure all images were successfully uploaded to Cloudinary
-    const failedUploads = files.filter((f) => !f.path);
-    if (failedUploads.length > 0) {
-      logger.error('Failed to upload images to Cloudinary', { failed: failedUploads.length });
-      return res.status(500).json({ 
-        message: translateError(lang, 'accessCode.imageUploadFailed')
-      });
-    }
-
-    logger.debug('Access code images uploaded', { count: imageUrls.length });
-
-    const newAccessCode = await accessCodeQueries.createAccessCode(
-      zip_code, 
-      address, 
-      access_code, 
-      imageUrls
-    );
-
-    notifyAccessCodeSubmitted(req.driver.id);
-
-    // ✅ Return Cloudinary URLs for client-side verification
-    const imageFiles = files.map((f) => ({
-      fieldname: f.fieldname,
-      filename: f.filename,
-      mimetype: f.mimetype,
-      cloudinaryUrl: f.path, // ✅ Cloudinary URL
-      publicId: f.filename, // Cloudinary public ID
-    }));
-
-    res.status(201).json({ 
-      message: translateError(lang, 'accessCode.savedSuccessfully'), 
-      data: newAccessCode, 
-      images: imageFiles 
-    });
-  } catch (err) {
-    logger.error("Driver Controller error in createAccessCode", err);
-    if (err.message === "Access code already exists") {
-      res.status(409).json({ message: translateError(lang, 'accessCode.alreadyExists') });
-    } else {
-      res.status(500).json({ message: err.message });
-    }
   }
 };

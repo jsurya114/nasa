@@ -2,12 +2,11 @@
 "use client";
 
 import { SkeletonList } from "../../reuse/Skeleton.jsx";
-import { MapPin, Camera, Lock, KeyRound, ListChecks, Save, LoaderCircle } from "lucide-react";
+import { MapPin, Camera, Lock, ListChecks } from "lucide-react";
 import { useState, useEffect } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import {
   fetchAccessCodes,
-  createAccessCode,
   clearError,
   setPage,
   setPageLimit,
@@ -16,7 +15,6 @@ import {
 } from "../../redux/slice/driver/driverAccessCodeSlice";
 import Header from "../../reuse/driver/Header";
 import Nav from "../../reuse/driver/Nav";
-import { toast } from "../../utils/toast";
 import useTranslation from "../../hooks/useTranslation.js";
 import { translateAccessCode } from "../../hooks/accessCodeTranslations.js";
 import AccessCodeDetailsDialog from "../AccessCodeDetailsDialog.jsx";
@@ -35,19 +33,11 @@ export default function DriverAccessCodePage() {
     zipCodeFilter,
   } = useSelector((state) => state.driverAccessCodes || {});
 
-  const [address, setAddress] = useState("");
-  const [accessCode, setAccessCode] = useState("");
-  const [zipCode, setZipCode] = useState("");
-  const [errors, setErrors] = useState({});
-  const [touched, setTouched] = useState({});
   // What was searched stays in Redux while the driver is on other pages; the boxes start from it.
   const [localSearch, setLocalSearch] = useState(searchTerm ?? "");
   const [localZipCodeFilter, setLocalZipCodeFilter] = useState(zipCodeFilter ?? "");
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [selectedAccessCode, setSelectedAccessCode] = useState(null);
-  const [newImages, setNewImages] = useState([]);
-  const [fileError, setFileError] = useState("");
-  const [fileInfo, setFileInfo] = useState("");
 
   useEffect(() => {
     if (status === "idle") {
@@ -62,118 +52,6 @@ export default function DriverAccessCodePage() {
       dispatch(clearError());
     };
   }, [dispatch]);
-
-  const validateField = (name, value) => {
-    let error = "";
-
-    switch (name) {
-      case "zipCode":
-        if (!value.trim()) {
-          error = t('zipCodeRequired');
-        } else if (!/^\d{5}(-\d{4})?$/.test(value.trim())) {
-          error = t('zipCodeInvalid');
-        }
-        break;
-      case "address":
-        if (!value.trim()) {
-          error = t('addressRequired');
-        } else if (value.trim().length < 5) {
-          error = t('addressMinLength');
-        }
-        break;
-      case "accessCode":
-        if (!value.trim()) {
-          error = t('accessCodeRequired');
-        } else if (value.length < 4) {
-          error = t('accessCodeMinLength');
-        }
-        break;
-      default:
-        break;
-    }
-
-    return error;
-  };
-
-  const handleBlur = (field) => {
-    setTouched({ ...touched, [field]: true });
-    const value = field === "zipCode" ? zipCode : field === "address" ? address : accessCode;
-    const error = validateField(field, value);
-    setErrors({ ...errors, [field]: error });
-  };
-
-  const handleFieldChange = (field, value) => {
-    if (field === "zipCode") {
-      setZipCode(value);
-    } else if (field === "address") {
-      setAddress(value);
-    } else if (field === "accessCode") {
-      setAccessCode(value);
-    }
-
-    if (touched[field]) {
-      const error = validateField(field, value);
-      setErrors({ ...errors, [field]: error });
-    }
-  };
-
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-
-    const newErrors = {
-      zipCode: validateField("zipCode", zipCode),
-      address: validateField("address", address),
-      accessCode: validateField("accessCode", accessCode),
-    };
-
-    setErrors(newErrors);
-    setTouched({ zipCode: true, address: true, accessCode: true });
-
-    if (Object.values(newErrors).some((error) => error !== "")) {
-      toast.error(t('fixValidationErrors'), { position: "top-right" });
-      return;
-    }
-
-    try {
-      // Shows "saving" while the code and photos upload, then the real result.
-      await toast.track(
-        dispatch(
-          createAccessCode({ zip_code: zipCode.trim(), address: address.trim(), access_code: accessCode.trim(), images: newImages }),
-        ).unwrap(),
-        { pending: t('savingAccessCode'), success: t('accessCodeCreated'), error: (err) => err || t('createFailed') },
-      );
-
-      setAddress("");
-      setAccessCode("");
-      setZipCode("");
-      setErrors({});
-      setTouched({});
-      setNewImages([]);
-      setFileError("");
-      setFileInfo("");
-    } catch {
-      // The failure is already shown by toast.track above; the form keeps what was typed.
-    }
-  };
-
-  const onFilesChange = (e) => {
-    const files = Array.from(e.target.files || []);
-    const allowed = ["image/jpeg", "image/png", "image/webp", "image/jpg"];
-    const invalids = files.filter((f) => !allowed.includes(f.type));
-    if (invalids.length > 0) {
-      setFileError(t('invalidImageFormat'));
-      return;
-    }
-    setFileError("");
-    setFileInfo("");
-
-    let selected = files;
-    if (files.length > 3) {
-      selected = files.slice(0, 3);
-      setFileInfo(t('maxImagesWarning'));
-    }
-    setNewImages(selected);
-  };
 
   const handleSearch = () => {
     dispatch(setSearchTerm(localSearch));
@@ -258,161 +136,6 @@ export default function DriverAccessCodePage() {
       <Header />
 
       <main className="max-w-7xl mx-auto p-3 sm:p-4 lg:p-6 py-6 sm:py-12 pb-32">
-        {/* Add New Access Code Card */}
-        <div className="card-surface p-4 sm:p-8 mb-6 sm:mb-8">
-          <div className="flex flex-col sm:flex-row sm:items-center mb-6 sm:mb-8">
-            <div className="mb-4 sm:mb-0 sm:mr-4 grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-brand-50 text-brand-700 ring-1 ring-brand-100">
-              <KeyRound className="h-6 w-6" aria-hidden="true" />
-            </div>
-            <div>
-              <h1 className="text-xl sm:text-2xl lg:text-3xl font-bold tracking-tight text-ink">
-                {t('addNewAccessCode')}
-              </h1>
-              <p className="text-gray-600 mt-1 text-sm sm:text-base">
-                {t('createAccessCodeDesc')}
-              </p>
-            </div>
-          </div>
-
-          <form onSubmit={handleSubmit} className="space-y-4 sm:space-y-6">
-            {/* Zip Code Input */}
-            <div className="space-y-2">
-              <label htmlFor="zipCode" className="block text-sm font-semibold text-gray-800 mb-2">
-                {t('zipCode')} <span className="text-red-500">*</span>
-              </label>
-              <input
-                id="zipCode"
-                type="text"
-                placeholder={t('zipCodePlaceholder')}
-                value={zipCode}
-                onChange={(e) => handleFieldChange("zipCode", e.target.value)}
-                onBlur={() => handleBlur("zipCode")}
-                className={`placeholder:text-ink-muted/70 focus:outline-none transition-shadow min-h-11 w-full px-4 py-3 border ${touched.zipCode && errors.zipCode ? "border-red-500" : "border-line"
-                  } rounded-xl focus:ring-4 focus:ring-brand-500/20 focus:border-brand-500 bg-white text-ink transition-all`}
-                disabled={status === "loading"}
-              />
-              {touched.zipCode && errors.zipCode && (
-                <p className="text-red-500 text-sm mt-1 flex items-center">
-                  <svg className="w-4 h-4 mr-1" fill="currentColor" viewBox="0 0 20 20">
-                    <path
-                      fillRule="evenodd"
-                      d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z"
-                      clipRule="evenodd"
-                    />
-                  </svg>
-                  {errors.zipCode}
-                </p>
-              )}
-              <p className="text-xs text-gray-500 mt-1">{t('enterZipCodeFormat')}</p>
-            </div>
-
-            {/* Address Input */}
-            <div className="space-y-2">
-              <label htmlFor="address" className="block text-sm font-semibold text-gray-800 mb-2">
-                {t('address')} <span className="text-red-500">*</span>
-              </label>
-              <input
-                id="address"
-                type="text"
-                placeholder={t('addressPlaceholder')}
-                value={address}
-                onChange={(e) => handleFieldChange("address", e.target.value)}
-                onBlur={() => handleBlur("address")}
-                className={`bg-white placeholder:text-ink-muted/70 focus:outline-none transition-shadow min-h-11 w-full px-4 py-3 border ${touched.address && errors.address ? "border-red-500" : "border-line"
-                  } rounded-xl focus:ring-4 focus:ring-brand-500/20 focus:border-brand-500 text-ink transition-all`}
-                disabled={status === "loading"}
-              />
-              {touched.address && errors.address && (
-                <p className="text-red-500 text-sm mt-1 flex items-center">
-                  <svg className="w-4 h-4 mr-1" fill="currentColor" viewBox="0 0 20 20">
-                    <path
-                      fillRule="evenodd"
-                      d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z"
-                      clipRule="evenodd"
-                    />
-                  </svg>
-                  {errors.address}
-                </p>
-              )}
-            </div>
-
-            {/* Access Code Input */}
-            <div className="space-y-2">
-              <label htmlFor="accessCode" className="block text-sm font-semibold text-gray-800 mb-2">
-                {t('accessCode')} <span className="text-red-500">*</span>
-              </label>
-              <input
-                id="accessCode"
-                type="text"
-                placeholder={t('accessCodePlaceholder')}
-                value={accessCode}
-                onChange={(e) => handleFieldChange("accessCode", e.target.value)}
-                onBlur={() => handleBlur("accessCode")}
-                className={`bg-white placeholder:text-ink-muted/70 focus:outline-none transition-shadow min-h-11 w-full px-4 py-3 border ${touched.accessCode && errors.accessCode ? "border-red-500" : "border-line"
-                  } rounded-xl focus:ring-4 focus:ring-brand-500/20 focus:border-brand-500 text-ink transition-all`}
-                disabled={status === "loading"}
-              />
-              {touched.accessCode && errors.accessCode && (
-                <p className="text-red-500 text-sm mt-1 flex items-center">
-                  <svg className="w-4 h-4 mr-1" fill="currentColor" viewBox="0 0 20 20">
-                    <path
-                      fillRule="evenodd"
-                      d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z"
-                      clipRule="evenodd"
-                    />
-                  </svg>
-                  {errors.accessCode}
-                </p>
-              )}
-              <p className="text-xs text-gray-500 mt-1">{t('onlyLettersNumbers')}</p>
-            </div>
-
-            {/* Images Upload (Max 3) */}
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <label className="block text-sm font-semibold text-gray-800">{t('images')}</label>
-                <span className="text-xs text-gray-500">{t('maxImages')}</span>
-              </div>
-              <input
-                type="file"
-                multiple
-                accept="image/jpeg,image/png,image/webp,image/jpg"
-                onChange={onFilesChange}
-                className="file:mr-3 file:rounded-lg file:border-0 file:bg-brand-50 file:px-3 file:py-2 file:text-sm file:font-semibold file:text-brand-800 hover:file:bg-brand-100 file:cursor-pointer w-full px-4 py-3 text-base border-2 border-line rounded-xl focus:ring-4 focus:ring-purple-100 focus:border-brand bg-white text-ink transition-all"
-                disabled={status === "loading"}
-              />
-              {fileError && <p className="text-red-500 text-sm mt-1">{fileError}</p>}
-              {fileInfo && <p className="text-gray-600 text-sm mt-1">{fileInfo}</p>}
-              {newImages.length > 0 && (
-                <ul className="text-xs text-gray-600 list-disc pl-5 mt-1">
-                  {newImages.map((f, i) => (
-                    <li key={i}>{f.name}</li>
-                  ))}
-                </ul>
-              )}
-            </div>
-
-            {/* Submit Button */}
-            <div className="flex justify-end pt-4">
-              <button
-                type="submit"
-                className={`px-6 sm:px-8 py-3 bg-brand text-white rounded-xl shadow-lg hover:bg-brand-dark focus:outline-none focus:ring-4 focus:ring-brand-500/30 transition-all font-semibold ${status === "loading"
-                    ? "opacity-50 cursor-not-allowed"
-                    : "hover:shadow-xl transform hover:-translate-y-0.5"
-                  }`}
-                disabled={status === "loading"}
-              >
-                <span className="inline-flex items-center justify-center gap-2">
-                  {status === "loading"
-                    ? <LoaderCircle className="h-5 w-5 animate-spin" aria-hidden="true" />
-                    : <Save className="h-5 w-5" aria-hidden="true" />}
-                  {status === "loading" ? t('saving') : t('saveAccessCode')}
-                </span>
-              </button>
-            </div>
-          </form>
-        </div>
-
         {/* Saved Access Codes Table */}
         <div className="card-surface overflow-hidden mb-20">
           <div className="px-3 sm:px-4 lg:px-8 py-4 sm:py-6 border-b border-gray-100">
@@ -503,11 +226,7 @@ export default function DriverAccessCodePage() {
                   </svg>
                 </div>
                 <h3 className="text-xl font-semibold text-ink mb-2">{t('noData')}</h3>
-                <p className="text-gray-600">
-                  {searchTerm || zipCodeFilter
-                    ? t('error')
-                    : t('createAccessCodeDesc')}
-                </p>
+                {(searchTerm || zipCodeFilter) && <p className="text-gray-600">{t('error')}</p>}
               </div>
             ) : (
               <>
