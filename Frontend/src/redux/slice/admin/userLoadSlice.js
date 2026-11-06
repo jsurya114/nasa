@@ -116,6 +116,19 @@ export const updateDriver = createAsyncThunk(
     }
 );
 
+// Local or Desi for one or many drivers in a single request (the server changes all of them or none).
+export const changeDriverTypes = createAsyncThunk(
+    "/admin/change-driver-types",
+    async ({ driverIds, driverType }, { rejectWithValue }) => {
+        try {
+            const res = await axios.patch(`/admin/drivers/type`, { driverIds, driverType });
+            return res.data;
+        } catch (err) {
+            return rejectWithValue(err.response?.data?.message || err.message);
+        }
+    }
+);
+
 export const updateAdmin = createAsyncThunk(
     "/admin/update-admin",
     async ({ id, formData }, { rejectWithValue }) => {
@@ -141,7 +154,9 @@ const userLoadSlice = createSlice({
         city: [],
         totalPages: 0,
         searchTerm: "",
-        selectedCity: "All"
+        selectedCity: "All",
+        // Kept apart from `loading` so changing types never swaps the table for its loading skeleton.
+        changingType: false
     },
     reducers: {
         clearMessages: (state) => {
@@ -335,6 +350,19 @@ const userLoadSlice = createSlice({
                 state.loading = false;
                 state.error = action.payload || "Failed to update driver";
                 state.success = null;
+            })
+
+            .addCase(changeDriverTypes.pending, (state) => {
+                state.changingType = true;
+            })
+            .addCase(changeDriverTypes.fulfilled, (state, action) => {
+                const { driverIds, driverType } = action.payload;
+                const changed = new Set(driverIds);
+                state.drivers = state.drivers.map(d => changed.has(d.id) ? { ...d, driver_type: driverType } : d);
+                state.changingType = false;
+            })
+            .addCase(changeDriverTypes.rejected, (state) => {
+                state.changingType = false;
             })
 
             .addCase(updateAdmin.pending, (state) => {
