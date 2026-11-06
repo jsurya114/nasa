@@ -26,7 +26,7 @@ export default function CalendarHeatmap({ status, report, message, onRetry, rang
   const hasAny = cells.some((c) => c.status === "records");
 
   return (
-    <section aria-labelledby="calendar-title" className="card-surface space-y-4 p-4 sm:p-5">
+    <section aria-labelledby="calendar-title" className="card-surface min-w-0 space-y-4 p-4 sm:p-5">
       <div>
         <h2 id="calendar-title" className="text-lg font-bold text-ink">Calendar</h2>
         <p className="text-sm text-ink-muted">Deliveries per day. Darker means busier. A dashed square is a day with no records.</p>

@@ -366,6 +366,20 @@ describe("Insights: trends, weekdays and calendar", () => {
     expect(screen.getByTestId("trends-notes").textContent).toContain("gaps in the charts, not zero");
   });
 
+  it("the weekday and calendar cards can shrink inside their grid, so a long calendar scrolls inside its own card and never widens the phone page", async () => {
+    // jsdom has no layout, so this guards the cause: a grid item keeps `min-width: auto` (as wide as its content, a year of weeks) unless it
+    // has min-w-0. Checked in a real browser at 390 px for 2025-11-01 to 2026-10-31: the page was 977 px wide before, 390 px after.
+    const server = await startServer();
+    await mount(CUSTOM);
+    await screen.findByTestId("calendar-grid");
+    const calendar = screen.getByRole("region", { name: "Calendar" });
+    const weekdays = screen.getByRole("region", { name: "Busiest weekdays" });
+    for (const card of [calendar, weekdays]) expect(card.classList.contains("min-w-0")).toBe(true);
+    expect(calendar.parentElement).toBe(weekdays.parentElement); // they are the two items of the same grid
+    expect(calendar.querySelector("[data-testid='calendar-grid']").parentElement.classList.contains("overflow-x-auto")).toBe(true);
+    expect(server.of("trends").length).toBeGreaterThan(0);
+  });
+
   it("a day with no records is a dashed square, not the lightest shade, and pointing at a day reads out its deliveries", async () => {
     await startServer();
     await mount(CUSTOM);

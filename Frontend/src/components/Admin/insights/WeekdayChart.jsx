@@ -32,7 +32,7 @@ export default function WeekdayChart({ status, report, message, onRetry }) {
   const hasAny = rows.some((r) => r.days > 0);
 
   return (
-    <section aria-labelledby="weekday-title" className="card-surface space-y-4 p-4 sm:p-5">
+    <section aria-labelledby="weekday-title" className="card-surface min-w-0 space-y-4 p-4 sm:p-5">
       <div>
         <h2 id="weekday-title" className="text-lg font-bold text-ink">Busiest weekdays</h2>
         <p className="text-sm text-ink-muted">Average deliveries on a day that has records. A weekday with no records is blank, not zero.</p>
