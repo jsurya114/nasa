@@ -7,6 +7,7 @@
 
 import { fromCents, toCents } from './payCalculator.js';
 import { assertCityAllowed, PayrollError } from './payRunStore.js';
+import { typeBlockers } from './driverPaymentRules.js';
 
 // blocking: this driver cannot be paid from this batch. disclose: shown to the person confirming; does not block.
 export const BLOCKERS = Object.freeze({
@@ -46,7 +47,7 @@ export const reviewRunAsBatch = async (db, admin, runId) => {
 
   const { rows: statements } = await db.query(
     `SELECT s.id, s.driver_id, d.name AS driver_name, s.gross, s.insurance, s.reimbursements, s.claim_deductions, s.recoveries,
-            s.net, s.carried_forward, s.flags, s.payout_status
+            s.net, s.carried_forward, s.flags, s.payout_status, d.driver_type
        FROM pay_statements s JOIN drivers d ON d.id = s.driver_id
       WHERE s.pay_run_id = $1 ORDER BY d.name, s.id`, [runId]);
   const driverIds = statements.map((s) => s.driver_id);
@@ -62,11 +63,13 @@ export const reviewRunAsBatch = async (db, admin, runId) => {
   for (const r of pending) { pendingClaims[r.status] = r.n; pendingClaims.total += r.n; }
 
   const drivers = statements.map((s) => {
-    const blockers = blockersFor({ statement: s, runStatus: run.status });
+    // A driver with no type (or a type that is not Local or Desi) is blocked for every payment method until an admin sets one.
+    const blockers = [...blockersFor({ statement: s, runStatus: run.status }), ...typeBlockers(s.driver_type)];
     return {
       statementId: s.id,
       driverId: s.driver_id,
       driverName: s.driver_name,
+      driverType: s.driver_type ?? null,
       amounts: Object.fromEntries(SUM_KEYS.map(([out, col]) => [out, s[col]])),
       payoutStatus: s.payout_status,
       blockers,

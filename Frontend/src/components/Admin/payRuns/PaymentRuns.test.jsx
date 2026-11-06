@@ -13,6 +13,7 @@ const driver = (id, name, net) => ({
   statementId: id,
   driverId: id,
   driverName: name,
+  driverType: "LOCAL",
   payoutStatus: "not_submitted",
   eligible: true,
   amounts: { net },
@@ -195,7 +196,7 @@ it("shows approved payments independently of delivery dates and records all with
     method: "cash",
     reference: "Synthetic cash receipt",
     confirmed: true,
-    statementIds: null,
+    statementIds: [1, 2],
   });
   expect(s.recorded).toHaveBeenCalledTimes(1);
   expect(
@@ -243,7 +244,7 @@ it("processing payments cannot be included in confirmation: the driver is not se
   // the processing driver has no checkbox and says so; only the other driver is selected, and the total is theirs alone
   expect(screen.queryByRole("checkbox", { name: /Dee Test/ })).toBeNull();
   expect(within(dialog).getByText("Payment processing")).toBeTruthy();
-  expect(within(dialog).getByText(/Selected: 1 of 1 unpaid drivers · 1 payment\(s\) processing, not counted/)).toBeTruthy();
+  expect(within(dialog).getByText(/Selected: 1 of 1 unpaid Local drivers · 1 payment\(s\) processing, not counted/)).toBeTruthy();
   expect(screen.getByRole("checkbox", { name: /Eli Test/ }).checked).toBe(true);
   expect(within(dialog).getByText("$190.00", { selector: "p" })).toBeTruthy();
   expect(submit.disabled).toBe(false);

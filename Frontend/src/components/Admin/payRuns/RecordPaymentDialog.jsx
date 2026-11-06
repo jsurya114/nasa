@@ -16,13 +16,16 @@ import EvereeApprovalLink from "./everee/EvereeApprovalLink.jsx";
 import EvereeSummary from "./everee/EvereeSummary.jsx";
 import ProviderPaymentLine from "./everee/ProviderPaymentLine.jsx";
 import useEvereeAvailable from "./everee/useEvereeAvailable.js";
+import DriverTypeTabs from "./DriverTypeTabs.jsx";
+import { typeOf } from "./driverTypes.js";
 
 // Names for the methods of saved receipts (a receipt made before "Bank transfer (Everee)" existed says "Bank transfer").
 const METHODS = {
   bank_transfer: "Bank transfer",
-  cash: "Cash",
+  cash: "Cash in Hand",
   other: "Other",
 };
+const CASH = "cash";
 const EVEREE = "everee";
 const EVEREE_LABEL = "Bank transfer (Everee)";
 const EVEREE_BASE = "/admin/payroll";
@@ -30,6 +33,8 @@ const paid = (d) => d.payoutStatus === "paid";
 // A payment already with Everee (submitted, or unconfirmed) is not left to pay: it is not selected or selectable, and it waits for Everee to confirm.
 const processing = (d) => d.payoutStatus === "submitted" || d.payoutStatus === "unconfirmed";
 const payable = (d) => !paid(d) && !processing(d);
+// Drivers are paid by type: Local (Cash in Hand or Everee), Desi (Cash in Hand only). A driver with no type cannot be paid. The server enforces the same.
+const firstTab = (drivers) => ["LOCAL", "DESI"].find((k) => drivers.some((d) => typeOf(d) === k && payable(d))) ?? "LOCAL";
 
 // "Pay to drivers": both entry points use this review. The method is chosen on purpose (nothing is pre-selected). Bank transfer (Everee) sends the
 // chosen drivers' approved amounts through Everee, and only that method calls Everee. Cash and Other record money paid outside NASA and send nothing.
@@ -40,9 +45,12 @@ export default function RecordPaymentDialog({
   onClose,
   onRecorded,
 }) {
+  const selectedRef = useRef(null);
   const [review, setReview] = useState({ status: "loading", data: null });
   const [version, setVersion] = useState(0);
   const [selected, setSelected] = useState(null);
+  const [tab, setTab] = useState("LOCAL");
+  selectedRef.current = selected;
   const [search, setSearch] = useState("");
   const [step, setStep] = useState("review");
   const bodyRef = useRef(null);
@@ -88,9 +96,14 @@ export default function RecordPaymentDialog({
         const unpaid = data.drivers
           .filter(payable)
           .map((d) => String(d.statementId));
-        setSelected((s) =>
-          s === null ? unpaid : s.filter((id) => unpaid.includes(id)),
-        );
+        // First load (nothing chosen yet): open the first tab that has drivers to pay and select its drivers. A refresh keeps the choice that is still valid.
+        if (selectedRef.current === null) {
+          const first = firstTab(data.drivers);
+          setTab(first);
+          setSelected(data.drivers.filter((d) => payable(d) && typeOf(d) === first).map((d) => String(d.statementId)));
+        } else {
+          setSelected((s) => s.filter((id) => unpaid.includes(id)));
+        }
       })
       .catch((error) => {
         if (!controller.signal.aborted)
@@ -105,6 +118,13 @@ export default function RecordPaymentDialog({
 
   const drivers = review.data?.drivers ?? [];
   const allPaid = drivers.length > 0 && drivers.every(paid);
+  const counts = Object.fromEntries(
+    ["LOCAL", "DESI", "NONE"].map((k) => [k, { total: drivers.filter((d) => typeOf(d) === k).length, unpaid: drivers.filter((d) => typeOf(d) === k && payable(d)).length }]),
+  );
+  // Drivers of the open tab that can be chosen: unpaid, not processing, and with a type (a driver with no type is never selectable).
+  const selectable = (d) => payable(d) && typeOf(d) === tab && tab !== "NONE";
+  // Desi drivers are paid in Cash in Hand only, so that method is fixed; a Local payment chooses between Cash in Hand and Everee.
+  const method = tab === "DESI" ? CASH : form.method;
   const chosen = drivers.filter((d) =>
     selected?.includes(String(d.statementId)),
   );
@@ -115,12 +135,12 @@ export default function RecordPaymentDialog({
     chosen.reduce((n, d) => n + Math.round(Number(d.amounts.net) * 100), 0) /
     100
   ).toFixed(2);
-  const visible = drivers.filter((d) =>
+  const visible = (allPaid ? drivers : drivers.filter((d) => typeOf(d) === tab)).filter((d) =>
     d.driverName.toLowerCase().includes(search.trim().toLowerCase()),
   );
   const chosenIds = chosen.map((d) => Number(d.statementId));
   const chosenKey = chosenIds.join(",");
-  const viaEveree = form.method === EVEREE;
+  const viaEveree = method === EVEREE;
 
   // With Bank transfer (Everee) chosen, the server previews exactly the chosen drivers: who can be paid, the total and what stops anyone.
   useEffect(() => {
@@ -146,6 +166,18 @@ export default function RecordPaymentDialog({
   const selectDrivers = (selection) => {
     setSelected(selection);
     setForm((f) => ({ ...f, confirmed: false }));
+  };
+  // Switching tab starts a fresh selection: the payment methods differ by driver type, so one payment never mixes the types.
+  const changeTab = (key) => {
+    if (busy || key === tab) return;
+    setTab(key);
+    setStep("review");
+    setSearch("");
+    setEveree({ preview: null, loading: false, error: "" });
+    setSelected(key === "NONE" ? [] : drivers.filter((d) => payable(d) && typeOf(d) === key).map((d) => String(d.statementId)));
+    setForm((f) => ({ ...f, method: "", confirmed: false }));
+    setErrors({});
+    setMessage("");
   };
   const toggle = (id) =>
     selectDrivers((s) =>
@@ -186,7 +218,7 @@ export default function RecordPaymentDialog({
       return;
     }
     const found = {};
-    if (!form.method) found.method = "Choose how the drivers are paid.";
+    if (!method) found.method = "Choose how the drivers are paid.";
     else if (!viaEveree) {
       if (!form.paidOn || form.paidOn > toLocalDateString(new Date()))
         found.paidOn = "Choose a payment date up to today.";
@@ -211,14 +243,11 @@ export default function RecordPaymentDialog({
     setBusy(true);
     setMessage("");
     try {
-      const all = drivers.filter((d) => !paid(d));
-      const statementIds =
-        chosen.length === all.length
-          ? null
-          : chosen.map((d) => Number(d.statementId));
+      // Always the chosen drivers by ID, never "everyone left": the run may hold drivers of the other type, or with no type.
+      const statementIds = chosen.map((d) => Number(d.statementId));
       const { data } = await axios.post(
         `/admin/payroll/payments/runs/${runId}/record`,
-        { requestId: form.requestId, paidOn: form.paidOn, method: form.method, reference: form.note.trim(), confirmed: form.confirmed, statementIds },
+        { requestId: form.requestId, paidOn: form.paidOn, method: CASH, reference: form.note.trim(), confirmed: form.confirmed, statementIds },
       );
       if (mounted.current) {
         setResult(data);
@@ -381,12 +410,15 @@ export default function RecordPaymentDialog({
                 {evereeAvailable && step === "review" && (
                   <EvereeRunResults runId={runId} reloadKey={resultsKey} onChanged={onRecorded} />
                 )}
+                {!allPaid && step === "review" && (
+                  <DriverTypeTabs tab={tab} counts={counts} onChange={changeTab} disabled={busy} />
+                )}
                 {!allPaid && (
                   <div className="flex flex-wrap items-center justify-between gap-3">
                     <div>
                       <p className="text-sm text-ink-muted">
                         Selected: {chosen.length} of{" "}
-                        {drivers.filter(payable).length} unpaid drivers
+                        {counts[tab].unpaid} unpaid {tab === "DESI" ? "Desi" : tab === "LOCAL" ? "Local" : ""} drivers
                         {drivers.some(processing) &&
                           ` · ${drivers.filter(processing).length} payment(s) processing, not counted`}
                       </p>
@@ -403,7 +435,7 @@ export default function RecordPaymentDialog({
                           onClick={() =>
                             selectDrivers(
                               drivers
-                                .filter(payable)
+                                .filter(selectable)
                                 .map((d) => String(d.statementId)),
                             )
                           }
@@ -436,7 +468,7 @@ export default function RecordPaymentDialog({
                       {visible.map((d) => (
                         <li key={d.statementId} className="p-3">
                           <label className="flex min-h-11 items-center gap-3">
-                            {payable(d) && (
+                            {selectable(d) && (
                               <input
                                 type="checkbox"
                                 disabled={busy}
@@ -458,9 +490,11 @@ export default function RecordPaymentDialog({
                                   ? "Paid"
                                   : processing(d)
                                     ? "Payment processing"
-                                    : d.eligible
-                                      ? "Awaiting payment"
-                                      : "Needs review"}
+                                    : typeOf(d) === "NONE"
+                                      ? "Needs a driver type"
+                                      : d.eligible
+                                        ? "Awaiting payment"
+                                        : "Needs review"}
                               </span>
                             </span>
                             <span className="font-semibold tabular-nums">
@@ -512,20 +546,25 @@ export default function RecordPaymentDialog({
                 {!allPaid && step === "payment" && (
                   <>
                     <div className="grid gap-3 sm:grid-cols-2">
-                      <Field label="Payment method" error={errors.method}>
-                        <select
-                          value={form.method}
-                          onChange={set("method")}
-                          disabled={busy}
-                          className={inputClass}
-                        >
-                          <option value="">Choose a method</option>
-                          {evereeAvailable && <option value={EVEREE}>{EVEREE_LABEL}</option>}
-                          <option value="cash">Cash</option>
-                          <option value="other">Other</option>
-                        </select>
-                      </Field>
-                      {form.method && !viaEveree && (
+                      {tab === "DESI" ? (
+                        <Field label="Payment method">
+                          <p className={`${inputClass} flex items-center`}>{METHODS[CASH]} (Desi drivers are paid in cash only)</p>
+                        </Field>
+                      ) : (
+                        <Field label="Payment method" error={errors.method}>
+                          <select
+                            value={form.method}
+                            onChange={set("method")}
+                            disabled={busy}
+                            className={inputClass}
+                          >
+                            <option value="">Choose a method</option>
+                            {evereeAvailable && <option value={EVEREE}>{EVEREE_LABEL}</option>}
+                            <option value={CASH}>{METHODS[CASH]}</option>
+                          </select>
+                        </Field>
+                      )}
+                      {method && !viaEveree && (
                         <Field label="Paid on" error={errors.paidOn}>
                           <input
                             type="date"
@@ -539,7 +578,17 @@ export default function RecordPaymentDialog({
                       )}
                     </div>
                     {viaEveree && <EvereeSummary preview={everee.preview} loading={everee.loading} error={everee.error} />}
-                    {form.method && !viaEveree && (
+                    {method && (
+                      <ul aria-label="Drivers in this payment" className="max-h-40 divide-y divide-line overflow-y-auto rounded-xl border border-line text-sm">
+                        {chosen.map((d) => (
+                          <li key={d.statementId} className="flex items-center justify-between gap-3 p-2">
+                            <span>{d.driverName}</span>
+                            <span className="font-semibold tabular-nums">{formatMoney(d.amounts.net)}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                    {method && !viaEveree && (
                       <Field label="Payment note" error={errors.note}>
                         <input
                           value={form.note}
@@ -551,15 +600,15 @@ export default function RecordPaymentDialog({
                         />
                       </Field>
                     )}
-                    {form.method && (!viaEveree || everee.preview) && (
+                    {method && (!viaEveree || everee.preview) && (
                       <p role="status" aria-label="Payment summary" className="rounded-xl border border-line p-3 font-semibold">
-                        {viaEveree ? EVEREE_LABEL : METHODS[form.method]} ·{" "}
+                        {viaEveree ? EVEREE_LABEL : METHODS[method]} ·{" "}
                         {viaEveree ? everee.preview.summary.eligible : chosen.length}{" "}
                         {(viaEveree ? everee.preview.summary.eligible : chosen.length) === 1 ? "driver" : "drivers"} ·{" "}
                         {formatMoney(viaEveree ? everee.preview.summary.total : total)}
                       </p>
                     )}
-                    {form.method && !viaEveree && (
+                    {method && !viaEveree && (
                       <label className="flex min-h-11 items-start gap-3 rounded-xl border border-line p-3 text-sm font-medium">
                         <input
                           type="checkbox"
