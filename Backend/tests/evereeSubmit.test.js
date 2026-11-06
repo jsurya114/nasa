@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { getBatchView, getCitySettings, PreviewChangedError, retryBatch, setCitySettings, submitBatch } from '../services/payments/everee/batchSubmit.js';
 import { previewEvereeBatch } from '../services/payments/everee/batchPreview.js';
 import { EvereeError } from '../services/payments/everee/evereeClient.js';
+import { listOwnTransfers, transferStatusOf } from '../services/payments/everee/driverTransfers.js';
 import { noonInZone } from '../services/payments/everee/payableRules.js';
 import { finalizeRun, generateRun } from '../services/payroll/payRuns/payRunStore.js';
 import { recordRunPayment } from '../services/payroll/payRuns/paymentRecords.js';
@@ -218,6 +219,31 @@ test('everee submit: reserve, send, payout request, replay, partial failure, ret
         `SELECT a.outcome FROM everee_payment_attempts a JOIN everee_payment_items i ON i.id = a.item_id WHERE i.batch_id = $1 AND i.driver_id = $2`, [partialBatch.batch.id, driver])).rows.map((r) => r.outcome);
       assert.deepEqual(await Promise.all([dA, dB, dC, dD, dE].map(outcomeOf)), [['accepted'], ['refused'], ['timeout'], ['server_error'], ['accepted']]);
       assert.equal(partialBatch.canRetry, true);
+    });
+
+    await t.test('a driver sees only their own transfers, each kept in its own status, as exact decimals, with nothing from Everee beyond NASA’s records', async () => {
+      await savepoint(async () => {
+        const run = await scenario('T', [[dA, '100.10'], [dB, '50.05'], [dC, '40.00'], [dD, '30.30'], [dE, '25.50']]);
+        const fake = makeEveree({ 'EW-B': 'refuse', 'EW-C': 'timeout', 'EW-D': 'server' });
+        await submit(run.run, fake.client);
+        // earlier cases also sent payments for these drivers, so this run's transfers are picked out by their statement
+        const of = async (driver) => { const mine = (await statement(run.run, driver)).id; return (await listOwnTransfers(db, driver)).transfers.filter((x) => String(x.statementId) === String(mine)); };
+        assert.deepEqual([(await of(dA)).map((x) => x.status), (await of(dB)).map((x) => x.status), (await of(dC)).map((x) => x.status), (await of(dD)).map((x) => x.status)], [['pending'], ['failed'], ['unconfirmed'], ['unconfirmed']]);
+        assert.deepEqual((await of(dA)).map((x) => x.amount), ['100.10'], 'exact decimal strings');
+        assert.deepEqual((await of(dB)).map((x) => x.amount), ['50.05']);
+        // a payment NASA marked paid is completed; one whose deposit a bank returned is returned, never completed, whatever else is true
+        await db.query("UPDATE everee_payment_items SET status = 'paid', paid_at = now() WHERE id = $1", [(await item(run.run, dA)).id]);
+        assert.deepEqual((await of(dA)).map((x) => [x.status, x.paidAt !== null]), [['completed', true]]);
+        await db.query('UPDATE everee_payment_items SET deposit_returned = true WHERE id = $1', [(await item(run.run, dA)).id]);
+        assert.deepEqual((await of(dA)).map((x) => [x.status, x.paidAt]), [['returned', null]]);
+        // privacy: a driver never sees another driver's transfer, and the fields are only NASA's own
+        const all = (await listOwnTransfers(db, dB)).transfers;
+        assert.ok(all.length > 0 && all.every((x) => ['id', 'statementId', 'periodStart', 'periodEnd', 'amount', 'status', 'sentAt', 'lastCheckedAt', 'paidAt'].every((k) => k in x) && Object.keys(x).length === 9));
+        const aStatement = String((await statement(run.run, dA)).id);
+        assert.equal(all.some((x) => String(x.statementId) === aStatement), false, 'driver B never sees driver A’s transfer');
+        assert.deepEqual((await listOwnTransfers(db, 2147483647)).transfers, []);
+        assert.equal(transferStatusOf({ status: 'submitted', deposit_returned: false }), 'pending');
+      });
     });
 
     await t.test('retry sends only what failed, with the same ID; unconfirmed and submitted items are never touched; a refusal stays failed', async () => {
