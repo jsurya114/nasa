@@ -128,5 +128,28 @@ test('the work gate: the check and the write are one transaction', { skip: !enab
     assert.equal(await journeys(d), 1);
   });
 
+  await t.test('classification stays locked before the first work mutation, including a driver who needs no onboarding', async () => {
+    const d = await driver({ verified: false });
+    await pool.query("UPDATE drivers SET driver_type = 'DESI' WHERE id = $1", [d]);
+    const checked = deferred();
+    const proceed = deferred();
+    const work = withWorkGate(pool, d, async (db) => {
+      checked.resolve();
+      await proceed.promise;
+      return write(d)(db);
+    }, { env: GATED });
+    await checked.promise;
+    const change = setDriverTypes(admin, [d], 'LOCAL', pool);
+    const beforeWrite = await state(change);
+    // Release the writer before asserting, so a failed assertion cannot strand either transaction.
+    proceed.resolve();
+    await work;
+    await change;
+    assert.equal(beforeWrite, 'pending', 'classification must wait even before a journey FK or availability write locks the row');
+    assert.equal(await journeys(d), 1);
+    await assert.rejects(withWorkGate(pool, d, write(d), { env: GATED }), OnboardingRequiredError);
+    assert.equal(await journeys(d), 1, 'subsequent work is held under the new classification');
+  });
+
   await pool.end();
 });
