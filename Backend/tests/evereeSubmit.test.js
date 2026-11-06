@@ -510,7 +510,7 @@ test('everee submit: reserve, send, payout request, replay, partial failure, ret
       await savepoint(() => assert.rejects(db.query('UPDATE everee_payment_batches SET total = 1'), /cannot be changed/));
       const first = await item(happy.run, dA);
       await savepoint(() => assert.rejects(db.query('UPDATE everee_payment_items SET amount = 1 WHERE id = $1', [first.id]), /cannot be changed/));
-      await savepoint(() => assert.rejects(db.query("UPDATE everee_payment_items SET external_id = 'nasa-stmt-1' WHERE id = $1", [first.id]), /cannot be changed/));
+      await savepoint(() => assert.rejects(db.query("UPDATE everee_payment_items SET external_id = external_id || '0' WHERE id = $1", [first.id]), /cannot be changed/));
       await savepoint(() => assert.rejects(db.query("UPDATE everee_payment_attempts SET outcome = 'refused' WHERE outcome = 'accepted'"), /once finished/));
       await savepoint(() => assert.rejects(db.query(
         `INSERT INTO everee_payment_items (batch_id, pay_statement_id, driver_id, everee_worker_id, external_id, amount) VALUES ($1, $2, $3, 'EW-A', 'nasa-stmt-777777', 1)`,
