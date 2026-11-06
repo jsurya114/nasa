@@ -3,7 +3,7 @@ import { formatMoney } from "../../../../utils/money.js";
 import { buttonClass } from "../../payroll/formParts.jsx";
 import { ITEM_STATUS, TONE_CLASS } from "./evereeLabels.js";
 
-// What happened to one payment batch, driver by driver. A sent payment is never called paid until Everee confirms the deposit.
+// What happened to the payments of one run (one batch, or several joined into one list), driver by driver. A sent payment is never called paid until Everee confirms the deposit.
 export default function EvereeBatchResults({ view, busy, onCheck, onRetry }) {
   const { batch, counts, items } = view;
   const waiting = counts.submitted + counts.unconfirmed;
@@ -15,7 +15,7 @@ export default function EvereeBatchResults({ view, busy, onCheck, onRetry }) {
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h3 className="font-bold">
-            Sent {new Date(batch.createdAt).toLocaleString()} · {batch.drivers} {batch.drivers === 1 ? "driver" : "drivers"} · {formatMoney(batch.total)}
+            {batch.sends > 1 ? `${batch.sends} payments, last sent` : "Sent"} {new Date(batch.createdAt).toLocaleString()} · {batch.drivers} {batch.drivers === 1 ? "driver" : "drivers"} · {formatMoney(batch.total)}
           </h3>
           <p className="mt-1 text-sm text-ink-muted">
             {successful} successful · {counts.submitted} sent, waiting · {counts.unconfirmed} unconfirmed · {counts.failed} not sent
