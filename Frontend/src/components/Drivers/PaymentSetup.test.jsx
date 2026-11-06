@@ -261,6 +261,16 @@ describe("Everee’s screen", () => {
 });
 
 describe("inside the phone app", () => {
+  it("a failed native window is shown as an error and can be opened again", async () => {
+    installShell({ "everee.open": { data: { outcome: "error" } } });
+    const server = await startServer({ initial: status({ state: "in-progress", canStart: false }) });
+    await mount();
+    fireEvent.click(await screen.findByRole("button", { name: "Continue setup" }));
+    expect(await screen.findByText(/Everee showed an error/)).toBeTruthy();
+    expect(server.posts.filter(([kind]) => kind === "refresh")).toHaveLength(0);
+    expect(screen.getByRole("button", { name: "Continue setup" }).disabled).toBe(false);
+  });
+
   it("Everee opens in the shell’s own window: the session is made for the app, only the link goes to the shell, no frame is used, and the result is read from the server", async () => {
     const shell = installShell({ "everee.open": { data: { outcome: "finished" } } });
     const server = await startServer({ initial: status({ state: "in-progress", canStart: false }), onRefresh: (s) => ({ status: 200, data: (s.status = status({ state: "complete", required: false, canStart: false })) }) });

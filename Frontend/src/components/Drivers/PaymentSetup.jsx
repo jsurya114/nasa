@@ -66,7 +66,11 @@ export default function PaymentSetup() {
       if (isNativeShell()) {
         // In the phone app Everee opens in the shell's own separate window (a frame cannot be used there). The link goes to the shell once and is not kept.
         try {
-          await callNative("everee.open", { url: opened.url }, { timeoutMs: NATIVE_WINDOW_MS });
+          const result = await callNative("everee.open", { url: opened.url }, { timeoutMs: NATIVE_WINDOW_MS });
+          if (result?.outcome === "error") {
+            setMessage({ tone: "bad", key: PROBLEM_KEY.screen_error });
+            return;
+          }
         } catch (nativeError) {
           setMessage({ tone: "bad", key: nativeError?.code === "unsupported_action" ? PROBLEM_KEY.native_unsupported : nativeError?.code === "busy" ? PROBLEM_KEY.native_busy : PROBLEM_KEY.no_connection });
           return;
