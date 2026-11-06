@@ -34,7 +34,11 @@ export default function useEvereeWindow({ onClosed } = {}) {
       const opened = await setup.openSession(experience);
       if (isNativeShell()) {
         try {
-          await callNative("everee.open", { url: opened.url }, { timeoutMs: NATIVE_WINDOW_MS });
+          const result = await callNative("everee.open", { url: opened.url }, { timeoutMs: NATIVE_WINDOW_MS });
+          if (result?.outcome === "error") {
+            setMessageKey("psetProbScreen");
+            return;
+          }
         } catch (nativeError) {
           setMessageKey(nativeError?.code === "unsupported_action" ? "psetProbUpdateApp" : nativeError?.code === "busy" ? "psetProbBusy" : "psetProbConnection");
           return;

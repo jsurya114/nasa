@@ -99,6 +99,15 @@ describe("the Everee transfers", () => {
 });
 
 describe("payment history and bank details", () => {
+  it("reports a native account window failure and permits a fresh attempt", async () => {
+    installShell({ "everee.open": { data: { outcome: "error" } } });
+    await startServer();
+    await mount();
+    fireEvent.click(await screen.findByRole("button", { name: "Bank details" }));
+    expect(await screen.findByText(/Everee showed an error/)).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Bank details" }).disabled).toBe(false);
+  });
+
   it("are offered only when the setup is complete, and each opens its own Everee screen with a fresh link for the web", async () => {
     const server = await startServer();
     await mount();

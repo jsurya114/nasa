@@ -243,6 +243,21 @@ test('everee submit: reserve, send, payout request, replay, partial failure, ret
         assert.equal(all.some((x) => String(x.statementId) === aStatement), false, 'driver B never sees driver A’s transfer');
         assert.deepEqual((await listOwnTransfers(db, 2147483647)).transfers, []);
         assert.equal(transferStatusOf({ status: 'submitted', deposit_returned: false }), 'pending');
+        // Simulated deposits cannot appear as real transfers after changing environments.
+        const production = await scenario('TP', [[dA, '7.00']]);
+        const prodStatement = await statement(production.run, dA);
+        const prodBatch = await one(`INSERT INTO everee_payment_batches
+          (request_id, pay_run_id, city_id, environment, preview_hash, driver_count, total, created_by)
+          VALUES ($1, $2, $3, 'production', $4, 1, '7.00', $5) RETURNING id`,
+          [randomUUID(), production.run.id, production.run.city_id, '0'.repeat(64), sup1.id]);
+        await db.query(`INSERT INTO everee_payment_items
+          (batch_id, pay_statement_id, driver_id, everee_worker_id, external_id, amount, driver_type)
+          VALUES ($1, $2, $3, 'PROD-WORKER', $4, '7.00', 'LOCAL')`,
+          [prodBatch.id, prodStatement.id, dA, `nasa-stmt-${prodStatement.id}`]);
+        const real = await listOwnTransfers(db, dA, { env: { EVEREE_ENVIRONMENT: 'production' } });
+        assert.deepEqual(real.transfers.map((x) => x.statementId), [prodStatement.id]);
+        assert.equal((await listOwnTransfers(db, dA, { env: SANDBOX })).transfers.some((x) => x.statementId === prodStatement.id), false);
+
       });
     });
 
@@ -536,7 +551,7 @@ test('everee submit: reserve, send, payout request, replay, partial failure, ret
       await savepoint(() => assert.rejects(db.query('UPDATE everee_payment_batches SET total = 1'), /cannot be changed/));
       const first = await item(happy.run, dA);
       await savepoint(() => assert.rejects(db.query('UPDATE everee_payment_items SET amount = 1 WHERE id = $1', [first.id]), /cannot be changed/));
-      await savepoint(() => assert.rejects(db.query("UPDATE everee_payment_items SET external_id = 'nasa-stmt-1' WHERE id = $1", [first.id]), /cannot be changed/));
+      await savepoint(() => assert.rejects(db.query("UPDATE everee_payment_items SET external_id = external_id || '0' WHERE id = $1", [first.id]), /cannot be changed/));
       await savepoint(() => assert.rejects(db.query("UPDATE everee_payment_attempts SET outcome = 'refused' WHERE outcome = 'accepted'"), /once finished/));
       await savepoint(() => assert.rejects(db.query(
         `INSERT INTO everee_payment_items (batch_id, pay_statement_id, driver_id, everee_worker_id, external_id, amount) VALUES ($1, $2, $3, 'EW-A', 'nasa-stmt-777777', 1)`,
