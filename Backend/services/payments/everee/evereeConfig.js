@@ -63,3 +63,13 @@ export const paymentsGate = (config, env = process.env) => {
   }
   return { enabled: true, reason: null };
 };
+
+// Whether drivers may start Everee onboarding from NASA (issue #242). Off unless EVEREE_DRIVER_ONBOARDING_ENABLED is exactly "true", so the routes and the
+// tables can ship and be tested while nobody is asked to onboard. Switching it on for production is a separate approval by the owners.
+export const driverOnboardingGate = (config, env = process.env) => {
+  if (!config.configured) return { enabled: false, reason: 'Everee is not set up in the backend settings' };
+  if (String(env.EVEREE_DRIVER_ONBOARDING_ENABLED ?? '').trim().toLowerCase() !== 'true') {
+    return { enabled: false, reason: 'driver onboarding is switched off (EVEREE_DRIVER_ONBOARDING_ENABLED is not "true")' };
+  }
+  return { enabled: true, reason: null };
+};

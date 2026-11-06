@@ -38,10 +38,10 @@ const loadDriver = async (db, cityId, driverId) => {
   return rows[0];
 };
 
-const LINK_COLUMNS = `id, driver_id, environment, everee_worker_id, external_worker_id, link_source, onboarding_complete, tin_status, terminated,
+export const LINK_COLUMNS = `id, driver_id, environment, everee_worker_id, external_worker_id, link_source, onboarding_complete, tin_status, terminated,
   last_checked_at, linked_at`;
 
-const viewOfLink = (row) => (row ? {
+export const viewOfLink = (row) => (row ? {
   workerId: row.everee_worker_id,
   externalWorkerId: row.external_worker_id,
   source: row.link_source,
@@ -53,7 +53,7 @@ const viewOfLink = (row) => (row ? {
   lastCheckedAt: row.last_checked_at,
 } : null);
 
-const stateOfWorker = (worker) => ({
+export const stateOfWorker = (worker) => ({
   onboardingComplete: worker?.onboardingComplete === true,
   tinStatus: typeof worker?.tinVerificationStatus === 'string' ? worker.tinVerificationStatus : null,
   terminated: Boolean(worker?.terminationDate),
