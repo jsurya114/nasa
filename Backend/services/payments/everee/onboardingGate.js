@@ -33,6 +33,9 @@ export const blockedDriverIds = async (db, driverIds, { env = process.env, lock 
   if (!enforced || ids.length === 0) return new Set();
   const params = [ids, config.environment, config.tenantId];
   if (lock) {
+    // Lock every requested classification before deciding eligibility. A permitted driver must remain permitted until the caller's write commits.
+    // Driver rows precede mapping rows, matching the onboarding save and payment paths; the advisory work/link lock already covers absent mappings.
+    await db.query('SELECT id FROM drivers WHERE id = ANY($1::int[]) ORDER BY id FOR SHARE', [ids]);
     await db.query('SELECT id FROM everee_workers WHERE driver_id = ANY($1::int[]) AND unlinked_at IS NULL ORDER BY id FOR SHARE', [ids]);
   }
   const { rows } = await db.query(
