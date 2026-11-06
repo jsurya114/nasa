@@ -9,14 +9,17 @@ import { checkSession, readEvent, REGISTER_TIMEOUT_MS } from "./embedRules.js";
 // The link is a bearer credential: it lives in this component's props only. It is never logged, stored, put in the URL or reused.
 
 // onFinished(): the driver finished or closed the screen (the page then asks the server). onProblem(kind): 'bad_session' | 'expired' | 'no_connection' | 'screen_error'.
-export default function EvereeEmbed({ session, onFinished, onProblem, onClose }) {
+// `connectTimeoutMs` is how long to wait for the screen to register before giving up; only the tests change it.
+export default function EvereeEmbed({ session, onFinished, onProblem, onClose, connectTimeoutMs = REGISTER_TIMEOUT_MS }) {
   const { t } = useTranslation();
   // Checked once per session, NOT once per render: the effect below depends on it, and a fresh object on every render (for example the one caused by
   // hiding the "Opening Everee…" line when the screen registers) would reset the handshake and close a healthy screen after the timeout.
   const checked = useMemo(() => checkSession(session), [session]);
   const portRef = useRef(null);
   const timersRef = useRef([]);
-  const registered = useRef(false);
+  // Registration belongs to the SESSION it happened for: once a session has registered, nothing (not an effect that runs late, not a re-run, not a
+  // re-render) can make it look unregistered again or arm its timers.
+  const registeredFor = useRef(null);
   const closeRef = useRef(null);
   const handlers = useRef({ onFinished, onProblem });
   handlers.current = { onFinished, onProblem };
@@ -29,13 +32,12 @@ export default function EvereeEmbed({ session, onFinished, onProblem, onClose })
   // Until the screen has registered, the link may run out (it is single-use and short-lived) or the connection may never come. These timers belong to
   // this session only: they start once for it, and they are cancelled for good the moment the screen registers (nothing later can close a working screen).
   useEffect(() => {
-    if (!checked) return undefined;
-    registered.current = false;
+    if (!checked || registeredFor.current === session) return undefined;
     const expiry = session.expiresAt ? Math.max(0, new Date(session.expiresAt).getTime() - Date.now()) : null;
-    timersRef.current = [setTimeout(() => { if (!registered.current) handlers.current.onProblem?.("no_connection"); }, REGISTER_TIMEOUT_MS)];
-    if (expiry !== null) timersRef.current.push(setTimeout(() => { if (!registered.current) handlers.current.onProblem?.("expired"); }, expiry));
+    timersRef.current = [setTimeout(() => { if (registeredFor.current !== session) handlers.current.onProblem?.("no_connection"); }, connectTimeoutMs)];
+    if (expiry !== null) timersRef.current.push(setTimeout(() => { if (registeredFor.current !== session) handlers.current.onProblem?.("expired"); }, expiry));
     return () => { timersRef.current.forEach(clearTimeout); timersRef.current = []; };
-  }, [checked, session]);
+  }, [checked, session, connectTimeoutMs]);
 
   useEffect(() => () => { portRef.current?.close(); portRef.current = null; }, []);
   useEffect(() => { closeRef.current?.focus(); }, []);
@@ -49,7 +51,7 @@ export default function EvereeEmbed({ session, onFinished, onProblem, onClose })
       const read = readEvent(message.data, session.eventHandlerName);
       if (!read) return;
       if (read.type === "MESSAGE_PORT_REGISTERED") {
-        registered.current = true;
+        registeredFor.current = session;
         timersRef.current.forEach(clearTimeout); // connected: neither "no connection" nor "expired" can fire any more
         timersRef.current = [];
         setLoading(false);
