@@ -52,3 +52,14 @@
 3. **Revalidate at persistence.** The final transaction now takes the driver lock, share-locks the driver row and the driver's links, and re-reads: the onboarding row must still be this attempt (`attempts` fence) and not in review; the driver must still be an enabled Local driver who signed; no admin unlink in this environment; no live link made meanwhile. It writes the link only if all hold; otherwise it writes nothing and leaves the driver in the right review state (`no_longer_eligible`, `previously_unlinked`) or untouched (superseded, already linked). Every write to the onboarding row is fenced by `attempts`, so a superseded request cannot let go of or overwrite a newer attempt's lease. The provider calls stay outside these transactions. Tests change the situation in the middle of the provider call (admin link then revoke, reclassification, account disabled, takeover by another attempt, an admin link made meanwhile) and show no wrong link is written.
 
 Tests: 17 database tests for onboarding (was 14) and the 10 worker tests pass on a disposable copy. The real embedded create/session probe is still unrun.
+
+## Review round 2 (Jasil: the revocation race)
+
+Jasil showed with two real connections that a driver-created link could remain live after an administrator committed a revocation: the admin writers did not take the onboarding advisory lock, and a row lock cannot cover the case where no link row exists yet. Fixed with **one per-driver lock protocol** (`driverLock.js`, a transaction-scoped advisory lock on the driver):
+- the driver's own onboarding (claim and final save) takes it, as before;
+- the admin writers now take it too: `linkDriver`, `unlinkDriver` and `createSandboxWorker` run their write inside a transaction that first takes the driver's lock. Their provider (Everee) lookups stay outside it;
+- so any two of these are strictly one after the other, including when there is no link yet. A save that was waiting then re-reads under the lock (as in round 1) and sees the committed revocation, so it writes no link and leaves `previously_unlinked` for review.
+
+Regression tests use **independent database connections** (`evereeDriverLock.test.js`; they commit rows, so they run only on a throw-away database whose name contains "test" with `PAYROLL_TEST_DB_COMMIT=1`): each real admin writer waits while another connection holds the driver's lock and then applies (they fail without the change); a save waiting behind an administrator's open revocation writes no live link; and with no revocation the same save links normally.
+
+Non-blocking follow-up from the review done too: `scripts/evereeEmbedProbe.js` now resolves the canonical worker ID from the exact search result, like the application, before opening the session. Jasil has since run the real embedded create and `ONBOARDING V2_0` session against a fictional sandbox worker successfully; the probe has still not been run by the author.
