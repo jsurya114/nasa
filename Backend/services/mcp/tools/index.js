@@ -6,11 +6,17 @@
 import * as z from 'zod/v4';
 import { LATEST_PROTOCOL_VERSION } from '@modelcontextprotocol/sdk/types.js';
 import { getMetricDefinitions } from './metricDefinitions.js';
-import { getBusinessSummaryTool, listReportingCitiesTool, rankCitiesTool } from './deliveryTools.js';
+import {
+  forecastDeliveriesTool, getBusinessSummaryTool, getClaimExposureTool, getDeliveryTrendsTool, getPaymentOverviewTool,
+  listReportingCitiesTool, rankCitiesTool, rankDriversTool,
+} from './deliveryTools.js';
 import { InputError } from '../../reporting/inputs.js';
 import logger from '../../../utils/logger.js';
 
-export const TOOLS = [getMetricDefinitions, listReportingCitiesTool, getBusinessSummaryTool, rankCitiesTool];
+export const TOOLS = [
+  getMetricDefinitions, listReportingCitiesTool, getBusinessSummaryTool, getDeliveryTrendsTool, rankCitiesTool, rankDriversTool,
+  getClaimExposureTool, getPaymentOverviewTool, forecastDeliveriesTool,
+];
 
 // Tools that read business data are offered only when the restricted reporting connection is configured.
 export const toolsFor = (reporting) => TOOLS.filter((tool) => !tool.needsReporting || reporting?.enabled);

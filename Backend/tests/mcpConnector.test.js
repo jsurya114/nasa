@@ -61,12 +61,17 @@ test('the consent page escapes what an app chose and names the redirect host', (
 });
 
 test('every tool is read-only by design: strict input, named scope, and no write-style tool exists', () => {
-  assert.deepEqual(TOOLS.map((t) => t.name), ['get_metric_definitions', 'list_reporting_cities', 'get_business_summary', 'rank_cities']);
+  assert.deepEqual(TOOLS.map((t) => t.name), [
+    'get_metric_definitions', 'list_reporting_cities', 'get_business_summary', 'get_delivery_trends', 'rank_cities', 'rank_drivers',
+    'get_claim_exposure', 'get_payment_overview', 'forecast_deliveries',
+  ]);
   for (const tool of TOOLS) {
     assert.equal(tool.requiredScope, MCP_SCOPE);
     assert.equal(tool.inputSchema.safeParse({ extra: 1 }).success, false, 'unsupported arguments are rejected');
-    assert.equal(tool.inputSchema.safeParse({}).success, !['get_business_summary', 'rank_cities'].includes(tool.name), 'only the tools that need a period require arguments');
-    assert.ok(!/pay|write|update|delete|sql|exec|shell|everee/i.test(tool.name));
+    assert.equal(tool.inputSchema.safeParse({}).success, !['get_business_summary', 'get_delivery_trends', 'rank_cities', 'rank_drivers'].includes(tool.name), 'only the tools that need a period require arguments');
+    assert.ok(/^(get|list|rank|forecast)_/.test(tool.name), 'only reading verbs');
+    assert.ok(!/write|update|delete|create|sql|exec|shell|everee|mark|send|submit|approve|retry|run_/i.test(tool.name));
+    assert.equal(tool.name.startsWith('pay_'), false, 'no payment action');
   }
   assert.ok(METRIC_DEFINITIONS.find((m) => m.id === 'gross_margin').label.includes('before overheads'));
   assert.ok(METRIC_DEFINITIONS.find((m) => m.id === 'company_margin').caveats[0].includes('not total revenue'));

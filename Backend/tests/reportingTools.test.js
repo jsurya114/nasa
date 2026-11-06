@@ -64,6 +64,25 @@ test('the reporting connection is off without its own settings and refuses the a
   assert.equal(borrowed.enabled, false);
 });
 
+test('TLS to the reporting database verifies the certificate unless that is switched off by name', () => {
+  const seen = [];
+  class FakePool { constructor(config) { seen.push(config); } on() {} }
+  const base = { REPORTING_DB_HOST: 'h', REPORTING_DB_NAME: 'n', REPORTING_DB_USER: 'ro', REPORTING_DB_PASSWORD: 'p' };
+  createReportingDb(base, { Pool: FakePool });
+  createReportingDb({ ...base, REPORTING_DB_SSL: 'true' }, { Pool: FakePool });
+  createReportingDb({ ...base, REPORTING_DB_SSL: 'true', REPORTING_DB_SSL_CA: 'PEM' }, { Pool: FakePool });
+  createReportingDb({ ...base, REPORTING_DB_SSL: 'true', REPORTING_DB_SSL_VERIFY: 'false' }, { Pool: FakePool });
+  assert.equal(seen[0].ssl, undefined, 'no TLS unless asked');
+  assert.deepEqual(seen[1].ssl, { rejectUnauthorized: true }, 'verified by default');
+  assert.deepEqual(seen[2].ssl, { rejectUnauthorized: true, ca: 'PEM' });
+  assert.deepEqual(seen[3].ssl, { rejectUnauthorized: false });
+  assert.match(seen[1].options, /default_transaction_read_only=on/);
+  const prod = createReportingDb({ ...base, NODE_ENV: 'production', REPORTING_DB_SSL: 'true', REPORTING_DB_SSL_VERIFY: 'false' }, { Pool: FakePool });
+  assert.equal(prod.enabled, false);
+  assert.match(prod.reason, /not allowed in production/);
+  assert.equal(seen.length, 4, 'no pool was created for the refused setting');
+});
+
 // ---------- the database: a disposable PostgreSQL copy with the app's tables and both reporting migrations (never production) ----------
 // MCP_TEST_DB=1, DB_* (owner), and REPORTING_DB_* (the read-only login). All data is made up and removed or rolled back.
 const hasDb = process.env.MCP_TEST_DB === '1';
@@ -337,9 +356,12 @@ test('over HTTP the tools list only with a reporting login, validate input, and 
     });
 
     const full = await start(true);
-    await t.test('with it the four read-only tools are listed with annotations and schemas', async () => {
+    await t.test('with it the nine read-only tools are listed with annotations and schemas', async () => {
       const { tools } = (await full.rpc('tools/list')).body.result;
-      assert.deepEqual(tools.map((x) => x.name), ['get_metric_definitions', 'list_reporting_cities', 'get_business_summary', 'rank_cities']);
+      assert.deepEqual(tools.map((x) => x.name), [
+        'get_metric_definitions', 'list_reporting_cities', 'get_business_summary', 'get_delivery_trends', 'rank_cities', 'rank_drivers',
+        'get_claim_exposure', 'get_payment_overview', 'forecast_deliveries',
+      ]);
       for (const x of tools) {
         assert.equal(x.annotations.readOnlyHint, true);
         assert.equal(x.annotations.destructiveHint, false);
@@ -396,6 +418,56 @@ test('over HTTP the tools list only with a reporting login, validate input, and 
         assert.deepEqual(sorted, [...sorted].sort((a, b) => b - a), 'ranked high to low');
       }
       assert.ok(compared > 0, 'at least some cities had stored amounts to compare');
+    });
+
+    await t.test('trends, drivers, claims, payments and the forecast answer through Claude\'s connection, and agree with the summary', async () => {
+      const period = { start_date: '2026-10-01', end_date: '2026-10-31' };
+      const summary = (await full.tool('get_business_summary', period)).structuredContent.data;
+      const weekly = (await full.tool('get_delivery_trends', { ...period, interval: 'week' }));
+      assert.equal(weekly.isError, undefined);
+      assert.equal(weekly.structuredContent.data.series.reduce((n, p) => n + p.deliveries, 0), summary.deliveries, 'weekly deliveries add up to the summary');
+      const monthly = (await full.tool('get_delivery_trends', { ...period, interval: 'month' })).structuredContent.data;
+      assert.equal(monthly.series.reduce((n, p) => n + p.deliveries, 0), summary.deliveries);
+      assert.equal(monthly.series.reduce((n, p) => n + toCents(p.earnedDeliveryRevenue ?? '0.00'), 0n), toCents(summary.earnedDeliveryRevenue), 'monthly revenue adds up');
+      const drivers = (await full.tool('rank_drivers', { ...period, limit: 50 })).structuredContent.data;
+      assert.ok(drivers.ranking.length > 0 && drivers.ranking.length <= 50);
+      const counts = drivers.ranking.map((d) => d.deliveries);
+      assert.deepEqual(counts, [...counts].sort((a, b) => b - a), 'high to low');
+      assert.ok(drivers.ranking.every((d) => d.name && d.primaryCity.name && Object.keys(d).every((k) => !/email|phone|password/i.test(k))));
+      const claims = (await full.tool('get_claim_exposure', {})).structuredContent.data;
+      assert.equal(claims.totalClaims >= 0, true);
+      const pay = (await full.tool('get_payment_overview', {})).structuredContent;
+      assert.ok(!Number.isNaN(Date.parse(pay.data.asOf)));
+      assert.match(pay.meta.warnings.join(' '), /Approved is not paid/);
+      const forecast = (await full.tool('forecast_deliveries', {})).structuredContent.data;
+      for (const start_date of ['banana', '2026-13-45', '10/01/2026']) {
+        const reply = (await full.rpc('tools/call', { name: 'forecast_deliveries', arguments: { start_date } })).body;
+        assert.ok(reply.error || reply.result?.isError, `a malformed start_date ${start_date} is refused whatever the history`);
+      }
+      assert.equal(forecast.estimate, true);
+      assert.ok(['ok', 'insufficient_data'].includes(forecast.status));
+      if (forecast.status === 'ok') {
+        assert.equal(forecast.forecast.length, 7);
+        assert.ok(forecast.backtest.testWeeks >= 4);
+      }
+      if (forecast.status === 'ok') {
+        const early = (await full.rpc('tools/call', { name: 'forecast_deliveries', arguments: { start_date: '2001-01-01' } })).body;
+        assert.ok(early.error || early.result?.isError, 'a start before the data is refused when there is history to compare with');
+      }
+      const bad = [
+        ['get_delivery_trends', { ...period, interval: 'year' }],
+        ['get_delivery_trends', { start_date: '2025-01-01', end_date: '2026-10-31', interval: 'day' }],
+        ['rank_drivers', { ...period, rank_by: 'name' }],
+        ['rank_drivers', { ...period, limit: 0 }],
+        ['get_claim_exposure', { start_date: '2026-10-01' }],
+        ['get_payment_overview', { city_ids: [2147483000] }],
+        ['forecast_deliveries', { days: 60 }],
+        ['forecast_deliveries', { anything: 1 }],
+      ];
+      for (const [name, args] of bad) {
+        const reply = (await full.rpc('tools/call', { name, arguments: args })).body;
+        assert.ok(reply.error || reply.result?.isError, `${name} ${JSON.stringify(args)} should be refused`);
+      }
     });
   } finally {
     for (const s of servers) await new Promise((resolve) => s.close(resolve));

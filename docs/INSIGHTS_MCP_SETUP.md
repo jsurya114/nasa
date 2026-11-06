@@ -51,6 +51,12 @@ tunnel (see the verification section: staging and mobile are still pending).
 
    The first must be `401` with a `WWW-Authenticate` header containing `resource_metadata`. The others must be JSON.
 
+## Reporting views
+
+Run in order after a backup: `2026-11-06-issue-220-reporting-views.sql`, then `2026-11-06-issue-220-reporting-claims-payments.sql`
+(rollbacks alongside). The second reads the Everee table only if it exists when it runs. **If the Everee migrations are run after it, run the claims-and-payments
+migration again afterwards**: until then returned deposits are not visible (the payment overview says so in a warning). Re-running is safe.
+
 ## Reporting database role (data tools)
 
 The data tools read through a separate PostgreSQL login that can see only the `reporting` views (`reporting.cities`,
@@ -73,7 +79,8 @@ falls back to the application's database login.
    read-only login setting already stop that, but also run `REVOKE CREATE ON SCHEMA public FROM PUBLIC;` if your application login owns
    the schema (it keeps its rights). PostgreSQL 15 and newer already refuse it.
 3. Set `REPORTING_DB_HOST`, `REPORTING_DB_NAME`, `REPORTING_DB_USER=nasa_insights_ro`, `REPORTING_DB_PASSWORD` (and `REPORTING_DB_SSL=true`
-   if the database requires TLS), then restart. The log must not say `data tools are off`.
+   if the database requires TLS: the server certificate is then verified; add `REPORTING_DB_SSL_CA` with the database's CA certificate if it is
+   not publicly trusted), then restart. The log must not say `data tools are off`.
 4. Check as that login (for example with `psql`): `SELECT count(*) FROM reporting.delivery_facts;` works, and `SELECT 1 FROM drivers;`,
    `SELECT 1 FROM admin;` and any `INSERT`, `UPDATE` or `DELETE` are refused.
 5. Rotate the password with `ALTER ROLE nasa_insights_ro PASSWORD '...'` and a restart. To switch the data tools off, remove
@@ -97,7 +104,15 @@ write, so they cannot change pay, claims, deductions or payments.
   revenue is zero.
 - **Checked against the Dashboard:** for every city and two sample periods the tools' deliveries, driver earnings, margin and revenue
   equal the Dashboard's own summary query (`getSummaryData`) exactly (an automated test).
-- **Known gaps:** claims, balances and payments are not in these tools yet. NASA has no overheads, so there is no net profit.
+- **Claims:** the latest version of each carrier claim, by decision: chargeable, exempt, or unmatched (unresolved, ambiguous or
+  review; a claim with no decision record counts as unmatched). "Deducted in approved pay runs" is what active claim lines in approved
+  runs took, before any later refund; it is not a driver balance.
+- **Payments:** pay statements of draft and approved runs (discarded and voided runs are not payments). Approved is not paid; a
+  returned deposit is not counted as paid. These are as-of figures, separate from delivery periods.
+- **Forecast:** recent weekday pattern, chosen by backtesting on the last 8 weeks without future data; partly imported weeks are left
+  out; an estimate, not a promise; no revenue forecast.
+- **Known gaps:** driver advances, debts and penalty balances (Payroll is the authority), route-level margin and a delivery success
+  rate (no reliable denominator). NASA has no overheads, so there is no net profit.
 
 ## Tools
 
@@ -106,7 +121,12 @@ write, so they cannot change pay, claims, deductions or payments.
 | `get_metric_definitions` | What the metrics mean and their limits |
 | `list_reporting_cities` | Cities, ids, type, first and last delivery date |
 | `get_business_summary` | A period: deliveries, revenue, margin, margin %, active drivers, per-delivery figures; optional city filter and comparison with the previous equal-length period |
+| `get_delivery_trends` | Deliveries, revenue and margin by day, week or month, the busiest weekdays and the five peak dates |
 | `rank_cities` | Cities ranked by deliveries, revenue or gross margin, with share of total |
+| `rank_drivers` | Top drivers by deliveries or deliveries per active day, with main city, active days and share (names and cities only) |
+| `get_claim_exposure` | Carrier claims: chargeable, exempt and unmatched, counts and amounts, oldest unmatched claim |
+| `get_payment_overview` | Driver pay now: pending approval, approved awaiting payment, processing, unconfirmed, failed, returned, paid, and what needs attention |
+| `forecast_deliveries` | An estimate of the next 1 to 28 days, with method, backtest error and a range, or `insufficient_data` |
 
 Periods are `YYYY-MM-DD` business dates, inclusive, at most 1,096 days. Unknown cities, bad dates, unsupported arguments and
 unsupported ranking metrics are refused with a message, never guessed.
