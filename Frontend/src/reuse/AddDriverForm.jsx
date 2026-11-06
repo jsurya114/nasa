@@ -1,21 +1,25 @@
 import { useState, useEffect } from "react";
 import { useSelector } from "react-redux";
+import { DRIVER_TYPE_LABEL } from "./driverType";
+
+const EMPTY_FORM = {
+  name: "",
+  email: "",
+  phoneNumber: "",
+  driver_code: "",
+  password: "",
+  confirmPassword: "",
+  city: "",
+  driverType: "",
+  enabled: false,
+};
 
 function AddDriverForm({ onSubmit, editData, isEdit, onCancel }) {
 
   const { isSuperAdmin } = useSelector((state) => state.admin);
   const { city, loading } = useSelector((state) => state.users);
 
-  const [form, setForm] = useState({
-    name: "",
-    email: "",
-    phoneNumber: "",
-    driver_code: "",
-    password: "",
-    confirmPassword: "",
-    city: "",
-    enabled: false,
-  });
+  const [form, setForm] = useState(EMPTY_FORM);
 
   const [errors, setErrors] = useState({});
 
@@ -30,6 +34,7 @@ function AddDriverForm({ onSubmit, editData, isEdit, onCancel }) {
         password: "", // Leave empty - optional to change
         confirmPassword: "",
         city: editData.job || "",
+        driverType: editData.driver_type || "",
         enabled: !!editData.enabled,
       });
     }
@@ -92,36 +97,20 @@ function AddDriverForm({ onSubmit, editData, isEdit, onCancel }) {
     if (isEdit && !driverData.password.trim()) {
       delete driverData.password;
     }
+    // No type chosen: send none, so a new driver is "Not set" and an edited driver keeps the type they have.
+    if (!driverData.driverType) delete driverData.driverType;
     
     onSubmit(driverData);
 
     if (!isEdit) {
-      setForm({
-        name: "",
-        email: "",
-        phoneNumber: "",
-        driver_code: "",
-        password: "",
-        confirmPassword: "",
-        city: "",
-        enabled: false,
-      });
+      setForm(EMPTY_FORM);
     }
 
     setErrors({});
   };
 
   const handleCancel = () => {
-    setForm({
-      name: "",
-      email: "",
-      phoneNumber: "",
-      driver_code: "",
-      password: "",
-      confirmPassword: "",
-      city: "",
-      enabled: false,
-    });
+    setForm(EMPTY_FORM);
     setErrors({});
     onCancel(); 
   };
@@ -243,6 +232,26 @@ function AddDriverForm({ onSubmit, editData, isEdit, onCancel }) {
             No cities assigned to you. Contact superadmin.
           </p>
         )}
+      </div>
+
+      <div className="flex flex-col gap-2">
+        <label htmlFor="driver-type" className="text-sm font-medium text-gray-700">
+          Driver Type
+        </label>
+        <select
+          id="driver-type"
+          value={form.driverType}
+          name="driverType"
+          onChange={handleChange}
+          className="text-ink transition-shadow border-line min-h-11 w-full px-3 py-2 border rounded-xl bg-white focus:outline-none focus:ring-4 focus:ring-brand-500/20"
+        >
+          <option value="">{isEdit && editData?.driver_type ? "Keep current type" : "Not set"}</option>
+          {Object.entries(DRIVER_TYPE_LABEL).map(([value, label]) => (
+            <option key={value} value={value}>
+              {label}
+            </option>
+          ))}
+        </select>
       </div>
 
       <label className="flex items-center space-x-2 cursor-pointer">

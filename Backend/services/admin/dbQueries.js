@@ -98,7 +98,7 @@ export const dbService = {
     
     getAllDrivers: async (lim, offset, search = "", city = "") => {
         let query = `
-            SELECT d.id, d.driver_code, d.name, d.email, d.phone_number, c.job, d.enabled 
+            SELECT d.id, d.driver_code, d.name, d.email, d.phone_number, c.job, d.enabled, d.driver_type 
             FROM drivers d
             JOIN city c ON d.city_id = c.id 
             WHERE 1=1`;
@@ -152,16 +152,16 @@ export const dbService = {
             const hashedPwd = await dbService.hashedPassword(data.password);
 
             const result = await pool.query(
-                `INSERT INTO drivers (name, email, driver_code, password, city_id, enabled, phone_number) 
-                 VALUES ($1, $2, $3, $4, $5, $6, $7)
+                `INSERT INTO drivers (name, email, driver_code, password, city_id, enabled, phone_number, driver_type) 
+                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
                  RETURNING id, name, email, enabled, city_id, driver_code, phone_number`,
-                [data.name, data.email, data.driver_code, hashedPwd, city_id, data.enabled, data.phoneNumber || null]
+                [data.name, data.email, data.driver_code, hashedPwd, city_id, data.enabled, data.phoneNumber || null, data.driverType ?? null]
             );
             
             const driver = result.rows[0];
             
             const driverWithCity = await pool.query(
-                `SELECT d.id, d.driver_code, d.name, d.email, d.phone_number, c.job, d.enabled
+                `SELECT d.id, d.driver_code, d.name, d.email, d.phone_number, c.job, d.enabled, d.driver_type
                  FROM drivers d
                  JOIN city c ON d.city_id = c.id
                  WHERE d.id = $1`,
@@ -237,7 +237,7 @@ export const dbService = {
         if (!updated) return null;
 
         const joined = await pool.query(
-            `SELECT d.id, d.driver_code, d.name, d.email, d.phone_number, c.job, d.enabled
+            `SELECT d.id, d.driver_code, d.name, d.email, d.phone_number, c.job, d.enabled, d.driver_type
              FROM drivers d
              JOIN city c ON d.city_id = c.id
              WHERE d.id = $1`,
@@ -298,7 +298,8 @@ export const dbService = {
     enabled=$4,
     phone_number=$5,
     password=$6,
-    driver_code=$7
+    driver_code=$7,
+    driver_type=COALESCE($9, driver_type)
   WHERE id=$8
 `;
 
@@ -310,7 +311,8 @@ updateParams = [
   data.phoneNumber,
   hashedPwd,
   data.driver_code || null,
-  id
+  id,
+  data.driverType ?? null
 ];
 
         } else {
@@ -323,7 +325,8 @@ updateParams = [
     city_id=$3,
     enabled=$4,
     phone_number=$5,
-    driver_code=$6
+    driver_code=$6,
+    driver_type=COALESCE($8, driver_type)
   WHERE id=$7
 `;
 
@@ -334,7 +337,8 @@ updateParams = [
   data.enabled,
   data.phoneNumber,
   data.driver_code || null,
-  id
+  id,
+  data.driverType ?? null
 ];
 
         }
@@ -342,7 +346,7 @@ updateParams = [
         await pool.query(updateQuery, updateParams);
 
         const joined = await pool.query(
-            `SELECT d.id, d.driver_code, d.name, d.email, d.phone_number, c.job, d.enabled
+            `SELECT d.id, d.driver_code, d.name, d.email, d.phone_number, c.job, d.enabled, d.driver_type
              FROM drivers d
              JOIN city c ON d.city_id = c.id
              WHERE d.id = $1`,
@@ -433,7 +437,7 @@ updateParams = [
     getDriversByAdminCities: async (adminId, limit, offset, search = "", city = "") => {
         try {
             let query = `
-                SELECT d.id, d.driver_code, d.name, d.email, d.phone_number, c.job, d.enabled 
+                SELECT d.id, d.driver_code, d.name, d.email, d.phone_number, c.job, d.enabled, d.driver_type 
                 FROM drivers d
                 JOIN city c ON d.city_id = c.id
                 JOIN admin_city_ref acr ON c.id = acr.city_id
