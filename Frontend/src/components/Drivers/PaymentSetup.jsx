@@ -28,6 +28,8 @@ export default function PaymentSetup() {
   const [session, setSession] = useState(null);
   const [busy, setBusy] = useState(false);
   const [checking, setChecking] = useState(false);
+  // True after the server was asked and did not (yet) say complete, or could not be reached: the driver can always ask again, whatever state is shown.
+  const [pendingCheck, setPendingCheck] = useState(false);
   const [message, setMessage] = useState(null); // { tone, key }
   const mounted = useRef(true);
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
@@ -37,6 +39,7 @@ export default function PaymentSetup() {
   // After a window closes: ask the server a few times (Everee can take a moment), then stop and say it is still being checked.
   const confirm = useCallback(async () => {
     setChecking(true);
+    setPendingCheck(false);
     setMessage(null);
     let latest = null;
     for (let attempt = 0; attempt < CHECK_ATTEMPTS; attempt += 1) {
@@ -47,12 +50,16 @@ export default function PaymentSetup() {
     }
     if (!mounted.current) return;
     setChecking(false);
-    if (latest?.state !== "complete") setMessage({ tone: "info", key: latest ? "psetStillChecking" : "psetErrUnavailable" });
+    if (latest?.state !== "complete") {
+      setPendingCheck(true); // "Check again" asks the server again; it does not open another Everee window
+      setMessage({ tone: "info", key: latest ? "psetStillChecking" : "psetErrUnavailable" });
+    }
   }, [setup]);
 
   const open = useCallback(async () => {
     if (busy) return;
     setBusy(true);
+    setPendingCheck(false);
     setMessage(null);
     try {
       const opened = await setup.openSession("ONBOARDING");
@@ -70,7 +77,9 @@ export default function PaymentSetup() {
       setSession(opened);
       setMode("embed");
     } catch (error) {
-      fail(error);
+      // Everee already has this driver complete (it finished in another tab or window): the answer is read from the server, nothing more is opened.
+      if (error?.response?.data?.code === "already_complete") confirm();
+      else fail(error);
     } finally {
       if (mounted.current) setBusy(false);
     }
@@ -131,7 +140,7 @@ export default function PaymentSetup() {
           <div className="flex flex-wrap gap-2">
             {action === "start" && adminMustFix.length === 0 && <button type="button" onClick={() => setMode("form")} disabled={busy} className="min-h-11 rounded-xl bg-brand px-5 font-semibold text-white disabled:opacity-60">{data.state === "creating" ? t("psetTryAgain") : t("psetStart")}</button>}
             {action === "continue" && <button type="button" onClick={open} disabled={busy} className="min-h-11 rounded-xl bg-brand px-5 font-semibold text-white disabled:opacity-60">{busy ? t("psetOpening") : t("psetContinue")}</button>}
-            {action === "check" && <button type="button" onClick={confirm} className="min-h-11 rounded-xl bg-brand px-5 font-semibold text-white">{t("psetCheckAgain")}</button>}
+            {(action === "check" || pendingCheck) && data.state !== "complete" && <button type="button" onClick={confirm} className={`min-h-11 rounded-xl px-5 font-semibold ${action === "continue" ? "border border-line bg-white text-ink" : "bg-brand text-white"}`}>{t("psetCheckAgain")}</button>}
             {data.state === "complete" && <Link to="/driver/dashboard" className="inline-flex min-h-11 items-center rounded-xl bg-brand px-5 font-semibold text-white">{t("psetBackToDashboard")}</Link>}
           </div>
         )}

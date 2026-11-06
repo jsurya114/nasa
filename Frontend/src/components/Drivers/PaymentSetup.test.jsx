@@ -182,6 +182,67 @@ describe("Everee’s screen", () => {
     expect(server.posts.filter(([k]) => k === "session")).toHaveLength(2); // a fresh link each time, never reused
   });
 
+  it("a screen that registered stays open past the connection timeout and the link's expiry, and through unrelated re-renders", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const problems = vi.fn();
+    await startServer({ initial: status({ state: "in-progress", canStart: false }) });
+    await mount();
+    fireEvent.click(await screen.findByRole("button", { name: "Continue setup" }));
+    const { speak } = await openEmbed();
+    speak({ eventType: "MESSAGE_PORT_REGISTERED", eventHandlerName: "nasaEvereeEmbed" }); // hides the "Opening Everee…" line: a re-render
+    await act(async () => { await vi.advanceTimersByTimeAsync(15_000); }); // past the 10 s connection wait
+    expect(screen.getByRole("dialog", { name: "Everee payment setup" })).toBeTruthy();
+    speak({ eventType: "ONBOARDING_DOCUMENTS_COMPLETE", eventHandlerName: "nasaEvereeEmbed" }); // another re-render path, nothing else happens
+    await act(async () => { await vi.advanceTimersByTimeAsync(120_000); }); // past the link's expiry too
+    expect(screen.getByRole("dialog", { name: "Everee payment setup" })).toBeTruthy();
+    expect(screen.queryByText(/did not connect|expired before it opened/)).toBeNull();
+    expect(problems).not.toHaveBeenCalled();
+  });
+
+  it("delayed completion: after the first checks stay unfinished there is a Check again that asks the server (it opens no new window), with no reload", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const server = await startServer({ initial: status({ state: "in-progress", canStart: false }) });
+    const { speak } = await begin();
+    speak({ eventType: "WORKER_ONBOARDING_COMPLETE", eventHandlerName: "nasaEvereeEmbed" });
+    await act(async () => { await vi.advanceTimersByTimeAsync(6000); });
+    await screen.findByText(/Everee is still checking/);
+    const again = screen.getByRole("button", { name: "Check again" });
+    expect(screen.getByRole("button", { name: "Continue setup" })).toBeTruthy();
+    const sessions = server.posts.filter(([k]) => k === "session").length;
+    server.status = status({ state: "complete", required: false, canStart: false }); // Everee finishes later
+    server.mutate = true;
+    fireEvent.click(again);
+    await screen.findByText("Your payment setup is complete.");
+    expect(server.posts.filter(([k]) => k === "session")).toHaveLength(sessions); // Check again opened nothing
+    expect(screen.queryByRole("button", { name: "Check again" })).toBeNull();
+  });
+
+  it("a refresh outage after the window closes leaves a Check again, and it works once the connection is back", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    let up = false;
+    const server = await startServer({ initial: status({ state: "in-progress", canStart: false }), onRefresh: (s) => (up ? { status: 200, data: (s.status = status({ state: "complete", required: false, canStart: false })) } : { status: 503, data: {} }) });
+    const { speak } = await begin();
+    speak({ eventType: "DISMISS", eventHandlerName: "nasaEvereeEmbed" });
+    await act(async () => { await vi.advanceTimersByTimeAsync(6000); });
+    expect((await screen.findAllByText(/not available right now/)).length).toBeGreaterThan(0);
+    up = true;
+    fireEvent.click(screen.getByRole("button", { name: "Check again" }));
+    await screen.findByText("Your payment setup is complete.");
+    expect(server.posts.filter(([k]) => k === "refresh").length).toBeGreaterThanOrEqual(4);
+  });
+
+  it("if Everee already has the driver complete, the refused new window turns into a status check, not an error", async () => {
+    await startServer({
+      initial: status({ state: "in-progress", canStart: false }),
+      onSession: () => ({ status: 409, data: { code: "already_complete", message: "your payment setup is already complete" } }),
+      onRefresh: (s) => ({ status: 200, data: (s.status = status({ state: "complete", required: false, canStart: false })) }),
+    });
+    await mount();
+    fireEvent.click(await screen.findByRole("button", { name: "Continue setup" }));
+    await screen.findByText("Your payment setup is complete.");
+    expect(screen.queryByText("Your payment setup is already complete.")).toBeNull();
+  });
+
   it("an error event, a link that never connects and an expired link each end the window with a clear message", async () => {
     await startServer({ initial: status({ state: "in-progress", canStart: false }) });
     const { speak } = await begin();
