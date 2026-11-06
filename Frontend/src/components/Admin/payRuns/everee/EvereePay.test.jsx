@@ -259,6 +259,25 @@ describe("Pay to drivers: Bank transfer (Everee)", () => {
     await waitFor(() => expect(server.calls).toContain("post /admin/payroll/everee-batches/5/check"));
   });
 
+  it("pays in several goes but shows one box for the run, and the actions reach every batch that needs them", async () => {
+    const first = batchOf([item(1, "Dee Test", "paid")], { batch: { id: 5, runId: 17, drivers: 1, total: "100.00", createdAt: "2026-11-04T12:00:00Z" } });
+    const second = batchOf([item(2, "Eli Test", "submitted"), item(3, "Fay Test", "failed")], { batch: { id: 6, runId: 17, drivers: 2, total: "200.00", createdAt: "2026-11-05T12:00:00Z" } });
+    const third = batchOf([item(4, "Gus Test", "submitted")], { batch: { id: 7, runId: 17, drivers: 1, total: "100.00", createdAt: "2026-11-06T12:00:00Z" } });
+    const server = await startServer({ batches: [third, second, first] });
+    await mount();
+    const results = await screen.findByRole("region", { name: "Everee payment results" });
+    expect(screen.getAllByRole("region", { name: "Everee payment results" })).toHaveLength(1);
+    for (const name of ["Dee Test", "Eli Test", "Fay Test", "Gus Test"]) expect(within(results).getByText(name)).toBeTruthy();
+    expect(within(results).getByText(/3 payments, last sent .* 4 drivers · \$400\.00/)).toBeTruthy();
+    fireEvent.click(within(results).getByRole("button", { name: "Check now" }));
+    await waitFor(() => expect(server.calls).toContain("post /admin/payroll/everee-batches/7/check"));
+    expect(server.calls).toContain("post /admin/payroll/everee-batches/6/check");
+    expect(server.calls).not.toContain("post /admin/payroll/everee-batches/5/check");
+    fireEvent.click(within(results).getByRole("button", { name: "Retry what failed" }));
+    await waitFor(() => expect(server.calls).toContain("post /admin/payroll/everee-batches/6/retry"));
+    expect(server.calls).not.toContain("post /admin/payroll/everee-batches/7/retry");
+  });
+
   it("the results re-read themselves while payments wait, and tell the page when one succeeds", async () => {
     const server = await startServer({ batches: [batchOf([item(1, "Dee Test", "submitted")])] });
     const { default: EvereeRunResults } = await import("./EvereeRunResults.jsx");

@@ -2,12 +2,13 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import axios from "../../../../redux/slice/axiosInstance";
 import EvereeBatchResults from "./EvereeBatchResults.jsx";
 import EvereeApprovalLink from "./EvereeApprovalLink.jsx";
+import { mergeBatches, needsCheck, needsRetry } from "./mergeBatches.js";
 import { readableError } from "./evereeLabels.js";
 
 const base = "/admin/payroll";
 export const REFRESH_MS = 60_000; // how often the open window re-reads the results while payments are still waiting
 
-// The Everee payments already made for one run, driver by driver, with Check now and Retry what failed. It reads the server's results and, while
+// The Everee payments already made for one run, in one list however many times the run was paid, driver by driver, with Check now and Retry what failed. It reads the server's results and, while
 // payments wait for Everee, reads them again every minute (a read only: the server checks Everee every 15 minutes, or at once with Check now).
 // Nothing here decides what is paid. `reloadKey` changes when a new batch has just been sent, so the list is read again.
 export default function EvereeRunResults({ runId, onChanged, refreshMs = REFRESH_MS, reloadKey = 0, showApprovalLink = true }) {
@@ -50,12 +51,12 @@ export default function EvereeRunResults({ runId, onChanged, refreshMs = REFRESH
     return () => { clearInterval(timer); controller.abort(); };
   }, [waiting, busy, load, refreshMs]);
 
-  const act = async (path, failure) => {
+  const act = async (paths, failure) => {
     if (busy) return;
     setBusy(true);
     setMessage("");
     try {
-      await axios.post(path);
+      for (const path of paths) await axios.post(path);
       await load();
       onChanged?.();
     } catch (error) {
@@ -69,11 +70,9 @@ export default function EvereeRunResults({ runId, onChanged, refreshMs = REFRESH
   return (
     <div className="space-y-3">
       {message && <p role="alert" className="rounded-xl bg-red-50 p-3 text-sm text-red-700">{message}</p>}
-      {batches.map((b) => (
-        <EvereeBatchResults key={b.batch.id} view={b} busy={busy}
-          onCheck={() => act(`${base}/everee-batches/${b.batch.id}/check`, "Everee could not be checked. Try again in a moment.")}
-          onRetry={() => act(`${base}/everee-batches/${b.batch.id}/retry`, "The retry could not be completed. Check the results before trying again.")} />
-      ))}
+      <EvereeBatchResults view={mergeBatches(batches)} busy={busy}
+        onCheck={() => act(batches.filter(needsCheck).map((b) => `${base}/everee-batches/${b.batch.id}/check`), "Everee could not be checked. Try again in a moment.")}
+        onRetry={() => act(batches.filter(needsRetry).map((b) => `${base}/everee-batches/${b.batch.id}/retry`), "The retry could not be completed. Check the results before trying again.")} />
       {showApprovalLink && waiting && <EvereeApprovalLink label={pending ? "Open Everee to approve" : "Open Everee for deposit details"} />}
     </div>
   );
