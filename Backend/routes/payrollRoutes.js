@@ -1,6 +1,7 @@
 // Payroll routes (issues #138 to #145). Mounted at /admin/payroll in app.js. Super admin only, except the one
 // Dashboard summary below; each action also checks the admin's cities in its service.
 import express from 'express';
+import { getOnboardingReadiness } from '../controllers/payroll/evereeReadinessController.js';
 import { sanitizeRouterParams } from '../middlewares/sanitize.js';
 import adminAuth from '../middlewares/adminAuth.js';
 import { requireRole } from '../middlewares/requireRole.js';
@@ -49,6 +50,7 @@ router.post('/runs/:runId/finalize', postFinalize);
 router.post('/runs/:runId/discard', postDiscard);
 router.post('/runs/:runId/void', postVoid);
 // Everee connection (#31): whether the backend is set up and which environment, and a read-only test call. Super admin only, checked in the service.
+router.get('/everee/onboarding-readiness', getOnboardingReadiness);
 router.get('/everee/status', getEvereeStatus);
 router.post('/everee/check', postEvereeCheck);
 // Linking drivers to existing Everee workers (#31): the city's drivers and their link state, a read-only lookup by email or phone, and a link
