@@ -194,21 +194,20 @@ export const updatePaymentData = async (req, res) => {
     // A city admin recalculates only the cities assigned to them
     const allowedJobs = isCityLimited(role) ? await getAllowedJobs(id) : null;
 
-    if (date) {
-      // Calculate payment for specific date
-      await AdminDashboardQueries.updatePaymentTableForDate(date, allowedJobs);
-      res.status(HttpStatus.OK).json({
-        success: true,
-        message: `Payment calculated for ${date}`
-      });
-    } else {
-      // Calculate payment for all dates
-      await AdminDashboardQueries.updatePaymentTable(allowedJobs);
-      res.status(HttpStatus.OK).json({
-        success: true,
-        message: "Payment calculated for all dates"
-      });
-    }
+    const result = date
+      ? await AdminDashboardQueries.updatePaymentTableForDate(date, allowedJobs)
+      : await AdminDashboardQueries.updatePaymentTable(allowedJobs);
+    const base = date ? `Payment calculated for ${date}` : "Payment calculated for all dates";
+    // Rows in an approved pay run or a verified carrier statement are never recalculated; say so instead of skipping them silently.
+    const note = result.protectedRows > 0
+      ? `. ${result.protectedRows} row${result.protectedRows === 1 ? " was" : "s were"} left as ${result.protectedRows === 1 ? "it is" : "they are"} because ${result.protectedRows === 1 ? "it belongs" : "they belong"} to an approved pay run or a verified carrier statement`
+      : "";
+    res.status(HttpStatus.OK).json({
+      success: true,
+      message: `${base}${note}`,
+      updated: result.updated,
+      protectedRows: result.protectedRows
+    });
   } catch (error) {
     if (error instanceof CityAccessError) {
       return res.status(HttpStatus.FORBIDDEN).json({ success: false, message: error.message });
