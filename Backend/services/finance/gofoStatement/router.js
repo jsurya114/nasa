@@ -6,7 +6,9 @@
  *   GET  /                 the statements, newest week first
  *   POST /preview          file -> everything publishing would check and what it would do. Stores nothing.
  *   POST /publish          file -> stores a statement that reconciles. Same statement again: nothing changes. A correction becomes a new version.
+ *   GET  /export.csv       the statements and their economics as a CSV (no driver names)
  *   GET  /:id/unallocated  the unmatched money of one statement and why
+ *   GET  /:id/unallocated.csv  the same as a CSV
  *   POST /:id/rematch      matches groups whose work reached NASA later
  *   POST /:id/void         { reason } retires a statement; its history stays
  *
@@ -28,7 +30,7 @@ export function createStatementRouter({ adminAuth, requireRole, upload, service 
   for (const [name, part] of Object.entries({ adminAuth, requireRole, upload })) {
     if (typeof part !== 'function' && !(name === 'upload' && typeof part?.single === 'function')) throw new Error(`createStatementRouter needs ${name}`);
   }
-  if (!service || ['list', 'preview', 'publish', 'unallocated', 'rematch', 'void'].some((fn) => typeof service[fn] !== 'function')) throw new Error('createStatementRouter needs a service');
+  if (!service || ['list', 'exportCsv', 'unallocatedCsv', 'preview', 'publish', 'unallocated', 'rematch', 'void'].some((fn) => typeof service[fn] !== 'function')) throw new Error('createStatementRouter needs a service');
   const router = express.Router();
 
   // Everything below is for the super admin only. Keep new routes below this line.
@@ -71,6 +73,17 @@ export function createStatementRouter({ adminAuth, requireRole, upload, service 
     const result = await service.publish(file.buffer, { user: { id: req.admin.id }, sourceLabel: String(file.originalname ?? 'statement.xlsx').replace(/[^\w .()-]/g, '_').slice(0, 200) });
     res.status(PUBLISH_STATUS[result.status] ?? HttpStatus.OK).json(result);
   })));
+
+  const sendCsv = (res, name, csv) => res.status(HttpStatus.OK).set({ 'Content-Type': 'text/csv; charset=utf-8', 'Content-Disposition': `attachment; filename="${name}"`, 'X-Content-Type-Options': 'nosniff' }).send(csv);
+
+  router.get('/export.csv', handle('export', async (_req, res) => sendCsv(res, 'carrier-statements.csv', await service.exportCsv())));
+
+  router.get('/:id/unallocated.csv', handle('unallocated export', async (req, res) => {
+    const id = idOf(req.params.id);
+    if (!id) return res.status(HttpStatus.BAD_REQUEST).json({ message: 'The statement id is not valid.' });
+    const csv = await service.unallocatedCsv(id);
+    return csv === null ? res.status(HttpStatus.NOT_FOUND).json({ message: 'No such statement.' }) : sendCsv(res, `carrier-statement-${id}-unallocated.csv`, csv);
+  }));
 
   router.get('/:id/unallocated', handle('unallocated', async (req, res) => {
     const id = idOf(req.params.id);

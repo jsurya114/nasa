@@ -15,6 +15,8 @@ const makeService = (overrides = {}) => ({
   preview: record('preview', { status: 'ready' }),
   publish: record('publish', { status: 'published', statementId: 9 }),
   unallocated: record('unallocated', [{ deliveryId: '1' }]),
+  exportCsv: record('exportCsv', 'City,Billing week\r\nLafayette,Week 43\r\n'),
+  unallocatedCsv: record('unallocatedCsv', 'Delivery ID\r\n1\r\n'),
   rematch: record('rematch', 2),
   void: record('void', true),
   ...overrides,
@@ -40,7 +42,8 @@ const send = async (app, method, path, { role = 'superadmin', body, file } = {})
     if (file) { payload = new FormData(); payload.append('file', new Blob([file.bytes]), file.name ?? 'statement.xlsx'); }
     else if (body !== undefined && method !== 'GET') { payload = JSON.stringify(body); headers['content-type'] = 'application/json'; }
     const response = await fetch(`http://127.0.0.1:${server.address().port}/admin/finance/gofo-statements${path}`, { method, headers, body: payload });
-    return { status: response.status, body: await response.json(), cache: response.headers.get('cache-control') };
+    const type = response.headers.get('content-type') ?? '';
+    return { status: response.status, body: type.includes('json') ? await response.json() : await response.text(), cache: response.headers.get('cache-control'), type, disposition: response.headers.get('content-disposition') };
   } finally {
     await new Promise((resolve) => server.close(resolve));
   }
@@ -50,7 +53,7 @@ test('only the super admin may use the statement routes: no token, a city admin 
   calls.length = 0;
   const app = makeApp(makeService());
   const good = await statementWorkbook();
-  const requests = [['GET', '/'], ['POST', '/preview', { file: { bytes: good } }], ['POST', '/publish', { file: { bytes: good } }], ['GET', '/1/unallocated'], ['POST', '/1/rematch'], ['POST', '/1/void', { body: { reason: 'wrong week' } }]];
+  const requests = [['GET', '/'], ['GET', '/export.csv'], ['GET', '/1/unallocated.csv'], ['POST', '/preview', { file: { bytes: good } }], ['POST', '/publish', { file: { bytes: good } }], ['GET', '/1/unallocated'], ['POST', '/1/rematch'], ['POST', '/1/void', { body: { reason: 'wrong week' } }]];
   for (const [method, path, extra] of requests) {
     assert.equal((await send(app, method, path, { ...extra, role: null })).status, 401, `${method} ${path} without a token`);
     for (const role of ['admin', 'driver']) {
@@ -77,6 +80,19 @@ test('the owner can list, preview, publish, inspect, rematch and void; company f
   assert.equal(calls[2][2].user.id, 7, 'who published comes from the token');
   assert.equal(calls[2][2].sourceLabel, 'LFT week 43.xlsx');
   assert.equal(calls[5][2].reason, 'uploaded for the wrong week', 'the reason is trimmed');
+});
+
+test('the CSV exports are downloads for the owner, never cached and never sniffed, and a bad id is refused', async () => {
+  calls.length = 0;
+  const app = makeApp(makeService());
+  const all = await send(app, 'GET', '/export.csv');
+  assert.deepEqual([all.status, all.type, all.disposition, all.cache], [200, 'text/csv; charset=utf-8', 'attachment; filename="carrier-statements.csv"', 'no-store']);
+  assert.equal(all.body, 'City,Billing week\r\nLafayette,Week 43\r\n');
+  const one = await send(app, 'GET', '/5/unallocated.csv');
+  assert.deepEqual([one.status, one.disposition], [200, 'attachment; filename="carrier-statement-5-unallocated.csv"']);
+  assert.equal((await send(app, 'GET', '/x/unallocated.csv')).status, 400);
+  assert.equal((await send(makeApp(makeService({ unallocatedCsv: async () => null })), 'GET', '/9/unallocated.csv')).status, 404);
+  assert.deepEqual(calls.map((c) => c[0]), ['exportCsv', 'unallocatedCsv']);
 });
 
 test('each publish result gets its own status: a rejected statement 422, an older version 409, the same statement again 200', async () => {
