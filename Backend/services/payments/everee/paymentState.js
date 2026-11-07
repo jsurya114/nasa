@@ -1,7 +1,8 @@
 import { toCents } from '../../payroll/payRuns/payCalculator.js';
 
 // Reading what Everee says about a payment, as pure functions (issue #31, part 5). Nothing here touches the database or the network.
-// "Paid" is claimed only when EVERY payout of the payment is PAID (Everee's Payment Data API: PENDING, PAID or FAILED). The answer's
+// "Paid" is claimed only when EVERY payout of the payment is PAID (Everee's Payment Data API: PENDING, PAID or FAILED); in the sandbox alone, the
+// payment's own PAID status is enough too (countsAsLanded, issue #242 follow-up). The answer's
 // shape is only partly documented, so anything not understood is "unknown" and never counts as paid.
 
 const PAYOUT_STATUSES = new Set(['PENDING', 'PAID', 'FAILED']);
@@ -47,5 +48,12 @@ export const readPayoutState = (body) => {
   // The worker the payment belongs to, when the answer says (the field is not fully documented; absent means "not stated", never a match).
   const rawWorker = body.workerId ?? body.worker?.workerId ?? body.worker?.id;
   const workerId = (typeof rawWorker === 'string' || typeof rawWorker === 'number') && ID_TEXT.test(String(rawWorker)) ? String(rawWorker) : null;
-  return { state, netCents, payDate, workerId };
+  // The payment's own status (Everee's Payment Data API), apart from its payouts: the sandbox sets it to PAID while the bank payouts stay PENDING.
+  const paymentPaid = typeof body.status === 'string' && body.status.toUpperCase() === 'PAID';
+  return { state, netCents, payDate, workerId, paymentPaid };
 };
+
+// Sandbox only: Everee's sandbox sends no money and its bank payouts may never settle, so a payment whose own status is PAID counts as the bank
+// transfer complete there. In production only the payouts decide, and a returned payout is never covered by this.
+export const countsAsLanded = (environment, payout) => payout.state === 'landed'
+  || (environment === 'sandbox' && payout.state === 'pending' && payout.paymentPaid === true);

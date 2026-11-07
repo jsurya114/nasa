@@ -7,10 +7,11 @@ import { readEvereeConfig } from './evereeConfig.js';
 import { createEvereeClient, EvereeError } from './evereeClient.js';
 import { DEFAULT_TIME_ZONE } from './payableRules.js';
 import { clip, defaultSleep, inTransaction, recordPayableStatus, withRateLimitRetry } from './batchSubmit.js';
-import { isPaymentId, readPayable, readPayoutState } from './paymentState.js';
+import { countsAsLanded, isPaymentId, readPayable, readPayoutState } from './paymentState.js';
 
 // Reading payments back from Everee (issue #31, part 5). The only place where an Everee item becomes "paid", and it happens only when
 // Everee's Payment Data API says EVERY payout of the payment is PAID (money deposited), never because we sent something or an event said so.
+// In the SANDBOX only, the payment's own PAID status counts too (its bank payouts may never settle there): see countsAsLanded.
 // Events (webhooks) are only a prompt to look again: what they say is not trusted, Everee is asked.
 //
 //  - A payable's status moves a blocked item to "unconfirmed" and an item Everee is processing back to "submitted" (recordPayableStatus).
@@ -184,7 +185,7 @@ export const reconcileItem = async (db, itemId, deps = {}, client) => {
     await note(db, item.id, "Everee's answer for this payment was not understood, so it is not marked paid. Check it in Everee.");
     return 'unknown';
   }
-  if (payout.state === 'pending') {
+  if (payout.state === 'pending' && !countsAsLanded(item.environment, payout)) {
     await note(db, item.id, 'Everee has the payment; the deposit is not complete yet.');
     return 'pending';
   }
