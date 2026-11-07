@@ -1,6 +1,8 @@
 import pool from "../../config/db.js";
 import logger from "../../utils/logger.js";
 import { lockUploads } from "./uploadSafety.js";
+import { rematchOpenGroups } from "../finance/gofoStatement/statementStore.js";
+import { companyEarningsSql } from "../finance/companyRates.js";
 
         export const WeeklyExcelQueries={
             fetchDashboardDataByDates : async(dates)=>{
@@ -343,8 +345,7 @@ createEntriesFromWeeklyCount: async ({ beforeInsert = null } = {}) => {
         wc.total_deliveries AS delivered,
         ((wc.fs * r.driver_route_price) +
         (wc.ds * r.driver_doublestop_price)) AS driver_payment,
-       ((wc.fs *( r.company_route_price-r.driver_route_price)) +
-        (wc.ds * (r.company_doublestop_price-r.driver_doublestop_price))) AS company_earnings,
+       ${companyEarningsSql({ route: 'r', city: 'c', ds: 'wc.ds', fs: 'wc.fs' })} AS company_earnings,
         TRUE,
         FALSE,
         FALSE
@@ -354,6 +355,8 @@ createEntriesFromWeeklyCount: async ({ beforeInsert = null } = {}) => {
       INNER JOIN routes r
         ON wc.del_route = r.route_code_in_string
       AND r.enabled = TRUE
+      INNER JOIN city c
+        ON c.job = r.job
       WHERE d.enabled = TRUE
       AND NOT EXISTS (
         SELECT 1
@@ -435,17 +438,31 @@ createEntriesFromWeeklyCount: async ({ beforeInsert = null } = {}) => {
     const insuranceResult = await client.query(insuranceQuery, [INSURANCE_RATE_PER_DAY, insertedIds]);
     await WeeklyExcelQueries.deleteWeeklyTableIfExists('weeklycount', client);
 
+    // A carrier statement published before this work reached the Dashboard has groups it could not match yet (issue #252). They are matched now.
+    // In a savepoint: matching never changes what the weekly add stores, and an older database without the statement tables simply skips it.
+    let statementGroupsMatched = 0;
+    await client.query('SAVEPOINT statement_rematch');
+    try {
+      statementGroupsMatched = await rematchOpenGroups(client);
+      await client.query('RELEASE SAVEPOINT statement_rematch');
+    } catch (matchError) {
+      await client.query('ROLLBACK TO SAVEPOINT statement_rematch');
+      if (matchError.code !== '42P01') logger.error('Carrier statements could not be matched after the weekly add', matchError);
+    }
+
     await client.query('COMMIT');
     logger.info('Weekly data added to the dashboard', {
       inserted: insertResult.rowCount,
-      insuranceApplied: insuranceResult.rowCount
+      insuranceApplied: insuranceResult.rowCount,
+      statementGroupsMatched
     });
 
     return {
       inserted: insertResult.rowCount,
       updated: updateResult.rowCount,
       insuranceApplied: insuranceResult.rowCount,
-      totalAffected: insertResult.rowCount
+      totalAffected: insertResult.rowCount,
+      statementGroupsMatched
     };
   } catch (err) {
     await client.query('ROLLBACK');

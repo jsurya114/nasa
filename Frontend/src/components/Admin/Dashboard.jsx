@@ -18,6 +18,7 @@ import Nav from "../../reuse/Nav.jsx";
 import PaymentDashboardTable from "./DashboardTable.jsx";
 import usePenaltySummary from "./dashboard/usePenaltySummary.js";
 import { summaryItems, summaryLook } from "./dashboard/penaltyDisplay.js";
+import { ownerRevenueRows } from "./dashboard/ownerRevenueRows.js";
 import PaymentRuns from "./payRuns/PaymentRuns.jsx";
 import Loader from "../Loader.jsx"
 import { CalendarDays, CalendarRange, ChevronDown, Gavel, LayoutGrid, ShieldCheck, Banknote } from "lucide-react";
@@ -112,6 +113,11 @@ export default function Dashboard() {
         delivered: 0,
         driversPayment: 0,
         companyEarnings: 0,
+        deliveryRevenue: null,
+        driverEarnings: null,
+        deliveryMargin: null,
+        unallocatedRevenue: null,
+        revenueEstimated: false,
         insuranceDeduction: 0,
         netDriverPayment: 0,
       };
@@ -129,6 +135,12 @@ export default function Dashboard() {
       delivered: Number(summaryData.total_delivered) || 0,
       driversPayment: totalDriverPayment.toFixed(2),
       companyEarnings: Number(summaryData.total_company_earnings) || 0,
+      // The owner's figures from the shared revenue definition (null from a server that has not sent them).
+      deliveryRevenue: summaryData.total_delivery_revenue ?? null,
+      driverEarnings: summaryData.total_driver_earnings ?? null,
+      deliveryMargin: summaryData.total_delivery_margin ?? null,
+      unallocatedRevenue: summaryData.total_unallocated_revenue ?? null,
+      revenueEstimated: summaryData.revenue_is_estimated === true,
       insuranceDeduction: totalInsurance.toFixed(2),
       netDriverPayment: (totalDriverPayment - totalInsurance).toFixed(2),
     };
@@ -467,7 +479,7 @@ export default function Dashboard() {
                     ...penaltyLines.afterInsurance,
                     { field: "netDriverPayment", kind: "net", preview: penaltyLines.net.preview, muted: penaltyLines.net.muted, icon: Banknote, label: penaltyLines.net.label,
                       text: `$${penaltyLines.net.net.toFixed(2)}` },
-                    ...(isSuperAdmin ? [{ field: "companyEarnings", label: "Total Company Earnings", highlight: true }] : []),
+                    ...(isSuperAdmin ? ownerRevenueRows(extraFieldsData) : []),
                   ].map((item, i) => {
                     const look = summaryLook(item);
                     const Icon = item.icon ?? (item.kind === "deducted" || item.kind === "notice" ? Gavel : item.kind === "net" ? Banknote : null);

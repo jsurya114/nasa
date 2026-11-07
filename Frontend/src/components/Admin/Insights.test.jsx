@@ -14,7 +14,7 @@ vi.mock("../../utils/toast", () => ({ toast: { success: vi.fn(), error: vi.fn(),
 // The real Insights page with made-up figures from a fake server. Every request is recorded, so the tests can say exactly what was asked.
 const CITIES = [{ cityId: 3, name: "Alpha City", code: "ALP", type: "DAILY", enabled: true, firstDeliveryDate: "2026-01-01", lastDeliveryDate: "2026-11-05", records: 100 },
   { cityId: 4, name: "Beta City", code: "BET", type: "WEEKLY", enabled: true, firstDeliveryDate: "2026-01-01", lastDeliveryDate: "2026-11-05", records: 50 }];
-const DEFINITIONS = [{ id: "gross_margin", label: "Gross profit", unit: "USD", definition: "Company margin after driver earnings.", caveats: ["It is not net profit."] }];
+const DEFINITIONS = [{ id: "delivery_margin", label: "Delivery margin", unit: "USD", definition: "Delivery revenue minus driver earnings.", caveats: ["It is not net profit."] }];
 const meta = (extra = {}) => ({ generatedAt: "2026-11-06T02:00:00.000Z", definitionsVersion: "x", units: {}, scope: { description: "s" }, coverage: [{ firstDate: "2026-01-01", lastDate: "2026-11-05", recordsInPeriod: 30, daysWithRecords: 20, daysInPeriod: 30 }], warnings: ["2 records are still open."], ...extra });
 const comparison = { status: "complete", change: { deliveries: { absolute: "15", percent: "10.00" }, earnedDeliveryRevenue: { absolute: "-120.50", percent: "-2.00" }, grossMarginBeforeOverheads: { absolute: "5.00", percent: "1.00" } }, note: "Compared with the immediately preceding period of the same length." };
 const overview = (data = {}, extra = {}) => ({ meta: meta(extra), data: {
@@ -111,7 +111,7 @@ describe("Insights: the headline figures", () => {
     expect(within(screen.getByTestId("kpi-revenue")).getByText(/vs previous 30 days \(/)).toBeTruthy();
     expect(within(screen.getByTestId("kpi-per-delivery")).getByText("$3.64 · $0.55")).toBeTruthy();
     // the margin is named honestly
-    expect(screen.getByText("Gross profit before overheads")).toBeTruthy();
+    expect(within(screen.getByTestId("kpi-margin")).getByText("Delivery margin")).toBeTruthy();
     expect(screen.getByText(/no overheads or operating costs are recorded, so it is not net profit/)).toBeTruthy();
   });
 
@@ -288,7 +288,7 @@ describe("Insights: top cities", () => {
   it("shows each city with its exact value, share and a bar, switches the ranking metric, and offers a table", async () => {
     const server = await startServer();
     await mount();
-    const list = await screen.findByRole("list", { name: "Cities ranked by revenue" });
+    const list = await screen.findByRole("list", { name: "Cities ranked by delivery revenue" });
     expect(within(list).getByText("$4,000.00")).toBeTruthy();
     expect(within(list).getByText("66.67% of all cities")).toBeTruthy();
     expect(within(list).getByText(/2 record\(s\) without stored amounts/)).toBeTruthy();
@@ -300,7 +300,7 @@ describe("Insights: top cities", () => {
     // the same data as a table, with every figure and the headings a screen reader needs
     fireEvent.click(screen.getByRole("button", { name: "Show as table" }));
     const table = screen.getByRole("table");
-    expect(within(table).getAllByRole("columnheader").map((h) => h.textContent)).toEqual(["#", "City", "Deliveries", "Revenue", "Gross margin", "Margin %", "Share"]);
+    expect(within(table).getAllByRole("columnheader").map((h) => h.textContent)).toEqual(["#", "City", "Deliveries", "Delivery revenue", "Delivery margin", "Margin %", "Share"]);
     expect(within(table).getByRole("row", { name: /Beta City/ }).textContent).toContain("$2,000.00");
     fireEvent.click(screen.getByRole("button", { name: "Show bars" }));
     expect(screen.getByRole("list", { name: "Cities ranked by deliveries" })).toBeTruthy();
@@ -309,7 +309,7 @@ describe("Insights: top cities", () => {
   it("choosing a city filters the whole page to it, and choosing it again is the way back", async () => {
     const server = await startServer();
     const page = await mount();
-    const list = await screen.findByRole("list", { name: "Cities ranked by revenue" });
+    const list = await screen.findByRole("list", { name: "Cities ranked by delivery revenue" });
     fireEvent.click(within(list).getByRole("button", { name: /Beta City/ }));
     await waitFor(() => expect(server.of("overview").at(-1).params.city_ids).toBe("4"));
     expect(server.of("rankings/cities").at(-1).params.city_ids).toBe("4");
@@ -319,7 +319,7 @@ describe("Insights: top cities", () => {
     expect(await screen.findByText(/33\.33% of the selected cities/)).toBeTruthy();
     expect(screen.queryByText(/of all cities/)).toBeNull();
     expect(screen.getByRole("button", { name: "Show everything" })).toBeTruthy();
-    const again = await screen.findByRole("list", { name: "Cities ranked by revenue" });
+    const again = await screen.findByRole("list", { name: "Cities ranked by delivery revenue" });
     expect(within(again).getAllByRole("button", { name: /City/ })[0].getAttribute("aria-pressed")).toBe("true");
     fireEvent.click(within(again).getAllByRole("button", { name: /City/ })[0]);
     await waitFor(() => expect(server.of("overview").at(-1).params.city_ids).toBeUndefined());
@@ -338,8 +338,8 @@ describe("Insights: top cities", () => {
     await startServer();
     await mount();
     await screen.findByTestId("kpi-margin");
-    fireEvent.click(within(screen.getByTestId("kpi-margin")).getByRole("button", { name: "About Gross profit before overheads" }));
-    expect(await screen.findByText(/Company margin after driver earnings\. It is not net profit\./)).toBeTruthy();
+    fireEvent.click(within(screen.getByTestId("kpi-margin")).getByRole("button", { name: "About Delivery margin" }));
+    expect(await screen.findByText(/Delivery revenue minus driver earnings\. It is not net profit\./)).toBeTruthy();
   });
 });
 
@@ -353,9 +353,9 @@ describe("Insights: trends, weekdays and calendar", () => {
     expect(screen.getByTestId("trend-revenue")).toBeTruthy();
     expect(server.of("trends")[0].params).toMatchObject({ start_date: "2026-10-19", end_date: "2026-11-01", interval: "day" });
     expect(screen.getByRole("img", { name: /^Deliveries from Oct 19 to Nov 1: 10 of 14 periods have records/ })).toBeTruthy();
-    expect(screen.getByRole("img", { name: /^Revenue and gross margin/ })).toBeTruthy();
+    expect(screen.getByRole("img", { name: /^Delivery revenue and delivery margin/ })).toBeTruthy();
     expect(document.querySelectorAll("[data-testid='trend-revenue'] .recharts-line").length).toBe(2);
-    expect(screen.getByRole("list", { name: "Legend" }).textContent).toContain("Gross margin");
+    expect(screen.getByRole("list", { name: "Legend" }).textContent).toContain("Delivery margin");
     expect(await screen.findByTestId("weekday-busiest")).toHaveProperty("textContent", "Busiest weekday: Saturday");
     expect(document.querySelectorAll("[data-testid='weekday-title'], .recharts-bar-rectangle").length).toBeGreaterThan(0);
     // a short period asked for the daily trend once, and the calendar reuses it
@@ -461,5 +461,64 @@ describe("Insights: trends, weekdays and calendar", () => {
     expect(await screen.findByRole("status", { name: "Loading trends" })).toBeTruthy();
     await screen.findByTestId("trend-deliveries");
     expect(server.of("trends").at(-1).params.city_ids).toBe("4");
+  });
+});
+
+describe("Insights: revenue from the carrier statement (#252)", () => {
+  const carrier = (extra = {}) => overview({
+    deliveryRevenue: "6000.00", driverEarnings: "5100.00", deliveryMargin: "900.00", driverEarningsAfterInsurance: "5000.08", unallocatedRevenue: null,
+    revenueBasis: "statement", revenueIsEstimated: false, recordsByBasis: { statement: 20, recorded: 10, estimated: 0, unallocatedGroups: 0 },
+    settlement: { statements: 2, deliveryRevenue: "5990.00", carrierClaims: "-100.00", ledgerAdjustments: "-50.00", payable: "5840.00", basis: "By billing week" }, ...extra,
+  });
+
+  it("shows delivery revenue, driver earnings, delivery margin and the GOFO settlement payable as separate figures", async () => {
+    await startServer({ overview: () => ({ status: 200, data: carrier() }) });
+    await mount();
+    expect(within(await screen.findByTestId("kpi-revenue")).getByText("$6,000.00")).toBeTruthy();
+    expect(within(screen.getByTestId("kpi-revenue")).getByText("Delivery revenue")).toBeTruthy();
+    expect(within(screen.getByTestId("kpi-revenue")).getByTestId("revenue-basis").textContent).toMatch(/what the carrier billed/i);
+    expect(screen.queryByTestId("estimated-badge")).toBeNull();
+    expect(within(screen.getByTestId("kpi-driver-earnings")).getByText("$5,100.00")).toBeTruthy();
+    expect(within(screen.getByTestId("kpi-driver-earnings")).getByTestId("driver-earnings-net").textContent).toBe("$5,000.08 after insurance withholding.");
+    expect(within(screen.getByTestId("kpi-margin")).getByText("$900.00")).toBeTruthy();
+    const settlement = screen.getByTestId("kpi-settlement");
+    expect(within(settlement).getByText("GOFO settlement payable")).toBeTruthy();
+    expect(within(settlement).getByText("$5,840.00")).toBeTruthy();
+    expect(within(within(settlement).getByTestId("settlement-lines")).getAllByText(/\$/).map((n) => n.textContent)).toEqual(["$5,990.00", "-$100.00", "-$50.00"]);
+    expect(within(settlement).getByText(/By billing week, 2 statements/)).toBeTruthy();
+  });
+
+  it("marks revenue and margin Estimated, in words, when weekly records have no verified statement", async () => {
+    await startServer({ overview: () => ({ status: 200, data: carrier({ revenueBasis: "mixed", revenueIsEstimated: true, recordsByBasis: { statement: 5, recorded: 0, estimated: 3, unallocatedGroups: 0 }, settlement: null }) }) });
+    await mount();
+    await screen.findByTestId("kpi-revenue");
+    expect(within(screen.getByTestId("kpi-revenue")).getByTestId("estimated-badge").textContent).toBe("Estimated");
+    expect(within(screen.getByTestId("kpi-margin")).getByTestId("estimated-badge").textContent).toBe("Estimated");
+    expect(within(screen.getByTestId("kpi-revenue")).getByTestId("revenue-basis").textContent).toMatch(/Includes 3 weekly records with no verified carrier statement/);
+    expect(screen.queryByTestId("kpi-settlement")).toBeNull();
+  });
+
+  it("shows unallocated carrier revenue apart, inside the revenue card", async () => {
+    await startServer({ overview: () => ({ status: 200, data: carrier({ unallocatedRevenue: "230.00" }) }) });
+    await mount();
+    expect((await screen.findByTestId("unallocated-revenue")).textContent).toBe("Includes $230.00 of carrier revenue that matched no driver (unallocated).");
+  });
+
+  it("still shows an older server's figures under the new names", async () => {
+    await startServer();
+    await mount();
+    expect(within(await screen.findByTestId("kpi-revenue")).getByText("$6,000.00")).toBeTruthy();
+    expect(within(screen.getByTestId("kpi-driver-earnings")).getByText("$5,100.00")).toBeTruthy();
+    expect(screen.queryByTestId("estimated-badge")).toBeNull();
+    expect(screen.queryByTestId("kpi-settlement")).toBeNull();
+  });
+
+  it("says in the ranking and the trend table which cities and periods are estimates", async () => {
+    await startServer({
+      "rankings/cities": () => ({ status: 200, data: ranking([{ ...ROWS[0], revenueIsEstimated: true }, { ...ROWS[1], unallocatedRevenue: "12.00" }]) }),
+    });
+    await mount();
+    expect((await screen.findByText(/Estimated: some weekly records have no verified carrier statement/))).toBeTruthy();
+    expect(screen.getByText(/includes \$12\.00 unallocated carrier revenue/)).toBeTruthy();
   });
 });
