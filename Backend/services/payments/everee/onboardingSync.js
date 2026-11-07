@@ -2,6 +2,8 @@ import { readEvereeConfig, driverOnboardingGate } from './evereeConfig.js';
 import { createEvereeClient, EvereeError } from './evereeClient.js';
 import { recoverOnboarding } from './driverOnboarding.js';
 
+const ABSENT_MAX_SECONDS = 6 * 3600; // the longest wait between two looks at a worker Everee does not know
+
 // Bounded, read-only provider reconciliation. A session lock serializes all server instances;
 // retry timing survives restarts. No session URL, profile, worker create or payment is issued here.
 export const syncOnboarding = async (pool, deps = {}) => {
@@ -50,11 +52,17 @@ export const syncOnboarding = async (pool, deps = {}) => {
     let checked = 0;
     for (const row of rows) {
       if (pause !== null || Date.now() - started > 35000) break;
-      let failed = false;
-      try { failed = (await recoverOnboarding(pool, row.driver_id, { env, client })).outcome === 'unavailable'; }
-      catch { failed = true; } // no provider payload or personal details in logs/state
-      const failures = failed ? Math.min(row.failures + 1, 10) : 0;
-      const wait = pause ?? (failed ? Math.min(3600, 60 * 2 ** failures) + Math.floor(Math.random() * 30) : 300);
+      let outcome;
+      try { outcome = (await recoverOnboarding(pool, row.driver_id, { env, client })).outcome; }
+      catch { outcome = 'unavailable'; } // no provider payload or personal details in logs/state
+      const failed = outcome === 'unavailable';
+      // A worker Everee does not know (the driver pressed Start and never came back) is asked about less and less often, so it cannot keep using the quota.
+      const absent = outcome === 'not_found';
+      const failures = failed || absent ? Math.min(row.failures + 1, 10) : 0;
+      let wait = 300;
+      if (failed) wait = Math.min(3600, 60 * 2 ** failures) + Math.floor(Math.random() * 30);
+      else if (absent) wait = Math.min(ABSENT_MAX_SECONDS, 300 * 2 ** failures);
+      if (pause !== null) wait = pause;
       await db.query(`UPDATE everee_onboarding_sync SET attempted_at = now(), failures = $4,
         next_check_at = now() + make_interval(secs => $5) WHERE driver_id = $1 AND environment = $2 AND tenant_id = $3`, [row.driver_id, config.environment, config.tenantId, failures, wait]);
       checked += 1;
