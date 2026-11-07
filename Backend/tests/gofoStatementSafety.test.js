@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { deflateRawSync } from 'node:zlib';
 import { StatementError } from '../services/finance/gofoStatement/statementMoney.js';
 import { assertSafeWorkbook } from '../services/finance/gofoStatement/workbookSafety.js';
 import { readStatementWorkbook } from '../services/finance/gofoStatement/readStatementWorkbook.js';
@@ -21,7 +22,7 @@ test('a zip that declares far too much data, or an absurd compression ratio, or 
   assert.throws(() => assertSafeWorkbook(huge), (e) => e instanceof StatementError && /inflate to too much data/.test(e.message));
 
   const ratio = Buffer.from(await statementWorkbook());
-  ratio.writeUInt32LE(150 * 1024 * 1024, firstEntryOf(ratio) + 24); // under the size cap, but a thousand times its compressed size
+  ratio.writeUInt32LE(90 * 1024 * 1024, firstEntryOf(ratio) + 24); // under the size cap, but a thousand times its compressed size
   assert.throws(() => assertSafeWorkbook(ratio), (e) => /compression ratio/.test(e.message));
 
   const many = Buffer.from(await statementWorkbook());
@@ -40,4 +41,32 @@ test('something that is not a complete zip is refused, and the reader refuses a 
   const huge = Buffer.from(await statementWorkbook());
   huge.writeUInt32LE(0xf0000000, firstEntryOf(huge) + 24);
   await assert.rejects(() => readStatementWorkbook(huge), StatementError);
+});
+
+// A zip built by hand whose directory UNDERSTATES a part: it declares a few bytes but the part really inflates to 120 MB of zeros.
+const lyingZip = (declared) => {
+  const data = deflateRawSync(Buffer.alloc(120 * 1024 * 1024));
+  const name = Buffer.from('xl/worksheets/sheet1.xml');
+  const local = Buffer.alloc(30);
+  local.writeUInt32LE(0x04034b50, 0); local.writeUInt16LE(20, 4); local.writeUInt16LE(8, 8); local.writeUInt32LE(data.length, 18); local.writeUInt32LE(declared, 22); local.writeUInt16LE(name.length, 26);
+  const central = Buffer.alloc(46);
+  central.writeUInt32LE(0x02014b50, 0); central.writeUInt16LE(20, 4); central.writeUInt16LE(20, 6); central.writeUInt16LE(8, 10);
+  central.writeUInt32LE(data.length, 20); central.writeUInt32LE(declared, 24); central.writeUInt16LE(name.length, 28); central.writeUInt32LE(0, 42);
+  const end = Buffer.alloc(22);
+  const directoryAt = local.length + name.length + data.length;
+  end.writeUInt32LE(0x06054b50, 0); end.writeUInt16LE(1, 8); end.writeUInt16LE(1, 10); end.writeUInt32LE(central.length + name.length, 12); end.writeUInt32LE(directoryAt, 16);
+  return Buffer.concat([local, name, data, central, name, end]);
+};
+
+test('a part that really inflates to far more than its directory declares is refused, so the declared sizes cannot be used to hide a zip bomb', () => {
+  assert.throws(() => assertSafeWorkbook(lyingZip(1000)), (e) => e instanceof StatementError && /inflates to more than it declares/.test(e.message));
+  // Even a directory that declares the huge size honestly is refused for being too big, without relying on the declaration alone.
+  assert.throws(() => assertSafeWorkbook(lyingZip(120 * 1024 * 1024)), (e) => /too much data/.test(e.message));
+});
+
+test('a part whose real size differs from its declared size is refused', async () => {
+  const file = Buffer.from(await statementWorkbook());
+  const entry = firstEntryOf(file);
+  file.writeUInt32LE(file.readUInt32LE(entry + 24) + 1, entry + 24); // declares one byte more than the part really holds
+  assert.throws(() => assertSafeWorkbook(file), (e) => /not the size its directory says/.test(e.message));
 });
