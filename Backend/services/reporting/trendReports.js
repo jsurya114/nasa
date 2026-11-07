@@ -3,6 +3,7 @@
  * dates, the record's route city, the Dashboard's city rule, stored amounts, missing amounts left out of money and disclosed.
  */
 import { InputError, addDays, centsToText, toCents } from './inputs.js';
+import { REVENUE_AGGREGATES, unallocatedByBucket } from './revenueSql.js';
 
 const FACTS = 'reporting.delivery_facts f';
 const SCOPE = 'f.business_date BETWEEN $1::date AND $2::date AND f.counts_for_city AND ($3::int[] IS NULL OR f.city_id = ANY($3::int[]))';
@@ -33,11 +34,9 @@ export async function deliveryTrends(db, { period, cityIds, interval }) {
     `SELECT to_char(date_trunc($4::text, f.business_date)::date, 'YYYY-MM-DD') AS bucket_start,
             (COALESCE(sum(f.delivered), 0))::bigint AS deliveries,
             (count(*))::int AS records,
-            (count(*) FILTER (WHERE f.amounts_complete))::int AS records_with_amounts,
             (count(DISTINCT f.business_date))::int AS days_with_records,
             (count(DISTINCT f.driver_id) FILTER (WHERE f.delivered > 0))::int AS active_drivers,
-            (COALESCE(sum(f.gross_driver_earnings) FILTER (WHERE f.amounts_complete), 0))::${MONEY} AS driver_earnings,
-            (COALESCE(sum(f.company_margin) FILTER (WHERE f.amounts_complete), 0))::${MONEY} AS margin
+            ${REVENUE_AGGREGATES}
        FROM ${FACTS} WHERE ${SCOPE}
       GROUP BY 1 ORDER BY 1`,
     [...params, interval]
@@ -53,21 +52,32 @@ export async function deliveryTrends(db, { period, cityIds, interval }) {
        FROM ${FACTS} WHERE f.counts_for_city AND ($1::int[] IS NULL OR f.city_id = ANY($1::int[]))`, [cityIds]);
   const { firstDate, lastDate } = { firstDate: bounds[0].first_date, lastDate: bounds[0].last_date };
 
+  // Carrier money that matched no record belongs to the carrier's signing day, so it lands in that day's bucket (shared definition: revenueSql.js).
+  const unallocated = await unallocatedByBucket(db, period, cityIds, null, interval);
+  const known = new Set(series.map((r) => r.bucket_start));
+  for (const key of unallocated.keys()) {
+    if (!known.has(key)) series.push({ bucket_start: key, deliveries: 0, records: 0, days_with_records: 0, active_drivers: 0, records_with_revenue: 0, records_with_amounts: 0, records_estimated: 0, revenue: '0', margin: '0', driver_earnings: '0' });
+  }
+  series.sort((a, b) => (a.bucket_start < b.bucket_start ? -1 : 1));
   const points = series.map((r) => {
     const start = r.bucket_start;
     const end = bucketEnd(interval, start);
     const from = start < period.startDate ? period.startDate : start;
     const to = end > period.endDate ? period.endDate : end;
-    const withAmounts = r.records_with_amounts > 0;
-    const driver = toCents(r.driver_earnings);
-    const margin = toCents(r.margin);
+    const extra = unallocated.get(start);
+    const hasRevenue = r.records_with_revenue > 0 || extra !== undefined;
     return {
       bucketStart: start, bucketEnd: end,
       deliveries: Number(r.deliveries),
-      earnedDeliveryRevenue: withAmounts ? centsToText(driver + margin) : null,
-      grossMarginBeforeOverheads: withAmounts ? centsToText(margin) : null,
+      earnedDeliveryRevenue: hasRevenue ? centsToText(toCents(r.revenue) + (extra ?? 0n)) : null,
+      grossMarginBeforeOverheads: hasRevenue ? centsToText(toCents(r.margin) + (extra ?? 0n)) : null,
+      deliveryRevenue: hasRevenue ? centsToText(toCents(r.revenue) + (extra ?? 0n)) : null,
+      driverEarnings: r.records_with_amounts > 0 ? centsToText(toCents(r.driver_earnings)) : null,
+      deliveryMargin: hasRevenue ? centsToText(toCents(r.margin) + (extra ?? 0n)) : null,
+      unallocatedRevenue: extra === undefined ? null : centsToText(extra),
+      revenueIsEstimated: r.records_estimated > 0,
       activeDrivers: r.active_drivers,
-      recordsWithoutStoredAmounts: r.records - r.records_with_amounts,
+      recordsWithoutStoredAmounts: r.records - r.records_with_revenue,
       daysWithRecords: r.days_with_records,
       daysInBucketWithinPeriod: daysBetween(from, to),
       partialBucket: start < period.startDate || end > period.endDate,
@@ -97,6 +107,8 @@ export async function deliveryTrends(db, { period, cityIds, interval }) {
     if (partial > 0) warnings.push(`${partial} ${interval}${partial === 1 ? '' : 's'} at the edge of the period ${partial === 1 ? 'is' : 'are'} only partly inside it (partialBucket); compare them with care.`);
     const open = points.reduce((n, p) => n + p.recordsWithoutStoredAmounts, 0);
     if (open > 0) warnings.push(`${open} record${open === 1 ? ' has' : 's have'} no stored amounts yet: revenue and margin leave them out, deliveries include them.`);
+    const estimated = points.filter((p) => p.revenueIsEstimated).length;
+    if (estimated > 0) warnings.push(`${estimated} ${interval}${estimated === 1 ? '' : 's'} include weekly records in a week with no verified carrier statement: their revenue and margin are ESTIMATES from the route price fields, not what the carrier billed.`);
     warnings.push('Weekday averages are over days that have records, so a weekday NASA does not work shows no average rather than zero.');
   }
   return {

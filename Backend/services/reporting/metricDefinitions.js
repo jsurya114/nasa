@@ -6,7 +6,7 @@
  * These definitions describe rules that already exist. They do not change how anything is calculated or paid.
  */
 
-export const DEFINITIONS_VERSION = '2026-11-06';
+export const DEFINITIONS_VERSION = '2026-11-08';
 export const CURRENCY = 'USD';
 
 export const METRIC_DEFINITIONS = Object.freeze([
@@ -23,41 +23,71 @@ export const METRIC_DEFINITIONS = Object.freeze([
   },
   {
     id: 'gross_driver_earnings',
-    label: 'Gross driver earnings',
+    label: 'Driver earnings',
     unit: CURRENCY,
-    definition: 'The stored driver payment on the same rows, before advances, insurance withholding, claims or debt recovery.',
-    caveats: [],
+    definition: 'NASA\'s stored gross driver earnings on the same records, before advances, insurance withholding, claims or debt recovery. Never the carrier\'s figure and never recalculated for a period that is already settled.',
+    caveats: ['Net driver payouts are shown apart from gross: insurance withholding is subtracted for "driver earnings after insurance". Claim recoveries and advances are settled in Payroll and are not included.'],
   },
   {
-    id: 'company_margin',
-    label: 'Company margin',
+    id: 'delivery_revenue',
+    label: 'Delivery revenue',
     unit: CURRENCY,
-    definition: 'The stored company earnings on the same rows: the company price minus the driver price, per delivery, as calculated when the row was stored.',
-    caveats: ['This is the margin left after gross driver earnings. It is not total revenue.'],
+    definition: 'What the company earned from deliveries. Weekly GOFO: the carrier\'s billed delivery fees after offsets, from a published and reconciled carrier statement, matched to NASA\'s records by Delivery ID, signing day and route. Daily SpeedX: the stored driver earnings plus the stored company earnings. Carrier money that matched no NASA record is included as unallocated revenue of its city.',
+    caveats: [
+      'Revenue is the carrier\'s billed amount, not proof that the carrier has paid NASA.',
+      'A weekly record in a week with no verified carrier statement keeps the old price-based figure and is labelled ESTIMATED; it is not what the carrier billed.',
+      'A record with no usable amounts is disclosed in the warnings and is never treated as zero revenue.',
+      'Trends use the carrier\'s signing day. Settlement uses the billing week.',
+      'Historical rows keep the amounts stored at the time. Nothing is recalculated from today\'s route rates.',
+    ],
   },
   {
     id: 'earned_delivery_revenue',
     label: 'Earned delivery revenue',
     unit: CURRENCY,
-    definition: 'Gross driver earnings plus company margin, from exactly the same rows.',
-    caveats: [
-      'Only records with both amounts stored are included. A record with no stored amounts is disclosed in the warnings and is never treated as zero revenue.',
-      'Revenue earned from deliveries. It is not proof that the carrier has paid NASA.',
-      'Historical rows keep the amounts stored at the time. Nothing is recalculated from today\'s route rates.',
-    ],
+    definition: 'The older name of delivery revenue. The same figure.',
+    caveats: ['See delivery revenue.'],
+  },
+  {
+    id: 'delivery_margin',
+    label: 'Delivery margin',
+    unit: CURRENCY,
+    definition: 'Delivery revenue minus driver earnings, before carrier claims and ledger adjustments, insurance and overheads.',
+    caveats: ['This is the margin left after driver earnings. It is not total revenue.', 'Gross profit before overheads. Not net profit. Carrier claims and ledger adjustments are shown with the settlement, not inside this margin.'],
+  },
+  {
+    id: 'company_margin',
+    label: 'Company margin',
+    unit: CURRENCY,
+    definition: 'The older name of delivery margin. The same figure.',
+    caveats: ['This is the margin left after driver earnings. It is not total revenue.'],
+  },
+  {
+    id: 'unallocated_revenue',
+    label: 'Unallocated carrier revenue',
+    unit: CURRENCY,
+    definition: 'Carrier-billed revenue on a verified statement that matched no NASA delivery record (no route, an unknown route or driver, or no recorded work for that driver, day and route). It is kept, attributed to the statement\'s city and the carrier\'s signing day, and never forced onto a driver.',
+    caveats: ['It has no driver earnings and no delivery count. It is included in revenue and margin, and shown apart.'],
+  },
+  {
+    id: 'gofo_settlement_payable',
+    label: 'GOFO settlement payable',
+    unit: CURRENCY,
+    definition: 'By billing week, from the carrier statement: delivery revenue plus carrier claims plus ledger adjustments. Prepayments to driver accounts and withdrawal fees are separate and not included.',
+    caveats: ['Counted in the period that holds the last day of the statement\'s billing week. Carrier debits (claims, adjustments) are kept apart from driver recoveries and insurance withholding.'],
   },
   {
     id: 'gross_margin',
     label: 'Gross profit before overheads',
     unit: CURRENCY,
-    definition: 'Company margin. Overheads and operating costs are not recorded in NASA.',
+    definition: 'Delivery margin. Overheads and operating costs are not recorded in NASA.',
     caveats: ['Not net profit. Do not describe it as net profit.'],
   },
   {
     id: 'margin_percentage',
     label: 'Margin percentage',
     unit: 'percent',
-    definition: 'Company margin divided by earned delivery revenue.',
+    definition: 'Delivery margin divided by delivery revenue.',
     caveats: ['Not available (N/A) when revenue is zero.'],
   },
   {
