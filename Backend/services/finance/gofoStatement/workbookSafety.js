@@ -28,10 +28,15 @@ export const assertSafeWorkbook = (buffer) => {
     if (buffer.readUInt32LE(at) === END_OF_DIRECTORY) { end = at; break; }
   }
   if (end < 0) refuse('it is not a complete zip');
+  // The end record must be consistent with itself and with the directory it points at, so no record can hide behind a smaller count.
+  const entriesOnDisk = buffer.readUInt16LE(end + 8);
   const entries = buffer.readUInt16LE(end + 10);
+  const directoryBytes = buffer.readUInt32LE(end + 12);
   const offset = buffer.readUInt32LE(end + 16);
-  if (entries === 0xffff || offset === 0xffffffff) refuse('zip64 files are not accepted');
+  if (entries === 0xffff || directoryBytes === 0xffffffff || offset === 0xffffffff) refuse('zip64 files are not accepted');
   if (entries === 0 || entries > MAX_ENTRIES) refuse(`${entries} parts`);
+  if (entriesOnDisk !== entries) refuse('it is split over several disks');
+  if (offset + directoryBytes !== end) refuse('its directory does not end where the file says');
   const parts = [];
   let compressed = 0;
   let inflated = 0;
@@ -44,6 +49,7 @@ export const assertSafeWorkbook = (buffer) => {
     parts.push(part);
     at += 46 + buffer.readUInt16LE(at + 28) + buffer.readUInt16LE(at + 30) + buffer.readUInt16LE(at + 32);
   }
+  if (at !== end) refuse('its directory holds a different number of parts than it says');
   if (inflated > MAX_UNCOMPRESSED_BYTES) refuse('it would inflate to too much data');
   if (compressed > 0 && inflated / compressed > MAX_RATIO) refuse('its compression ratio is far beyond a spreadsheet');
 

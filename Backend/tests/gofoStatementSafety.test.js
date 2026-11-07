@@ -70,3 +70,18 @@ test('a part whose real size differs from its declared size is refused', async (
   file.writeUInt32LE(file.readUInt32LE(entry + 24) + 1, entry + 24); // declares one byte more than the part really holds
   assert.throws(() => assertSafeWorkbook(file), (e) => /not the size its directory says/.test(e.message));
 });
+
+test('a directory cannot hide parts behind a smaller count, a wrong size or a split archive', async () => {
+  const hidden = Buffer.from(await statementWorkbook());
+  hidden.writeUInt16LE(1, endOf(hidden) + 8);
+  hidden.writeUInt16LE(1, endOf(hidden) + 10); // says one part; the directory really holds more
+  assert.throws(() => assertSafeWorkbook(hidden), (e) => /different number of parts/.test(e.message));
+
+  const split = Buffer.from(await statementWorkbook());
+  split.writeUInt16LE(split.readUInt16LE(endOf(split) + 10) - 1, endOf(split) + 8);
+  assert.throws(() => assertSafeWorkbook(split), (e) => /several disks/.test(e.message));
+
+  const short = Buffer.from(await statementWorkbook());
+  short.writeUInt32LE(short.readUInt32LE(endOf(short) + 12) - 10, endOf(short) + 12);
+  assert.throws(() => assertSafeWorkbook(short), (e) => /does not end where the file says/.test(e.message));
+});
