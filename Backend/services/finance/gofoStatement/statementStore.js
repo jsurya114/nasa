@@ -173,3 +173,22 @@ export const rematchOpenGroups = async (db, { statementId = null, cityId = null 
   );
   return rows.length;
 };
+
+const REASON = Object.freeze({
+  no_route: 'The carrier gave no route',
+  unknown_route: 'The route is not set up in NASA',
+  unknown_driver: 'No NASA driver has this Delivery ID',
+  no_pay_group: 'NASA has no recorded work for this driver, day and route',
+});
+
+// The unmatched money of one statement, largest first, so the owner can see what is unallocated and why.
+export const listUnallocated = async (db, statementId, { limit = 200 } = {}) => {
+  const { rows } = await db.query(
+    `SELECT g.delivery_id, to_char(g.signed_on, 'YYYY-MM-DD') AS day, g.route_code, g.match_state, g.fee_cents, g.fee_lines, g.offset_lines
+       FROM carrier_statement_groups g
+      WHERE g.statement_id = $1 AND g.match_state <> 'matched'
+      ORDER BY abs(g.fee_cents) DESC, g.signed_on, g.delivery_id, g.route_code LIMIT $2`,
+    [statementId, limit]
+  );
+  return rows.map((r) => ({ deliveryId: r.delivery_id, day: r.day, route: r.route_code || null, state: r.match_state, reason: REASON[r.match_state], revenue: centsToText(Number(r.fee_cents)), lines: r.fee_lines, offsets: r.offset_lines }));
+};
