@@ -1,7 +1,7 @@
 // A driver's own Everee transfers (issue #242, PR D1): what NASA sent to Everee for this driver and where each one stands, from NASA's own records.
 // It is a read, scoped to the driver in the token, and it never asks Everee anything. It shows only what NASA verified itself:
-//  - "completed" only when NASA marked the payment paid, which happens only when Everee's payout records say PAID (never from a screen event or a
-//    top-level payment status);
+//  - "completed" only when NASA marked the payment paid, which happens only when Everee's payout records say PAID (never from a screen event); in the
+//    sandbox only, Everee's payment-level PAID counts too (see paymentState.countsAsLanded);
 //  - "pending" while the payment is with Everee and not settled; "unconfirmed" and "failed" are kept apart from it; "returned" is a deposit a bank sent back.
 // Amounts are exact decimal strings. These are TRANSFERS: they are not new earnings and not extra money. They pay the approved statement they point to, and
 // cash receipts are not listed here.
