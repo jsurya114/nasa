@@ -19,7 +19,7 @@ export default function DataStatus({ report }) {
       </p>
       <p className="flex gap-2 text-sm text-ink-muted">
         <Info className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
-        <span>Figures are the amounts stored when each record was calculated. Gross profit before overheads is the company margin after driver earnings: no overheads or operating costs are recorded, so it is not net profit. Revenue is earned from deliveries, not cash received from the carrier.</span>
+        <span>Delivery revenue for weekly GOFO is what the carrier billed on its verified statements; daily figures are the amounts stored when each record was calculated, and weekly records without a verified statement are marked estimated. Delivery margin is delivery revenue minus driver earnings: no overheads or operating costs are recorded, so it is not net profit. Revenue is earned from deliveries, not cash received from the carrier.</span>
       </p>
       {warnings.length > 0 && (
         <details className="rounded-xl border border-line bg-brand-50/50 p-3">
