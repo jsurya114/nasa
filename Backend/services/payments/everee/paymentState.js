@@ -53,6 +53,14 @@ export const readPayoutState = (body) => {
   return { state, netCents, payDate, workerId, paymentPaid };
 };
 
+// Sandbox only: a worker's payment may hold payables from other sends too (the same week sent from another NASA database), so its total can be more
+// than this item. Our own payable decides instead: it must be PAID, inside this very payment, for exactly the amount NASA sent.
+export const ownPayableIsPaidInPayment = (environment, data, { paymentId, amount }) => {
+  if (environment !== 'sandbox') return false;
+  const own = readPayable(data);
+  return own.paymentStatus === 'PAID' && own.paymentId !== null && own.paymentId === String(paymentId) && amountCents(data?.amount) === toCents(amount);
+};
+
 // Sandbox only: Everee's sandbox sends no money and its bank payouts may never settle, so a payment whose own status is PAID counts as the bank
 // transfer complete there. In production only the payouts decide, and a returned payout is never covered by this.
 export const countsAsLanded = (environment, payout) => payout.state === 'landed'

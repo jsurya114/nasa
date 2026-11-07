@@ -7,7 +7,7 @@ import { readEvereeConfig } from './evereeConfig.js';
 import { createEvereeClient, EvereeError } from './evereeClient.js';
 import { DEFAULT_TIME_ZONE } from './payableRules.js';
 import { clip, defaultSleep, inTransaction, recordPayableStatus, withRateLimitRetry } from './batchSubmit.js';
-import { countsAsLanded, isPaymentId, readPayable, readPayoutState } from './paymentState.js';
+import { countsAsLanded, isPaymentId, ownPayableIsPaidInPayment, readPayable, readPayoutState } from './paymentState.js';
 
 // Reading payments back from Everee (issue #31, part 5). The only place where an Everee item becomes "paid", and it happens only when
 // Everee's Payment Data API says EVERY payout of the payment is PAID (money deposited), never because we sent something or an event said so.
@@ -101,6 +101,17 @@ const findPaymentData = async (client, payDate, paymentId, deps) => {
     after = data.nextCursor;
   }
   return null;
+};
+
+// Sandbox only (see ownPayableIsPaidInPayment): reads our own payable; any problem reading it means "not verified", so the item is left for a person.
+const ownPayableIsPaid = async (client, item, paymentId, deps) => {
+  if (item.environment !== 'sandbox') return false;
+  try {
+    const { data } = await withRateLimitRetry(() => client.getPayable(item.external_id), deps);
+    return ownPayableIsPaidInPayment(item.environment, data, { paymentId, amount: item.amount });
+  } catch {
+    return false;
+  }
 };
 
 // Looks again at one item. Never throws for an Everee problem: it is written as a note and the item keeps its status.
@@ -207,7 +218,7 @@ export const reconcileItem = async (db, itemId, deps = {}, client) => {
   // The amount, when Everee states it, must be exactly what this item froze (a worker's payment may hold only our item or several).
   if (payout.netCents !== null && payout.netCents !== toCents(item.amount)) {
     const { rows: [sum] } = await db.query('SELECT COALESCE(SUM(amount), 0)::text AS total FROM everee_payment_items WHERE everee_payment_id = $1', [paymentId]);
-    if (payout.netCents !== toCents(sum.total)) {
+    if (payout.netCents !== toCents(sum.total) && !(await ownPayableIsPaid(client, item, paymentId, deps))) {
       await note(db, item.id, `Everee paid ${fromCents(payout.netCents)} for this payment but ${sum.total} was sent. It is not marked paid; check it in Everee.`);
       return 'amount_differs';
     }

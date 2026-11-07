@@ -12,6 +12,11 @@ never saw "Completed". On the owner's instruction, in the SANDBOX only, a paymen
 the bank transfer complete. The scheduled check and the webhook-prompted check mark the item and statement paid, and the driver's transfer list shows
 "Completed" without any further change.
 
+Second part, same sandbox-only scope: a worker's Everee payment can hold payables from other sends of the same week (the same pay run sent from another
+NASA database to the shared sandbox company), so its total is larger than NASA's item and the amount check refused it. In the sandbox NASA now reads its own
+payable (`ownPayableIsPaidInPayment`): it must be `PAID`, inside this very payment, for exactly the amount NASA sent. Then the item is paid for NASA's amount
+only. Any problem reading the payable, a different amount or another payment still leaves the item unpaid. Production is unchanged and keeps refusing.
+
 What stays the same:
 - Production: only the payouts decide (every payout `PAID`). The new rule is `countsAsLanded(environment, payout)` in `paymentState.js` and is false for
   `production`.
@@ -32,7 +37,9 @@ None in production. In the sandbox, statements of sandbox batches can now become
 
 ## Tested
 
-- `evereePaymentState.test.js`: the rule (sandbox yes, production no, returned never, unknown never).
+- `evereePaymentState.test.js`: the rule (sandbox yes, production no, returned never, unknown never) and the own-payable check (production no, not paid, other
+  payment, other amount, no amount all refused).
+- `evereePaymentStatus.test.js`: a payment holding two sends is refused until our payable is PAID inside it for our amount, then only our amount is paid.
 - `evereePaymentStatus.test.js` (database test, rolled back): the sandbox scenarios that asserted "PAID payment with a pending payout is not paid" now
   assert the new behaviour; a payment whose own status is `PENDING` is still not paid; `evereeDriverTransfers` and `evereeWebhook` pass.
 

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { countsAsLanded, readPayable, readPayoutState } from '../services/payments/everee/paymentState.js';
+import { countsAsLanded, ownPayableIsPaidInPayment, readPayable, readPayoutState } from '../services/payments/everee/paymentState.js';
 
 test('a payment has landed only when EVERY payout is PAID', () => {
   const state = (netPayouts, extra = {}) => readPayoutState({ paymentId: 'p1', netPayouts, ...extra });
@@ -53,4 +53,17 @@ test('the sandbox counts a payment whose own status is PAID as landed; productio
   assert.equal(countsAsLanded('sandbox', readPayoutState({ status: 'PAID' })), false, 'an answer not understood is never paid');
   assert.equal(countsAsLanded('production', read('PAID', 'PENDING')), false, 'production waits for the payouts');
   assert.equal(countsAsLanded('production', read('PAID', 'PAID')), true);
+});
+
+test('the sandbox trusts its own payable inside a larger payment; production and any mismatch never do', () => {
+  const own = (extra = {}) => ({ paymentStatus: 'PAID', paymentId: 29684089, amount: { amount: 402.59, currency: 'USD' }, ...extra });
+  const want = { paymentId: '29684089', amount: '402.59' };
+  assert.equal(ownPayableIsPaidInPayment('sandbox', own(), want), true);
+  assert.equal(ownPayableIsPaidInPayment('production', own(), want), false);
+  assert.equal(ownPayableIsPaidInPayment('sandbox', own({ paymentStatus: 'PENDING_PAYMENT' }), want), false, 'not paid');
+  assert.equal(ownPayableIsPaidInPayment('sandbox', own({ paymentId: 1 }), want), false, 'in another payment');
+  assert.equal(ownPayableIsPaidInPayment('sandbox', own({ paymentId: undefined }), want), false, 'no payment');
+  assert.equal(ownPayableIsPaidInPayment('sandbox', own({ amount: { amount: 805.18 } }), want), false, 'another amount');
+  assert.equal(ownPayableIsPaidInPayment('sandbox', own({ amount: undefined }), want), false, 'no amount');
+  assert.equal(ownPayableIsPaidInPayment('sandbox', null, want), false);
 });

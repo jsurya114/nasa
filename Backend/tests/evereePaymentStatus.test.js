@@ -525,6 +525,27 @@ test('everee payment status: only a payment that landed marks a statement paid',
       fakeN.state.payments['12345678'].status = 'PAID'; // sandbox: the payment's own PAID is the transfer complete
       assert.equal(await check(fakeN, iN.id), 'paid');
     });
+    await t.test('sandbox: a worker\'s payment that also holds another send of the same week is paid when our own payable is PAID inside it for our amount', async () => {
+      const scD = await scenario('DUP', [[dA, '100.00']]);
+      const fakeD = makeEveree();
+      await sent(scD, fakeD);
+      const iD = await item(scD, dA);
+      const twice = { workerId: workers[dA], status: 'PAID', totalNetPay: { amount: '200.00', currency: 'USD' },
+        netPayouts: [{ id: 'po-dup', type: 'DIRECT_DEPOSIT', date: PAY_DATE, status: 'PENDING', netAmount: { amount: '200.00', currency: 'USD' } }] };
+      fakeD.state.payments['pay-DUP'] = twice;
+      // our payable is not paid yet (or sits in another payment): the larger total is not explained, so nothing is paid
+      fakeD.state.payables[iD.external_id] = { externalId: iD.external_id, paymentStatus: 'PENDING_PAYMENT', paymentId: 'pay-DUP', amount: { amount: 100, currency: 'USD' } };
+      assert.equal(await check(fakeD, iD.id), 'amount_differs');
+      fakeD.state.payables[iD.external_id] = { externalId: iD.external_id, paymentStatus: 'PAID', paymentId: 'pay-OTHER', amount: { amount: 100, currency: 'USD' } };
+      assert.equal(await check(fakeD, iD.id), 'amount_differs');
+      fakeD.state.payables[iD.external_id] = { externalId: iD.external_id, paymentStatus: 'PAID', paymentId: 'pay-DUP', amount: { amount: 99, currency: 'USD' } };
+      assert.equal(await check(fakeD, iD.id), 'amount_differs', 'our payable must be for the amount NASA sent');
+      assert.deepEqual([(await item(scD, dA)).status, (await stmt(scD, dA)).payout_status], ['submitted', 'submitted']);
+      // our payable is PAID inside this payment for exactly our amount: paid, and only our statement's amount
+      fakeD.state.payables[iD.external_id] = { externalId: iD.external_id, paymentStatus: 'PAID', paymentId: 'pay-DUP', amount: { amount: 100, currency: 'USD' } };
+      assert.equal(await check(fakeD, iD.id), 'paid');
+      assert.deepEqual([(await item(scD, dA)).status, (await stmt(scD, dA)).payout_status, (await stmt(scD, dA)).net], ['paid', 'paid', '100.00']);
+    });
   } finally {
     await db.query('ROLLBACK');
     db.release();
