@@ -9,6 +9,7 @@
  * implementation later; the only difference is that every bucket of the period is present.
  */
 import { InputError, addDays, centsToText, toCents } from '../reporting/inputs.js';
+import { REVENUE_AGGREGATES, unallocatedByBucket } from '../reporting/revenueSql.js';
 
 export const INTERVALS = Object.freeze(['day', 'week', 'month']);
 export const MAX_DAY_BUCKETS = 366;
@@ -58,15 +59,18 @@ export async function trendSeries(db, { period, cityIds = null, source = null, i
     `SELECT to_char(date_trunc($5::text, f.business_date)::date, 'YYYY-MM-DD') AS bucket_start,
             (COALESCE(sum(f.delivered), 0))::bigint AS deliveries,
             (count(*))::int AS records,
-            (count(*) FILTER (WHERE f.amounts_complete))::int AS records_with_amounts,
             (count(DISTINCT f.business_date))::int AS days_with_records,
             (count(DISTINCT f.driver_id) FILTER (WHERE f.delivered > 0))::int AS active_drivers,
-            (COALESCE(sum(f.gross_driver_earnings) FILTER (WHERE f.amounts_complete), 0))::numeric(16,2) AS driver_earnings,
-            (COALESCE(sum(f.company_margin) FILTER (WHERE f.amounts_complete), 0))::numeric(16,2) AS margin
+            ${REVENUE_AGGREGATES}
        FROM ${FACTS} WHERE ${SCOPE} GROUP BY 1`,
     [...params, interval]
   );
+  // Carrier money that matched no record belongs to the carrier's signing day, so it lands in that day's bucket.
+  const unallocated = await unallocatedByBucket(db, period, cityIds, source, interval);
   const byStart = new Map(found.map((r) => [r.bucket_start, r]));
+  for (const key of unallocated.keys()) {
+    if (!byStart.has(key)) byStart.set(key, { bucket_start: key, deliveries: 0, records: 0, days_with_records: 0, active_drivers: 0, records_with_revenue: 0, records_with_amounts: 0, records_estimated: 0, revenue: '0', margin: '0', driver_earnings: '0' });
+  }
 
   const series = bucketStarts(interval, period.startDate, period.endDate).map((start) => {
     const end = bucketEndOf(interval, start);
@@ -74,19 +78,25 @@ export async function trendSeries(db, { period, cityIds = null, source = null, i
     const to = end > period.endDate ? period.endDate : end;
     const r = byStart.get(start);
     const base = { bucketStart: start, bucketEnd: end, partialBucket: start < period.startDate || end > period.endDate, daysInBucketWithinPeriod: daysBetween(from, to) };
-    if (!r) return { ...base, hasRecords: false, deliveries: null, earnedDeliveryRevenue: null, grossDriverEarnings: null, grossMarginBeforeOverheads: null, activeDrivers: null, daysWithRecords: 0, recordsWithoutStoredAmounts: 0 };
+    if (!r) return { ...base, hasRecords: false, deliveries: null, earnedDeliveryRevenue: null, grossDriverEarnings: null, grossMarginBeforeOverheads: null, deliveryRevenue: null, driverEarnings: null, deliveryMargin: null, unallocatedRevenue: null, revenueIsEstimated: false, activeDrivers: null, daysWithRecords: 0, recordsWithoutStoredAmounts: 0 };
+    const extra = unallocated.get(start);
+    const hasRevenue = r.records_with_revenue > 0 || extra !== undefined;
     const withAmounts = r.records_with_amounts > 0;
-    const driver = toCents(r.driver_earnings);
-    const margin = toCents(r.margin);
     return {
       ...base, hasRecords: true,
       deliveries: Number(r.deliveries),
-      earnedDeliveryRevenue: withAmounts ? centsToText(driver + margin) : null,
-      grossDriverEarnings: withAmounts ? centsToText(driver) : null,
-      grossMarginBeforeOverheads: withAmounts ? centsToText(margin) : null,
+      // The shared definition (reporting/revenueSql.js); the first three keep their older names for existing readers.
+      earnedDeliveryRevenue: hasRevenue ? centsToText(toCents(r.revenue) + (extra ?? 0n)) : null,
+      grossDriverEarnings: withAmounts ? centsToText(toCents(r.driver_earnings)) : null,
+      grossMarginBeforeOverheads: hasRevenue ? centsToText(toCents(r.margin) + (extra ?? 0n)) : null,
+      deliveryRevenue: hasRevenue ? centsToText(toCents(r.revenue) + (extra ?? 0n)) : null,
+      driverEarnings: withAmounts ? centsToText(toCents(r.driver_earnings)) : null,
+      deliveryMargin: hasRevenue ? centsToText(toCents(r.margin) + (extra ?? 0n)) : null,
+      unallocatedRevenue: extra === undefined ? null : centsToText(extra),
+      revenueIsEstimated: r.records_estimated > 0,
       activeDrivers: r.active_drivers,
       daysWithRecords: r.days_with_records,
-      recordsWithoutStoredAmounts: r.records - r.records_with_amounts,
+      recordsWithoutStoredAmounts: r.records - r.records_with_revenue,
     };
   });
 
@@ -125,6 +135,8 @@ export async function trendSeries(db, { period, cityIds = null, source = null, i
     if (partial > 0) warnings.push(`${partial} ${interval}${partial === 1 ? '' : 's'} at the edge of the period ${partial === 1 ? 'is' : 'are'} only partly inside it; compare ${partial === 1 ? 'it' : 'them'} with care.`);
     const open = withRecords.reduce((n, p) => n + p.recordsWithoutStoredAmounts, 0);
     if (open > 0) warnings.push(`${open} record${open === 1 ? ' has' : 's have'} no stored amounts yet: revenue and margin leave ${open === 1 ? 'it' : 'them'} out, deliveries include ${open === 1 ? 'it' : 'them'}.`);
+    const estimated = withRecords.filter((p) => p.revenueIsEstimated).length;
+    if (estimated > 0) warnings.push(`${estimated} ${interval}${estimated === 1 ? '' : 's'} include weekly records in a week with no verified carrier statement: their revenue and margin are ESTIMATES from the route price fields, not what the carrier billed.`);
     warnings.push('Weekday averages are over the days that have records, so a weekday NASA does not work shows no average rather than zero.');
   }
   return {
