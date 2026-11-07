@@ -455,3 +455,46 @@ export const refreshStatus = async (db, driverId, deps = {}) => {
     return { ...(await getStatus(db, driverId, deps)), refreshed: false, stale: true };
   }
 };
+
+// Background recovery only reads Everee. In particular, a missing worker NEVER causes a create: only the driver's explicit Start action can do that.
+export const recoverOnboarding = async (db, driverId, deps = {}) => {
+  const { config, driver } = await requireLocalDriver(db, driverId, deps);
+  if (!driver.agreement_signed) return { outcome: 'agreement_required' };
+  const link = await findLink(db, driverId, config);
+  if (link) {
+    if (link.tenant_id !== config.tenantId) return { outcome: 'needs_review' };
+    const result = await refreshStatus(db, driverId, deps);
+    return { outcome: result.refreshed ? result.state : 'unavailable' };
+  }
+  if (await wasUnlinked(db, driverId, config)) return { outcome: 'needs_review' };
+  const existing = await findRow(db, driverId, config);
+  if (!existing || !['creating', 'verifying', 'in_progress'].includes(existing.state)) return { outcome: 'unchanged' };
+  const { row, mine } = await claim(db, driverId, config);
+  if (!mine) return { outcome: 'busy' };
+  const client = deps.client ?? createEvereeClient(config);
+  try {
+    let worker;
+    try { ({ data: worker } = await client.getWorker(row.external_worker_id)); }
+    catch (error) {
+      if (!(error instanceof EvereeError) || error.status !== 404) throw error;
+      await release(db, row, { error: 'worker not visible yet; driver can retry setup' });
+      return { outcome: 'not_found' };
+    }
+    if (!worker?.id) {
+      await release(db, row, { error: 'worker details not visible yet' });
+      return { outcome: 'verifying' };
+    }
+    const resolved = await resolveWorkerId(client, row.external_worker_id);
+    if (!resolved.workerId) {
+      await release(db, row, resolved.ambiguous ? { state: 'needs_review', reason: 'ambiguous_worker_identity' } : {});
+      return { outcome: resolved.ambiguous ? 'needs_review' : 'verifying' };
+    }
+    const outcome = await saveLink(db, driverId, config, row, worker, resolved.workerId);
+    await record(db, driverId, 'reconciled', outcome);
+    return { outcome };
+  } catch (error) {
+    // Fixed wording only: provider errors can contain private profile details.
+    await release(db, row, { error: 'background verification could not complete' });
+    throw error;
+  }
+};

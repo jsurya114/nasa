@@ -16,6 +16,7 @@ import { notFound, errorHandler } from './middlewares/errorHandler.js';
 import rateLimit from './middlewares/rateLimit.js';
 import { trustProxyHops, assertTrustProxyConfigured } from './middlewares/loginRateLimit.js';
 import { initializeAvailabilityResetCron } from './utils/availabilityCronJob.js';
+import { initializeEvereeOnboardingJob } from './utils/evereeOnboardingJob.js';
 import { initializeEvereeStatusJob } from './utils/evereeStatusJob.js';
 import { assertAuthSecrets } from './services/jwtservice.js';
 import logger from './utils/logger.js';
@@ -62,6 +63,7 @@ app.use(rateLimit({ windowMs: 15 * 60 * 1000, max: 1000 }));
 
 initializeAvailabilityResetCron()
 initializeEvereeStatusJob()
+initializeEvereeOnboardingJob()
 
 // Before /admin so payroll requests are handled here and checked once.
 app.use('/admin/payroll', (req, _, next) => {
