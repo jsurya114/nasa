@@ -1,4 +1,6 @@
 import { getAllottedRoutes } from "../../services/admin/dashboardService.js";
+import pool from "../../config/db.js";
+import { companyRatesRetired } from "../../services/finance/companyRates.js";
 import {
   insertRoute,
   getAllRoutes,
@@ -54,6 +56,12 @@ export const createRoute = asyncHandler(async (req, res) => {
     route_code_in_string: routeCodeInString ? routeCodeInString.trim() : null,
     enabled: enabled || false,
   };
+
+  // A weekly city with a verified carrier statement takes its revenue from the statement: the company price fields are retired and stored as 0.
+  if (await companyRatesRetired(pool, job)) {
+    routeData.company_route_price = 0;
+    routeData.company_doublestop_price = 0;
+  }
 
   for (const [key, value] of Object.entries({
     company_route_price: routeData.company_route_price,
@@ -169,6 +177,12 @@ export const updateRoute = asyncHandler(async (req, res) => {
     route_code_in_string: routeCodeInString ? routeCodeInString.trim() : null,
     enabled: enabled || false,
   };
+
+  // A weekly city with a verified carrier statement takes its revenue from the statement: the company price fields are retired and stored as 0.
+  if (await companyRatesRetired(pool, job)) {
+    routeData.company_route_price = 0;
+    routeData.company_doublestop_price = 0;
+  }
 
   for (const [key, value] of Object.entries({
     company_route_price: routeData.company_route_price,

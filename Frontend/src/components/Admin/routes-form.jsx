@@ -10,6 +10,7 @@ import { fetchPaginatedJobs } from "../../redux/slice/admin/jobSlice";
 import Pagination from "../../reuse/Pagination.jsx";
 import SearchBar from "../../reuse/Search.jsx";
 import Modal from "../../reuse/Modal.jsx";
+import { CARRIER_STATEMENT_LABEL, companyPriceCell, companyRatesRetired, visiblePriceFields } from "./routeCompanyRates.js";
 
 const ROUTES_PER_PAGE = 10;
 
@@ -57,6 +58,9 @@ export default function RoutesForm() {
     }
     return [];
   }, [cities]);
+
+  // The chosen city decides whether the company price fields are shown (issue #252).
+  const formCity = useMemo(() => enabledJobs.find((city) => city.job === formData.job), [enabledJobs, formData.job]);
 
   // ✅ ENHANCED: Page change handler with city filter
   const handlePageChange = useCallback((newPage) => {
@@ -361,7 +365,7 @@ export default function RoutesForm() {
                           {route.job}
                         </span>
                       </td>
-                      <td className="px-3 py-2 border-b border-line">{route.companyRoutePrice}</td>
+                      <td className="px-3 py-2 border-b border-line">{companyPriceCell(route, enabledJobs.find((city) => city.job === route.job))}</td>
                       <td className="px-3 py-2 border-b border-line">{route.driverRoutePrice}</td>
                       <td className="px-3 py-2 border-b border-line">
                         <span
@@ -470,7 +474,12 @@ export default function RoutesForm() {
               )}
             </div>
 
-            {priceFields.map(({ label, field }) => (
+            {companyRatesRetired(formCity) && (
+              <p className="rounded-xl border border-line bg-brand-50 px-3 py-2 text-sm text-ink" data-testid="company-rates-retired">
+                {formCity.job} takes its revenue from the {CARRIER_STATEMENT_LABEL.toLowerCase()}, so company prices are not used for its routes.
+              </p>
+            )}
+            {visiblePriceFields(priceFields, formCity).map(({ label, field }) => (
               <div key={field}>
                 <label className="block mb-1 font-medium">{label}</label>
                 <input

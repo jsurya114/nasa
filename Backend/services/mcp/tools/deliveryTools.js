@@ -14,6 +14,11 @@ const period = z.object({ startDate: z.string(), endDate: z.string(), days: z.nu
 const change = z.object({ absolute: z.string().nullable(), percent });
 const units = { currency: CURRENCY, deliveries: 'count', percentages: 'percent, two decimals', dates: 'business dates, YYYY-MM-DD' };
 
+const basis = z.enum(['statement', 'recorded', 'estimated', 'mixed']).nullable().describe('Where the revenue comes from: the carrier statement, the stored daily figure, an estimate from route prices, or a mix');
+const bucketFigures = {
+  deliveryRevenue: money, driverEarnings: money, deliveryMargin: money, unallocatedRevenue: money,
+  revenueIsEstimated: z.boolean().describe('True when some weekly records have no verified carrier statement and use an estimate'),
+};
 const dateArg = (name) => z.string().describe(`${name}: a calendar date written YYYY-MM-DD`);
 
 export const listReportingCitiesTool = {
@@ -38,7 +43,7 @@ export const listReportingCitiesTool = {
 export const getBusinessSummaryTool = {
   name: 'get_business_summary',
   title: 'NASA business summary',
-  description: 'Summarises a period: completed deliveries, earned delivery revenue, gross margin (gross profit before overheads, not net profit), margin percentage, active drivers and per-delivery figures, with coverage and warnings. Optionally filter by city and compare with the previous period of equal length. Revenue is earned, not cash received. Read-only.',
+  description: 'Summarises a period: completed deliveries, delivery revenue (weekly GOFO: what the carrier billed; otherwise the stored figure, labelled estimated when a week has no verified carrier statement), driver earnings, delivery margin (gross profit before overheads, not net profit), unallocated carrier revenue, the GOFO settlement payable by billing week, margin percentage, active drivers and per-delivery figures, with coverage and warnings. Optionally filter by city and compare with the previous period of equal length. Revenue is earned, not cash received. Read-only.',
   needsReporting: true,
   inputSchema: z.strictObject({
     start_date: dateArg('First day of the period'),
@@ -53,6 +58,15 @@ export const getBusinessSummaryTool = {
     earnedDeliveryRevenue: money,
     grossDriverEarnings: money,
     grossMarginBeforeOverheads: money,
+    deliveryRevenue: money,
+    driverEarnings: money,
+    deliveryMargin: money,
+    unallocatedRevenue: money,
+    driverEarningsAfterInsurance: money,
+    revenueBasis: basis,
+    revenueIsEstimated: z.boolean(),
+    recordsByBasis: z.object({ statement: z.number().int(), recorded: z.number().int(), estimated: z.number().int(), unallocatedGroups: z.number().int() }),
+    settlement: z.object({ statements: z.number().int(), deliveryRevenue: money, carrierClaims: money, ledgerAdjustments: money, payable: money, basis: z.string() }).nullable(),
     marginPercentage: percent,
     activeDrivers: z.number().int(),
     activeDriverDays: z.number().int(),
@@ -93,7 +107,7 @@ export const rankCitiesTool = {
     ranking: z.array(z.object({
       rank: z.number().int(), cityId: z.number().int(), name: z.string(), code: z.string(),
       deliveries: z.number().int(),
-      earnedDeliveryRevenue: money, grossMarginBeforeOverheads: money, marginPercentage: percent,
+      earnedDeliveryRevenue: money, grossMarginBeforeOverheads: money, ...bucketFigures, marginPercentage: percent,
       shareOfTotalPercent: percent,
       records: z.number().int(), recordsWithoutStoredAmounts: z.number().int(),
     })),
@@ -131,7 +145,7 @@ export const getDeliveryTrendsTool = {
     cities: citiesField,
     series: z.array(z.object({
       bucketStart: z.string(), bucketEnd: z.string(), deliveries: z.number().int(),
-      earnedDeliveryRevenue: money, grossMarginBeforeOverheads: money,
+      earnedDeliveryRevenue: money, grossMarginBeforeOverheads: money, ...bucketFigures,
       activeDrivers: z.number().int(), recordsWithoutStoredAmounts: z.number().int(),
       daysWithRecords: z.number().int(), daysInBucketWithinPeriod: z.number().int(), partialBucket: z.boolean(),
     })),
