@@ -5,9 +5,13 @@ import { createContext, useContext } from "react";
 export const EvereeSetupContext = createContext(null);
 
 // Without a provider (the sign-in page, other screens' tests) nothing is shown and nothing is requested.
-const OFF = Object.freeze({ status: "ready", data: null, required: false, enforced: false, promptDismissed: true });
+const OFF = Object.freeze({ status: "ready", data: null, required: false, enforced: false, locked: false, promptDismissed: true });
 
 export const isSetupRequired = (data) => Boolean(data?.required) && data.state !== "complete";
+
+// The whole app is locked behind the setup (issue #242): a Local driver whose setup is unfinished, with enforcement on, sees nothing but the setup page until
+// the server says it is complete. A driver still to be classified, or to sign the agreement, is not locked here: those have their own screens.
+export const isSetupLocked = (data) => isSetupRequired(data) && Boolean(data?.enforced) && data.state !== "classification-required" && data.blockedBy !== "agreement";
 
 export const useEvereeSetup = () => useContext(EvereeSetupContext) ?? OFF;
 
