@@ -404,6 +404,8 @@ test('over HTTP the tools list only with a reporting login, validate input, and 
             assert.equal(toCentsLocal(mine.grossMarginBeforeOverheads), toCentsLocal(dash.total_company_earnings), `${c.name} ${start} margin`);
             assert.equal(toCentsLocal(mine.grossDriverEarnings), toCentsLocal(dash.total_driver_payment), `${c.name} ${start} driver earnings`);
             assert.equal(toCentsLocal(mine.earnedDeliveryRevenue), toCentsLocal(dash.total_driver_payment) + toCentsLocal(dash.total_company_earnings), `${c.name} ${start} revenue`);
+            assert.equal(toCentsLocal(mine.deliveryRevenue), toCentsLocal(dash.total_delivery_revenue), `${c.name} ${start} the Dashboard and the connector share one revenue definition`);
+            assert.equal(toCentsLocal(mine.deliveryMargin), toCentsLocal(dash.total_delivery_margin), `${c.name} ${start} the Dashboard and the connector share one margin definition`);
             compared += 1;
           }
         }

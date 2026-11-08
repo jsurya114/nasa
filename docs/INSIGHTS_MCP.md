@@ -96,11 +96,14 @@ These are the rules the tools and the Insights page must follow. They preserve w
 | Metric | Definition | Notes |
 |---|---|---|
 | Completed deliveries | The stored `delivered` count on eligible rows (daily and weekly sources, same inclusion rules as the existing reports). | One database row is an aggregate, not one order. No "unique orders" claim. |
-| Gross driver earnings | Stored `driver_payment` on the same rows. | |
-| Company margin | Stored `company_earnings`: the company price minus the driver price, per delivery, at the time the row was calculated. | **Not total revenue.** |
-| Earned delivery revenue | Gross driver earnings + company margin, same rows. | Revenue earned, not cash received from the carrier. Daily and weekly sources are each verified before being summed together. |
-| Gross margin | Company margin. Label: "Gross profit before overheads". | Not net profit: no overheads or operating costs are recorded. |
-| Margin % | Company margin ÷ earned revenue. | `N/A` when revenue is zero. |
+| Driver earnings | Stored `driver_payment` on the same rows (gross, before insurance, claims, advances). Never the carrier's figure. | "Driver earnings after insurance" subtracts the stored insurance withholding only; claim recoveries and advances stay in Payroll. |
+| Delivery revenue | Weekly GOFO: the carrier's billed delivery fees after offsets, from a published and reconciled carrier statement, matched to NASA records by Delivery ID, signing day and route. Daily SpeedX: stored driver earnings + stored company earnings. Carrier money that matched no record is added as unallocated revenue of its city. | The carrier's billed amount, not cash received. A weekly record in a week with no verified statement keeps the old price-based figure and is labelled **estimated** (`revenueIsEstimated`). Trends use the carrier's signing day. |
+| Delivery margin | Delivery revenue - driver earnings. | **Not total revenue.** Gross profit before overheads; carrier claims and ledger adjustments are shown with the settlement, not inside it. Older names: `grossMarginBeforeOverheads`, company margin. |
+| Unallocated carrier revenue | Billed amounts on a verified statement that matched no NASA record (no route, unknown route or driver, no recorded work that day). | Kept, attributed to the statement's city and signing day, never forced onto a driver; no driver earnings, no delivery count. |
+| GOFO settlement payable | By billing week: delivery revenue + carrier claims + ledger adjustments. | Counted in the period that holds the last day of the billing week. Prepayments and withdrawal fees are excluded. |
+| Earned delivery revenue | Older name of delivery revenue. | Same figure. |
+| Gross margin | Delivery margin. Label: "Gross profit before overheads". | Not net profit: no overheads or operating costs are recorded. |
+| Margin % | Delivery margin ÷ delivery revenue. | `N/A` when revenue is zero. |
 | Active drivers | Distinct drivers with at least one delivery in the period. | |
 | Deliveries per active day | Deliveries ÷ distinct driver-days with deliveries. | |
 | Claims | Chargeable, exempt (including the DFWGOFO + Tracking interruption exemption) and unmatched, counted and valued separately. | Unmatched claims are never silently assigned or deducted. Carrier claims sit under penalty balances as already approved. |
