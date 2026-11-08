@@ -125,6 +125,66 @@ describe("Carrier statements: adding one", () => {
   });
 });
 
+describe("Carrier statements: the file that was checked is the file that is published", () => {
+  const nameOf = (config) => config.data.get("file").name;
+
+  it("drops a preview for another file and ignores a late answer, so Publish can never send a different workbook", async () => {
+    let release;
+    const gate = new Promise((resolve) => { release = resolve; });
+    const sent = [];
+    const calls = await mount(async (config) => {
+      if (config.url.endsWith("/preview")) { if (nameOf(config) === "a.xlsx") await gate; return { status: 200, data: { ...PREVIEW, identity: { billNumber: nameOf(config) === "a.xlsx" ? "BILL-A" : "BILL-B" } } }; }
+      if (config.url.endsWith("/publish")) { sent.push(nameOf(config)); return { status: 201, data: { status: "published", statementId: 7, version: 1 } }; }
+      return { status: 200, data: { statements: [] } };
+    });
+    await screen.findByTestId("statements-empty");
+    choose(new File(["a"], "a.xlsx"));
+    fireEvent.click(screen.getByRole("button", { name: "Check statement" }));
+    await waitFor(() => expect(calls.some((c) => c.url.endsWith("/preview"))).toBe(true));
+    expect(screen.getByLabelText("Carrier statement file").disabled).toBe(true); // the file cannot be changed while the check runs
+    choose(new File(["b"], "b.xlsx")); // forced past the disabled input, as a script or a fast second choice could
+    release();
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    expect(screen.queryByTestId("statement-preview")).toBeNull(); // A's late answer is ignored
+    expect(screen.queryByRole("button", { name: "Publish statement" })).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Check statement" }));
+    const preview = await screen.findByTestId("statement-preview");
+    expect(preview.textContent).toMatch(/BILL-B/);
+    fireEvent.click(screen.getByRole("button", { name: "Publish statement" }));
+    await waitFor(() => expect(sent).toEqual(["b.xlsx"]));
+  });
+
+  it("removes the preview and the Publish button as soon as another file is chosen", async () => {
+    const sent = [];
+    await mount(async (config) => {
+      if (config.url.endsWith("/preview")) return { status: 200, data: PREVIEW };
+      if (config.url.endsWith("/publish")) { sent.push(nameOf(config)); return { status: 201, data: { status: "published", statementId: 7, version: 1 } }; }
+      return { status: 200, data: { statements: [] } };
+    });
+    await screen.findByTestId("statements-empty");
+    choose(new File(["a"], "a.xlsx"));
+    fireEvent.click(screen.getByRole("button", { name: "Check statement" }));
+    await screen.findByTestId("statement-preview");
+    choose(new File(["b"], "b.xlsx"));
+    expect(screen.queryByTestId("statement-preview")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Publish statement" })).toBeNull();
+    expect(sent).toEqual([]);
+  });
+});
+
+describe("Carrier statements: a replaced version", () => {
+  it("shows the figures that are not available as such, never as zero, and says why", async () => {
+    const economics = { ...ECONOMICS, driverEarnings: null, deliveryMargin: null, contribution: null, insuranceWithheld: null, driverEarningsAfterInsurance: null, nasaRecords: null, nasaDeliveries: null,
+      recordsWithoutBilledFee: null, recordsWithoutDriverEarnings: null, economicsAvailable: false, unavailableReason: "This version is no longer the statement that stands, so NASA's driver earnings are not attributed to it." };
+    await mount(async () => ({ status: 200, data: { statements: [statement({ status: "superseded", economics })] } }));
+    const card = await screen.findByTestId("statement-7");
+    expect(within(card).getByTestId("fig-revenue").textContent).toBe("$4.91");
+    for (const id of ["fig-driver", "fig-margin", "fig-contribution", "fig-after-insurance"]) expect(within(card).getByTestId(id).textContent).not.toMatch(/\$0\.00|\$[0-9]/);
+    expect(within(card).getByTestId("economics-unavailable").textContent).toMatch(/no longer the statement that stands/);
+  });
+});
+
 describe("Carrier statements: voiding", () => {
   it("needs a reason of at least five characters, then voids and reloads", async () => {
     let voided = false;

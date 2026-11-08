@@ -58,6 +58,7 @@ function Statement({ statement: s, onChanged }) {
           <div className="flex justify-between gap-3"><dt className="text-ink-muted">NASA deliveries · carrier count</dt><dd className="font-semibold tabular-nums" data-testid="fig-deliveries">{formatCount(e.nasaDeliveries)} · {formatCount(e.carrierDeliveries)}</dd></div>
         </dl>
       )}
+      {e?.economicsAvailable === false && <p className="text-xs text-ink-muted" data-testid="economics-unavailable">{e.unavailableReason}</p>}
       {e?.recordsWithoutBilledFee > 0 && <p className="text-xs text-ink-muted">{e.recordsWithoutBilledFee} NASA record{e.recordsWithoutBilledFee === 1 ? "" : "s"} in this week had no fee on the statement (zero revenue). The carrier's count includes offset tickets; NASA keeps its own delivery count.</p>}
       {note && <p role="status" className="text-sm text-ink">{note}</p>}
       <div className="flex flex-wrap gap-2">

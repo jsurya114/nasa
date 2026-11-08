@@ -11,26 +11,40 @@ function Line({ label, value, id }) {
 }
 
 // Choose a statement, check it (nothing is stored), read what it would do, then publish. A statement that does not reconcile is refused with every reason.
+// What is shown is bound to the exact File that was checked: choosing another file drops the preview and ignores any answer still on its way, Publish sends the
+// checked file and only while it is still the chosen one, and the file cannot be changed while a request is running.
 export default function StatementUpload({ onPublished }) {
   const input = useRef(null);
+  const latest = useRef(0); // the newest request or choice; an older answer is stale and is ignored
   const [file, setFile] = useState(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
-  const [preview, setPreview] = useState(null);
+  const [previewed, setPreviewed] = useState(null); // { file, result }
   const [published, setPublished] = useState(null);
 
-  const choose = (event) => { setFile(event.target.files?.[0] ?? null); setPreview(null); setPublished(null); setError(null); };
+  const choose = (event) => { latest.current += 1; setFile(event.target.files?.[0] ?? null); setPreviewed(null); setPublished(null); setError(null); setBusy(false); };
   const run = async (action) => {
+    const ticket = (latest.current += 1);
+    const current = () => ticket === latest.current;
     setBusy(true); setError(null);
-    try { await action(); } catch (e) { setError(messageFor(e)); } finally { setBusy(false); }
+    try { await action(current); } catch (e) { if (current()) setError(messageFor(e)); } finally { if (current()) setBusy(false); }
   };
-  const check = () => run(async () => { setPublished(null); setPreview(await previewStatement(file)); });
-  const publish = () => run(async () => {
-    const result = await publishStatement(file);
+  const check = () => run(async (current) => {
+    const checking = file;
+    setPublished(null);
+    const result = await previewStatement(checking);
+    if (current()) setPreviewed({ file: checking, result });
+  });
+  const publish = () => run(async (current) => {
+    const sending = previewed.file;
+    const result = await publishStatement(sending);
+    if (result.status === "published") onPublished();
+    if (!current()) return;
     setPublished(result);
-    if (result.status === "published") { setPreview(null); setFile(null); if (input.current) input.current.value = ""; onPublished(); }
+    if (result.status === "published") { setPreviewed(null); setFile(null); if (input.current) input.current.value = ""; }
   });
 
+  const preview = previewed && previewed.file === file ? previewed.result : null;
   const m = preview?.matching;
   return (
     <section aria-labelledby="statement-upload-title" className="card-surface space-y-3 p-4 sm:p-5">
@@ -40,7 +54,7 @@ export default function StatementUpload({ onPublished }) {
       </div>
       <div className="flex flex-wrap items-center gap-3">
         <label className="sr-only" htmlFor="statement-file">Carrier statement file</label>
-        <input ref={input} id="statement-file" type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" onChange={choose} className="min-h-11 max-w-full text-sm" />
+        <input ref={input} id="statement-file" type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" onChange={choose} disabled={busy} className="min-h-11 max-w-full text-sm" />
         <button type="button" className={BUTTON} disabled={!file || busy} onClick={check}>Check statement</button>
       </div>
       {error && <p role="alert" className="text-sm text-red-700">{error}</p>}
