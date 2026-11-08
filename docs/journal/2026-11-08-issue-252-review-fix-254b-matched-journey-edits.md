@@ -18,6 +18,12 @@ because the reporting join no longer found the group), and that deleting it fail
 - The supported correction path is therefore: void the statement (its lines, groups and events stay as history), fix or delete the journey, publish the statement again.
   A voided or replaced statement no longer guards anything.
 
+## Concurrency (from an automated security review of the first version of this fix)
+
+Without the foreign keys, a journey moved or deleted between matching and commit could have left a published statement pointing at work that is no longer there. Publishing now
+locks the matched pay rows (`FOR SHARE`, until the transaction ends) and re-checks that each still exists with the same driver, route and day; if not, nothing is stored and the owner
+is told to check the statement again. A journey edit that arrives meanwhile waits for the publish to finish and is then refused by the guard. The re-match path does the same (see PR #255).
+
 ## Database
 
 The `carrier_statement_groups` columns `route_id`, `driver_id`, `payment_dashboard_id` lose their foreign keys (`DROP CONSTRAINT IF EXISTS` for databases from the first draft);
@@ -35,5 +41,5 @@ None to any stored amount. An edit that would have silently moved verified reven
   the voided statement keeps all its evidence, and the same statement can be published again.
 - `tests/gofoStatementStore.test.js` still passes.
 
-Not tested: the journey screens in a browser, and deleting a driver or route that appears in a voided statement (their pay rows already prevent that, as before). The guard protects the
+Not tested: a true two-connection race (the test simulates an edit that slipped past the trigger), the journey screens in a browser, and deleting a driver or route that appears in a voided statement (their pay rows already prevent that, as before). The guard protects the
 pay row that carries the revenue (the lowest id of the driver, route and day); other rows of the same driver, route and day are not guarded because they do not carry revenue.

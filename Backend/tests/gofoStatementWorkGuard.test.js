@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { publishStatement } from '../services/finance/gofoStatement/publishStatement.js';
-import { voidStatement } from '../services/finance/gofoStatement/statementStore.js';
+import { holdMatchedWork, voidStatement } from '../services/finance/gofoStatement/statementStore.js';
 import { isStatementWorkConflict } from '../services/finance/gofoStatement/workGuard.js';
 import { statementSheets, statementWorkbook } from './helpers/gofoStatementFixture.js';
 
@@ -68,6 +68,15 @@ test('a journey with verified carrier revenue cannot be moved or deleted until t
     assert.equal(await attempt('UPDATE dashboard_data SET driver_id = $2 WHERE id = $1', [unbilled, driverA]), null, 'a journey the statement does not carry is free');
     assert.equal(await attempt('DELETE FROM dashboard_data WHERE id = $1', [unbilled]), null);
     assert.equal(await revenue(), before, 'the refused edits changed no revenue');
+
+    // Publishing also locks the matched rows and re-checks them, so a journey changed between matching and commit cannot leave a statement pointing at other work.
+    assert.equal(await holdMatchedWork(client, published.statementId), true, 'every matched journey is still there and unchanged');
+    await client.query('SAVEPOINT bypass');
+    await client.query('SET LOCAL session_replication_role = replica'); // simulates an edit that slipped past the trigger (the race), for this test only
+    await client.query('UPDATE payment_dashboard SET route_id = $2 WHERE dashboard_data_id = $1', [matched, routeOther]);
+    assert.equal(await holdMatchedWork(client, published.statementId), false, 'a journey that changed under the statement is detected');
+    await client.query('ROLLBACK TO SAVEPOINT bypass');
+    assert.equal(await holdMatchedWork(client, published.statementId), true);
 
     // Voiding is the supported correction path: the history stays, and the journey is free to change or delete (no foreign key blocks it any more).
     assert.equal(await voidStatement(client, published.statementId, { actorId: 1, reason: 'fixing the journey, then publishing again' }), true);
