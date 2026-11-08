@@ -96,6 +96,24 @@ export const insertItems = async (db, statementId, kind, items) => {
   );
 };
 
+// The matched groups of a statement point at NASA's pay rows by plain id (no foreign key), so the rows are LOCKED here until the transaction ends and checked once
+// more: each must still exist with the same driver, route and day. Without this, a journey moved or deleted between matching and commit could leave a published
+// statement pointing at work that is no longer there. Returns true when every matched group's row is held and unchanged; the caller rolls back otherwise.
+export const holdMatchedWork = async (db, statementId) => {
+  const { rows } = await db.query(
+    `WITH held AS (
+       SELECT g.delivery_id
+         FROM carrier_statement_groups g
+         JOIN payment_dashboard pd ON pd.id = g.payment_dashboard_id AND pd.driver_id = g.driver_id AND pd.route_id = g.route_id AND pd.journey_date = g.signed_on
+        WHERE g.statement_id = $1 AND g.match_state = 'matched'
+          FOR SHARE OF pd
+     )
+     SELECT (SELECT count(*) FROM carrier_statement_groups WHERE statement_id = $1 AND match_state = 'matched')::int AS expected, (SELECT count(*) FROM held)::int AS held`,
+    [statementId]
+  );
+  return rows[0].expected === rows[0].held;
+};
+
 export const insertGroups = async (db, statementId, groups) => {
   for (const part of chunks(groups)) {
     await db.query(
@@ -161,10 +179,16 @@ export const voidStatement = (db, id, { actorId, reason }) => inTransaction(db, 
 
 // Re-matches one published statement and records who did it, in one transaction. The statement row is locked first, so a void or another re-match cannot
 // run in between. Returns null when the statement is not published, otherwise how many groups were matched.
+export class StatementWorkChanged extends Error {
+  constructor() { super('A journey changed while the statement was being matched. Nothing was changed. Try again.'); this.name = 'StatementWorkChanged'; }
+}
+
 export const rematchStatement = (db, id, { actorId }) => inTransaction(db, async (tx) => {
   const { rows } = await tx.query('SELECT status FROM carrier_statements WHERE id = $1 FOR UPDATE', [id]);
   if (rows[0]?.status !== 'published') return null;
   const matched = await rematchOpenGroups(tx, { statementId: id });
+  // The newly matched pay rows are held and re-checked, as in publishing, so work that changed meanwhile cannot be attached (the whole re-match is undone).
+  if (matched > 0 && !(await holdMatchedWork(tx, id))) throw new StatementWorkChanged();
   if (matched > 0) await addEvent(tx, id, 'rematched', actorId, `${matched} group${matched === 1 ? '' : 's'} matched`);
   return matched;
 });

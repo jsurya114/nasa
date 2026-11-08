@@ -1,5 +1,5 @@
 import pool from "../../config/db.js";
-import { protectedPayRowSql } from "../finance/payGuards.js";
+import { closeOnlyRowSql, protectedPayRowSql } from "../finance/payGuards.js";
 
 
 // One implementation for "all dates" and "one date". $1 date (or null), $2 allowed jobs (or null).
@@ -24,6 +24,18 @@ const recalculatePayRows = async ({ date, allowedJobs, db }) => {
           AND NOT ${guard}`,
       [date, allowedJobs]
     );
+    // A row protected only by a verified carrier statement keeps its amounts but is still closed, so open work can enter a pay run (services/finance/payGuards.js).
+    const closeOnly = await closeOnlyRowSql(db);
+    const closed = await db.query(
+      `UPDATE payment_dashboard pd
+          SET closed = true
+         FROM dashboard_data dd
+         JOIN routes r ON dd.route_id = r.id
+        WHERE pd.dashboard_data_id = dd.id
+          AND ${scope}
+          AND ${guard} AND ${closeOnly}`,
+      [date, allowedJobs]
+    );
     const left = await db.query(
       `SELECT count(*)::int AS n
          FROM payment_dashboard pd
@@ -32,7 +44,7 @@ const recalculatePayRows = async ({ date, allowedJobs, db }) => {
         WHERE ${scope} AND ${guard}`,
       [date, allowedJobs]
     );
-    return { updated: result.rowCount, protectedRows: left.rows[0].n };
+    return { updated: result.rowCount, protectedRows: left.rows[0].n, closedOnly: closed.rowCount };
   } catch (error) {
     console.error("Error in recalculatePayRows:", error);
     throw error;
@@ -68,7 +80,7 @@ const withDeliveryRevenue = async (summary, filters, db) => {
 export const AdminDashboardQueries = {
   // Recalculates open pay rows from today's route rates. Rows that are part of an approved pay run or a verified carrier statement are
   // protected (services/finance/payGuards.js): their figures are settled or reconciled, so they are left exactly as they are and counted.
-  // Returns { updated, protectedRows } so the screen can say how many were left alone.
+  // Returns { updated, protectedRows, closedOnly } so the screen can say how many were left alone and how many of those were only closed.
   updatePaymentTableForDate: async (selectedDate, allowedJobs = null, db = pool) => {
     return recalculatePayRows({ date: selectedDate, allowedJobs, db });
   },

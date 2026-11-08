@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { AdminDashboardQueries } from '../services/admin/dashboardQueries.js';
+import { loadEarnings } from '../services/payroll/payRuns/payRunStore.js';
 import { publishStatement } from '../services/finance/gofoStatement/publishStatement.js';
 import { statementSheets, statementWorkbook } from './helpers/gofoStatementFixture.js';
 
@@ -76,8 +77,18 @@ test('Calculate Payment recalculates open rows but leaves pay-run and verified-s
     assert.deepEqual(after[open], ['7.50', '5.00'], 'an open row is recalculated from the route rates, as before');
     assert.deepEqual(after[daily], ['7.50', '5.00'], 'a daily-type row is recalculated, as before');
     assert.deepEqual(after[fresh], ['7.50', '5.00'], 'an open row in a verified statement week still gets its first calculation, and is closed');
+    assert.deepEqual(after[priced], [STALE, STALE], 'a priced open row keeps its amounts');
+    assert.equal(result.closedOnly, 1, 'and is reported as closed only');
+    assert.equal((await client.query('SELECT closed FROM payment_dashboard WHERE id = $1', [priced])).rows[0].closed, true, 'but it is closed now');
+    // Both open rows can now enter a pay run: the real pay-run loader returns them, with the priced one at its kept amount.
+    const eligible = await loadEarnings(client, { city_id: city, period_start: '2026-10-19', period_end: '2026-10-25', data_type: 'weekly' });
+    const gross = Object.fromEntries(eligible.map((e) => [e.id, e.gross]));
+    assert.equal(gross[fresh], '7.50', 'the fresh row is eligible at its first calculation');
+    assert.equal(gross[priced], STALE, 'the priced open row is eligible at the amount it already had');
+    const september = await loadEarnings(client, { city_id: city, period_start: '2026-09-01', period_end: '2026-09-07', data_type: 'weekly' });
+    assert.equal(september.some((e) => e.id === frozen), false, 'the pay-run earning is still excluded');
     assert.equal((await client.query('SELECT closed FROM payment_dashboard WHERE id = $1', [fresh])).rows[0].closed, true);
-    for (const [name, id] of [['a pay-run earning', frozen], ['a row matched in a verified statement', matched], ['a weekly row in a verified statement week', sameWeek], ['a priced but unclosed weekly row in that week', priced]]) {
+    for (const [name, id] of [['a pay-run earning', frozen], ['a row matched in a verified statement', matched], ['a weekly row in a verified statement week', sameWeek]]) {
       assert.deepEqual(after[id], [STALE, STALE], `${name} is left exactly as it was`);
     }
     assert.equal(result.protectedRows >= 3, true, 'the rows left alone are counted');
