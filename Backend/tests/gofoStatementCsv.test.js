@@ -18,7 +18,7 @@ test('a CSV has one header and one line per row, with CRLF line ends and no driv
   assert.equal(end, '');
   assert.equal(header.split(',').length, STATEMENT_COLUMNS.length);
   assert.equal(line.split(',').length, STATEMENT_COLUMNS.length);
-  assert.match(line, /^'=Lafayette,Week 43-2026,2026-10-19,2026-10-25,AP1,2,published,4\.91,,,,,-0\.70,/);
+  assert.match(line, /^'=Lafayette,Week 43-2026,2026-10-19,2026-10-25,AP1,2,published,4\.91,,,,,,-0\.70,/);
   assert.equal(/driver name|courier/i.test(header), false);
   assert.match(toCsv(UNALLOCATED_COLUMNS, []), /^Delivery ID,Signing day,Route,Why,Revenue,Fee lines,Offset lines\r\n$/);
 });

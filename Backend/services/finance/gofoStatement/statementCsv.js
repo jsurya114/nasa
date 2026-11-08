@@ -23,7 +23,7 @@ export const STATEMENT_COLUMNS = [
   { header: 'City', key: 'city' }, { header: 'Billing week', key: 'billingWeek' }, { header: 'Week start', key: 'periodStart' }, { header: 'Week end', key: 'periodEnd' },
   { header: 'Bill number', key: 'billNumber' }, { header: 'Version', key: 'version', number: true }, { header: 'Status', key: 'status' },
   { header: 'Delivery revenue', key: 'deliveryRevenue', number: true }, { header: 'Matched revenue', key: 'matchedRevenue', number: true }, { header: 'Unallocated revenue', key: 'unallocatedRevenue', number: true },
-  { header: 'Driver earnings', key: 'driverEarnings', number: true }, { header: 'Delivery margin', key: 'deliveryMargin', number: true },
+  { header: 'Driver earnings', key: 'driverEarnings', number: true }, { header: 'Delivery margin', key: 'deliveryMargin', number: true }, { header: 'Margin status', key: 'marginStatus' },
   { header: 'Carrier claims', key: 'carrierClaims', number: true }, { header: 'Ledger adjustments', key: 'ledgerAdjustments', number: true },
   { header: 'Contribution', key: 'contribution', number: true }, { header: 'GOFO settlement payable', key: 'settlementPayable', number: true },
   { header: 'Insurance withheld', key: 'insuranceWithheld', number: true }, { header: 'Driver earnings after insurance', key: 'driverEarningsAfterInsurance', number: true },
