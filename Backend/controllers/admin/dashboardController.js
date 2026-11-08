@@ -202,11 +202,15 @@ export const updatePaymentData = async (req, res) => {
     const note = result.protectedRows > 0
       ? `. ${result.protectedRows} row${result.protectedRows === 1 ? " was" : "s were"} left as ${result.protectedRows === 1 ? "it is" : "they are"} because ${result.protectedRows === 1 ? "it belongs" : "they belong"} to an approved pay run or a verified carrier statement`
       : "";
+    const closedNote = result.closedOnly > 0
+      ? `. ${result.closedOnly} open row${result.closedOnly === 1 ? "" : "s"} of those kept ${result.closedOnly === 1 ? "its" : "their"} amount and ${result.closedOnly === 1 ? "was" : "were"} closed so ${result.closedOnly === 1 ? "it" : "they"} can go into a pay run`
+      : "";
     res.status(HttpStatus.OK).json({
       success: true,
-      message: `${base}${note}`,
+      message: `${base}${note}${closedNote}`,
       updated: result.updated,
-      protectedRows: result.protectedRows
+      protectedRows: result.protectedRows,
+      closedOnly: result.closedOnly
     });
   } catch (error) {
     if (error instanceof CityAccessError) {
