@@ -113,7 +113,7 @@ test('prepayments and withdrawal fees are shown on their own and never counted a
   const r = run((sheets) => {
     sheets['Total Prepaid to Driver Account'].push(['10/20/2026', 1.5, '77', 'Driver One', '10/20/2026', '2026-43']);
     sheets['Total Withdrawal Fees for Drive'].push(['T1', 'TST-NLC', '77', 'Driver One', 20, '10/20/2026', '10/01/2026', 'Y', 0.25]);
-    sheets['DSP Summary'][2][7] = 1.5; sheets['DSP Summary'][2][6] = 0.71; // remaining payable = payable - prepaid
+    sheets['DSP Summary'][2][7] = 1.5; sheets['DSP Summary'][2][8] = 0.25; sheets['DSP Summary'][2][6] = 0.71; // remaining payable = payable - prepaid
   });
   assert.equal(r.status, 'reconciled');
   assert.equal(r.amounts.deliveryRevenue, '4.91');
@@ -130,6 +130,37 @@ test('the fingerprint ignores row order and changes when the statement is correc
   const corrected = fixture();
   corrected['Details of Delivery Fees'][1][15] = 1.81;
   assert.notEqual(parseStatement(corrected).fingerprint, same, 'a corrected statement is a different one');
+});
+
+test('a correction to prepayments or withdrawal fees is a different statement, and the detail must equal its control', () => {
+  const withPrepaid = (amount, control = amount, remaining = 2.21 - control) => {
+    const sheets = fixture();
+    sheets['Total Prepaid to Driver Account'].push(['10/20/2026', amount, '77', 'Driver One', '10/20/2026', '2026-43']);
+    sheets['DSP Summary'][2][7] = control; sheets['DSP Summary'][2][6] = Number(remaining.toFixed(2));
+    return sheets;
+  };
+  const original = parseStatement(fixture()).fingerprint;
+  const one = parseStatement(withPrepaid(1));
+  assert.equal(reconcileStatement(one).status, 'reconciled');
+  assert.notEqual(one.fingerprint, original, 'a prepayment of 1.00 instead of nothing is a corrected statement');
+  assert.notEqual(parseStatement(withPrepaid(1.5)).fingerprint, one.fingerprint, 'changing the prepayment again is another correction');
+  const mismatch = reconcileStatement(parseStatement(withPrepaid(2, 1, 1.21)));
+  assert.equal(mismatch.status, 'rejected', 'a detail total of 2.00 against a 1.00 control is refused');
+  assert.ok(mismatch.failed.some((c) => c.name.startsWith('DSP Summary prepaid')));
+
+  const withFee = (fee, control) => {
+    const sheets = fixture();
+    sheets['Total Withdrawal Fees for Drive'].push(['T1', 'TST-NLC', '77', 'Driver One', 20, '10/20/2026', '10/01/2026', 'Y', fee]);
+    sheets['DSP Summary'][2][8] = control;
+    return sheets;
+  };
+  assert.notEqual(parseStatement(withFee(0.25, 0.25)).fingerprint, original);
+  assert.equal(reconcileStatement(parseStatement(withFee(0.25, 0.25))).status, 'reconciled');
+  const wrongFee = reconcileStatement(parseStatement(withFee(0.25, 0.5)));
+  assert.equal(wrongFee.status, 'rejected');
+  assert.ok(wrongFee.failed.some((c) => c.name.startsWith('DSP Summary withdrawal fees')));
+  const unlisted = reconcileStatement(parseStatement(withFee(0.25, '')));
+  assert.equal(unlisted.status, 'rejected', 'a fee on the sheet that the summary does not mention is refused');
 });
 
 test('a real .xlsx file is read the same way as the rows (formula results, truncated sheet names)', async () => {

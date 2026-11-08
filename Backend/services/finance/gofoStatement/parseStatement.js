@@ -144,6 +144,8 @@ export const parseStatement = (sheets) => {
 };
 
 // The same statement always gives the same fingerprint, whatever the order of its rows; a corrected statement (any money or day changed) gives another one.
+const CONTROL_FIELDS = ['totalBilling', 'deliveryFee', 'claims', 'adjustments', 'remainingPayable', 'prepaid', 'withdrawalFees', 'deliveries', 'offsetTickets', 'offsetAmount',
+  'firstCount', 'firstAmount', 'subsequentCount', 'subsequentAmount'];
 const fingerprintOf = (statement) => {
   const keyed = (list, pick) => list.map(pick).sort();
   const canonical = JSON.stringify({
@@ -152,7 +154,10 @@ const fingerprintOf = (statement) => {
     offsets: keyed(statement.offsets, (l) => `${l.waybill}|${l.deliveryId}|${l.route}|${l.signedOn}|${l.feeCents}`),
     claims: keyed(statement.claims, (c) => `${c.waybill}|${c.amountCents}`),
     adjustments: keyed(statement.adjustments, (a) => `${a.expenseType}|${a.deliveryId}|${a.amountCents}`),
-    controls: statement.header ? [statement.header.totalBilling, statement.header.deliveryFee, statement.header.claims, statement.header.adjustments] : null,
+    // Prepayments and withdrawal fees stay out of revenue, but a correction to either is a different statement, so they and every header control count.
+    prepaid: keyed(statement.prepaid, (p) => `${p.courierId}|${p.amountCents}`),
+    withdrawals: keyed(statement.withdrawals, (w) => `${w.courierId}|${w.amountCents}`),
+    controls: statement.header ? CONTROL_FIELDS.map((field) => statement.header[field] ?? null) : null,
   });
   return createHash('sha256').update(canonical).digest('hex');
 };
