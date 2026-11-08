@@ -48,18 +48,19 @@ test('Calculate Payment recalculates open rows but leaves pay-run and verified-s
     const driverB = await driver('Guard Test Two', Number(ID_B));
     // One Dashboard row: 2 first stops and 1 double stop, with a stale stored amount so a recalculation is visible.
     // `fresh` is work that has never been calculated: no driver payment, not closed.
-    const work = async (driverId, routeId, day, { start = 0, end = 0, fresh = false } = {}) => {
+    const work = async (driverId, routeId, day, { start = 0, end = 0, fresh = false, closed = !fresh } = {}) => {
       const dd = (await client.query(
         "INSERT INTO dashboard_data (driver_id, journey_date, route_id, packages, first_stop, ds, delivered, closed, paid, start_seq, end_seq) VALUES ($1, $2, $3, 3, 2, 1, 3, true, false, $4, $5) RETURNING id",
         [driverId, day, routeId, start, end])).rows[0].id;
       return (await client.query('UPDATE payment_dashboard SET driver_payment = $2, company_earnings = $2, closed = $3 WHERE dashboard_data_id = $1 RETURNING id',
-        [dd, fresh ? null : STALE, !fresh])).rows[0].id;
+        [dd, fresh ? null : STALE, closed])).rows[0].id;
     };
     const open = await work(driverA, routeA, '2026-09-01');                       // no statement, no pay run: recalculated
     const frozen = await work(driverA, routeA, '2026-09-02');                     // an earning on a pay statement
     const matched = await work(driverA, routeA, '2026-10-19');                    // matched in the verified statement
     const sameWeek = await work(driverB, routeB, '2026-10-22');                   // weekly row in the statement's week that the carrier did not bill
     const daily = await work(driverB, routeB, '2026-10-21', { start: 1, end: 5 }); // a daily-type row in that week: not a weekly row, recalculated
+    const priced = await work(driverB, routeB, '2026-10-24', { closed: false });    // weekly row in the statement's week with a driver payment but not closed: still protected
     const fresh = await work(driverB, routeB, '2026-10-23', { fresh: true });       // weekly row in the statement's week with no pay yet, and no carrier match
     const admin = (await client.query("INSERT INTO admin (password, name, email, role) VALUES ('x', 'Guard Test Admin', 'guard.test@example.test', 'superadmin') RETURNING id")).rows[0].id;
     const payRun = (await client.query("INSERT INTO pay_runs (request_id, city_id, period_start, period_end, data_type, status, created_by, finalized_by, finalized_at) VALUES (gen_random_uuid(), $1, '2026-09-01', '2026-09-07', 'weekly', 'finalized', $2, $2, now()) RETURNING id", [city, admin])).rows[0].id;
@@ -69,14 +70,14 @@ test('Calculate Payment recalculates open rows but leaves pay-run and verified-s
     const published = await publishStatement(nestedPool(client), await statementWorkbook(statementSheets({ idA: ID_A, idB: ID_B })), { user: { id: admin }, sourceLabel: 'guard test.xlsx' });
     assert.equal(published.status, 'published');
 
-    const amounts = async () => Object.fromEntries((await client.query('SELECT id, driver_payment, company_earnings FROM payment_dashboard WHERE id = ANY($1)', [[open, frozen, matched, sameWeek, daily, fresh]])).rows.map((r) => [r.id, [r.driver_payment, r.company_earnings]]));
+    const amounts = async () => Object.fromEntries((await client.query('SELECT id, driver_payment, company_earnings FROM payment_dashboard WHERE id = ANY($1)', [[open, frozen, matched, sameWeek, daily, fresh, priced]])).rows.map((r) => [r.id, [r.driver_payment, r.company_earnings]]));
     const result = await AdminDashboardQueries.updatePaymentTable(null, client);
     const after = await amounts();
     assert.deepEqual(after[open], ['7.50', '5.00'], 'an open row is recalculated from the route rates, as before');
     assert.deepEqual(after[daily], ['7.50', '5.00'], 'a daily-type row is recalculated, as before');
     assert.deepEqual(after[fresh], ['7.50', '5.00'], 'an open row in a verified statement week still gets its first calculation, and is closed');
     assert.equal((await client.query('SELECT closed FROM payment_dashboard WHERE id = $1', [fresh])).rows[0].closed, true);
-    for (const [name, id] of [['a pay-run earning', frozen], ['a row matched in a verified statement', matched], ['a weekly row in a verified statement week', sameWeek]]) {
+    for (const [name, id] of [['a pay-run earning', frozen], ['a row matched in a verified statement', matched], ['a weekly row in a verified statement week', sameWeek], ['a priced but unclosed weekly row in that week', priced]]) {
       assert.deepEqual(after[id], [STALE, STALE], `${name} is left exactly as it was`);
     }
     assert.equal(result.protectedRows >= 3, true, 'the rows left alone are counted');
