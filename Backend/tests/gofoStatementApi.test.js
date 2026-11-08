@@ -115,6 +115,14 @@ test('a bad id or a missing reason is refused, and an unknown or already-voided 
   assert.deepEqual(calls.map((c) => c[0]), []);
 });
 
+test('a re-match that finds the journeys changed is answered 409 with a plain message, and nothing else', async () => {
+  const { StatementWorkChanged } = await import('../services/finance/gofoStatement/statementStore.js');
+  const app = makeApp(makeService({ rematch: async () => { throw new StatementWorkChanged(); } }));
+  const answer = await send(app, 'POST', '/5/rematch');
+  assert.equal(answer.status, 409);
+  assert.match(answer.body.message, /A journey changed while the statement was being matched\. Nothing was changed/);
+});
+
 test('an unexpected failure is answered safely, without internals', async () => {
   const app = makeApp(makeService({ list: async () => { throw Object.assign(new Error('relation "secret_table" does not exist'), { code: '42P01' }); } }));
   const answer = await send(app, 'GET', '/');

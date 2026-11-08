@@ -1,5 +1,8 @@
 -- Rollback for issue #252 (carrier statements). This deletes every stored carrier statement and its audit trail. Back up first.
 -- Nothing in payroll, pay runs or payment_dashboard is touched.
+DROP TRIGGER IF EXISTS carrier_statement_work_guard_delete ON payment_dashboard;
+DROP TRIGGER IF EXISTS carrier_statement_work_guard_update ON payment_dashboard;
+DROP FUNCTION IF EXISTS carrier_statement_work_guard();
 DROP VIEW IF EXISTS carrier_statement_totals;
 DROP TABLE IF EXISTS carrier_statement_events;
 DROP TABLE IF EXISTS carrier_statement_groups;

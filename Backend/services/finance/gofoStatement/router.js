@@ -41,6 +41,7 @@ export function createStatementRouter({ adminAuth, requireRole, upload, service 
     try {
       return await job(req, res);
     } catch (error) {
+      if (error?.name === 'StatementWorkChanged') return res.status(HttpStatus.CONFLICT).json({ message: error.message });
       logger.error(`Carrier statement ${action} failed`, { code: error?.code, message: error?.message });
       return res.status(HttpStatus.INTERNAL_SERVER_ERROR).json({ message: 'The carrier statement request could not be completed. Nothing was changed.' });
     }
