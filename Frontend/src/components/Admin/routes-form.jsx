@@ -476,7 +476,7 @@ export default function RoutesForm() {
 
             {companyRatesRetired(formCity) && (
               <p className="rounded-xl border border-line bg-brand-50 px-3 py-2 text-sm text-ink" data-testid="company-rates-retired">
-                {formCity.job} takes its revenue from the {CARRIER_STATEMENT_LABEL.toLowerCase()}, so company prices are not used for its routes.
+                {formCity.job} takes its revenue from the {CARRIER_STATEMENT_LABEL.toLowerCase()}, so company prices are not edited for its routes. Prices already stored are kept only to estimate a week that has no verified statement.
               </p>
             )}
             {visiblePriceFields(priceFields, formCity).map(({ label, field }) => (

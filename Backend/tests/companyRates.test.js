@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { AdminDashboardQueries } from '../services/admin/dashboardQueries.js';
-import { citiesWithVerifiedStatements, companyEarningsSql, companyRatesRetired, noCompanyRateSql } from '../services/finance/companyRates.js';
+import { citiesWithVerifiedStatements, companyEarningsSql, companyPricesToStore, companyRatesRetired, noCompanyRateSql } from '../services/finance/companyRates.js';
 import { publishStatement } from '../services/finance/gofoStatement/publishStatement.js';
 import { statementSheets, statementWorkbook } from './helpers/gofoStatementFixture.js';
 
@@ -13,6 +13,15 @@ test('the SQL says what "no company rate" means, and the earnings formula is wri
   assert.match(sql, /THEN NULL/);
   assert.match(sql, /wc\.ds \* \(r\.company_doublestop_price - r\.driver_doublestop_price\)\) \+ \(wc\.fs \* \(r\.company_route_price - r\.driver_route_price\)/);
   assert.match(companyEarningsSql({ route: 'r', city: 'c', ds: '1', fs: '2', keep: 'pd.company_earnings' }), /THEN pd\.company_earnings/);
+});
+
+test('a route save keeps the stored company prices in a retired city and uses the request elsewhere', () => {
+  const stored = { company_route_price: '5.00', company_doublestop_price: '2.50' };
+  const sent = { companyRoutePrice: 9, companyDoubleStopPrice: 8 };
+  assert.deepEqual(companyPricesToStore({ retired: true, sent, current: stored }), { company_route_price: 5, company_doublestop_price: 2.5 }, 'an edited route keeps what it had');
+  assert.deepEqual(companyPricesToStore({ retired: true, sent: { companyRoutePrice: NaN, companyDoubleStopPrice: NaN }, current: stored }), { company_route_price: 5, company_doublestop_price: 2.5 }, 'hidden fields are not needed');
+  assert.deepEqual(companyPricesToStore({ retired: true, sent }), { company_route_price: 0, company_doublestop_price: 0 }, 'a new route has no company rate');
+  assert.deepEqual(companyPricesToStore({ retired: false, sent, current: stored }), { company_route_price: 9, company_doublestop_price: 8 }, 'not retired: the request decides');
 });
 
 // Needs a PostgreSQL copy that has the app's tables (never production). PAYROLL_TEST_DB=1 and the DB_* variables. One rolled-back transaction, made-up data.
@@ -79,8 +88,21 @@ test('company prices are retired for a weekly city only once it has a verified s
     assert.equal(await companyRatesRetired(client, 'Test Rates GOFO'), true, 'a weekly city with a published statement');
     assert.equal(await companyRatesRetired(client, 'Test Rates SpeedX'), false, 'daily SpeedX never retires them');
     assert.deepEqual([...await citiesWithVerifiedStatements(client, [weekly, daily])], [weekly]);
+    // Retirement keeps the stored prices: an untouched route and a route saved after publication estimate an unverified week the same way, and voiding changes nothing.
+    const routeUntouched = await route('Test Rates GOFO', 'TS01-003', 5);            // same prices, never saved after publication
+    const unverifiedA = await row(driverW, routeUntouched, '2026-09-10');
+    const unverifiedB = await row(driverW, routeRated, '2026-09-11');                 // the route that is saved below
+    await client.query("UPDATE routes SET company_route_price = $2, company_doublestop_price = $3 WHERE id = $1", [routeRated, ...Object.values(companyPricesToStore({ retired: true, sent: { companyRoutePrice: NaN, companyDoubleStopPrice: NaN }, current: (await one('SELECT * FROM routes WHERE id = $1', [routeRated])) }))]);
+    const stored = async (id) => { const r = await one('SELECT company_route_price AS a, company_doublestop_price AS b FROM routes WHERE id = $1', [id]); return [r.a, r.b]; };
+    assert.deepEqual(await stored(routeRated), ['5.00', '5.00'], 'saving a route in a retired city does not erase its prices');
+    await AdminDashboardQueries.updatePaymentTable(null, client);
+    assert.equal(await company(unverifiedA), '7.50');
+    assert.equal(await company(unverifiedB), '7.50', 'the same estimate for the same unverified week, edited or not');
     await client.query("UPDATE carrier_statements SET status = 'voided', voided_at = now(), void_reason = 'test'");
     assert.equal(await companyRatesRetired(client, 'Test Rates GOFO'), false, 'a voided statement verifies nothing');
+    assert.deepEqual(await stored(routeRated), ['5.00', '5.00'], 'voiding brings the same prices back, not zeros');
+    await AdminDashboardQueries.updatePaymentTable(null, client);
+    assert.equal(await company(unverifiedA), '7.50');
   } finally {
     await client.query('ROLLBACK');
     client.release();
