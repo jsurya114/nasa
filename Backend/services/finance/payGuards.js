@@ -2,7 +2,8 @@
 //
 // A row is protected when recalculating it from today's route rates could change a figure that is already settled:
 //   1. it is an earning on a pay statement (approved or paid pay runs freeze their earnings), or
-//   2. it is part of a verified carrier statement: its figures were imported and reconciled against the carrier's bill.
+//   2. it is part of a verified carrier statement AND already has a driver payment: its figures were reconciled against the carrier's bill.
+//      A row with no driver payment yet is open work and is never protected by a statement, so it can receive its first calculation.
 // Everything else is recalculated exactly as before. Protected rows are counted and reported, never silently skipped.
 
 const EARNING_ON_STATEMENT = `EXISTS (SELECT 1 FROM pay_statement_lines psl WHERE psl.payment_dashboard_id = pd.id AND psl.active AND psl.line_type = 'earning')`;
@@ -10,11 +11,17 @@ const EARNING_ON_STATEMENT = `EXISTS (SELECT 1 FROM pay_statement_lines psl WHER
 // A weekly row: no sequence numbers (the Dashboard's own rule).
 const WEEKLY_ROW = `(pd.start_seq IS NULL OR pd.end_seq IS NULL OR pd.start_seq = 0 OR pd.end_seq = 0)`;
 
+// A row that already has a calculated driver payment, closed or not: that amount was reconciled, so it stays. A row that has no driver payment yet is still open
+// work: it must be able to get its first calculation, or it can never close and enter a pay run, whatever week it falls in.
+const ALREADY_CALCULATED = `(pd.driver_payment IS NOT NULL)`;
+
 const IN_VERIFIED_STATEMENT = `(
-    EXISTS (SELECT 1 FROM carrier_statement_groups csg JOIN carrier_statements cs ON cs.id = csg.statement_id
-             WHERE csg.payment_dashboard_id = pd.id AND cs.status = 'published')
-    OR (${WEEKLY_ROW} AND EXISTS (SELECT 1 FROM carrier_statements cs2 JOIN routes csr ON csr.id = pd.route_id JOIN city csc ON csc.job = csr.job
-                                   WHERE cs2.status = 'published' AND cs2.city_id = csc.id AND pd.journey_date BETWEEN cs2.period_start AND cs2.period_end))
+    ${ALREADY_CALCULATED} AND (
+      EXISTS (SELECT 1 FROM carrier_statement_groups csg JOIN carrier_statements cs ON cs.id = csg.statement_id
+               WHERE csg.payment_dashboard_id = pd.id AND cs.status = 'published')
+      OR (${WEEKLY_ROW} AND EXISTS (SELECT 1 FROM carrier_statements cs2 JOIN routes csr ON csr.id = pd.route_id JOIN city csc ON csc.job = csr.job
+                                     WHERE cs2.status = 'published' AND cs2.city_id = csc.id AND pd.journey_date BETWEEN cs2.period_start AND cs2.period_end))
+    )
   )`;
 
 // The SQL condition that is true for a protected row (the payment_dashboard table must be aliased `pd`). `db` is a pool or client: the carrier

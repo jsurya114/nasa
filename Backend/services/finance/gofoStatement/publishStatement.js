@@ -10,7 +10,7 @@ import * as store from './statementStore.js';
 //   1. read and reconcile the workbook against its own controls (no database),
 //   2. work out the fleet's city from the routes and match the statement to NASA's recorded work,
 //   3. only a statement that reconciles with no problem and belongs to exactly one city can be published.
-// Publishing is idempotent: the same statement again changes nothing; a corrected statement for the same fleet and week becomes a new version
+// Publishing is idempotent: the same statement again changes nothing; a corrected statement for the same city and week (the city is verified from the routes, so the fleet's spelling cannot split a week) becomes a new version
 // that supersedes the old one, and the old rows stay for the audit trail. Nothing here writes to payment_dashboard or any payroll table.
 
 const CARRIER = 'gofo';
@@ -115,8 +115,8 @@ export const previewStatement = async (db, buffer) => {
   if (reviewed.status !== 'ok') return reviewed;
   const plan = await planStatement(db, reviewed);
   if (plan.status !== 'ready') return plan;
-  const existing = await db.query('SELECT id, version, status, fingerprint FROM carrier_statements WHERE carrier = $1 AND fleet = $2 AND period_start = $3::date ORDER BY version DESC',
-    [CARRIER, plan.fleet, reviewed.week.start]);
+  const existing = await db.query('SELECT id, version, status, fingerprint FROM carrier_statements WHERE carrier = $1 AND city_id = $2 AND period_start = $3::date ORDER BY version DESC',
+    [CARRIER, plan.city.cityId, reviewed.week.start]);
   return { status: 'ready', ...describe(reviewed, plan), outcome: outcomeOf(existing.rows, reviewed.reconciliation.fingerprint) };
 };
 
@@ -131,7 +131,7 @@ export const publishStatement = async (pool, buffer, { user, sourceLabel, origin
     const plan = await planStatement(client, reviewed);
     if (plan.status !== 'ready') { await client.query('ROLLBACK'); return plan; }
     const { statement, reconciliation, week } = reviewed;
-    const existing = await store.lockWeek(client, { carrier: CARRIER, fleet: plan.fleet, periodStart: week.start });
+    const existing = await store.lockWeek(client, { carrier: CARRIER, cityId: plan.city.cityId, periodStart: week.start });
     const outcome = outcomeOf(existing, reconciliation.fingerprint);
     if (outcome.kind === 'already_published' || outcome.kind === 'older_version') {
       await client.query('ROLLBACK');
