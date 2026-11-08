@@ -16,6 +16,12 @@ Two findings from Jasil's latest review.
 2. **One safe re-match.** `rematchOpenGroups` now holds and re-checks the pay rows it attaches (`holdMatchedWork`) for every statement it touched, and throws `StatementWorkChanged` if a journey changed,
    so each caller's transaction or savepoint undoes the match. This covers the automatic re-match after a weekly Excel add (PR #256 handles its savepoint) as well as the manual one (#255).
 
+## Recheck also covers the classification (from an automated security review)
+
+The hold-and-recheck now also requires each matched pay row to still be weekly work (no sequence number on either end), so a sequence edit that slipped in between matching and the lock is
+detected and undoes the publish or re-match. It cannot tell whether a row was "both zero" at match time (a half-set range is still weekly work that a weekly city does not count); that case is
+covered by the journey guard once the statement stands, not by the recheck.
+
 ## Database
 
 `carrier_statement_work_guard_update` is recreated: it now also fires for `start_seq` and `end_seq` and the WHEN clause compares both classifications. Re-runnable; rollback unchanged.

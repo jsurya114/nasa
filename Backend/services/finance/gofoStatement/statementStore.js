@@ -97,7 +97,7 @@ export const insertItems = async (db, statementId, kind, items) => {
 };
 
 // The matched groups of a statement point at NASA's pay rows by plain id (no foreign key), so the rows are LOCKED here until the transaction ends and checked once
-// more: each must still exist with the same driver, route and day. Without this, a journey moved or deleted between matching and commit could leave a published
+// more: each must still exist with the same driver, route and day and still be weekly work (an edit to its sequence numbers is a change too). Without this, a journey moved or deleted between matching and commit could leave a published
 // statement pointing at work that is no longer there. Returns true when every matched group's row is held and unchanged; the caller rolls back otherwise.
 export const holdMatchedWork = async (db, statementId) => {
   const { rows } = await db.query(
@@ -105,6 +105,7 @@ export const holdMatchedWork = async (db, statementId) => {
        SELECT g.delivery_id
          FROM carrier_statement_groups g
          JOIN payment_dashboard pd ON pd.id = g.payment_dashboard_id AND pd.driver_id = g.driver_id AND pd.route_id = g.route_id AND pd.journey_date = g.signed_on
+                                  AND (pd.start_seq IS NULL OR pd.end_seq IS NULL OR pd.start_seq = 0 OR pd.end_seq = 0) -- still weekly work, the only kind matching attaches to
         WHERE g.statement_id = $1 AND g.match_state = 'matched'
           FOR SHARE OF pd
      )
