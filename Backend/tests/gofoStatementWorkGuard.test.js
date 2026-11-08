@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { publishStatement } from '../services/finance/gofoStatement/publishStatement.js';
-import { holdMatchedWork, voidStatement } from '../services/finance/gofoStatement/statementStore.js';
+import { StatementWorkChanged, holdMatchedWork, rematchOpenGroups, voidStatement } from '../services/finance/gofoStatement/statementStore.js';
+import AdminJourneyQuery from '../services/admin/AjourneyQuery.js';
 import { isStatementWorkConflict } from '../services/finance/gofoStatement/workGuard.js';
 import { statementSheets, statementWorkbook } from './helpers/gofoStatementFixture.js';
 
@@ -64,6 +65,17 @@ test('a journey with verified carrier revenue cannot be moved or deleted until t
     assert.equal(isStatementWorkConflict(await attempt('UPDATE dashboard_data SET driver_id = $2 WHERE id = $1', [matched, driverB])), true, 'so is giving it to another driver');
     assert.equal(isStatementWorkConflict(await attempt("UPDATE dashboard_data SET journey_date = '2026-10-21' WHERE id = $1", [matched])), true, 'or another day');
     assert.equal(isStatementWorkConflict(await attempt('DELETE FROM dashboard_data WHERE id = $1', [matched])), true, 'and deleting it');
+    // The journey screen's own update path: changing the sequence numbers changes whether the work counts as weekly, which would take its revenue out of the city's reports.
+    const viaScreen = async (id, start_seq, end_seq, route_id = routeA, driver_id = driverA) => {
+      await client.query('SAVEPOINT screen');
+      try { await AdminJourneyQuery.updateJourneyById(id, { start_seq, end_seq, route_id, driver_id }, client); return null; } catch (error) { return error; } finally { await client.query('ROLLBACK TO SAVEPOINT screen'); }
+    };
+    assert.equal(isStatementWorkConflict(await viaScreen(matched, 1, 10)), true, 'giving a weekly journey sequence numbers is refused while a statement bills it');
+    assert.equal(isStatementWorkConflict(await viaScreen(matched, 0, 5)), true, 'and so is a half-set range, which a weekly city no longer counts');
+    assert.equal(await viaScreen(matched, 0, 0), null, 'saving the same classification is not affected');
+    assert.equal(await viaScreen(unbilled, 1, 10), null, 'a journey the statement does not carry can still change');
+    const stillCounted = (await one("SELECT counts_for_city FROM reporting.delivery_facts WHERE fact_id = (SELECT id FROM payment_dashboard WHERE dashboard_data_id = $1)", [matched])).counts_for_city;
+    assert.equal(stillCounted, true, 'the matched journey still counts for its city');
     assert.equal(await attempt('UPDATE dashboard_data SET packages = 5, route_id = $2 WHERE id = $1', [matched, routeA]), null, 'edits that do not move it are not affected');
     assert.equal(await attempt('UPDATE dashboard_data SET driver_id = $2 WHERE id = $1', [unbilled, driverA]), null, 'a journey the statement does not carry is free');
     assert.equal(await attempt('DELETE FROM dashboard_data WHERE id = $1', [unbilled]), null);
@@ -80,6 +92,7 @@ test('a journey with verified carrier revenue cannot be moved or deleted until t
 
     // Voiding is the supported correction path: the history stays, and the journey is free to change or delete (no foreign key blocks it any more).
     assert.equal(await voidStatement(client, published.statementId, { actorId: 1, reason: 'fixing the journey, then publishing again' }), true);
+    assert.equal(await viaScreen(matched, 1, 10), null, 'free to give it sequence numbers after the void');
     assert.equal(await attempt('UPDATE dashboard_data SET route_id = $2 WHERE id = $1', [matched, routeOther]), null, 'free to move after the void');
     assert.equal(await attempt('DELETE FROM dashboard_data WHERE id = $1', [matched]), null, 'free to delete after the void');
     await client.query('DELETE FROM dashboard_data WHERE id = $1', [matched]);
@@ -93,4 +106,11 @@ test('a journey with verified carrier revenue cannot be moved or deleted until t
     client.release();
     await pool.end();
   }
+});
+
+test('every re-match, not only the manual one, undoes itself when a journey changed under it', async () => {
+  // A fake connection: the match update attaches one group of statement 5; the hold-and-recheck then finds a pay row that no longer matches.
+  const fake = (held) => ({ query: async (sql) => (/WITH open_groups/.test(sql) ? { rows: [{ statement_id: '5' }] } : { rows: [{ expected: 1, held }] }) });
+  assert.equal(await rematchOpenGroups(fake(1), { cityId: 1 }), 1, 'nothing changed: the match stands');
+  await assert.rejects(rematchOpenGroups(fake(0), { cityId: 1 }), StatementWorkChanged, 'a changed journey rolls the match back through the caller');
 });

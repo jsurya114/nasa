@@ -179,16 +179,11 @@ export const voidStatement = (db, id, { actorId, reason }) => inTransaction(db, 
 
 // Re-matches one published statement and records who did it, in one transaction. The statement row is locked first, so a void or another re-match cannot
 // run in between. Returns null when the statement is not published, otherwise how many groups were matched.
-export class StatementWorkChanged extends Error {
-  constructor() { super('A journey changed while the statement was being matched. Nothing was changed. Try again.'); this.name = 'StatementWorkChanged'; }
-}
-
 export const rematchStatement = (db, id, { actorId }) => inTransaction(db, async (tx) => {
   const { rows } = await tx.query('SELECT status FROM carrier_statements WHERE id = $1 FOR UPDATE', [id]);
   if (rows[0]?.status !== 'published') return null;
+  // rematchOpenGroups holds and re-checks the pay rows it attaches, so work that changed meanwhile undoes the whole re-match.
   const matched = await rematchOpenGroups(tx, { statementId: id });
-  // The newly matched pay rows are held and re-checked, as in publishing, so work that changed meanwhile cannot be attached (the whole re-match is undone).
-  if (matched > 0 && !(await holdMatchedWork(tx, id))) throw new StatementWorkChanged();
   if (matched > 0) await addEvent(tx, id, 'rematched', actorId, `${matched} group${matched === 1 ? '' : 's'} matched`);
   return matched;
 });
@@ -209,6 +204,10 @@ export const listStatements = async (db, { limit = 50 } = {}) => {
     unallocatedGroups: r.unallocated_groups,
   }));
 };
+
+export class StatementWorkChanged extends Error {
+  constructor() { super('A journey changed while the statement was being matched. Nothing was changed. Try again.'); this.name = 'StatementWorkChanged'; }
+}
 
 // Matches groups that were left unmatched when NASA has since recorded the work (or the driver or route was added). Matching only ever
 // moves a group from unmatched to matched, so this is safe to run any time and as often as wanted. Returns how many groups it matched.
@@ -237,6 +236,11 @@ export const rematchOpenGroups = async (db, { statementId = null, cityId = null 
      RETURNING g.statement_id`,
     [statementId, cityId]
   );
+  // Every caller gets the same safety: the pay rows just attached are held and re-checked before the caller commits (see holdMatchedWork). If a journey changed,
+  // StatementWorkChanged is thrown and the caller's transaction (or savepoint) undoes the whole match.
+  for (const id of new Set(rows.map((r) => String(r.statement_id)))) {
+    if (!(await holdMatchedWork(db, id))) throw new StatementWorkChanged();
+  }
   return rows.length;
 };
 
