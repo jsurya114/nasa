@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { publishStatement, previewStatement } from '../services/finance/gofoStatement/publishStatement.js';
 import { listStatements, rematchOpenGroups, voidStatement } from '../services/finance/gofoStatement/statementStore.js';
+import { createStatementService } from '../services/finance/gofoStatement/statementService.js';
 import { statementSheets, statementWorkbook } from './helpers/gofoStatementFixture.js';
 
 // Needs a PostgreSQL copy that has the app's tables (never production). Run with PAYROLL_TEST_DB=1 and the usual DB_* variables. Everything happens inside
@@ -31,8 +32,10 @@ const nestedPool = (client) => {
 
 const sheets = () => statementSheets({ idA: ID_A, idB: ID_B });
 // A corrected statement: one fee goes from 0.50 to 0.60, and every control the carrier writes is corrected with it.
+// The correction also spells the fleet differently and carries a new bill number, which must not start a second live statement for the city and week.
 const corrected = () => {
   const s = sheets();
+  s['DSP Summary'][2][0] = 'AP0000000002'; s['DSP Summary'][2][2] = 'TST NLC';
   s['Details of Delivery Fees'][4][15] = 0.6;
   s['DSP Summary'][2][6] = 2.31; s['DSP Summary'][2][9] = 2.31; s['DSP Summary'][2][13] = 5.01;
   s['Driver Summary'][3][2] = 2.4; s['Driver Summary'][3][6] = 2.4;
@@ -98,6 +101,27 @@ test('a carrier statement is previewed, published once, corrected, matched later
       assert.equal(rows[0].driver_payment, '3.00');
     });
 
+    await t.test('a re-match or a void whose audit event fails is undone completely, so it can be retried', async () => {
+      await client.query('SAVEPOINT audit_failure');
+      const rowB = await work(driverB, routeB, '2026-10-20', '1.50');
+      const withoutEvents = { connect: async () => { const c = await db.connect(); return { release: c.release, query: (sql, params) => (/INSERT INTO carrier_statement_events/.test(sql) ? Promise.reject(new Error('event write failed')) : c.query(sql, params)) }; } };
+      const broken = createStatementService(withoutEvents);
+      const events = () => stored('carrier_statement_events');
+      const eventsBefore = await events();
+      await assert.rejects(broken.rematch(first.statementId, { actorId: 7 }), /event write failed/);
+      assert.equal(await one("SELECT count(*) AS n FROM carrier_statement_groups WHERE match_state <> 'matched'"), 1, 'the failed re-match left the group unmatched');
+      await assert.rejects(broken.void(first.statementId, { actorId: 7, reason: 'wrong week' }), /event write failed/);
+      assert.equal((await client.query('SELECT status FROM carrier_statements WHERE id = $1', [first.statementId])).rows[0].status, 'published', 'the failed void left it published');
+      assert.equal(await events(), eventsBefore);
+      const service = createStatementService(db);
+      assert.equal(await service.rematch(first.statementId, { actorId: 7 }), 1, 'the retry finds the group and succeeds');
+      assert.equal(await events(), eventsBefore + 1);
+      assert.equal(await service.rematch(first.statementId, { actorId: 7 }), 0);
+      assert.equal(await events(), eventsBefore + 1, 'a re-match that changes nothing writes no event');
+      assert.equal(rowB > 0, true);
+      await client.query('ROLLBACK TO SAVEPOINT audit_failure');
+    });
+
     await t.test('work that reaches NASA later is matched; matching only ever moves from unmatched to matched', async () => {
       assert.equal(await rematchOpenGroups(client, { cityId: city }), 0, 'nothing new to match yet');
       const rowB = await work(driverB, routeB, '2026-10-20', '1.50');
@@ -119,6 +143,14 @@ test('a carrier statement is previewed, published once, corrected, matched later
       assert.deepEqual(rows.map((r) => [r.version, r.status]), [[1, 'superseded'], [2, 'published']]);
       assert.equal(String(rows[1].supersedes_id), String(first.statementId));
       assert.equal(await one("SELECT count(*) AS n FROM carrier_statement_events WHERE event = 'superseded'"), 1);
+      assert.equal(await one("SELECT count(*) AS n FROM carrier_statements WHERE status = 'published'"), 1, 'one live statement for the city and week');
+      await client.query('SAVEPOINT second_live');
+      const second = await client.query(`INSERT INTO carrier_statements (carrier, fleet, city_id, period_start, period_end, billing_week, bill_number, currency, fingerprint, version, status,
+          detail_fee_cents, offset_cents, claims_cents, adjustments_cents, settlement_payable_cents, detail_lines, offset_lines, source_label)
+        SELECT carrier, 'SOMETHING ELSE', city_id, period_start, period_end, billing_week, 'AP9', currency, repeat('a', 64), 50, 'published',
+          detail_fee_cents, offset_cents, claims_cents, adjustments_cents, settlement_payable_cents, detail_lines, offset_lines, 'x' FROM carrier_statements WHERE status = 'published'`).then(() => 'inserted', (error) => error.message);
+      await client.query('ROLLBACK TO SAVEPOINT second_live');
+      assert.match(second, /carrier_statements_one_published_per_city|duplicate key/, 'the database also refuses a second live statement under another fleet spelling');
       const old = await publishStatement(db, file, { user: { id: 7 }, sourceLabel: 'old copy.xlsx' });
       assert.equal(old.status, 'older_version', 'an earlier version is never published again by accident');
     });
