@@ -6,6 +6,7 @@ import AuthCheckRetry from "../../native/AuthCheckRetry.jsx";
 import PushSetup from "../../native/PushSetup.jsx";
 import EvereeSetupProvider from "../../hooks/EvereeSetupProvider.jsx";
 import PaymentSetupBanner from "../../components/Drivers/everee/PaymentSetupBanner.jsx";
+import SetupLock from "../../components/Drivers/everee/SetupLock.jsx";
 import PaymentSetupPrompt from "../../components/Drivers/everee/PaymentSetupPrompt.jsx";
 
 function DProtectRoutes() {
@@ -41,7 +42,7 @@ function DProtectRoutes() {
             <PushSetup area="driver" />
             <PaymentSetupBanner />
             <PaymentSetupPrompt />
-            <Outlet />
+            <SetupLock><Outlet /></SetupLock>
         </EvereeSetupProvider>
     );
 }

@@ -164,10 +164,12 @@ export default function PaymentSetup() {
         <div aria-live="polite">
           {message && <p role={message.tone === "bad" ? "alert" : "status"} className={`mb-4 rounded-xl p-3 text-sm ${message.tone === "bad" ? "bg-red-50 text-red-700" : "bg-brand-50 text-brand-700"}`}>{t(message.key)}</p>}
         </div>
+        {setup.required && <p className="mb-4 rounded-xl bg-brand-50 p-3 text-sm text-brand-700">{t("psetEmailNote")}</p>}
+        {setup.locked && <p role="alert" className="mb-4 rounded-xl bg-amber-50 p-3 text-sm font-medium text-amber-900">{t("psetLockedNote")}</p>}
         {body}
       </main>
       {mode === "embed" && session && <EvereeEmbed session={session} onFinished={closeEmbed} onClose={closeEmbed} onProblem={problem} />}
-      <Nav />
+      {!setup.locked && <Nav />}
     </div>
   );
 }

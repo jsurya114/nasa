@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import axios from "../redux/slice/axiosInstance";
 import { isNativeShell } from "../native/bridge";
-import { EvereeSetupContext, isSetupRequired } from "./useEvereeSetup.js";
+import { EvereeSetupContext, isSetupLocked, isSetupRequired } from "./useEvereeSetup.js";
 
 // Fills the context with the signed-in driver's setup state. It lives in React state only: never in Redux, storage or the URL, so nothing is left for the
 // next person on the phone, and it is gone when the driver signs out (this unmounts with the signed-in pages). A session link is returned to the caller
@@ -60,6 +60,7 @@ export default function EvereeSetupProvider({ children }) {
     status, data, reload, refresh, start, openSession,
     required: isSetupRequired(data),
     enforced: Boolean(data?.enforced),
+    locked: isSetupLocked(data),
     promptDismissed,
     dismissPrompt: () => setPromptDismissed(true),
   }), [status, data, reload, refresh, start, openSession, promptDismissed]);

@@ -38,6 +38,7 @@ const mount = async (path) => {
             <Route path="/driver/agreement" element={<DriverAgreement />} />
             <Route path="/driver/payment-setup" element={<PaymentSetup />} />
             <Route path="/driver/dashboard" element={<p>Driver dashboard</p>} />
+            <Route path="/driver/pay" element={<p>Driver pay</p>} />
           </Route>
           <Route path="/driver/login" element={<p>Login</p>} />
         </Routes>
@@ -88,7 +89,7 @@ describe("the way in for a driver", () => {
   });
 
   it("the menu has a Payment setup entry only while the setup is unfinished", async () => {
-    await serve({ signed: true, setup: status({ state: "in-progress", canStart: false }) });
+    await serve({ signed: true, setup: status({ state: "in-progress", canStart: false, enforced: false }) });
     await mount("/driver/payment-setup");
     await screen.findByRole("button", { name: "Continue setup" });
     expect(document.querySelector('a[href="/driver/payment-setup"]')).not.toBeNull();
@@ -97,5 +98,43 @@ describe("the way in for a driver", () => {
     await mount("/driver/payment-setup");
     await screen.findByText("Your payment setup is complete.");
     expect(document.querySelector('nav a[href="/driver/payment-setup"]')).toBeNull();
+  });
+
+  it("an unfinished Local driver is locked out of every other page and told to use the same email", async () => {
+    await serve({ signed: true, setup: status({ state: "in-progress", canStart: false }) });
+    const trail = await mount("/driver/pay");
+    expect(await screen.findByRole("button", { name: "Continue setup" })).toBeTruthy();
+    expect(screen.queryByText("Driver pay")).toBeNull();
+    await waitFor(() => expect(trail.at(-1)).toBe("/driver/payment-setup"));
+    expect(screen.getByText(/same email address you use to sign in/i)).toBeTruthy();
+    expect(document.querySelector("nav")).toBeNull(); // no menu to leave by
+  });
+
+  it("without enforcement the driver is only reminded, not locked", async () => {
+    await serve({ signed: true, setup: status({ state: "in-progress", canStart: false, enforced: false }) });
+    await mount("/driver/pay");
+    expect(await screen.findByText("Driver pay")).toBeTruthy();
+  });
+
+  it("a driver whose setup is complete reaches every page", async () => {
+    await serve({ signed: true, setup: status({ state: "complete", required: false, canStart: false }) });
+    await mount("/driver/pay");
+    expect(await screen.findByText("Driver pay")).toBeTruthy();
+  });
+
+  it("a driver who has not signed, or is still to be classified, is not locked by the setup", async () => {
+    await serve({ signed: true, setup: status({ state: "classification-required", canStart: false }) });
+    await mount("/driver/pay");
+    expect(await screen.findByText("Driver pay")).toBeTruthy();
+  });
+
+  it("when the setup status cannot be read the pages stay open (the server gate still holds work)", async () => {
+    await installServer(async (config) => {
+      if (config.url === "/driver/everee/status") return { status: 500, data: {} };
+      if (config.url === "/driver/access-driver") return { status: 200, data: { driver: { id: 1, name: "Dee Test", agreement_signed: true } } };
+      return { status: 200, data: {} };
+    });
+    await mount("/driver/pay");
+    expect(await screen.findByText("Driver pay")).toBeTruthy();
   });
 });
