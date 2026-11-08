@@ -225,8 +225,14 @@ DROP TRIGGER IF EXISTS carrier_statement_work_guard_delete ON payment_dashboard;
 CREATE TRIGGER carrier_statement_work_guard_delete BEFORE DELETE ON payment_dashboard
   FOR EACH ROW EXECUTE FUNCTION carrier_statement_work_guard();
 DROP TRIGGER IF EXISTS carrier_statement_work_guard_update ON payment_dashboard;
-CREATE TRIGGER carrier_statement_work_guard_update BEFORE UPDATE OF driver_id, route_id, journey_date ON payment_dashboard
-  FOR EACH ROW WHEN (OLD.driver_id IS DISTINCT FROM NEW.driver_id OR OLD.route_id IS DISTINCT FROM NEW.route_id OR OLD.journey_date IS DISTINCT FROM NEW.journey_date)
+-- The classification of a journey as weekly (and whether its city counts it) comes from its sequence numbers, so an edit that changes either classification is a move too:
+-- weekly work is "no sequence numbers on either end" for the carrier matching and the reporting source, and "both zero" for whether a weekly city counts it.
+CREATE TRIGGER carrier_statement_work_guard_update BEFORE UPDATE OF driver_id, route_id, journey_date, start_seq, end_seq ON payment_dashboard
+  FOR EACH ROW WHEN (
+    OLD.driver_id IS DISTINCT FROM NEW.driver_id OR OLD.route_id IS DISTINCT FROM NEW.route_id OR OLD.journey_date IS DISTINCT FROM NEW.journey_date
+    OR (OLD.start_seq IS NULL OR OLD.end_seq IS NULL OR OLD.start_seq = 0 OR OLD.end_seq = 0) IS DISTINCT FROM (NEW.start_seq IS NULL OR NEW.end_seq IS NULL OR NEW.start_seq = 0 OR NEW.end_seq = 0)
+    OR (OLD.start_seq = 0 AND OLD.end_seq = 0) IS DISTINCT FROM (NEW.start_seq = 0 AND NEW.end_seq = 0)
+  )
   EXECUTE FUNCTION carrier_statement_work_guard();
 
 -- The statements that stand, with their matched and unallocated revenue worked out from the groups, so the two can never drift apart
