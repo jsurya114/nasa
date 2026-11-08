@@ -1,7 +1,7 @@
 import pool from "../../config/db.js";
 import logger from "../../utils/logger.js";
 import { lockUploads } from "./uploadSafety.js";
-import { rematchOpenGroups } from "../finance/gofoStatement/statementStore.js";
+import { matchAfterWeeklyAdd } from "../finance/gofoStatement/matchAfterWeeklyAdd.js";
 import { companyEarningsSql } from "../finance/companyRates.js";
 
         export const WeeklyExcelQueries={
@@ -438,17 +438,9 @@ createEntriesFromWeeklyCount: async ({ beforeInsert = null } = {}) => {
     const insuranceResult = await client.query(insuranceQuery, [INSURANCE_RATE_PER_DAY, insertedIds]);
     await WeeklyExcelQueries.deleteWeeklyTableIfExists('weeklycount', client);
 
-    // A carrier statement published before this work reached the Dashboard has groups it could not match yet (issue #252). They are matched now.
-    // In a savepoint: matching never changes what the weekly add stores, and an older database without the statement tables simply skips it.
-    let statementGroupsMatched = 0;
-    await client.query('SAVEPOINT statement_rematch');
-    try {
-      statementGroupsMatched = await rematchOpenGroups(client);
-      await client.query('RELEASE SAVEPOINT statement_rematch');
-    } catch (matchError) {
-      await client.query('ROLLBACK TO SAVEPOINT statement_rematch');
-      if (matchError.code !== '42P01') logger.error('Carrier statements could not be matched after the weekly add', matchError);
-    }
+    // A carrier statement published before this work reached the Dashboard has groups it could not match yet (issue #252). They are matched now, in a savepoint that
+    // never fails the weekly add (services/finance/gofoStatement/matchAfterWeeklyAdd.js).
+    const statementGroupsMatched = await matchAfterWeeklyAdd(client, logger);
 
     await client.query('COMMIT');
     logger.info('Weekly data added to the dashboard', {

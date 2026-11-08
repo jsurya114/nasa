@@ -7,10 +7,11 @@ import { readEvereeConfig } from './evereeConfig.js';
 import { createEvereeClient, EvereeError } from './evereeClient.js';
 import { DEFAULT_TIME_ZONE } from './payableRules.js';
 import { clip, defaultSleep, inTransaction, recordPayableStatus, withRateLimitRetry } from './batchSubmit.js';
-import { isPaymentId, readPayable, readPayoutState } from './paymentState.js';
+import { countsAsLanded, isPaymentId, ownPayableIsPaidInPayment, readPayable, readPayoutState } from './paymentState.js';
 
 // Reading payments back from Everee (issue #31, part 5). The only place where an Everee item becomes "paid", and it happens only when
 // Everee's Payment Data API says EVERY payout of the payment is PAID (money deposited), never because we sent something or an event said so.
+// In the SANDBOX only, the payment's own PAID status counts too (its bank payouts may never settle there): see countsAsLanded.
 // Events (webhooks) are only a prompt to look again: what they say is not trusted, Everee is asked.
 //
 //  - A payable's status moves a blocked item to "unconfirmed" and an item Everee is processing back to "submitted" (recordPayableStatus).
@@ -102,6 +103,17 @@ const findPaymentData = async (client, payDate, paymentId, deps) => {
   return null;
 };
 
+// Sandbox only (see ownPayableIsPaidInPayment): reads our own payable; any problem reading it means "not verified", so the item is left for a person.
+const ownPayableIsPaid = async (client, item, paymentId, deps) => {
+  if (item.environment !== 'sandbox') return false;
+  try {
+    const { data } = await withRateLimitRetry(() => client.getPayable(item.external_id), deps);
+    return ownPayableIsPaidInPayment(item.environment, data, { paymentId, amount: item.amount });
+  } catch {
+    return false;
+  }
+};
+
 // Looks again at one item. Never throws for an Everee problem: it is written as a note and the item keeps its status.
 // `deps.environment` is the environment the Everee client belongs to; an item of another environment is never looked at with it.
 export const reconcileItem = async (db, itemId, deps = {}, client) => {
@@ -184,7 +196,7 @@ export const reconcileItem = async (db, itemId, deps = {}, client) => {
     await note(db, item.id, "Everee's answer for this payment was not understood, so it is not marked paid. Check it in Everee.");
     return 'unknown';
   }
-  if (payout.state === 'pending') {
+  if (payout.state === 'pending' && !countsAsLanded(item.environment, payout)) {
     await note(db, item.id, 'Everee has the payment; the deposit is not complete yet.');
     return 'pending';
   }
@@ -206,7 +218,7 @@ export const reconcileItem = async (db, itemId, deps = {}, client) => {
   // The amount, when Everee states it, must be exactly what this item froze (a worker's payment may hold only our item or several).
   if (payout.netCents !== null && payout.netCents !== toCents(item.amount)) {
     const { rows: [sum] } = await db.query('SELECT COALESCE(SUM(amount), 0)::text AS total FROM everee_payment_items WHERE everee_payment_id = $1', [paymentId]);
-    if (payout.netCents !== toCents(sum.total)) {
+    if (payout.netCents !== toCents(sum.total) && !(await ownPayableIsPaid(client, item, paymentId, deps))) {
       await note(db, item.id, `Everee paid ${fromCents(payout.netCents)} for this payment but ${sum.total} was sent. It is not marked paid; check it in Everee.`);
       return 'amount_differs';
     }
