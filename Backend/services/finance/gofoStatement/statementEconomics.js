@@ -14,6 +14,12 @@ import { centsToText } from './statementMoney.js';
 // Only the statement that stands (published) has NASA-side figures. The reporting view assigns records to published statements only, so a superseded or voided
 // version has no live records to work from; its driver earnings, margin, contribution, insurance and NASA counts are NOT AVAILABLE (null, empty in the list and the CSV),
 // never zero, and never copied from the version that replaced it. What the carrier itself stated on that version stays.
+//
+// Cost coverage. Margin and contribution are only as good as the driver cost behind them, so each statement says how far its cost is known (marginStatus):
+//   complete      every carrier line is matched to NASA work and every covered record has its driver earnings
+//   provisional   some cost is missing: a covered record has no driver earnings yet, or carrier lines matched no NASA work. The figures are kept, with the reasons.
+//   unavailable   no NASA work is recorded against the statement at all (or it is an inactive version): driver cost and margin are null, never zero.
+// Delivery revenue, claims, adjustments and settlement payable are the carrier's own and always stay visible.
 export const INACTIVE_REASON = 'This version is no longer the statement that stands, so NASA\'s driver earnings are not attributed to it. The carrier\'s own figures are kept.';
 
 const cents = (numeric) => Math.round(Number(numeric ?? 0) * 100);
@@ -22,7 +28,7 @@ export const statementEconomics = async (db, statementIds) => {
   if (statementIds.length === 0) return new Map();
   const { rows } = await db.query(
     `SELECT s.id, s.status, s.detail_fee_cents, s.offset_cents, s.claims_cents, s.adjustments_cents, s.settlement_payable_cents, s.carrier_deliveries,
-            t.matched_cents, t.unallocated_cents,
+            t.matched_cents, t.unallocated_cents, t.unallocated_groups,
             COALESCE(f.driver_cents, 0)::bigint AS driver_cents, COALESCE(f.insurance_cents, 0)::bigint AS insurance_cents,
             COALESCE(f.records, 0)::int AS records, COALESCE(f.unbilled_records, 0)::int AS unbilled_records, COALESCE(f.nasa_deliveries, 0)::bigint AS nasa_deliveries,
             COALESCE(f.without_driver_earnings, 0)::int AS without_driver_earnings
@@ -51,17 +57,32 @@ export const statementEconomics = async (db, statementIds) => {
     const margin = revenue - driver;
     const claims = Number(r.claims_cents);
     const adjustments = Number(r.adjustments_cents);
+    const reasons = [];
+    let marginStatus = 'complete';
+    if (!active) {
+      marginStatus = 'unavailable';
+      reasons.push(INACTIVE_REASON);
+    } else if (r.records === 0 && revenue !== 0) {
+      marginStatus = 'unavailable';
+      reasons.push('No NASA work is recorded against this statement yet, so driver cost and margin are not available.');
+    } else {
+      if (r.without_driver_earnings > 0) reasons.push(`${r.without_driver_earnings} NASA record${r.without_driver_earnings === 1 ? ' has' : 's have'} no driver earnings yet, so ${r.without_driver_earnings === 1 ? 'its' : 'their'} cost is not in this margin.`);
+      if (Number(r.unallocated_groups) > 0) reasons.push(`${r.unallocated_groups} carrier line group${Number(r.unallocated_groups) === 1 ? '' : 's'} (${centsToText(Number(r.unallocated_cents))}) matched no NASA work, so the driver cost behind ${Number(r.unallocated_groups) === 1 ? 'it' : 'them'} is not in this margin.`);
+      if (reasons.length > 0) marginStatus = 'provisional';
+    }
+    const known = marginStatus !== 'unavailable';
+    const ifKnown = (value) => (known ? value : null);
     const ifActive = (value) => (active ? value : null);
     return [String(r.id), {
       deliveryRevenue: centsToText(revenue),
-      driverEarnings: ifActive(centsToText(driver)),
-      deliveryMargin: ifActive(centsToText(margin)),
+      driverEarnings: ifKnown(centsToText(driver)),
+      deliveryMargin: ifKnown(centsToText(margin)),
       carrierClaims: centsToText(claims),
       ledgerAdjustments: centsToText(adjustments),
-      contribution: ifActive(centsToText(margin + claims + adjustments)),
+      contribution: ifKnown(centsToText(margin + claims + adjustments)),
       settlementPayable: centsToText(Number(r.settlement_payable_cents)),
-      insuranceWithheld: ifActive(centsToText(insurance)),
-      driverEarningsAfterInsurance: ifActive(centsToText(driver - insurance)),
+      insuranceWithheld: ifKnown(centsToText(insurance)),
+      driverEarningsAfterInsurance: ifKnown(centsToText(driver - insurance)),
       matchedRevenue: centsToText(Number(r.matched_cents)),
       unallocatedRevenue: centsToText(Number(r.unallocated_cents)),
       nasaRecords: ifActive(r.records),
@@ -70,8 +91,10 @@ export const statementEconomics = async (db, statementIds) => {
       recordsWithoutDriverEarnings: ifActive(r.without_driver_earnings),
       carrierDeliveries: r.carrier_deliveries,
       carrierDeliveriesNote: 'The carrier counts offset tickets as deliveries; NASA keeps its own completed-delivery count.',
-      economicsAvailable: active,
-      unavailableReason: active ? null : INACTIVE_REASON,
+      marginStatus,
+      marginReasons: reasons,
+      economicsAvailable: known,
+      unavailableReason: known ? null : reasons[0],
     }];
   }));
 };

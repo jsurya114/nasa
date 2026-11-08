@@ -98,15 +98,21 @@ CREATE TABLE IF NOT EXISTS carrier_statement_groups (
   fee_lines            INTEGER NOT NULL CHECK (fee_lines >= 0),
   offset_lines         INTEGER NOT NULL CHECK (offset_lines >= 0),
   match_state          TEXT    NOT NULL CHECK (match_state IN ('matched', 'no_route', 'unknown_route', 'unknown_driver', 'no_pay_group')),
-  route_id             INTEGER REFERENCES routes (id),
-  driver_id            INTEGER REFERENCES drivers (id),
-  payment_dashboard_id INTEGER REFERENCES payment_dashboard (id),   -- the NASA row this revenue is shown on (the lowest id of the day's rows)
+  -- The link to NASA's work (route, driver, pay row) is a plain id, not a foreign key: the statement is immutable evidence and must never block, or be broken by,
+  -- editing or deleting a journey. While the statement stands, carrier_statement_work_guard (below) refuses to move or delete a journey that carries its revenue.
+  route_id             INTEGER,
+  driver_id            INTEGER,
+  payment_dashboard_id INTEGER,                              -- the NASA row this revenue is shown on (the lowest id of the day's rows)
   nasa_driver_cents    BIGINT,                                -- NASA's gross driver earnings for the same grain when it was matched (audit only)
   matched_at           TIMESTAMPTZ,
   PRIMARY KEY (statement_id, delivery_id, signed_on, route_code),
   CONSTRAINT carrier_statement_groups_matched_consistent
     CHECK ((match_state = 'matched') = (payment_dashboard_id IS NOT NULL AND driver_id IS NOT NULL AND route_id IS NOT NULL AND matched_at IS NOT NULL))
 );
+-- A database that ran an earlier draft has the three foreign keys; they are dropped (the columns and their data stay).
+ALTER TABLE carrier_statement_groups DROP CONSTRAINT IF EXISTS carrier_statement_groups_route_id_fkey;
+ALTER TABLE carrier_statement_groups DROP CONSTRAINT IF EXISTS carrier_statement_groups_driver_id_fkey;
+ALTER TABLE carrier_statement_groups DROP CONSTRAINT IF EXISTS carrier_statement_groups_payment_dashboard_id_fkey;
 CREATE INDEX IF NOT EXISTS idx_carrier_statement_groups_row ON carrier_statement_groups (payment_dashboard_id) WHERE payment_dashboard_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_carrier_statement_groups_open ON carrier_statement_groups (statement_id) WHERE match_state <> 'matched';
 
@@ -194,6 +200,34 @@ $$ LANGUAGE plpgsql;
 DROP TRIGGER IF EXISTS carrier_statement_groups_guard ON carrier_statement_groups;
 CREATE TRIGGER carrier_statement_groups_guard BEFORE UPDATE OR DELETE ON carrier_statement_groups
   FOR EACH ROW EXECUTE FUNCTION carrier_statement_groups_guard();
+
+-- A journey that carries verified carrier revenue cannot be moved to another driver, route or day, or deleted, while the statement that bills it stands:
+-- moving it would take the revenue to another city's books, deleting it would orphan the revenue. The supported correction path is to void the statement (its
+-- history is kept), fix the journey, and publish the statement again; once the statement is voided or replaced the journey is free. Other edits (packages,
+-- sequence numbers, pay figures) are not affected. SQLSTATE CS001 lets the app answer with a plain message.
+CREATE OR REPLACE FUNCTION carrier_statement_work_guard() RETURNS trigger AS $$
+DECLARE holder BIGINT;
+BEGIN
+  SELECT g.statement_id INTO holder
+    FROM carrier_statement_groups g JOIN carrier_statements s ON s.id = g.statement_id
+   WHERE g.payment_dashboard_id = OLD.id AND g.match_state = 'matched' AND s.status = 'published'
+   LIMIT 1;
+  IF holder IS NOT NULL THEN
+    RAISE EXCEPTION 'This journey carries revenue verified by carrier statement %. Void that statement first, change the journey, then publish the statement again.', holder
+      USING ERRCODE = 'CS001';
+  END IF;
+  IF TG_OP = 'DELETE' THEN RETURN OLD; END IF;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS carrier_statement_work_guard_delete ON payment_dashboard;
+CREATE TRIGGER carrier_statement_work_guard_delete BEFORE DELETE ON payment_dashboard
+  FOR EACH ROW EXECUTE FUNCTION carrier_statement_work_guard();
+DROP TRIGGER IF EXISTS carrier_statement_work_guard_update ON payment_dashboard;
+CREATE TRIGGER carrier_statement_work_guard_update BEFORE UPDATE OF driver_id, route_id, journey_date ON payment_dashboard
+  FOR EACH ROW WHEN (OLD.driver_id IS DISTINCT FROM NEW.driver_id OR OLD.route_id IS DISTINCT FROM NEW.route_id OR OLD.journey_date IS DISTINCT FROM NEW.journey_date)
+  EXECUTE FUNCTION carrier_statement_work_guard();
 
 -- The statements that stand, with their matched and unallocated revenue worked out from the groups, so the two can never drift apart
 -- from the figures stored on the statement.

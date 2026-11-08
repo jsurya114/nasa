@@ -5,6 +5,9 @@
 //   2. it is part of a verified carrier statement AND already has a driver payment: its figures were reconciled against the carrier's bill.
 //      A row with no driver payment yet is open work and is never protected by a statement, so it can receive its first calculation.
 // Everything else is recalculated exactly as before. Protected rows are counted and reported, never silently skipped.
+//
+// One exception to "left exactly as they are": a row protected only by a carrier statement that is still open (not closed) keeps its amounts but is CLOSED, so open work
+// can finish and enter a pay run (the pay run loads closed rows only). Its driver payment and company figure are not touched. A row on a pay run is never touched at all.
 
 const EARNING_ON_STATEMENT = `EXISTS (SELECT 1 FROM pay_statement_lines psl WHERE psl.payment_dashboard_id = pd.id AND psl.active AND psl.line_type = 'earning')`;
 
@@ -35,3 +38,10 @@ export const protectedPayRowSql = async (db) => {
 };
 
 export const PROTECTED_ROWS_NOTE = 'Rows that belong to an approved pay run or a verified carrier statement were left exactly as they are.';
+
+// The SQL condition (alias `pd`) for a protected row that is only waiting to be closed: it is not closed yet and is not an earning on a pay statement.
+// Used together with protectedPayRowSql, to close such a row without recalculating its amounts.
+export const closeOnlyRowSql = async (db) => {
+  const { rows } = await db.query("SELECT to_regclass('public.pay_statement_lines') IS NOT NULL AS has_lines");
+  return rows[0].has_lines ? `(pd.closed IS NOT TRUE AND NOT ${EARNING_ON_STATEMENT})` : '(pd.closed IS NOT TRUE)';
+};
