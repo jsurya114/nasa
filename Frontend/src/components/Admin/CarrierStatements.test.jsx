@@ -185,6 +185,36 @@ describe("Carrier statements: a replaced version", () => {
   });
 });
 
+describe("Carrier statements: how far the driver cost is known", () => {
+  it("labels a margin whose driver cost is incomplete as provisional and gives the reasons, keeping the carrier's figures", async () => {
+    const economics = { ...ECONOMICS, marginStatus: "provisional", marginReasons: ["1 NASA record has no driver earnings yet, so its cost is not in this margin."], economicsAvailable: true };
+    await mount(async () => ({ status: 200, data: { statements: [statement({ economics })] } }));
+    const card = await screen.findByTestId("statement-7");
+    expect(within(card).getByTestId("margin-provisional").textContent).toMatch(/provisional.*1 NASA record has no driver earnings yet/);
+    expect(within(card).getByText(/Delivery margin.*provisional/)).toBeTruthy();
+    expect(within(card).getByText(/Contribution · provisional/)).toBeTruthy();
+    expect(within(card).getByTestId("fig-revenue").textContent).toBe("$4.91");
+    expect(within(card).getByTestId("fig-payable").textContent).toBe("$2.21");
+  });
+
+  it("shows no provisional note when the cost is complete", async () => {
+    await mount(async () => ({ status: 200, data: { statements: [statement({ economics: { ...ECONOMICS, marginStatus: "complete", marginReasons: [], economicsAvailable: true } })] } }));
+    const card = await screen.findByTestId("statement-7");
+    expect(within(card).queryByTestId("margin-provisional")).toBeNull();
+  });
+
+  it("shows unavailable cost and margin as Not available (never $0.00) when no NASA work is recorded yet, with the carrier figures intact", async () => {
+    const economics = { ...ECONOMICS, driverEarnings: null, deliveryMargin: null, contribution: null, insuranceWithheld: null, driverEarningsAfterInsurance: null, marginStatus: "unavailable",
+      marginReasons: ["No NASA work is recorded against this statement yet, so driver cost and margin are not available."], economicsAvailable: false, unavailableReason: "No NASA work is recorded against this statement yet, so driver cost and margin are not available." };
+    await mount(async () => ({ status: 200, data: { statements: [statement({ economics })] } }));
+    const card = await screen.findByTestId("statement-7");
+    for (const id of ["fig-driver", "fig-margin", "fig-contribution"]) expect(within(card).getByTestId(id).textContent).not.toMatch(/\$/);
+    expect(within(card).getByTestId("economics-unavailable").textContent).toMatch(/No NASA work is recorded/);
+    expect(within(card).getByTestId("fig-revenue").textContent).toBe("$4.91");
+    expect(within(card).getByTestId("fig-payable").textContent).toBe("$2.21");
+  });
+});
+
 describe("Carrier statements: voiding", () => {
   it("needs a reason of at least five characters, then voids and reloads", async () => {
     let voided = false;

@@ -48,10 +48,10 @@ function Statement({ statement: s, onChanged }) {
         <dl className="grid gap-x-8 gap-y-1 text-sm sm:grid-cols-2" aria-label="Statement figures">
           <Figure id="fig-revenue" label="Delivery revenue" value={e.deliveryRevenue} />
           <Figure id="fig-driver" label="Driver earnings" value={e.driverEarnings} />
-          <Figure id="fig-margin" label="Delivery margin (before claims and adjustments)" value={e.deliveryMargin} />
+          <Figure id="fig-margin" label={`Delivery margin (before claims and adjustments)${e.marginStatus === "provisional" ? " · provisional" : ""}`} value={e.deliveryMargin} />
           <Figure id="fig-claims" label="Carrier claims" value={e.carrierClaims} />
           <Figure id="fig-adjustments" label="Ledger adjustments" value={e.ledgerAdjustments} />
-          <Figure id="fig-contribution" label="Contribution" value={e.contribution} />
+          <Figure id="fig-contribution" label={`Contribution${e.marginStatus === "provisional" ? " · provisional" : ""}`} value={e.contribution} />
           <Figure id="fig-payable" label="GOFO settlement payable" value={e.settlementPayable} />
           <Figure id="fig-after-insurance" label="Driver earnings after insurance" value={e.driverEarningsAfterInsurance} />
           <Figure id="fig-unallocated" label="Unallocated revenue" value={e.unallocatedRevenue} />
@@ -59,6 +59,12 @@ function Statement({ statement: s, onChanged }) {
         </dl>
       )}
       {e?.economicsAvailable === false && <p className="text-xs text-ink-muted" data-testid="economics-unavailable">{e.unavailableReason}</p>}
+      {e?.marginStatus === "provisional" && (
+        <div className="rounded-xl border border-amber-300 bg-amber-50 p-2 text-xs text-amber-900" data-testid="margin-provisional">
+          <p className="font-semibold">Margin and contribution are provisional: driver cost is not fully known.</p>
+          <ul className="mt-1 list-disc space-y-0.5 pl-4">{e.marginReasons.map((reason) => <li key={reason}>{reason}</li>)}</ul>
+        </div>
+      )}
       {e?.recordsWithoutBilledFee > 0 && <p className="text-xs text-ink-muted">{e.recordsWithoutBilledFee} NASA record{e.recordsWithoutBilledFee === 1 ? "" : "s"} in this week had no fee on the statement (zero revenue). The carrier's count includes offset tickets; NASA keeps its own delivery count.</p>}
       {note && <p role="status" className="text-sm text-ink">{note}</p>}
       <div className="flex flex-wrap gap-2">
