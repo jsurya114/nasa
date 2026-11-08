@@ -1,18 +1,14 @@
-// The requests behind the carrier statements page (issue #252). Every call goes to /admin/finance/gofo-statements, which only the super admin may use.
+// The requests behind the GOFO import history page (issue #252). Every call goes to /admin/finance/gofo-statements, which only the super admin may use.
 import axios from "../../../redux/slice/axiosInstance";
 
 const BASE = "/admin/finance/gofo-statements";
 
-const withFile = (file) => {
-  const form = new FormData();
-  form.append("file", file);
-  return form;
-};
-
 export const listStatements = async (signal) => (await axios.get(BASE, { signal })).data.statements;
-export const previewStatement = async (file) => (await axios.post(`${BASE}/preview`, withFile(file))).data;
-// 201 published, 200 already published, 409 older version and 422 rejected are all answers with a body to show, not failures.
-export const publishStatement = async (file) => (await axios.post(`${BASE}/publish`, withFile(file), { validateStatus: (status) => [200, 201, 409, 422].includes(status) })).data;
+// The weekly uploads waiting for the owner. The file was saved when it was uploaded under File Upload, so reviewing one never asks for the file again.
+export const listImports = async (signal) => (await axios.get(`${BASE}/imports`, { signal })).data.imports;
+// 201 published, 200 already imported, 409 needs the correction confirmed (or is no longer open), 422 still fails its checks and 404 are answers with a body to show, not failures.
+export const publishImport = async (id, replacesStatementId = null) => (await axios.post(`${BASE}/imports/${id}/publish`, { replacesStatementId }, { validateStatus: (status) => [200, 201, 404, 409, 422].includes(status) })).data;
+export const dismissImport = async (id, reason) => (await axios.post(`${BASE}/imports/${id}/dismiss`, { reason })).data;
 export const listUnallocated = async (id) => (await axios.get(`${BASE}/${id}/unallocated`)).data.unallocated;
 export const rematchStatement = async (id) => (await axios.post(`${BASE}/${id}/rematch`)).data.matched;
 export const voidStatement = async (id, reason) => (await axios.post(`${BASE}/${id}/void`, { reason })).data;

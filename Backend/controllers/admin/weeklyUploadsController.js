@@ -320,6 +320,7 @@ import {
 import { unlink } from "fs";
 import { recordWorkbookHistory } from "../../services/excel/assignmentHistory/recordWorkbookHistory.js";
 import { recordWorkbookClaims } from "../../services/payroll/claims/recordWorkbookClaims.js";
+import { reviewImport, stageImport } from "../../services/finance/gofoStatement/weeklyImport.js";
 
 
 export const getWeeklyTempData=async(req,res)=>{
@@ -788,8 +789,15 @@ async function processExcelFromBuffer(buffer, client, startTime, user, fileName)
     // against it. Also in a savepoint: a claims problem never changes what the pay upload stores.
     const claims = await recordWorkbookClaims(client, { buffer, fileName, user, routeCodes });
 
+    // The same file is also the carrier's statement (issue #252): keep it as the import tied to this staged data, in a savepoint, so a problem here never
+    // changes what the pay upload stores.
+    const staged = await stageImport(client, { buffer, fileName, user, assignmentImportId: assignmentHistory.importId ?? null });
+
     await client.query('COMMIT');
     logger.info('Weekly upload stored', { processed: totalProcessed, skipped: totalSkipped, groups: totalInserted });
+
+    // Check on the same connection after committing staging. A failed or late check cannot undo the upload.
+    const revenue = await reviewImport(client, staged.id, buffer, user, staged.reason);
 
     return {
       success: true,
@@ -799,7 +807,8 @@ async function processExcelFromBuffer(buffer, client, startTime, user, fileName)
       batchSize: BATCH_SIZE,
       numberOfBatches: Math.ceil(dataArray.length / BATCH_SIZE),
       assignmentHistory,
-      claims
+      claims,
+      revenue
     };
 
   } catch (dbError) {

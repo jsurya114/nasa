@@ -6,6 +6,7 @@ import logger from "../../utils/logger.js";
 import pool from "../../config/db.js";
 import { markProcessingRows } from "../../services/payroll/payRuns/processingRows.js";
 import { UploadBusyError } from "../../services/admin/uploadSafety.js";
+import { settleImport } from "../../services/finance/gofoStatement/weeklyImport.js";
 import {
   CityAccessError,
   assertJobsAllowed,
@@ -254,12 +255,16 @@ export const updateWeeklyTempDataToDashboard = async (req, res) => {
       )
       : null;
 
-    // The staging table is cleared in the same transaction as the insert
-    const rowsInserted = await WeeklyExcelQueries.createEntriesFromWeeklyCount({ beforeInsert });
+    // The same locked transaction applies the staged work, records which import it used and clears staging.
+    const { revenueImportId, ...rowsInserted } = await WeeklyExcelQueries.createEntriesFromWeeklyCount({ beforeInsert });
+
+    // After the weekly add committed. Never throws and never undoes it: an owner's import is published, anything else is left for the owner to review.
+    const revenue = await settleImport(pool, req.user, revenueImportId);
 
     return res.status(200).json({
       success: true,
       rowsInserted,
+      revenue,
       message: "Data inserted successfully!!"
     });
   } catch (err) {

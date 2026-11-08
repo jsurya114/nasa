@@ -90,6 +90,17 @@ beforeEach(async () => {
 });
 afterEach(cleanup);
 
+describe("Insights: the GOFO import history link", () => {
+  it("has a small link to the import history (the page itself is for the owner only), which now holds the source figures", async () => {
+    await startServer();
+    await mount();
+    const link = await screen.findByTestId("gofo-import-history-link");
+    expect(link.getAttribute("href")).toBe("/admin/carrier-statements");
+    expect(link.textContent).toBe("GOFO import history");
+    expect(screen.getByText(/source figures, versions, unmatched charges, corrections and voids/)).toBeTruthy();
+  });
+});
+
 describe("Insights: the headline figures", () => {
   it("opens on Last 30 days and All cities, asks for exactly that, and shows the figures with the comparison", async () => {
     const server = await startServer();

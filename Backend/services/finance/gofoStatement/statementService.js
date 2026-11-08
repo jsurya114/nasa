@@ -1,6 +1,7 @@
 import { previewStatement, publishStatement } from './publishStatement.js';
 import { listStatements, listUnallocated, loadStatement, rematchStatement, voidStatement } from './statementStore.js';
 import { statementEconomics } from './statementEconomics.js';
+import { dismissImport, listOpenImports, publishImport } from './weeklyImport.js';
 import { STATEMENT_COLUMNS, UNALLOCATED_COLUMNS, toCsv } from './statementCsv.js';
 
 // The statements with their economics (revenue, driver earnings, margin, contribution), worked out from the shared reporting view.
@@ -20,4 +21,8 @@ export const createStatementService = (pool) => ({
   unallocated: async (id) => ((await loadStatement(pool, id)) ? listUnallocated(pool, id) : null),
   void: (id, options) => voidStatement(pool, id, options),
   rematch: (id, { actorId }) => rematchStatement(pool, id, { actorId }),
+  // The weekly uploads waiting for the owner (issue #252), reviewed from the saved file: nothing is uploaded again.
+  listImports: () => listOpenImports(pool),
+  publishImport: (id, options) => publishImport(pool, id, options),
+  dismissImport: (id, options) => dismissImport(pool, id, options),
 });

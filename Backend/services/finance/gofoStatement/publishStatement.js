@@ -120,52 +120,56 @@ export const previewStatement = async (db, buffer) => {
   return { status: 'ready', ...describe(reviewed, plan), outcome: outcomeOf(existing.rows, reviewed.reconciliation.fingerprint) };
 };
 
-// pool: a pg Pool. user: { id }. origin: 'upload' or 'backfill'.
-export const publishStatement = async (pool, buffer, { user, sourceLabel, origin = 'upload' }) => {
+class PublishWorkChanged extends Error {}
+
+// Accept a pool or a client in an open transaction. Saved imports use the latter so their status and the statement commit together.
+// Corrections can be allowed by the legacy publisher, denied, or restricted to the exact statement an owner confirmed.
+export const publishStatement = async (db, buffer, { user, sourceLabel, origin = 'upload', importId = null, allowCorrection = true }) => {
   const reviewed = await readAndReconcile(buffer);
   if (reviewed.status !== 'ok') return reviewed;
-  const client = await pool.connect();
+  const { statement, reconciliation, week } = reviewed;
   try {
-    await client.query('BEGIN');
-    await client.query('SELECT pg_advisory_xact_lock($1)', [WEEK_LOCK_KEY]);
-    const plan = await planStatement(client, reviewed);
-    if (plan.status !== 'ready') { await client.query('ROLLBACK'); return plan; }
-    const { statement, reconciliation, week } = reviewed;
-    const existing = await store.lockWeek(client, { carrier: CARRIER, cityId: plan.city.cityId, periodStart: week.start });
-    const outcome = outcomeOf(existing, reconciliation.fingerprint);
-    if (outcome.kind === 'already_published' || outcome.kind === 'older_version') {
-      await client.query('ROLLBACK');
-      return { status: outcome.kind, ...describe(reviewed, plan), outcome };
-    }
-    if (outcome.kind === 'correction') await store.markSuperseded(client, outcome.replaces);
-    const totals = reconciliation.totals;
-    const id = await store.insertStatement(client, {
-      carrier: CARRIER, fleet: plan.fleet, cityId: plan.city.cityId, periodStart: week.start, periodEnd: week.end, billingWeek: week.label,
-      billNumber: statement.header.billNumber, currency: statement.header.currency, fingerprint: reconciliation.fingerprint,
-      version: (existing[0]?.version ?? 0) + 1, origin, detailFeeCents: totals.detailFees, offsetCents: totals.offsets, claimsCents: totals.claims,
-      adjustmentsCents: totals.adjustments, settlementPayableCents: totals.settlementPayable, prepaidCents: totals.prepaid, withdrawalFeeCents: totals.withdrawalFees,
-      detailLines: totals.detailLines, offsetLines: totals.offsetLines, carrierDeliveries: statement.header.deliveries, sourceLabel: String(sourceLabel || 'statement.xlsx').slice(0, 200),
-      importedBy: user?.id, supersedesId: outcome.kind === 'correction' ? outcome.replaces : null,
+    return await store.inTransaction(db, async (client) => {
+      await client.query('SELECT pg_advisory_xact_lock($1)', [WEEK_LOCK_KEY]);
+      const plan = await planStatement(client, reviewed);
+      if (plan.status !== 'ready') return plan;
+      const existing = await store.lockWeek(client, { carrier: CARRIER, cityId: plan.city.cityId, periodStart: week.start });
+      const outcome = outcomeOf(existing, reconciliation.fingerprint);
+      if (outcome.kind === 'already_published' || outcome.kind === 'older_version') {
+        return { status: outcome.kind, ...describe(reviewed, plan), outcome };
+      }
+      if (outcome.kind === 'correction' && allowCorrection !== true && allowCorrection !== String(outcome.replaces)) {
+        return { status: 'needs_confirmation', ...describe(reviewed, plan), outcome };
+      }
+      if (outcome.kind === 'new' && typeof allowCorrection === 'string') {
+        return rejected(['The statement you reviewed is no longer current. Check the saved import again before publishing.']);
+      }
+      if (outcome.kind === 'correction') await store.markSuperseded(client, outcome.replaces);
+      const totals = reconciliation.totals;
+      const id = await store.insertStatement(client, {
+        carrier: CARRIER, fleet: plan.fleet, cityId: plan.city.cityId, periodStart: week.start, periodEnd: week.end, billingWeek: week.label,
+        billNumber: statement.header.billNumber, currency: statement.header.currency, fingerprint: reconciliation.fingerprint,
+        version: (existing[0]?.version ?? 0) + 1, origin, detailFeeCents: totals.detailFees, offsetCents: totals.offsets, claimsCents: totals.claims,
+        adjustmentsCents: totals.adjustments, settlementPayableCents: totals.settlementPayable, prepaidCents: totals.prepaid, withdrawalFeeCents: totals.withdrawalFees,
+        detailLines: totals.detailLines, offsetLines: totals.offsetLines, carrierDeliveries: statement.header.deliveries, sourceLabel: String(sourceLabel || 'statement.xlsx').slice(0, 200),
+        importedBy: user?.id, supersedesId: outcome.kind === 'correction' ? outcome.replaces : null, sourceImportId: importId,
+      });
+      await store.insertLines(client, id, 'fee', statement.details);
+      await store.insertLines(client, id, 'offset', statement.offsets);
+      await store.insertItems(client, id, 'claim', statement.claims.map((c) => ({ ...c, label: c.claimType })));
+      await store.insertItems(client, id, 'adjustment', statement.adjustments.map((a) => ({ ...a, label: a.expenseType })));
+      await store.insertItems(client, id, 'prepaid', statement.prepaid);
+      await store.insertItems(client, id, 'withdrawal', statement.withdrawals);
+      await store.insertGroups(client, id, plan.match.groups);
+      if (!(await store.holdMatchedWork(client, id))) {
+        throw new PublishWorkChanged('A journey this statement is matched to was changed or deleted while it was being published. Nothing was stored. Check the statement again and publish it.');
+      }
+      if (outcome.kind === 'correction') await store.addEvent(client, outcome.replaces, 'superseded', user?.id, `Replaced by version ${(existing[0]?.version ?? 0) + 1}`);
+      await store.addEvent(client, id, 'published', user?.id, `${origin}: ${reconciliation.identity.billNumber}`);
+      return { status: 'published', statementId: id, version: (existing[0]?.version ?? 0) + 1, ...describe(reviewed, plan), outcome };
     });
-    await store.insertLines(client, id, 'fee', statement.details);
-    await store.insertLines(client, id, 'offset', statement.offsets);
-    await store.insertItems(client, id, 'claim', statement.claims.map((c) => ({ ...c, label: c.claimType })));
-    await store.insertItems(client, id, 'adjustment', statement.adjustments.map((a) => ({ ...a, label: a.expenseType })));
-    await store.insertItems(client, id, 'prepaid', statement.prepaid);
-    await store.insertItems(client, id, 'withdrawal', statement.withdrawals);
-    await store.insertGroups(client, id, plan.match.groups);
-    if (!(await store.holdMatchedWork(client, id))) {
-      await client.query('ROLLBACK');
-      return rejected(['A journey this statement is matched to was changed or deleted while it was being published. Nothing was stored. Check the statement again and publish it.'], { reconciliation: summaryOf(reconciliation), week });
-    }
-    if (outcome.kind === 'correction') await store.addEvent(client, outcome.replaces, 'superseded', user?.id, `Replaced by version ${(existing[0]?.version ?? 0) + 1}`);
-    await store.addEvent(client, id, 'published', user?.id, `${origin}: ${reconciliation.identity.billNumber}`);
-    await client.query('COMMIT');
-    return { status: 'published', statementId: id, version: (existing[0]?.version ?? 0) + 1, ...describe(reviewed, plan), outcome };
   } catch (error) {
-    await client.query('ROLLBACK').catch(() => {});
+    if (error instanceof PublishWorkChanged) return rejected([error.message], { reconciliation: summaryOf(reconciliation), week });
     throw error;
-  } finally {
-    client.release();
   }
 };

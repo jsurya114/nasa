@@ -3,14 +3,15 @@ import Header from "../../reuse/Header";
 import Nav from "../../reuse/Nav";
 import { SkeletonList } from "../../reuse/Skeleton.jsx";
 import StatementList from "./statements/StatementList.jsx";
-import StatementUpload from "./statements/StatementUpload.jsx";
+import ImportsWaiting from "./statements/ImportsWaiting.jsx";
 import { exportStatementsCsv, listStatements, messageFor } from "./statements/statementsApi.js";
 import { csvFileName } from "./statements/statementText.js";
 
 const BUTTON = "min-h-11 rounded-xl border border-line bg-white px-4 text-sm font-semibold text-brand hover:bg-brand-50 focus:outline-none focus:ring-4 focus:ring-brand-500/20 disabled:opacity-50";
 
-// The owner's carrier statements (#252): the GOFO weekly bills that company revenue comes from. Super admin only (the route and the server both check). Adding a
-// statement never changes pay: it is stored apart from payroll, and anything it cannot match to a driver stays visible as unallocated.
+// The owner's GOFO import history (#252): the carrier's weekly bills that company revenue comes from, with their versions, unmatched charges, corrections and voids.
+// There is no upload here: the weekly workbook is uploaded once under File Upload, and an upload that needs the owner waits below. Super admin only (the route and the server
+// both check). Nothing here changes pay: statements are stored apart from payroll, and anything unmatched to a driver stays visible as unallocated.
 export default function CarrierStatements() {
   const [status, setStatus] = useState("loading");
   const [statements, setStatements] = useState([]);
@@ -45,10 +46,10 @@ export default function CarrierStatements() {
       <Header />
       <main className="mx-auto max-w-5xl space-y-4 p-3 pb-28 sm:p-6 sm:pb-40">
         <div>
-          <h1 className="text-2xl font-bold text-brand">Carrier statements</h1>
-          <p className="text-sm text-ink-muted">The carrier's weekly GOFO bill is where company revenue comes from. It is stored apart from payroll: adding one never changes what a driver is paid.</p>
+          <h1 className="text-2xl font-bold text-brand">GOFO import history</h1>
+          <p className="text-sm text-ink-muted">The carrier's weekly GOFO bill is where company revenue comes from. It comes in with the weekly upload under File Upload and is stored apart from payroll: it never changes what a driver is paid.</p>
         </div>
-        <StatementUpload onPublished={reload} />
+        <ImportsWaiting onChanged={reload} />
         <section aria-labelledby="statements-title" className="space-y-3">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <h2 id="statements-title" className="text-lg font-bold text-ink">Statements</h2>
@@ -62,7 +63,7 @@ export default function CarrierStatements() {
               <button type="button" className={`${BUTTON} mt-2`} onClick={reload}>Try again</button>
             </div>
           )}
-          {status === "ready" && statements.length === 0 && <p className="card-surface p-4 text-sm text-ink-muted" data-testid="statements-empty">No statement has been added yet. Weekly GOFO figures stay estimates until one is.</p>}
+          {status === "ready" && statements.length === 0 && <p className="card-surface p-4 text-sm text-ink-muted" data-testid="statements-empty">No statement has been imported yet. Weekly GOFO figures stay estimates until a weekly upload brings one in.</p>}
           {status === "ready" && statements.length > 0 && <StatementList statements={statements} onChanged={reload} />}
         </section>
       </main>

@@ -1,6 +1,8 @@
-// What a weekly upload kept besides the pay data (issues #140, #141, #163): the claims read from the Claims Detail
+// What a weekly upload kept besides the pay data (issues #140, #141, #163, #252): the GOFO revenue check of the same file, the claims read from the Claims Detail
 // sheet and the carrier history saved from the report. English only; admin screen. Shows what the server answered and
 // nothing it did not: a field the server leaves out (for example `notStored` for a city admin) is not shown.
+
+import RevenueResult from "./RevenueResult.jsx";
 
 const plural = (n, one, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 
@@ -68,6 +70,8 @@ const HistoryPart = ({ history }) => {
 export default function UploadResultSummary({ result }) {
   if (!result) return null;
   return (
+    <>
+    <RevenueResult revenue={result.revenue} />
     <section className="card-surface mb-4 p-6" aria-label="What this upload also kept">
       <h2 className="mb-3 text-base font-semibold text-ink">Claims in this file</h2>
       <ClaimsPart claims={result.claims} />
@@ -75,5 +79,6 @@ export default function UploadResultSummary({ result }) {
         <HistoryPart history={result.assignmentHistory} />
       </div>
     </section>
+    </>
   );
 }

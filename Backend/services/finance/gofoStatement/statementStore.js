@@ -63,16 +63,18 @@ export const addEvent = (db, statementId, event, actorId, detail = null) =>
   db.query('INSERT INTO carrier_statement_events (statement_id, event, actor_id, detail) VALUES ($1, $2, $3, $4)', [statementId, event, actorId ?? null, detail]);
 
 export const insertStatement = async (db, s) => {
+  // source_import_id exists once the weekly-upload migration has run; a statement published without an import (the backfill) never needs it.
+  const tied = s.sourceImportId != null;
   const { rows } = await db.query(
     `INSERT INTO carrier_statements
        (carrier, fleet, city_id, period_start, period_end, billing_week, bill_number, currency, fingerprint, version, status, origin,
         detail_fee_cents, offset_cents, claims_cents, adjustments_cents, settlement_payable_cents, prepaid_cents, withdrawal_fee_cents,
-        detail_lines, offset_lines, carrier_deliveries, source_label, imported_by, supersedes_id)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'published',$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24)
+        detail_lines, offset_lines, carrier_deliveries, source_label, imported_by, supersedes_id${tied ? ', source_import_id' : ''})
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'published',$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24${tied ? ', $25' : ''})
      RETURNING id`,
     [s.carrier, s.fleet, s.cityId, s.periodStart, s.periodEnd, s.billingWeek, s.billNumber, s.currency, s.fingerprint, s.version, s.origin,
       s.detailFeeCents, s.offsetCents, s.claimsCents, s.adjustmentsCents, s.settlementPayableCents, s.prepaidCents, s.withdrawalFeeCents,
-      s.detailLines, s.offsetLines, s.carrierDeliveries ?? null, s.sourceLabel, s.importedBy ?? null, s.supersedesId ?? null]
+      s.detailLines, s.offsetLines, s.carrierDeliveries ?? null, s.sourceLabel, s.importedBy ?? null, s.supersedesId ?? null, ...(tied ? [s.sourceImportId] : [])]
   );
   return rows[0].id;
 };
@@ -151,7 +153,7 @@ export const inTransaction = async (db, work) => {
       await db.query(`RELEASE SAVEPOINT ${name}`);
       return result;
     } catch (error) {
-      await db.query(`ROLLBACK TO SAVEPOINT ${name}`).catch(() => {});
+      await db.query(`ROLLBACK TO SAVEPOINT ${name}`).then(() => db.query(`RELEASE SAVEPOINT ${name}`)).catch(() => {});
       throw error;
     }
   }
