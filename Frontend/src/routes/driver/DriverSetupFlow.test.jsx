@@ -121,4 +121,20 @@ describe("the way in for a driver", () => {
     await mount("/driver/pay");
     expect(await screen.findByText("Driver pay")).toBeTruthy();
   });
+
+  it("a driver who has not signed, or is still to be classified, is not locked by the setup", async () => {
+    await serve({ signed: true, setup: status({ state: "classification-required", canStart: false }) });
+    await mount("/driver/pay");
+    expect(await screen.findByText("Driver pay")).toBeTruthy();
+  });
+
+  it("when the setup status cannot be read the pages stay open (the server gate still holds work)", async () => {
+    await installServer(async (config) => {
+      if (config.url === "/driver/everee/status") return { status: 500, data: {} };
+      if (config.url === "/driver/access-driver") return { status: 200, data: { driver: { id: 1, name: "Dee Test", agreement_signed: true } } };
+      return { status: 200, data: {} };
+    });
+    await mount("/driver/pay");
+    expect(await screen.findByText("Driver pay")).toBeTruthy();
+  });
 });
