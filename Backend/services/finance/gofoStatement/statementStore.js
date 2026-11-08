@@ -210,6 +210,10 @@ export const listStatements = async (db, { limit = 50 } = {}) => {
   }));
 };
 
+export class StatementWorkChanged extends Error {
+  constructor() { super('A journey changed while the statement was being matched. Nothing was changed. Try again.'); this.name = 'StatementWorkChanged'; }
+}
+
 // Matches groups that were left unmatched when NASA has since recorded the work (or the driver or route was added). Matching only ever
 // moves a group from unmatched to matched, so this is safe to run any time and as often as wanted. Returns how many groups it matched.
 export const rematchOpenGroups = async (db, { statementId = null, cityId = null } = {}) => {
@@ -237,6 +241,11 @@ export const rematchOpenGroups = async (db, { statementId = null, cityId = null 
      RETURNING g.statement_id`,
     [statementId, cityId]
   );
+  // Every caller gets the same safety: the pay rows just attached are held and re-checked before the caller commits (see holdMatchedWork). If a journey changed,
+  // StatementWorkChanged is thrown and the caller's transaction (or savepoint) undoes the whole match.
+  for (const id of new Set(rows.map((r) => String(r.statement_id)))) {
+    if (!(await holdMatchedWork(db, id))) throw new StatementWorkChanged();
+  }
   return rows.length;
 };
 

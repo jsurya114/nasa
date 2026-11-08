@@ -452,7 +452,7 @@ test('everee payment status: only a payment that landed marks a statement paid',
       await db.query("UPDATE everee_payment_items SET check_note = 'x', last_checked_at = now() WHERE id = $1", [iA2.id]);
     });
 
-    await t.test('the real answer shapes: a PAID payment whose payout is still PENDING is not paid; once the payout is PAID it is; unlisted, unreadable, paged and dateless answers change nothing', async () => {
+    await t.test('the real answer shapes: in the sandbox a PAID payment is paid even while its payout is PENDING; a pending payment is not; unlisted, unreadable, paged and dateless answers change nothing', async () => {
       const scR = await scenario('RS', [[dA, '100.00'], [dB, '50.00'], [dC, '25.00']]);
       const fakeR = makeEveree();
       await sent(scR, fakeR);
@@ -462,13 +462,14 @@ test('everee payment status: only a payment that landed marks a statement paid',
         netPayouts: [{ id: `po-${driver}`, type: 'DIRECT_DEPOSIT', date: PAY_DATE, status: payoutStatus, netAmount: { amount, currency: 'USD' } }] });
       for (const [it, id] of [[iRA, 'pay-RA'], [iRB, 'pay-RB'], [iRC, 'pay-RC']]) fakeR.state.payables[it.external_id] = { externalId: it.external_id, paymentStatus: 'PENDING_PAYMENT', paymentId: id };
 
-      // the case seen in the sandbox: the payment is PAID but the ACH payout has not settled
-      fakeR.state.payments['pay-RA'] = real(dA, '100.00', 'PENDING');
+      // a payment that is itself still pending is not paid, whatever its payout says
+      fakeR.state.payments['pay-RA'] = { ...real(dA, '100.00', 'PENDING'), status: 'PENDING' };
       assert.equal(await check(fakeR, iRA.id), 'pending');
       assert.deepEqual([(await item(scR, dA)).status, (await stmt(scR, dA)).payout_status], ['submitted', 'submitted']);
       assert.match((await item(scR, dA)).check_note, /deposit is not complete yet/);
-      // the payout settles: now it is paid, once, with the amount verified
-      fakeR.state.payments['pay-RA'] = real(dA, '100.00', 'PAID');
+      // the case seen in the sandbox: the payment is PAID but the ACH payout has not settled. The sandbox sends no money, so this counts as the
+      // bank transfer complete: paid, once, with the amount verified
+      fakeR.state.payments['pay-RA'] = real(dA, '100.00', 'PENDING');
       assert.equal(await check(fakeR, iRA.id), 'paid');
       assert.deepEqual([(await item(scR, dA)).status, (await stmt(scR, dA)).payout_status], ['paid', 'paid']);
       assert.equal(await check(fakeR, iRA.id), 'unchanged');
@@ -516,13 +517,34 @@ test('everee payment status: only a payment that landed marks a statement paid',
       await sent(scN, fakeN);
       const iN = await item(scN, dA);
       fakeN.state.payables[iN.external_id] = { externalId: iN.external_id, paymentStatus: 'PENDING_PAYMENT', paymentId: 12345678 };
-      // the payment exists at Everee but its payout is not settled: linked, still not paid
-      fakeN.state.payments['12345678'] = { workerId: workers[dA], status: 'PAID', netPayouts: [{ id: 'po', status: 'PENDING', netAmount: { amount: '10.00', currency: 'USD' } }] };
+      // the payment exists at Everee but is itself not paid yet: linked, still not paid
+      fakeN.state.payments['12345678'] = { workerId: workers[dA], status: 'PENDING', netPayouts: [{ id: 'po', status: 'PENDING', netAmount: { amount: '10.00', currency: 'USD' } }] };
       assert.equal(await check(fakeN, iN.id), 'pending');
       const after = await item(scN, dA);
       assert.deepEqual([after.everee_payment_id, after.payment_link, after.status], ['12345678', 'payable', 'submitted']);
-      fakeN.state.payments['12345678'].netPayouts[0].status = 'PAID';
+      fakeN.state.payments['12345678'].status = 'PAID'; // sandbox: the payment's own PAID is the transfer complete
       assert.equal(await check(fakeN, iN.id), 'paid');
+    });
+    await t.test('sandbox: a worker\'s payment that also holds another send of the same week is paid when our own payable is PAID inside it for our amount', async () => {
+      const scD = await scenario('DUP', [[dA, '100.00']]);
+      const fakeD = makeEveree();
+      await sent(scD, fakeD);
+      const iD = await item(scD, dA);
+      const twice = { workerId: workers[dA], status: 'PAID', totalNetPay: { amount: '200.00', currency: 'USD' },
+        netPayouts: [{ id: 'po-dup', type: 'DIRECT_DEPOSIT', date: PAY_DATE, status: 'PENDING', netAmount: { amount: '200.00', currency: 'USD' } }] };
+      fakeD.state.payments['pay-DUP'] = twice;
+      // our payable is not paid yet (or sits in another payment): the larger total is not explained, so nothing is paid
+      fakeD.state.payables[iD.external_id] = { externalId: iD.external_id, paymentStatus: 'PENDING_PAYMENT', paymentId: 'pay-DUP', amount: { amount: 100, currency: 'USD' } };
+      assert.equal(await check(fakeD, iD.id), 'amount_differs');
+      fakeD.state.payables[iD.external_id] = { externalId: iD.external_id, paymentStatus: 'PAID', paymentId: 'pay-OTHER', amount: { amount: 100, currency: 'USD' } };
+      assert.equal(await check(fakeD, iD.id), 'amount_differs');
+      fakeD.state.payables[iD.external_id] = { externalId: iD.external_id, paymentStatus: 'PAID', paymentId: 'pay-DUP', amount: { amount: 99, currency: 'USD' } };
+      assert.equal(await check(fakeD, iD.id), 'amount_differs', 'our payable must be for the amount NASA sent');
+      assert.deepEqual([(await item(scD, dA)).status, (await stmt(scD, dA)).payout_status], ['submitted', 'submitted']);
+      // our payable is PAID inside this payment for exactly our amount: paid, and only our statement's amount
+      fakeD.state.payables[iD.external_id] = { externalId: iD.external_id, paymentStatus: 'PAID', paymentId: 'pay-DUP', amount: { amount: 100, currency: 'USD' } };
+      assert.equal(await check(fakeD, iD.id), 'paid');
+      assert.deepEqual([(await item(scD, dA)).status, (await stmt(scD, dA)).payout_status, (await stmt(scD, dA)).net], ['paid', 'paid', '100.00']);
     });
   } finally {
     await db.query('ROLLBACK');

@@ -51,5 +51,17 @@ test('read-only readiness previews the gate using current city, tenant and verif
       const r=await onboardingReadiness(db,admin,{cityId:city},{env:{}});
       assert.equal(r.configured,false);assert.equal(r.summary.complete,0);assert.equal(r.summary.wouldHold,53);
     });
+    await t.test('open work is a rough count of recent unclosed work only: old unclosed rows are not counted',async()=>{
+      const route=(await one("INSERT INTO routes(name,job,company_route_price,driver_route_price,company_doublestop_price,driver_doublestop_price,route_code_in_string) VALUES($1,$2,2,1.6,0.5,0.25,$3) RETURNING id",[`RD ${tag}`,`Readiness ${tag}`,`RD-${tag}`])).id;
+      const recent=await driver();const stale=await driver();
+      let start=7100;
+      for(const [id,daysAgo] of [[recent,3],[stale,200]]){
+        const dd=(await one("INSERT INTO dashboard_data(driver_id,route_id,start_seq,end_seq,journey_date,packages) VALUES($1,$2,$3,$4,current_date - $5::int,10) RETURNING id",[id,route,start,start+9,daysAgo])).id;
+        start+=10;
+        await db.query('UPDATE payment_dashboard SET closed = false WHERE dashboard_data_id = $1',[dd]);
+      }
+      const r=await onboardingReadiness(db,admin,{cityId:city},{env:ENV});
+      assert.equal(r.summary.driversWithOpenWork,1);assert.equal(r.summary.openWorkRoutes,1);
+    });
   } finally {await db.query('ROLLBACK');db.release();await pool.end();}
 });
