@@ -131,15 +131,29 @@ test('one upload: the weekly file stages pay data, and its statement reaches Ins
       assert.deepEqual([waiting[0].reasonKind, waiting[0].canPublish, waiting[0].deliveryRevenue], ['owner_required', true, '4.91']);
     });
 
+    await t.test('an owner adding a city admin\'s staged data does not publish the city admin\'s file', async () => {
+      await upload(file1, CITY_ADMIN);
+      const added = await apply(OWNER);
+      assert.equal(added.body.revenue.state, 'needs_review');
+      assert.equal(added.body.revenue.reasonKind, 'owner_required');
+      assert.match(added.body.revenue.reasons.join(' '), /uploaded by a city admin/);
+      assert.deepEqual(await statements(), [], 'nothing was published as a side effect of the owner\'s add');
+      assert.equal((await createStatementService(db).listImports()).length, 2, 'both saved imports wait for the owner');
+    });
+
     await t.test('the owner publishes the saved import without choosing the file again, and Insights shows the reconciled totals', async () => {
-      const [saved] = await createStatementService(db).listImports();
+      const open = await createStatementService(db).listImports();
+      const [saved, duplicate] = open; // the newest first; the older one is the same file from the earlier city admin upload
       const done = await createStatementService(db).publishImport(Number(saved.id), { user: OWNER, confirmCorrection: false });
       assert.equal(done.status, 'published');
       const [statement] = await statements();
       assert.deepEqual([statement.version, statement.status, String(statement.source_import_id), statement.detail_fee_cents], [1, 'published', saved.id, '671']);
       const data = await summary();
       assert.deepEqual([data.deliveryRevenue, data.driverEarnings, data.revenueBasis, data.revenueIsEstimated, data.unallocatedRevenue], ['4.91', '12.00', 'statement', false, null]);
-      assert.equal((await imports())[0].has_file, false, 'the saved file is dropped once it is published');
+      assert.equal((await imports()).find((i) => String(i.id) === saved.id).has_file, false, 'the saved file is dropped once it is published');
+      assert.equal((await createStatementService(db).listImports()).length, 1, 'the earlier saved copy of the same file is still open');
+      const same = await createStatementService(db).publishImport(Number(duplicate.id), { user: OWNER });
+      assert.equal(same.status, 'already_imported', 'the same statement is never published twice');
       assert.equal((await createStatementService(db).listImports()).length, 0);
       const again = await createStatementService(db).publishImport(Number(saved.id), { user: OWNER });
       assert.equal(again.status, 'not_open', 'publishing twice is refused, not repeated');

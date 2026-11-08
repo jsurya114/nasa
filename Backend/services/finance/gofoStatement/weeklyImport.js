@@ -151,8 +151,13 @@ export const settleImport = async (pool, user, importId) => {
       await client.query('COMMIT');
       return present(await load(pool, row.id), user);
     }
-    if (!isOwner(user)) {
-      await close(client, row.id, { status: 'needs_review', reasonKind: 'owner_required', review: { ...row.review, reasons: ['Only an owner publishes company revenue. The saved import is waiting for the owner; nothing needs to be uploaded again.'] }, keepFile: true, applied: true });
+    // Revenue is published automatically only when an owner both uploaded the file and adds its data. A file a city admin uploaded is never published as a side effect of
+    // someone else's weekly add (the staged data is shared): the owner reviews it and publishes it from the import history.
+    if (!isOwner(user) || row.uploaded_by_role !== OWNER_ROLE) {
+      const reason = isOwner(user)
+        ? 'This file was uploaded by a city admin. An owner reviews it and publishes it from the import history; nothing needs to be uploaded again.'
+        : 'Only an owner publishes company revenue. The saved import is waiting for the owner; nothing needs to be uploaded again.';
+      await close(client, row.id, { status: 'needs_review', reasonKind: 'owner_required', review: { ...row.review, reasons: [reason] }, keepFile: true, applied: true });
       await client.query('COMMIT');
       return present(await load(pool, row.id), user);
     }

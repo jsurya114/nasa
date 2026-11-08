@@ -21,7 +21,7 @@ const fakePool = ({ row, failOn = null } = {}) => {
   };
   return { sent, query, connect: async () => ({ query, release: () => {} }) };
 };
-const row = (over = {}) => ({ id: 5, status: 'staged', reason_kind: null, review: REVIEW, is_current: true, applied_at: null, file: Buffer.from('not a workbook'), source_label: 'weekly.xlsx', ...over });
+const row = (over = {}) => ({ id: 5, status: 'staged', reason_kind: null, review: REVIEW, uploaded_by_role: 'superadmin', is_current: true, applied_at: null, file: Buffer.from('not a workbook'), source_label: 'weekly.xlsx', ...over });
 const OWNER = { id: 1, role: 'superadmin' };
 const CITY_ADMIN = { id: 2, role: 'admin' };
 
@@ -44,6 +44,13 @@ test('a city admin\'s weekly add never publishes revenue: the saved import waits
   assert.equal(out.importId, null);
   for (const key of ['city', 'week', 'billNumber', 'deliveryRevenue', 'settlementPayable', 'matchedRevenue', 'unallocatedRevenue', 'outcome']) assert.equal(key in out, false, `a city admin does not get ${key}`);
   assert.ok(pool.sent.includes('BEGIN') && pool.sent.includes('COMMIT'));
+});
+
+test('an owner who adds a city admin\'s staged data does not publish the city admin\'s file: it waits for the owner\'s own review', async () => {
+  const pool = fakePool({ row: row({ uploaded_by_role: 'admin' }) });
+  const out = await settleImport(pool, OWNER, 5);
+  assert.deepEqual([out.state, out.reasonKind, out.importId], ['needs_review', 'owner_required', '5']);
+  assert.match(out.reasons.join(' '), /uploaded by a city admin/);
 });
 
 test('the owner sees the figures and the import id', async () => {
