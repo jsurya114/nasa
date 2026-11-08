@@ -95,6 +95,12 @@ test('a journey with verified carrier revenue cannot be moved or deleted until t
     assert.equal(await holdMatchedWork(client, published.statementId), false, 'a journey that stopped being weekly work under the statement is detected');
     await client.query('ROLLBACK TO SAVEPOINT bypass_sequence');
     assert.equal(await holdMatchedWork(client, published.statementId), true);
+    await client.query('SAVEPOINT bypass_half');
+    await client.query('SET LOCAL session_replication_role = replica');
+    await client.query('UPDATE payment_dashboard SET start_seq = 0, end_seq = 5 WHERE dashboard_data_id = $1', [matched]); // a half-set range the reports do not count
+    assert.equal(await holdMatchedWork(client, published.statementId), false, 'a journey the city no longer counts is detected too');
+    await client.query('ROLLBACK TO SAVEPOINT bypass_half');
+    assert.equal(await holdMatchedWork(client, published.statementId), true);
 
     // Voiding is the supported correction path: the history stays, and the journey is free to change or delete (no foreign key blocks it any more).
     assert.equal(await voidStatement(client, published.statementId, { actorId: 1, reason: 'fixing the journey, then publishing again' }), true);
@@ -107,6 +113,48 @@ test('a journey with verified carrier revenue cannot be moved or deleted until t
     const again = await publishStatement(nestedPool(client), await statementWorkbook(statementSheets({ idA: '90000701', idB: '90000702' })), { user: { id: 1 }, sourceLabel: 'guard again.xlsx' });
     assert.equal(again.status, 'published', 'the same statement can be published again once the journey is fixed');
     assert.equal(other > 0, true);
+  } finally {
+    await client.query('ROLLBACK');
+    client.release(); // the pool is closed by the next database test in this file
+  }
+});
+
+test('revenue is only matched to a journey the weekly city counts: a half-set sequence range stays unallocated until it is fixed', { skip: !hasDb && 'set PAYROLL_TEST_DB=1 and the DB_* variables to run' }, async () => {
+  const { default: pool } = await import('../config/db.js');
+  const client = await pool.connect();
+  const one = async (sql, params) => (await client.query(sql, params)).rows[0];
+  try {
+    await client.query('BEGIN');
+    await client.query(readFileSync(MIGRATION, 'utf8'));
+    const city = (await one("INSERT INTO city (job, city_code, city_type) VALUES ('Test Half Range GOFO', 'TST GOFO', 'WEEKLY') RETURNING id")).id;
+    const route = async (code) => (await one('INSERT INTO routes (name, job, company_route_price, driver_route_price, company_doublestop_price, driver_doublestop_price, route_code_in_string) VALUES ($1, $2, 0, 3, 0, 1.5, $3) RETURNING id', [`Test ${code}`, 'Test Half Range GOFO', code])).id;
+    const routeA = await route('TS01-001');
+    const routeB = await route('TS01-002');
+    const driver = async (name, code) => (await one("INSERT INTO drivers (password, name, email, driver_code, city_id) VALUES ('x', $1, $2, $3, $4) RETURNING id", [name, `${name.replace(/\s+/g, '.')}@example.test`, code, city])).id;
+    const driverA = await driver('Half Range One', 90000801);
+    const driverB = await driver('Half Range Two', 90000802);
+    const journey = async (driverId, routeId, day, startSeq, endSeq) => {
+      const dd = (await one('INSERT INTO dashboard_data (driver_id, route_id, journey_date, start_seq, end_seq, packages, delivered, closed, paid) VALUES ($1,$2,$3,$4,$5,2,2,true,false) RETURNING id', [driverId, routeId, day, startSeq, endSeq])).id;
+      await client.query('UPDATE payment_dashboard SET driver_payment = 3, delivered = 2 WHERE dashboard_data_id = $1', [dd]);
+      return dd;
+    };
+    // The half-set range already exists when matching begins (saved through the journey screen's own update path).
+    const half = await journey(driverA, routeA, '2026-10-19', 0, 5);
+    await journey(driverB, routeB, '2026-10-20', 0, 0);
+    const published = await publishStatement(nestedPool(client), await statementWorkbook(statementSheets({ idA: '90000801', idB: '90000802' })), { user: { id: 1 }, sourceLabel: 'half.xlsx' });
+    assert.equal(published.status, 'published');
+    const totals = async () => one('SELECT matched_cents::int AS matched, unallocated_cents::int AS unallocated FROM carrier_statement_totals WHERE statement_id = $1', [published.statementId]);
+    assert.deepEqual(await totals(), { matched: 230, unallocated: 261 }, 'the $2.61 group is unallocated, not matched to a row the reports exclude');
+    assert.equal((await one("SELECT counts_for_city FROM reporting.delivery_facts WHERE fact_id = (SELECT id FROM payment_dashboard WHERE dashboard_data_id = $1)", [half])).counts_for_city, false, 'the reports do not count the half-set row');
+    // Re-matching leaves it alone while it is still half-set ...
+    assert.equal(await rematchOpenGroups(client, { statementId: published.statementId }), 0);
+    assert.deepEqual(await totals(), { matched: 230, unallocated: 261 });
+    // ... and picks it up once it is a row the city counts, with the same figures the reports use.
+    await client.query('UPDATE dashboard_data SET start_seq = 0, end_seq = 0 WHERE id = $1', [half]);
+    assert.equal(await rematchOpenGroups(client, { statementId: published.statementId }), 1);
+    assert.deepEqual(await totals(), { matched: 491, unallocated: 0 });
+    // Every matched journey is one the reports count.
+    assert.equal((await one("SELECT bool_and(f.counts_for_city) AS ok FROM carrier_statement_groups g JOIN payment_dashboard pd ON pd.id = g.payment_dashboard_id JOIN reporting.delivery_facts f ON f.fact_id = pd.id WHERE g.statement_id = $1 AND g.match_state = 'matched'", [published.statementId])).ok, true);
   } finally {
     await client.query('ROLLBACK');
     client.release();
