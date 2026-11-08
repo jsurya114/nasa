@@ -89,6 +89,12 @@ test('a journey with verified carrier revenue cannot be moved or deleted until t
     assert.equal(await holdMatchedWork(client, published.statementId), false, 'a journey that changed under the statement is detected');
     await client.query('ROLLBACK TO SAVEPOINT bypass');
     assert.equal(await holdMatchedWork(client, published.statementId), true);
+    await client.query('SAVEPOINT bypass_sequence');
+    await client.query('SET LOCAL session_replication_role = replica');
+    await client.query('UPDATE payment_dashboard SET start_seq = 1, end_seq = 10 WHERE dashboard_data_id = $1', [matched]); // an edit that made it non-weekly slipped past the trigger
+    assert.equal(await holdMatchedWork(client, published.statementId), false, 'a journey that stopped being weekly work under the statement is detected');
+    await client.query('ROLLBACK TO SAVEPOINT bypass_sequence');
+    assert.equal(await holdMatchedWork(client, published.statementId), true);
 
     // Voiding is the supported correction path: the history stays, and the journey is free to change or delete (no foreign key blocks it any more).
     assert.equal(await voidStatement(client, published.statementId, { actorId: 1, reason: 'fixing the journey, then publishing again' }), true);
