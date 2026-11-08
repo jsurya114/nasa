@@ -3,6 +3,8 @@ import { readEvereeConfig } from './evereeConfig.js';
 import { enforcement } from './onboardingGate.js';
 
 const STATES = ['not-started', 'creating', 'in-progress', 'verifying', 'complete', 'needs-review', 'classification-required', 'not-required', 'service-unavailable'];
+// "Open work" is a rough count: unclosed rows of the last OPEN_WORK_DAYS days only, so old rows that were never closed do not inflate it.
+export const OPEN_WORK_DAYS = 60;
 export const readinessParams = (input = {}) => {
   const positive = (value, fallback, max) => {
     if (value === undefined) return fallback;
@@ -29,7 +31,7 @@ export const onboardingReadiness = async (db, admin, input, { env = process.env 
       EXISTS (SELECT 1 FROM everee_workers old WHERE old.driver_id = d.id AND old.environment = $2 AND old.unlinked_at IS NOT NULL) AS unlinked,
       EXISTS (SELECT 1 FROM everee_payment_items i JOIN everee_payment_batches b ON b.id = i.batch_id
         WHERE i.driver_id = d.id AND b.environment = $2 AND (i.status IN ('submitted', 'unconfirmed', 'not_submitted') OR i.deposit_returned)) AS "outstandingPayment",
-      EXISTS (SELECT 1 FROM payment_dashboard pd WHERE pd.driver_id = d.id AND NOT COALESCE(pd.closed, false)) AS "openWork"
+      EXISTS (SELECT 1 FROM payment_dashboard pd WHERE pd.driver_id = d.id AND NOT COALESCE(pd.closed, false) AND pd.journey_date >= current_date - $7::int) AS "openWork"
     FROM drivers d
     LEFT JOIN everee_workers w ON w.driver_id = d.id AND w.environment = $2 AND w.unlinked_at IS NULL
     LEFT JOIN everee_onboarding o ON o.driver_id = d.id AND o.environment = $2 AND o.tenant_id = $3
@@ -58,10 +60,10 @@ export const onboardingReadiness = async (db, admin, input, { env = process.env 
       'complete', count(*) FILTER (WHERE state = 'complete'), 'wouldHold', count(*) FILTER (WHERE "driverType" = 'LOCAL' AND state <> 'complete'),
       'unclassified', count(*) FILTER (WHERE "driverType" IS NULL), 'needsReview', count(*) FILTER (WHERE state = 'needs-review'),
       'driversWithOpenWork', count(*) FILTER (WHERE "openWork"), 'driversWithOutstandingPayments', count(*) FILTER (WHERE "outstandingPayment"),
-      'openWorkRoutes', (SELECT count(DISTINCT pd.route_id) FROM payment_dashboard pd JOIN drivers d ON d.id = pd.driver_id WHERE d.enabled AND d.city_id = $1 AND NOT COALESCE(pd.closed, false))) FROM classified) AS summary,
+      'openWorkRoutes', (SELECT count(DISTINCT pd.route_id) FROM payment_dashboard pd JOIN drivers d ON d.id = pd.driver_id WHERE d.enabled AND d.city_id = $1 AND NOT COALESCE(pd.closed, false) AND pd.journey_date >= current_date - $7::int)) FROM classified) AS summary,
     (SELECT count(*)::int FROM classified WHERE $5 = '' OR state = $5) AS total,
     COALESCE((SELECT jsonb_agg(v) FROM visible v), '[]'::jsonb) AS drivers`,
-  [cityId, config.environment, config.tenantId, config.configured, state, (page - 1) * 50]);
+  [cityId, config.environment, config.tenantId, config.configured, state, (page - 1) * 50, OPEN_WORK_DAYS]);
   return { ...result, cityId, page, pageSize: 50, environment: config.environment, configured: config.configured,
     onboardingEnabled: String(env.EVEREE_DRIVER_ONBOARDING_ENABLED ?? '').trim().toLowerCase() === 'true',
     enforced: enforcement(env).enforced, checkedAt: new Date().toISOString() };
