@@ -71,6 +71,8 @@ export default function CityRanking({ status, report, message, onRetry, metricId
                       <span className="mt-1 block text-xs text-ink-muted">
                         {row.shareOfTotalPercent === null || row.shareOfTotalPercent === undefined ? `Share ${NA}` : `${formatPercent(row.shareOfTotalPercent)} of ${selectedCityIds.length > 0 ? "the selected cities" : "all cities"}`}
                         {row.recordsWithoutStoredAmounts > 0 && ` · ${row.recordsWithoutStoredAmounts} record(s) without stored amounts`}
+                        {row.revenueIsEstimated && " · Estimated: some weekly records have no verified carrier statement"}
+                        {row.unallocatedRevenue && ` · includes ${formatUsd(row.unallocatedRevenue)} unallocated carrier revenue`}
                       </span>
                     </button>
                   </li>
@@ -84,15 +86,15 @@ export default function CityRanking({ status, report, message, onRetry, metricId
                 <thead>
                   <tr className="border-b border-line text-ink-muted">
                     <th scope="col" className="py-2 pr-3">#</th><th scope="col" className="py-2 pr-3">City</th>
-                    <th scope="col" className="py-2 pr-3 text-right">Deliveries</th><th scope="col" className="py-2 pr-3 text-right">Revenue</th>
-                    <th scope="col" className="py-2 pr-3 text-right">Gross margin</th><th scope="col" className="py-2 pr-3 text-right">Margin %</th><th scope="col" className="py-2 text-right">Share</th>
+                    <th scope="col" className="py-2 pr-3 text-right">Deliveries</th><th scope="col" className="py-2 pr-3 text-right">Delivery revenue</th>
+                    <th scope="col" className="py-2 pr-3 text-right">Delivery margin</th><th scope="col" className="py-2 pr-3 text-right">Margin %</th><th scope="col" className="py-2 text-right">Share</th>
                   </tr>
                 </thead>
                 <tbody>
                   {rows.map((r) => (
                     <tr key={r.cityId} className="border-b border-line/60">
                       <td className="py-2 pr-3 tabular-nums">{r.rank}</td><th scope="row" className="py-2 pr-3 font-semibold">{r.name}</th>
-                      <td className="py-2 pr-3 text-right tabular-nums">{formatCount(r.deliveries)}</td><td className="py-2 pr-3 text-right tabular-nums">{formatUsd(r.earnedDeliveryRevenue)}</td>
+                      <td className="py-2 pr-3 text-right tabular-nums">{formatCount(r.deliveries)}</td><td className="py-2 pr-3 text-right tabular-nums">{formatUsd(r.earnedDeliveryRevenue)}{r.revenueIsEstimated ? " (estimated)" : ""}</td>
                       <td className="py-2 pr-3 text-right tabular-nums">{formatUsd(r.grossMarginBeforeOverheads)}</td><td className="py-2 pr-3 text-right tabular-nums">{formatPercent(r.marginPercentage)}</td>
                       <td className="py-2 text-right tabular-nums">{formatPercent(r.shareOfTotalPercent)}</td>
                     </tr>

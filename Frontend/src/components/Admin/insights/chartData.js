@@ -31,6 +31,8 @@ export function seriesToPoints(series, interval) {
     marginText: b.grossMarginBeforeOverheads,
     activeDrivers: b.activeDrivers,
     withoutAmounts: b.recordsWithoutStoredAmounts,
+    estimated: b.revenueIsEstimated === true,
+    unallocatedText: b.unallocatedRevenue ?? null,
   }));
 }
 

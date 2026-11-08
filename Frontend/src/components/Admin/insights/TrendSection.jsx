@@ -12,8 +12,8 @@ const button = "min-h-11 rounded-xl border border-line bg-white px-3 text-sm fon
 
 const VOLUME = [{ key: "deliveries", label: "Deliveries", color: BRAND, text: (p) => formatCount(p.deliveries) }];
 const MONEY = [
-  { key: "revenue", label: "Revenue", color: SERIES_BLUE, text: (p) => formatUsd(p.revenueText) },
-  { key: "margin", label: "Gross margin", color: SERIES_ORANGE, text: (p) => formatUsd(p.marginText) },
+  { key: "revenue", label: "Delivery revenue", color: SERIES_BLUE, text: (p) => formatUsd(p.revenueText) },
+  { key: "margin", label: "Delivery margin", color: SERIES_ORANGE, text: (p) => formatUsd(p.marginText) },
 ];
 
 const summaryOf = (what, points) => {
@@ -36,7 +36,7 @@ export default function TrendSection({ status, report, message, onRetry, choice,
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h2 id="trends-title" className="text-lg font-bold text-ink">Trends</h2>
-          <p className="text-sm text-ink-muted">Deliveries, revenue and gross margin by {SIZE_WORD[interval]}. A period with no records is a gap, not zero.</p>
+          <p className="text-sm text-ink-muted">Deliveries, delivery revenue and delivery margin by {SIZE_WORD[interval]}. A period with no records is a gap, not zero.</p>
         </div>
         <div role="group" aria-label="Group trends by" className="flex flex-wrap gap-2">
           {CHOICES.map(([id, label]) => {
@@ -66,20 +66,20 @@ export default function TrendSection({ status, report, message, onRetry, choice,
           {!asTable ? (
             <div className="space-y-6">
               <TrendChart title="Deliveries" points={points} series={VOLUME} axisFormat={formatCount} summary={summaryOf("Deliveries", points)} />
-              <TrendChart title="Revenue and gross margin (USD)" points={points} series={MONEY} axisFormat={formatUsdCompact} summary={summaryOf("Revenue and gross margin", points)} />
+              <TrendChart title="Delivery revenue and delivery margin (USD)" points={points} series={MONEY} axisFormat={formatUsdCompact} summary={summaryOf("Delivery revenue and delivery margin", points)} />
             </div>
           ) : (
             <div className="max-h-96 overflow-auto rounded-xl border border-line">
               <table className="w-full text-left text-sm" data-testid="trends-table">
                 <caption className="sr-only">Trends by {SIZE_WORD[interval]}</caption>
-                <thead className="sticky top-0 bg-brand-50 text-xs uppercase text-ink-muted"><tr><th scope="col" className="p-2">Period</th><th scope="col" className="p-2 text-right">Deliveries</th><th scope="col" className="p-2 text-right">Revenue</th><th scope="col" className="p-2 text-right">Gross margin</th><th scope="col" className="p-2 text-right">Drivers</th></tr></thead>
+                <thead className="sticky top-0 bg-brand-50 text-xs uppercase text-ink-muted"><tr><th scope="col" className="p-2">Period</th><th scope="col" className="p-2 text-right">Deliveries</th><th scope="col" className="p-2 text-right">Delivery revenue</th><th scope="col" className="p-2 text-right">Delivery margin</th><th scope="col" className="p-2 text-right">Drivers</th></tr></thead>
                 <tbody>
                   {points.map((p) => (
                     <tr key={p.key} className="border-t border-line">
                       <th scope="row" className="p-2 font-medium text-ink">{p.label}{p.partial ? " (part)" : ""}</th>
                       <td className="p-2 text-right">{p.hasRecords ? formatCount(p.deliveries) : NA}</td>
-                      <td className="p-2 text-right">{p.hasRecords ? formatUsd(p.revenueText) : NA}</td>
-                      <td className="p-2 text-right">{p.hasRecords ? formatUsd(p.marginText) : NA}</td>
+                      <td className="p-2 text-right">{p.hasRecords ? formatUsd(p.revenueText) : NA}{p.hasRecords && p.estimated ? " (estimated)" : ""}</td>
+                      <td className="p-2 text-right">{p.hasRecords ? formatUsd(p.marginText) : NA}{p.hasRecords && p.estimated ? " (estimated)" : ""}</td>
                       <td className="p-2 text-right">{p.hasRecords ? formatCount(p.activeDrivers) : NA}</td>
                     </tr>
                   ))}
@@ -87,6 +87,7 @@ export default function TrendSection({ status, report, message, onRetry, choice,
               </table>
             </div>
           )}
+          {points.some((p) => p.estimated) && <p className="text-xs font-semibold text-amber-800" data-testid="trends-estimated">Estimated: {points.filter((p) => p.estimated).length} of these periods include weekly records with no verified carrier statement, so their revenue and margin come from route prices, not from what the carrier billed.</p>}
           {warnings.length > 0 && <ul className="list-disc space-y-1 pl-5 text-xs text-ink-muted" data-testid="trends-notes">{warnings.slice(0, 4).map((w) => <li key={w}>{w}</li>)}</ul>}
         </>
       )}

@@ -4,6 +4,7 @@ import InfoTip from "../../../reuse/InfoTip.jsx";
 import { Skeleton } from "../../../reuse/Skeleton.jsx";
 import { describeChange, formatCount, formatDecimal, formatPercent, formatUsd } from "./insightsFormat.js";
 import { daysInRange, describeRange, previousRange } from "./insightsDates.js";
+import { ESTIMATED, basisNote, deliveryMarginOf, deliveryRevenueOf, driverEarningsOf, settlementLines } from "./revenueFigures.js";
 
 const TONE = {
   up: { Icon: ArrowUpRight, className: "text-emerald-700" },
@@ -34,6 +35,11 @@ function Card({ id, label, value, tip, children, large = false }) {
       {children}
     </div>
   );
+}
+
+// "Estimated" as a word on a badge, never colour alone.
+function EstimatedBadge() {
+  return <span data-testid="estimated-badge" className="ml-2 rounded-full border border-amber-600 bg-amber-50 px-2 py-0.5 align-middle text-xs font-semibold text-amber-800">{ESTIMATED}</span>;
 }
 
 const tipOf = (definitions, id) => {
@@ -72,16 +78,35 @@ export default function KpiCards({ status, report, message, onRetry, range, defi
   const cmp = d.comparison;
   return (
     <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-      <Card id="revenue" large label="Earned delivery revenue" value={formatUsd(d.earnedDeliveryRevenue)} tip={tipOf(definitions, "earned_delivery_revenue")}>
+      <Card id="revenue" large label="Delivery revenue" value={formatUsd(deliveryRevenueOf(d))} tip={tipOf(definitions, "delivery_revenue") ?? tipOf(definitions, "earned_delivery_revenue")}>
+        {d.revenueIsEstimated && <p className="mt-1"><EstimatedBadge /></p>}
+        {basisNote(d) && <p className="mt-1 text-sm text-ink-muted" data-testid="revenue-basis">{basisNote(d)}</p>}
+        {d.unallocatedRevenue && <p className="mt-1 text-sm text-ink-muted" data-testid="unallocated-revenue">Includes {formatUsd(d.unallocatedRevenue)} of carrier revenue that matched no driver (unallocated).</p>}
         <Change comparison={cmp} field="earnedDeliveryRevenue" kind="money" previousLabel={previousLabel} />
       </Card>
       <Card id="deliveries" large label="Completed deliveries" value={formatCount(d.deliveries)} tip={tipOf(definitions, "completed_deliveries")}>
         <Change comparison={cmp} field="deliveries" kind="count" previousLabel={previousLabel} />
       </Card>
-      <Card id="margin" large label="Gross profit before overheads" value={formatUsd(d.grossMarginBeforeOverheads)} tip={tipOf(definitions, "gross_margin")}>
+      <Card id="margin" large label="Delivery margin" value={formatUsd(deliveryMarginOf(d))} tip={tipOf(definitions, "delivery_margin") ?? tipOf(definitions, "gross_margin")}>
+        {d.revenueIsEstimated && <p className="mt-1"><EstimatedBadge /></p>}
         <p className="mt-1 text-sm text-ink-muted" data-testid="margin-percent">Margin {formatPercent(d.marginPercentage)} of revenue</p>
         <Change comparison={cmp} field="grossMarginBeforeOverheads" kind="money" previousLabel={previousLabel} />
       </Card>
+      <Card id="driver-earnings" label="Driver earnings" value={formatUsd(driverEarningsOf(d))} tip={tipOf(definitions, "gross_driver_earnings")}>
+        <p className="mt-1 text-sm text-ink-muted" data-testid="driver-earnings-net">
+          {d.driverEarningsAfterInsurance ? `${formatUsd(d.driverEarningsAfterInsurance)} after insurance withholding.` : "Gross, before insurance, claims and advances."}
+        </p>
+      </Card>
+      {d.settlement && (
+        <Card id="settlement" label="GOFO settlement payable" value={formatUsd(d.settlement.payable)} tip={tipOf(definitions, "gofo_settlement_payable")}>
+          <dl className="mt-1 space-y-0.5 text-sm text-ink-muted" data-testid="settlement-lines">
+            {settlementLines(d).map((line) => (
+              <div key={line.id} className="flex justify-between gap-3"><dt>{line.label}</dt><dd className="tabular-nums">{formatUsd(line.value)}</dd></div>
+            ))}
+          </dl>
+          <p className="mt-1 text-xs text-ink-muted">By billing week, {d.settlement.statements} statement{d.settlement.statements === 1 ? "" : "s"}. Prepayments and withdrawal fees are not included.</p>
+        </Card>
+      )}
       <Card id="drivers" label="Active drivers" value={formatCount(d.activeDrivers)} tip={tipOf(definitions, "active_drivers")} />
       <Card id="per-day" label="Deliveries per active driver-day" value={formatDecimal(d.deliveriesPerActiveDriverDay)} tip={tipOf(definitions, "deliveries_per_active_day")} />
       <Card id="per-delivery" label="Revenue and margin per delivery" value={`${formatUsd(d.revenuePerDelivery)} · ${formatUsd(d.marginPerDelivery)}`}>
