@@ -17,6 +17,7 @@ import TempUploadedData from "../../reuse/TempUploadedData";
 import { toast } from "react-toastify";
 import Analystic from "./Analystic";
 import UploadResultSummary from "./UploadResultSummary";
+import RevenueResult from "./RevenueResult";
 
 const DoubleStop = () => {
   const dispatch = useDispatch();
@@ -32,6 +33,7 @@ const DoubleStop = () => {
   const weeklyLoading = useSelector((state) => state.excel?.weekly?.loading);
   const dailyLoading = useSelector((state) => state.excel?.daily?.loading);
   const weeklyResult = useSelector(selectWeeklyResult);
+  const appliedRevenue = useSelector((state) => state.dashboard?.revenue);
 
   // Daily form state
   const [dailyForm, setDailyForm] = useState({
@@ -349,6 +351,8 @@ const DoubleStop = () => {
         )}
 
         {/* Driver Payment Section - Only show for the current view */}
+        {activeView === "weekly" && <RevenueResult revenue={appliedRevenue} title="GOFO revenue after adding the weekly data" />}
+
         {activeView === "weekly" && (
           <DriverPaymentSection
             loadData={() => {

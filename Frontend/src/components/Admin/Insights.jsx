@@ -1,4 +1,5 @@
 import React, { useMemo, useState } from "react";
+import { Link } from "react-router-dom";
 import Header from "../../reuse/Header";
 import Nav from "../../reuse/Nav";
 import InsightsFilters from "./insights/InsightsFilters.jsx";
@@ -52,6 +53,8 @@ export default function Insights() {
         <div>
           <h1 className="text-2xl font-bold text-brand">Insights</h1>
           <p className="text-sm text-ink-muted">A read-only overview of deliveries and revenue. Nothing here changes pay, claims or payments.</p>
+          {/* Owner only: the whole page is super admin only (the route and the server both check). The source figures behind GOFO revenue live in the import history. */}
+          <p className="mt-1 text-xs text-ink-muted"><Link to="/admin/carrier-statements" className="font-semibold text-brand underline" data-testid="gofo-import-history-link">GOFO import history</Link> shows the source figures, versions, unmatched charges, corrections and voids.</p>
         </div>
 
         <InsightsFilters filters={filters} cities={cityList} citiesStatus={cities.status} onRetryCities={cities.reload} />

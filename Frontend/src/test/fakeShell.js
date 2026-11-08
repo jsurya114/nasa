@@ -45,7 +45,9 @@ export const installServer = async (handler) => {
   axios.defaults.adapter = async (config) => {
     calls.push({ url: config.url, method: config.method, authorization: config.headers?.Authorization });
     const out = await handler(config);
-    if (out.status >= 200 && out.status < 300) return { ...out, headers: {}, config, statusText: "OK" };
+    // Like axios: the request's own validateStatus decides what is an answer rather than a failure.
+    const accepted = typeof config.validateStatus === "function" ? config.validateStatus(out.status) : out.status >= 200 && out.status < 300;
+    if (accepted) return { ...out, headers: {}, config, statusText: "OK" };
     throw new axios.AxiosError("Request failed", "ERR_BAD_REQUEST", config, null, { ...out, headers: {}, config });
   };
   return { calls, axios, networkError: (config) => new axios.AxiosError("Network Error", "ERR_NETWORK", config) };

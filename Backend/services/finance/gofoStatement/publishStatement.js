@@ -121,7 +121,9 @@ export const previewStatement = async (db, buffer) => {
 };
 
 // pool: a pg Pool. user: { id }. origin: 'upload' or 'backfill'.
-export const publishStatement = async (pool, buffer, { user, sourceLabel, origin = 'upload' }) => {
+// importId: the weekly upload this file came from; the statement remembers it. allowCorrection: false stops short of replacing a statement that already
+// stands (status 'needs_confirmation', nothing stored), so a weekly apply never swaps verified revenue without an owner's say.
+export const publishStatement = async (pool, buffer, { user, sourceLabel, origin = 'upload', importId = null, allowCorrection = true }) => {
   const reviewed = await readAndReconcile(buffer);
   if (reviewed.status !== 'ok') return reviewed;
   const client = await pool.connect();
@@ -137,6 +139,10 @@ export const publishStatement = async (pool, buffer, { user, sourceLabel, origin
       await client.query('ROLLBACK');
       return { status: outcome.kind, ...describe(reviewed, plan), outcome };
     }
+    if (outcome.kind === 'correction' && !allowCorrection) {
+      await client.query('ROLLBACK');
+      return { status: 'needs_confirmation', ...describe(reviewed, plan), outcome };
+    }
     if (outcome.kind === 'correction') await store.markSuperseded(client, outcome.replaces);
     const totals = reconciliation.totals;
     const id = await store.insertStatement(client, {
@@ -145,7 +151,7 @@ export const publishStatement = async (pool, buffer, { user, sourceLabel, origin
       version: (existing[0]?.version ?? 0) + 1, origin, detailFeeCents: totals.detailFees, offsetCents: totals.offsets, claimsCents: totals.claims,
       adjustmentsCents: totals.adjustments, settlementPayableCents: totals.settlementPayable, prepaidCents: totals.prepaid, withdrawalFeeCents: totals.withdrawalFees,
       detailLines: totals.detailLines, offsetLines: totals.offsetLines, carrierDeliveries: statement.header.deliveries, sourceLabel: String(sourceLabel || 'statement.xlsx').slice(0, 200),
-      importedBy: user?.id, supersedesId: outcome.kind === 'correction' ? outcome.replaces : null,
+      importedBy: user?.id, supersedesId: outcome.kind === 'correction' ? outcome.replaces : null, sourceImportId: importId,
     });
     await store.insertLines(client, id, 'fee', statement.details);
     await store.insertLines(client, id, 'offset', statement.offsets);

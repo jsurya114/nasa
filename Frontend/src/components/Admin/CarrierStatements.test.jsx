@@ -12,21 +12,13 @@ afterEach(cleanup);
 // The real page with made-up statements from a fake server. Every request is recorded so the tests can say exactly what was asked.
 const ECONOMICS = { deliveryRevenue: "4.91", driverEarnings: "6.50", deliveryMargin: "-1.59", carrierClaims: "-0.70", ledgerAdjustments: "-2.00", contribution: "-4.29", settlementPayable: "2.21", insuranceWithheld: "1.92", driverEarningsAfterInsurance: "4.58", matchedRevenue: "2.61", unallocatedRevenue: "2.30", nasaRecords: 3, nasaDeliveries: 6, recordsWithoutBilledFee: 1, recordsWithoutDriverEarnings: 0, carrierDeliveries: 5 };
 const statement = (extra = {}) => ({ id: "7", fleet: "TST-NLC", cityId: 1, city: "Test GOFO", periodStart: "2026-10-19", periodEnd: "2026-10-25", billingWeek: "Week 43-2026", billNumber: "AP1", version: 1, status: "published", origin: "upload", unallocatedGroups: 1, economics: ECONOMICS, ...extra });
-const PREVIEW = { status: "ready", city: { id: 1, name: "Test GOFO" }, period: { start: "2026-10-19", end: "2026-10-25", label: "Week 43-2026" }, identity: { billNumber: "AP1" },
-  amounts: { deliveryRevenue: "4.91", claims: "-0.70", adjustments: "-2.00", settlementPayable: "2.21" },
-  matching: { matchedRevenue: "2.61", unallocatedRevenue: "2.30", states: { matched: { groups: 1, revenue: "2.61" }, no_pay_group: { groups: 1, revenue: "2.30" }, no_route: { groups: 0, revenue: "0.00" }, unknown_route: { groups: 0, revenue: "0.00" }, unknown_driver: { groups: 0, revenue: "0.00" } }, nasaOnly: { rows: 1, driverEarnings: "2.00" } },
-  outcome: { kind: "new" } };
-
-const mount = async (handler) => {
+const mount = async (handler, { imports = [] } = {}) => {
   const calls = [];
-  await installServer(async (config) => { calls.push(config); return handler(config, calls); });
+  await installServer(async (config) => { calls.push(config); return config.url.endsWith("/imports") ? { status: 200, data: { imports } } : handler(config, calls); });
   const { default: Page } = await import("./CarrierStatements.jsx");
   render(<MemoryRouter><Page /></MemoryRouter>);
   return calls;
 };
-const FILE = () => new File(["x"], "statement.xlsx", { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
-const choose = (file = FILE()) => fireEvent.change(screen.getByLabelText("Carrier statement file"), { target: { files: [file] } });
-
 describe("Carrier statements: the list", () => {
   it("shows each statement's revenue, driver earnings, margin, contribution and settlement apart, with the carrier's count beside NASA's", async () => {
     await mount(async () => ({ status: 200, data: { statements: [statement()] } }));
@@ -58,118 +50,6 @@ describe("Carrier statements: the list", () => {
     expect(within(table).getByText("$2.30")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Hide unallocated" }));
     expect(screen.queryByTestId("unallocated-table")).toBeNull();
-  });
-});
-
-describe("Carrier statements: adding one", () => {
-  it("checks the file first, stores nothing until Publish, then reloads the list", async () => {
-    let published = false;
-    const calls = await mount(async (config) => {
-      if (config.url.endsWith("/preview")) return { status: 200, data: PREVIEW };
-      if (config.url.endsWith("/publish")) { published = true; return { status: 201, data: { status: "published", statementId: 7, version: 1 } }; }
-      return { status: 200, data: { statements: published ? [statement()] : [] } };
-    });
-    await screen.findByTestId("statements-empty");
-    expect(screen.getByRole("button", { name: "Check statement" }).disabled).toBe(true);
-    choose();
-    fireEvent.click(screen.getByRole("button", { name: "Check statement" }));
-    const preview = await screen.findByTestId("statement-preview");
-    expect(calls.some((c) => c.url.endsWith("/publish"))).toBe(false);
-    expect(within(preview).getByTestId("amount-revenue").textContent).toBe("$4.91");
-    expect(within(preview).getByTestId("amount-unallocated").textContent).toBe("$2.30");
-    expect(within(preview).getByTestId("statement-outcome").textContent).toMatch(/first statement for this fleet and week/);
-    expect(within(preview).getByTestId("statement-unmatched").textContent).toMatch(/No recorded work for that driver, day and route: 1 group, \$2\.30\. Kept as unallocated revenue/);
-    expect(within(preview).getByText(/1 NASA record \(\$2\.00 of driver earnings\) the carrier did not bill/)).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "Publish statement" }));
-    expect(await screen.findByTestId("statement-7")).toBeTruthy();
-    expect(screen.queryByTestId("statement-preview")).toBeNull();
-  });
-
-  it("refuses a statement that does not reconcile and lists every reason, with no way to publish it", async () => {
-    await mount(async (config) => (config.url.endsWith("/preview")
-      ? { status: 200, data: { status: "rejected", reasons: ["Check failed: DSP Summary total billing = revenue + claims + adjustments", "Details of Delivery Fees row 5 (Fee): not an amount"] } }
-      : { status: 200, data: { statements: [] } }));
-    await screen.findByTestId("statements-empty");
-    choose();
-    fireEvent.click(screen.getByRole("button", { name: "Check statement" }));
-    const rejected = await screen.findByTestId("statement-rejected");
-    expect(within(rejected).getAllByRole("listitem")).toHaveLength(2);
-    expect(screen.queryByRole("button", { name: "Publish statement" })).toBeNull();
-  });
-
-  it("explains a correction, and refuses to offer Publish for the same statement or an older version", async () => {
-    const outcomes = [{ kind: "correction", replaces: "7", replacesVersion: 1 }, { kind: "already_published", version: 1 }, { kind: "older_version", version: 1 }];
-    let next = 0;
-    await mount(async (config) => (config.url.endsWith("/preview") ? { status: 200, data: { ...PREVIEW, outcome: outcomes[next++] } } : { status: 200, data: { statements: [] } }));
-    await screen.findByTestId("statements-empty");
-    choose();
-    fireEvent.click(screen.getByRole("button", { name: "Check statement" }));
-    expect((await screen.findByTestId("statement-outcome")).textContent).toMatch(/corrects version 1\. Publishing makes it version 2; the earlier version stays as history/);
-    expect(screen.getByRole("button", { name: "Publish statement" }).disabled).toBe(false);
-    choose(new File(["y"], "again.xlsx"));
-    fireEvent.click(screen.getByRole("button", { name: "Check statement" }));
-    await waitFor(() => expect(screen.getByTestId("statement-outcome").textContent).toMatch(/already published/));
-    expect(screen.getByRole("button", { name: "Publish statement" }).disabled).toBe(true);
-    choose(new File(["z"], "old.xlsx"));
-    fireEvent.click(screen.getByRole("button", { name: "Check statement" }));
-    await waitFor(() => expect(screen.getByTestId("statement-outcome").textContent).toMatch(/earlier version/));
-    expect(screen.getByRole("button", { name: "Publish statement" }).disabled).toBe(true);
-  });
-
-  it("shows a refused request in plain words", async () => {
-    await mount(async (config) => (config.url.endsWith("/preview") ? { status: 400, data: { message: "This is not an Excel (.xlsx) file. Upload the statement as downloaded." } } : { status: 200, data: { statements: [] } }));
-    await screen.findByTestId("statements-empty");
-    choose();
-    fireEvent.click(screen.getByRole("button", { name: "Check statement" }));
-    expect((await screen.findByRole("alert")).textContent).toBe("This is not an Excel (.xlsx) file. Upload the statement as downloaded.");
-  });
-});
-
-describe("Carrier statements: the file that was checked is the file that is published", () => {
-  const nameOf = (config) => config.data.get("file").name;
-
-  it("drops a preview for another file and ignores a late answer, so Publish can never send a different workbook", async () => {
-    let release;
-    const gate = new Promise((resolve) => { release = resolve; });
-    const sent = [];
-    const calls = await mount(async (config) => {
-      if (config.url.endsWith("/preview")) { if (nameOf(config) === "a.xlsx") await gate; return { status: 200, data: { ...PREVIEW, identity: { billNumber: nameOf(config) === "a.xlsx" ? "BILL-A" : "BILL-B" } } }; }
-      if (config.url.endsWith("/publish")) { sent.push(nameOf(config)); return { status: 201, data: { status: "published", statementId: 7, version: 1 } }; }
-      return { status: 200, data: { statements: [] } };
-    });
-    await screen.findByTestId("statements-empty");
-    choose(new File(["a"], "a.xlsx"));
-    fireEvent.click(screen.getByRole("button", { name: "Check statement" }));
-    await waitFor(() => expect(calls.some((c) => c.url.endsWith("/preview"))).toBe(true));
-    expect(screen.getByLabelText("Carrier statement file").disabled).toBe(true); // the file cannot be changed while the check runs
-    choose(new File(["b"], "b.xlsx")); // forced past the disabled input, as a script or a fast second choice could
-    release();
-    await new Promise((resolve) => setTimeout(resolve, 30));
-    expect(screen.queryByTestId("statement-preview")).toBeNull(); // A's late answer is ignored
-    expect(screen.queryByRole("button", { name: "Publish statement" })).toBeNull();
-
-    fireEvent.click(screen.getByRole("button", { name: "Check statement" }));
-    const preview = await screen.findByTestId("statement-preview");
-    expect(preview.textContent).toMatch(/BILL-B/);
-    fireEvent.click(screen.getByRole("button", { name: "Publish statement" }));
-    await waitFor(() => expect(sent).toEqual(["b.xlsx"]));
-  });
-
-  it("removes the preview and the Publish button as soon as another file is chosen", async () => {
-    const sent = [];
-    await mount(async (config) => {
-      if (config.url.endsWith("/preview")) return { status: 200, data: PREVIEW };
-      if (config.url.endsWith("/publish")) { sent.push(nameOf(config)); return { status: 201, data: { status: "published", statementId: 7, version: 1 } }; }
-      return { status: 200, data: { statements: [] } };
-    });
-    await screen.findByTestId("statements-empty");
-    choose(new File(["a"], "a.xlsx"));
-    fireEvent.click(screen.getByRole("button", { name: "Check statement" }));
-    await screen.findByTestId("statement-preview");
-    choose(new File(["b"], "b.xlsx"));
-    expect(screen.queryByTestId("statement-preview")).toBeNull();
-    expect(screen.queryByRole("button", { name: "Publish statement" })).toBeNull();
-    expect(sent).toEqual([]);
   });
 });
 
@@ -233,5 +113,66 @@ describe("Carrier statements: voiding", () => {
     expect(await screen.findByText(/Voided: uploaded for the wrong week/)).toBeTruthy();
     expect(JSON.parse(calls.find((c) => c.url.endsWith("/7/void")).data)).toEqual({ reason: "uploaded for the wrong week" });
     expect(screen.queryByRole("button", { name: "Void" })).toBeNull();
+  });
+});
+
+const waiting = (extra = {}) => ({ id: "4", sourceLabel: "weekly week 43.xlsx", uploadedAt: "2026-11-08T10:00:00Z", reasonKind: "owner_required", canPublish: true, reasons: ["Only an owner publishes company revenue. The saved import is waiting for the owner; nothing needs to be uploaded again."],
+  city: "Test GOFO", week: "Week 43-2026", billNumber: "AP1", deliveryRevenue: "4.91", settlementPayable: "2.21", outcome: { kind: "new" }, ...extra });
+
+describe("GOFO import history: no upload here", () => {
+  it("has no file chooser: the weekly workbook is uploaded once under File Upload", async () => {
+    await mount(async () => ({ status: 200, data: { statements: [] } }));
+    expect(await screen.findByRole("heading", { name: "GOFO import history" })).toBeTruthy();
+    expect(screen.queryByLabelText("Carrier statement file")).toBeNull();
+    expect(document.querySelector('input[type="file"]')).toBeNull();
+    expect(await screen.findByTestId("imports-empty")).toBeTruthy();
+  });
+});
+
+describe("GOFO import history: a weekly upload waiting for the owner", () => {
+  it("publishes the saved import without choosing the file again, then reloads", async () => {
+    let published = false;
+    const calls = await mount(async (config) => (config.url.endsWith("/imports/4/publish") ? ((published = true), { status: 201, data: { status: "published", version: 1 } }) : { status: 200, data: { statements: [] } }), { imports: [waiting()] });
+    const card = await screen.findByTestId("import-4");
+    expect(within(card).getByText(/A city admin added this week's data/)).toBeTruthy();
+    expect(within(card).getByText(/Delivery revenue \$4.91/)).toBeTruthy();
+    fireEvent.click(within(card).getByRole("button", { name: "Publish" }));
+    await waitFor(() => expect(published).toBe(true));
+    const post = calls.find((c) => c.url.endsWith("/imports/4/publish"));
+    expect(post.method).toBe("post");
+    expect(post.data instanceof FormData).toBe(false);
+    expect(JSON.parse(post.data)).toEqual({ confirmCorrection: false });
+    expect(await screen.findByText("Revenue updated")).toBeTruthy();
+  });
+
+  it("asks for a confirmation before a correction replaces the statement that stands", async () => {
+    const calls = await mount(async (config) => (config.url.endsWith("/publish") ? { status: 201, data: { status: "published", version: 2 } } : { status: 200, data: { statements: [] } }),
+      { imports: [waiting({ reasonKind: "correction", reasons: ["This corrects the statement that stands for Test GOFO Week 43-2026 (version 1). An owner confirms a correction."] })] });
+    const card = await screen.findByTestId("import-4");
+    fireEvent.click(within(card).getByRole("button", { name: "Review correction" }));
+    expect(calls.some((c) => c.url.endsWith("/publish"))).toBe(false);
+    expect(within(card).getByText(/replaces the statement that stands for this week/)).toBeTruthy();
+    fireEvent.click(within(card).getByRole("button", { name: "Confirm correction" }));
+    await waitFor(() => expect(calls.find((c) => c.url.endsWith("/publish"))).toBeTruthy());
+    expect(JSON.parse(calls.find((c) => c.url.endsWith("/publish")).data)).toEqual({ confirmCorrection: true });
+  });
+
+  it("shows why a failed check still fails when the owner checks again, and dismissal needs a reason", async () => {
+    const calls = await mount(async (config) => {
+      if (config.url.endsWith("/publish")) return { status: 422, data: { status: "rejected", reasons: ["Check failed: settlement payable"] } };
+      if (config.url.endsWith("/dismiss")) return { status: 200, data: { dismissed: true } };
+      return { status: 200, data: { statements: [] } };
+    }, { imports: [waiting({ reasonKind: "check_failed", reasons: ["Check failed: settlement payable"], city: null, deliveryRevenue: null })] });
+    const card = await screen.findByTestId("import-4");
+    fireEvent.click(within(card).getByRole("button", { name: "Check again" }));
+    expect((await within(card).findByRole("alert")).textContent).toMatch(/settlement payable/);
+    fireEvent.click(within(card).getByRole("button", { name: "Dismiss" }));
+    const confirm = within(card).getByRole("button", { name: "Dismiss import" });
+    expect(confirm.disabled).toBe(true);
+    fireEvent.change(within(card).getByLabelText(/Why is it being dismissed/), { target: { value: "wrong file from the carrier" } });
+    expect(confirm.disabled).toBe(false);
+    fireEvent.click(confirm);
+    await waitFor(() => expect(calls.find((c) => c.url.endsWith("/dismiss"))).toBeTruthy());
+    expect(JSON.parse(calls.find((c) => c.url.endsWith("/dismiss")).data)).toEqual({ reason: "wrong file from the carrier" });
   });
 });

@@ -35,6 +35,7 @@ const driverPaymentSlice = createSlice({
   initialState: {
     message: true,
     data: null,
+    revenue: null, // what became of the GOFO revenue in the file that was just added (issue #252)
     loading: false,
     error: null,
   },
@@ -58,10 +59,12 @@ const driverPaymentSlice = createSlice({
       .addCase(updateWeeklyExcelToDashboard.pending, (state) => {
         state.loading = true;
         state.error = null;
+        state.revenue = null;
       })
       .addCase(updateWeeklyExcelToDashboard.fulfilled, (state, action) => {
         state.loading = false;
         state.data = null;
+        state.revenue = action.payload?.revenue ?? null;
       })
       .addCase(updateWeeklyExcelToDashboard.rejected, (state, action) => {
         state.loading = false;

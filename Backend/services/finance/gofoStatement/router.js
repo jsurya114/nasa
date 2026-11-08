@@ -7,6 +7,10 @@
  *   POST /preview          file -> everything publishing would check and what it would do. Stores nothing.
  *   POST /publish          file -> stores a statement that reconciles. Same statement again: nothing changes. A correction becomes a new version.
  *   GET  /export.csv       the statements and their economics as a CSV (no driver names)
+
+ *   GET  /imports          the weekly uploads waiting for the owner (a check failed, a correction, or a city admin applied the data), saved so nothing is uploaded again
+ *   POST /imports/:id/publish  { confirmCorrection? } publishes a saved import after checking it again; a correction needs confirmCorrection: true
+ *   POST /imports/:id/dismiss  { reason } closes a saved import without publishing
  *   GET  /:id/unallocated  the unmatched money of one statement and why
  *   GET  /:id/unallocated.csv  the same as a CSV
  *   POST /:id/rematch      matches groups whose work reached NASA later
@@ -23,6 +27,7 @@ const ZIP_START = Buffer.from([0x50, 0x4b, 0x03, 0x04]); // an .xlsx file is a z
 const REASON_MIN = 5;
 const REASON_MAX = 300;
 const PUBLISH_STATUS = { published: HttpStatus.CREATED, already_published: HttpStatus.OK, older_version: HttpStatus.CONFLICT, rejected: HttpStatus.UNPROCESSABLE_ENTITY };
+const IMPORT_STATUS = { published: HttpStatus.CREATED, already_imported: HttpStatus.OK, needs_confirmation: HttpStatus.CONFLICT, rejected: HttpStatus.UNPROCESSABLE_ENTITY, not_found: HttpStatus.NOT_FOUND, not_open: HttpStatus.CONFLICT };
 
 const idOf = (value) => (/^\d{1,15}$/.test(String(value)) ? Number(value) : null);
 
@@ -30,7 +35,7 @@ export function createStatementRouter({ adminAuth, requireRole, upload, service 
   for (const [name, part] of Object.entries({ adminAuth, requireRole, upload })) {
     if (typeof part !== 'function' && !(name === 'upload' && typeof part?.single === 'function')) throw new Error(`createStatementRouter needs ${name}`);
   }
-  if (!service || ['list', 'exportCsv', 'unallocatedCsv', 'preview', 'publish', 'unallocated', 'rematch', 'void'].some((fn) => typeof service[fn] !== 'function')) throw new Error('createStatementRouter needs a service');
+  if (!service || ['list', 'exportCsv', 'unallocatedCsv', 'preview', 'publish', 'unallocated', 'rematch', 'void', 'listImports', 'publishImport', 'dismissImport'].some((fn) => typeof service[fn] !== 'function')) throw new Error('createStatementRouter needs a service');
   const router = express.Router();
 
   // Everything below is for the super admin only. Keep new routes below this line.
@@ -74,6 +79,25 @@ export function createStatementRouter({ adminAuth, requireRole, upload, service 
     const result = await service.publish(file.buffer, { user: { id: req.admin.id }, sourceLabel: String(file.originalname ?? 'statement.xlsx').replace(/[^\w .()-]/g, '_').slice(0, 200) });
     res.status(PUBLISH_STATUS[result.status] ?? HttpStatus.OK).json(result);
   })));
+
+  router.get('/imports', handle('import list', async (_req, res) => res.status(HttpStatus.OK).json({ imports: await service.listImports() })));
+
+  router.post('/imports/:id/publish', express.json({ limit: '4kb' }), handle('import publish', async (req, res) => {
+    const id = idOf(req.params.id);
+    if (!id) return res.status(HttpStatus.BAD_REQUEST).json({ message: 'The import id is not valid.' });
+    const result = await service.publishImport(id, { user: { id: req.admin.id }, confirmCorrection: req.body?.confirmCorrection === true });
+    const messages = { not_found: 'No such saved import.', not_open: 'This import is no longer waiting for review.' };
+    return res.status(IMPORT_STATUS[result.status] ?? HttpStatus.OK).json(messages[result.status] ? { ...result, message: messages[result.status] } : result);
+  }));
+
+  router.post('/imports/:id/dismiss', express.json({ limit: '4kb' }), handle('import dismiss', async (req, res) => {
+    const id = idOf(req.params.id);
+    const reason = typeof req.body?.reason === 'string' ? req.body.reason.trim() : '';
+    if (!id) return res.status(HttpStatus.BAD_REQUEST).json({ message: 'The import id is not valid.' });
+    if (reason.length < REASON_MIN || reason.length > REASON_MAX) return res.status(HttpStatus.BAD_REQUEST).json({ message: `Give a reason of ${REASON_MIN} to ${REASON_MAX} characters.` });
+    const done = await service.dismissImport(id, { user: { id: req.admin.id }, reason });
+    return done ? res.status(HttpStatus.OK).json({ dismissed: true }) : res.status(HttpStatus.CONFLICT).json({ message: 'This import is no longer waiting for review.' });
+  }));
 
   const sendCsv = (res, name, csv) => res.status(HttpStatus.OK).set({ 'Content-Type': 'text/csv; charset=utf-8', 'Content-Disposition': `attachment; filename="${name}"`, 'X-Content-Type-Options': 'nosniff' }).send(csv);
 
