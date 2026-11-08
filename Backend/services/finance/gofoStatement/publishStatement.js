@@ -154,6 +154,10 @@ export const publishStatement = async (pool, buffer, { user, sourceLabel, origin
     await store.insertItems(client, id, 'prepaid', statement.prepaid);
     await store.insertItems(client, id, 'withdrawal', statement.withdrawals);
     await store.insertGroups(client, id, plan.match.groups);
+    if (!(await store.holdMatchedWork(client, id))) {
+      await client.query('ROLLBACK');
+      return rejected(['A journey this statement is matched to was changed or deleted while it was being published. Nothing was stored. Check the statement again and publish it.'], { reconciliation: summaryOf(reconciliation), week });
+    }
     if (outcome.kind === 'correction') await store.addEvent(client, outcome.replaces, 'superseded', user?.id, `Replaced by version ${(existing[0]?.version ?? 0) + 1}`);
     await store.addEvent(client, id, 'published', user?.id, `${origin}: ${reconciliation.identity.billNumber}`);
     await client.query('COMMIT');

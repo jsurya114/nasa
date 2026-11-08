@@ -170,6 +170,23 @@ test('delivery revenue, driver earnings and margin use one definition in every r
       const byDay = await trendSeries(client, { period, cityIds: city, interval: 'day' });
       assert.equal(byDay.data.series.find((p) => p.bucketStart === '2026-10-19').deliveryRevenue, '0.81');
     });
+
+    await t.test('a cross-week offset is added to an ESTIMATE when no statement covers the record\'s week, and never replaces it', async () => {
+      // Void the week-43 statement: the record for the 19th is now covered by no statement, so it is back to its stored estimate (3.00 + 1.00 = 4.00).
+      const week43 = (await one("SELECT id FROM carrier_statements WHERE status = 'published' AND period_start = '2026-10-19'")).id;
+      await voidStatement(client, week43, { actorId: 1, reason: 'test: the earlier week has no active statement' });
+      const record = async () => one("SELECT delivery_revenue, delivery_margin, revenue_basis, revenue_complete, statement_id FROM reporting.delivery_facts WHERE driver_id = $1 AND business_date = '2026-10-19'", [driverA]);
+      const r = await record();
+      assert.deepEqual([money(r.delivery_revenue), money(r.delivery_margin), r.revenue_basis, r.revenue_complete, r.statement_id], ['2.20', '-0.80', 'estimated', true, null],
+        'the 4.00 estimate stays, the -1.80 offset from week 44 is added on top, and the label stays estimated');
+      const data = await summary();
+      assert.equal(data.revenueIsEstimated, true);
+      assert.equal(data.recordsByBasis.estimated >= 1, true);
+      // The offset is matched to the record, not unallocated, and the voided statement's own unallocated money is gone with it: nothing is counted twice.
+      assert.equal(data.unallocatedRevenue, null);
+      const byDay = await trendSeries(client, { period, cityIds: city, interval: 'day' });
+      assert.equal(byDay.data.series.find((p) => p.bucketStart === '2026-10-19').deliveryRevenue, '2.20');
+    });
   } finally {
     await client.query('ROLLBACK');
     client.release();
