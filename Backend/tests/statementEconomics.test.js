@@ -1,0 +1,124 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { publishStatement } from '../services/finance/gofoStatement/publishStatement.js';
+import { createStatementService } from '../services/finance/gofoStatement/statementService.js';
+import { statementSheets, statementWorkbook } from './helpers/gofoStatementFixture.js';
+
+// Needs a PostgreSQL copy that has the app's tables and the reporting views (never production). PAYROLL_TEST_DB=1 and the DB_* variables. One rolled-back
+// transaction, made-up data. The numbers follow the owner's own worked example: margin before claims and adjustments, then the contribution after them.
+const hasDb = process.env.PAYROLL_TEST_DB === '1';
+const dir = (name) => fileURLToPath(new URL(`../migrations/${name}`, import.meta.url));
+const nestedPool = (client) => {
+  let depth = 0;
+  return {
+    query: (sql, params) => client.query(sql, params),
+    connect: async () => ({
+      query: (sql, params) => {
+        if (sql === 'BEGIN') { depth += 1; return client.query(`SAVEPOINT s${depth}`); }
+        if (sql === 'COMMIT') { const name = `s${depth}`; depth -= 1; return client.query(`RELEASE SAVEPOINT ${name}`); }
+        if (sql === 'ROLLBACK') { const name = `s${depth}`; depth -= 1; return client.query(`ROLLBACK TO SAVEPOINT ${name}`).then(() => client.query(`RELEASE SAVEPOINT ${name}`)); }
+        return client.query(sql, params);
+      },
+      release: () => {},
+    }),
+  };
+};
+
+test('a statement\'s economics: revenue, driver earnings, margin before claims, contribution after them, settlement and net of insurance', { skip: !hasDb && 'set PAYROLL_TEST_DB=1 and the DB_* variables to run' }, async () => {
+  const { default: pool } = await import('../config/db.js');
+  const client = await pool.connect();
+  const one = async (sql, params) => (await client.query(sql, params)).rows[0];
+  try {
+    await client.query('BEGIN');
+    await client.query(readFileSync(dir('2026-11-08-issue-252-carrier-statements.sql'), 'utf8'));
+    await client.query(readFileSync(dir('2026-11-08-issue-252-reporting-statement-revenue.sql'), 'utf8'));
+    const city = (await one("INSERT INTO city (job, city_code, city_type) VALUES ('Test Economics GOFO', 'TST GOFO', 'WEEKLY') RETURNING id")).id;
+    const route = async (code) => (await one('INSERT INTO routes (name, job, company_route_price, driver_route_price, company_doublestop_price, driver_doublestop_price, route_code_in_string) VALUES ($1, $2, 0, 3, 0, 1.5, $3) RETURNING id', [`Test ${code}`, 'Test Economics GOFO', code])).id;
+    const routeA = await route('TS01-001');
+    const routeB = await route('TS01-002');
+    const driver = async (name, code) => (await one("INSERT INTO drivers (password, name, email, driver_code, city_id) VALUES ('x', $1, $2, $3, $4) RETURNING id", [name, `${name.replace(/\s+/g, '.')}@example.test`, code, city])).id;
+    const driverA = await driver('Economics Test One', 90000501);
+    const driverB = await driver('Economics Test Two', 90000502);
+    const row = async (driverId, routeId, day, pay, insurance) => {
+      const dd = (await one('INSERT INTO dashboard_data (driver_id, route_id, journey_date, start_seq, end_seq, packages, delivered, closed, paid) VALUES ($1,$2,$3,0,0,2,2,true,false) RETURNING id', [driverId, routeId, day])).id;
+      await client.query('UPDATE payment_dashboard SET delivered = 2, driver_payment = $2, company_earnings = NULL, insurance_deduction = $3 WHERE dashboard_data_id = $1', [dd, pay, insurance]);
+    };
+    await row(driverA, routeA, '2026-10-19', '3.00', '1.92');
+    await row(driverB, routeB, '2026-10-20', '1.50', '0');
+    await row(driverB, routeA, '2026-10-23', '2.00', '0'); // work the carrier did not bill
+    const db = nestedPool(client);
+    const published = await publishStatement(db, await statementWorkbook(statementSheets({ idA: '90000501', idB: '90000502' })), { user: { id: 1 }, sourceLabel: 'economics.xlsx' });
+    assert.equal(published.status, 'published');
+
+    const [statement] = await createStatementService(db).list();
+    assert.deepEqual(statement.economics, {
+      deliveryRevenue: '4.91', driverEarnings: '6.50', deliveryMargin: '-1.59', carrierClaims: '-0.70', ledgerAdjustments: '-2.00', contribution: '-4.29',
+      settlementPayable: '2.21', insuranceWithheld: '1.92', driverEarningsAfterInsurance: '4.58', matchedRevenue: '4.91', unallocatedRevenue: '0.00',
+      nasaRecords: 3, nasaDeliveries: 6, recordsWithoutBilledFee: 1, recordsWithoutDriverEarnings: 0, carrierDeliveries: 5,
+      carrierDeliveriesNote: 'The carrier counts offset tickets as deliveries; NASA keeps its own completed-delivery count.',
+      marginStatus: 'complete', marginReasons: [], economicsAvailable: true, unavailableReason: null,
+    });
+    assert.equal(statement.economics.deliveryRevenue, statement.deliveryRevenue, 'the list and the economics agree on revenue');
+
+    const csv = await createStatementService(db).exportCsv();
+    const [header, line] = csv.split('\r\n');
+    assert.match(header, /^City,Billing week,Week start,Week end,Bill number,Version,Status,Delivery revenue,Matched revenue,Unallocated revenue,Driver earnings,Delivery margin,Margin status,Carrier claims,Ledger adjustments,Contribution,GOFO settlement payable/);
+    assert.match(line, /^Test Economics GOFO,Week 43-2026,2026-10-19,2026-10-25,AP0000000001,1,published,4\.91,4\.91,0\.00,6\.50,-1\.59,complete,-0\.70,-2\.00,-4\.29,2\.21,1\.92,4\.58,6,5$/);
+    assert.equal(/Economics Test/.test(csv), false, 'no driver name is exported');
+
+    // A correction supersedes this version. The old version keeps what the carrier stated but has no NASA-side economics: unavailable, never zero and never the new version's.
+    const corrected = statementSheets({ idA: '90000501', idB: '90000502' });
+    corrected['Details of Delivery Fees'][4][15] = 0.6;
+    corrected['DSP Summary'][2][6] = 2.31; corrected['DSP Summary'][2][9] = 2.31; corrected['DSP Summary'][2][13] = 5.01;
+    corrected['Driver Summary'][3][2] = 2.4; corrected['Driver Summary'][3][6] = 2.4;
+    corrected['Driver Daily Summary'][3][3] = 2.4; corrected['Driver Daily Summary'][3][7] = 2.4;
+    const second = await publishStatement(db, await statementWorkbook(corrected), { user: { id: 1 }, sourceLabel: 'economics corrected.xlsx' });
+    assert.deepEqual([second.status, second.version], ['published', 2]);
+    const listed = await createStatementService(db).list();
+    const [current, old] = listed;
+    assert.deepEqual([current.version, current.status, current.economics.economicsAvailable, current.economics.driverEarnings, current.economics.deliveryMargin], [2, 'published', true, '6.50', '-1.49']);
+    assert.deepEqual([old.version, old.status, old.economics.economicsAvailable], [1, 'superseded', false]);
+    for (const field of ['driverEarnings', 'deliveryMargin', 'contribution', 'insuranceWithheld', 'driverEarningsAfterInsurance', 'nasaRecords', 'nasaDeliveries', 'recordsWithoutBilledFee', 'recordsWithoutDriverEarnings']) {
+      assert.equal(old.economics[field], null, `${field} is unavailable on a superseded version`);
+    }
+    assert.deepEqual([old.economics.deliveryRevenue, old.economics.carrierClaims, old.economics.ledgerAdjustments, old.economics.settlementPayable, old.economics.carrierDeliveries], ['4.91', '-0.70', '-2.00', '2.21', 5], 'what the carrier stated is kept');
+    assert.match(old.economics.unavailableReason, /no longer the statement that stands/);
+    const history = (await createStatementService(db).exportCsv()).split('\r\n').filter(Boolean).find((l) => /,1,superseded,/.test(l));
+    assert.equal(history, 'Test Economics GOFO,Week 43-2026,2026-10-19,2026-10-25,AP0000000001,1,superseded,4.91,4.91,0.00,,,unavailable,-0.70,-2.00,,2.21,,,,5', 'unavailable figures are empty cells in the CSV');
+    await client.query("UPDATE carrier_statements SET status = 'voided', voided_at = now(), void_reason = 'test' WHERE version = 2");
+    assert.equal((await createStatementService(db).list()).find((s) => s.version === 2).economics.economicsAvailable, false, 'a voided version has none either');
+
+    // Cost coverage (Jasil's review): a published statement whose driver cost is not known must not look like complete profit.
+    // 1) a matched record whose driver payment is still NULL: the carrier's figures stay, the margin is provisional with a reason.
+    const again = await publishStatement(db, await statementWorkbook(corrected), { user: { id: 1 }, sourceLabel: 'economics again.xlsx' }); // version 2 was voided above
+    assert.equal(again.status, 'published');
+    await client.query("UPDATE payment_dashboard SET driver_payment = NULL WHERE journey_date = '2026-10-20'");
+    const provisional = (await createStatementService(db).list()).find((s) => s.status === 'published');
+    assert.equal(provisional.economics.marginStatus, 'provisional');
+    assert.match(provisional.economics.marginReasons.join(' '), /1 NASA record has no driver earnings yet/);
+    assert.equal(provisional.economics.deliveryRevenue, '5.01', 'verified carrier revenue and settlement stay visible');
+    assert.equal(provisional.economics.settlementPayable, '2.31');
+    assert.equal(provisional.economics.recordsWithoutDriverEarnings, 1);
+    const csvLine = (await createStatementService(db).exportCsv()).split('\r\n').find((l) => new RegExp(`,${again.version},published,`).test(l));
+    assert.match(csvLine, /,provisional,/, 'the CSV carries the same status');
+
+    // 2) the statement is published before any NASA work exists: cost and margin are unavailable (empty), revenue and settlement stay.
+    await client.query("UPDATE carrier_statements SET status = 'voided', voided_at = now(), void_reason = 'test' WHERE status = 'published'");
+    await client.query('DELETE FROM dashboard_data WHERE driver_id IN ($1, $2)', [driverA, driverB]);
+    const early = await publishStatement(db, await statementWorkbook(corrected), { user: { id: 1 }, sourceLabel: 'economics early.xlsx' });
+    assert.equal(early.status, 'published');
+    const noWork = (await createStatementService(db).list()).find((s) => s.id === String(early.statementId) || Number(s.id) === Number(early.statementId));
+    assert.equal(noWork.economics.marginStatus, 'unavailable');
+    for (const field of ['driverEarnings', 'deliveryMargin', 'contribution', 'driverEarningsAfterInsurance']) assert.equal(noWork.economics[field], null, `${field} is unavailable, not zero`);
+    assert.deepEqual([noWork.economics.deliveryRevenue, noWork.economics.settlementPayable, noWork.economics.unallocatedRevenue], ['5.01', '2.31', '5.01']);
+    assert.match(noWork.economics.unavailableReason, /No NASA work is recorded against this statement yet/);
+    const early_csv = (await createStatementService(db).exportCsv()).split('\r\n').find((l) => new RegExp(`,${early.version},published,`).test(l));
+    assert.match(early_csv, /,5\.01,0\.00,5\.01,,,unavailable,/, 'empty driver earnings and margin cells, status unavailable');
+  } finally {
+    await client.query('ROLLBACK');
+    client.release();
+    await pool.end();
+  }
+});
