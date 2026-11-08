@@ -11,7 +11,8 @@
 --   'recorded'   daily record with both stored amounts (revenue = driver earnings + stored company earnings)
 --   'estimated'  weekly record with both stored amounts but no verified statement for its week: the old price-based figure, not the carrier's bill
 --   NULL         no usable amounts yet (still open); counted in deliveries, never as zero revenue
--- The matched carrier fee is shown on ONE record per Delivery ID, day and route (the lowest id), so a repeated record cannot multiply revenue.
+-- A carrier group is matched to ONE record (the lowest id of its Delivery ID, day and route), so a repeated record cannot multiply revenue. A record's revenue is the
+-- sum of every active group matched to it, across statements.
 CREATE OR REPLACE VIEW reporting.delivery_facts AS
 SELECT pd.id                                       AS fact_id,
        pd.journey_date                             AS business_date,
@@ -35,32 +36,42 @@ SELECT pd.id                                       AS fact_id,
        (pd.driver_payment IS NOT NULL AND pd.company_earnings IS NOT NULL) AS amounts_complete,
        ((pd.driver_payment IS NULL) <> (pd.company_earnings IS NULL))      AS amounts_partial,
        -- appended for issue #252
-       CASE WHEN st.statement_id IS NOT NULL THEN (COALESCE(st.fee_cents, 0)::numeric / 100)
+       CASE WHEN st.has_statement THEN (COALESCE(st.fee_cents, 0)::numeric / 100)
             WHEN pd.driver_payment IS NOT NULL AND pd.company_earnings IS NOT NULL THEN pd.driver_payment + pd.company_earnings
        END                                         AS delivery_revenue,
-       CASE WHEN st.statement_id IS NOT NULL THEN (CASE WHEN pd.driver_payment IS NOT NULL THEN (COALESCE(st.fee_cents, 0)::numeric / 100) - pd.driver_payment END)
+       CASE WHEN st.has_statement THEN (CASE WHEN pd.driver_payment IS NOT NULL THEN (COALESCE(st.fee_cents, 0)::numeric / 100) - pd.driver_payment END)
             WHEN pd.driver_payment IS NOT NULL AND pd.company_earnings IS NOT NULL THEN pd.company_earnings
        END                                         AS delivery_margin,
-       CASE WHEN st.statement_id IS NOT NULL THEN 'statement'
+       CASE WHEN st.has_statement THEN 'statement'
             WHEN pd.driver_payment IS NOT NULL AND pd.company_earnings IS NOT NULL
                  THEN (CASE WHEN pd.start_seq IS NULL OR pd.end_seq IS NULL OR pd.start_seq = 0 OR pd.end_seq = 0 THEN 'estimated' ELSE 'recorded' END)
        END                                         AS revenue_basis,
-       (pd.driver_payment IS NOT NULL AND (st.statement_id IS NOT NULL OR pd.company_earnings IS NOT NULL)) AS revenue_complete,
+       (pd.driver_payment IS NOT NULL AND (st.has_statement OR pd.company_earnings IS NOT NULL)) AS revenue_complete,
        st.statement_id                             AS statement_id,
        COALESCE(pd.insurance_deduction, 0)         AS insurance_withheld
   FROM payment_dashboard pd
   JOIN drivers d ON d.id = pd.driver_id
   JOIN routes  r ON r.id = pd.route_id
   JOIN city    c ON c.job = r.job
+  -- The revenue of a record is EVERY active carrier group matched to it, whichever statement and billing week the group is in (a later week can carry an offset for
+  -- an earlier day, and after a re-match two statements can point at one record). The statement that covers the record's week only decides whether the record is
+  -- billed at all, and which statement_id is shown; it never picks which groups count. The record's driver earnings are its own single stored amount.
   LEFT JOIN LATERAL (
-    SELECT s.id AS statement_id,
-           (SELECT sum(g.fee_cents) FROM carrier_statement_groups g WHERE g.statement_id = s.id AND g.payment_dashboard_id = pd.id) AS fee_cents
-      FROM carrier_statements s
-     WHERE s.status = 'published' AND s.city_id = c.id
-       AND (EXISTS (SELECT 1 FROM carrier_statement_groups g WHERE g.statement_id = s.id AND g.payment_dashboard_id = pd.id)
-            OR ((pd.start_seq IS NULL OR pd.end_seq IS NULL OR pd.start_seq = 0 OR pd.end_seq = 0) AND pd.journey_date BETWEEN s.period_start AND s.period_end))
-     ORDER BY s.version DESC
-     LIMIT 1
+    SELECT (anchored.groups > 0 OR cover.statement_id IS NOT NULL) AS has_statement,
+           anchored.fee_cents,
+           COALESCE(cover.statement_id, anchored.statement_id) AS statement_id
+      FROM (SELECT count(*) AS groups, sum(g.fee_cents) AS fee_cents, max(g.statement_id) AS statement_id
+              FROM carrier_statement_groups g
+              JOIN carrier_statements gs ON gs.id = g.statement_id AND gs.status = 'published' AND gs.city_id = c.id
+             WHERE g.payment_dashboard_id = pd.id) anchored
+      LEFT JOIN LATERAL (
+        SELECT s.id AS statement_id
+          FROM carrier_statements s
+         WHERE s.status = 'published' AND s.city_id = c.id
+           AND (pd.start_seq IS NULL OR pd.end_seq IS NULL OR pd.start_seq = 0 OR pd.end_seq = 0) AND pd.journey_date BETWEEN s.period_start AND s.period_end
+         ORDER BY s.version DESC
+         LIMIT 1
+      ) cover ON true
   ) st ON true;
 
 -- The carrier's unmatched money, kept as UNALLOCATED revenue of the statement's city on the carrier's signing day. It belongs to no driver, so it has no

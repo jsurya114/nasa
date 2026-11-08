@@ -1,6 +1,6 @@
 -- Issue #252: keep the carrier's (GOFO) weekly statement as company revenue, apart from payroll.
 --
--- A statement is the carrier's bill for one fleet (one city) and one billing week. It is the source of company revenue.
+-- A statement is the carrier's bill for one fleet (one city) and one billing week; one live statement per city and week. It is the source of company revenue.
 -- NASA's own driver earnings stay in payment_dashboard and are never written to by these tables. Additive only: new tables,
 -- triggers and one view. Nothing existing is touched, and nothing here changes pay.
 --
@@ -52,9 +52,13 @@ CREATE TABLE IF NOT EXISTS carrier_statements (
 -- The same statement is published once. A voided one may be uploaded again as a new version.
 CREATE UNIQUE INDEX IF NOT EXISTS carrier_statements_fingerprint_once
   ON carrier_statements (carrier, fingerprint) WHERE status <> 'voided';
--- At most one live statement per fleet and week.
-CREATE UNIQUE INDEX IF NOT EXISTS carrier_statements_one_published
-  ON carrier_statements (carrier, fleet, period_start) WHERE status = 'published';
+-- At most one live statement per city and week. The grain is the verified city, not the fleet text: "TST-NLC" and "TST NLC" are the same fleet, and a
+-- correction that spells it differently must still replace the old version. (An earlier draft keyed this on the fleet text; drop that index if present.)
+DROP INDEX IF EXISTS carrier_statements_one_published;
+CREATE UNIQUE INDEX IF NOT EXISTS carrier_statements_one_published_per_city
+  ON carrier_statements (carrier, city_id, period_start) WHERE status = 'published';
+CREATE UNIQUE INDEX IF NOT EXISTS carrier_statements_city_version_once
+  ON carrier_statements (carrier, city_id, period_start, version);
 CREATE INDEX IF NOT EXISTS idx_carrier_statements_city_period ON carrier_statements (city_id, period_start) WHERE status = 'published';
 
 -- Every line of Details of Delivery Fees ('fee') and Offset Details ('offset'), with its sheet row.

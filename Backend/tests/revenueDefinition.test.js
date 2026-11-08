@@ -144,6 +144,32 @@ test('delivery revenue, driver earnings and margin use one definition in every r
       const trendDays = await trendSeries(client, { period, cityIds: city, interval: 'day' });
       assert.equal(trendDays.data.series.find((p) => p.bucketStart === '2026-10-20').unallocatedRevenue, '2.30');
     });
+
+    await t.test('two statements that point at one record add up: a later week\'s offset for an earlier day is counted once, before and after a re-match', async () => {
+      // Week 44 carries only an offset (-1.80) signed on the 19th, which belongs to week 43. When it is published NASA's record for that day is outside week 44, so the
+      // offset is unmatched; a re-match then anchors it to the same record that week 43 already bills (2.61).
+      const week44 = statementSheets({ idA: ID_A, idB: ID_B });
+      week44['DSP Summary'][2] = ['AP0000000044', 'TEST CARRIER LLC', 'TST-NLC', 'Weekly settlement', 'Week 44-2026', 'USD', -1.8, '', '', -1.8, 0, 0, 1, -1.8, 1, -1.8, 0, 0, 0, 0];
+      week44['Driver Summary'] = [week44['Driver Summary'][0], week44['Driver Summary'][1], [`${ID_A} `, 'Driver One', -1.8, 0, 0, 0, -1.8, 1, -1.8]];
+      week44['Driver Daily Summary'] = [week44['Driver Daily Summary'][0], week44['Driver Daily Summary'][1], [`${ID_A} `, 'Driver One', '10/19/2026', -1.8, 0, 0, 0, -1.8, 1, -1.8]];
+      week44['Details of Delivery Fees'] = [week44['Details of Delivery Fees'][0]];
+      week44['Claims Detail'] = [week44['Claims Detail'][0]];
+      week44['General Ledger Adjustment recor'] = [week44['General Ledger Adjustment recor'][0]];
+      const second = await publishStatement(db, await statementWorkbook(week44), { user: { id: 1 }, sourceLabel: 'week 44.xlsx' });
+      assert.equal(second.status, 'published', JSON.stringify(second.reasons));
+      assert.equal(second.matching.unallocatedRevenue, '-1.80', 'the offset starts unmatched');
+      const before = await summary();
+      assert.deepEqual([before.deliveryRevenue, before.unallocatedRevenue, before.driverEarnings], ['3.11', '0.50', '5.00']);
+
+      const { rematchOpenGroups } = await import('../services/finance/gofoStatement/statementStore.js');
+      assert.equal(await rematchOpenGroups(client, { statementId: second.statementId }), 1, 'the offset is now matched to the record for the 19th');
+      const after = await summary();
+      assert.deepEqual([after.deliveryRevenue, after.unallocatedRevenue, after.driverEarnings, after.deliveryMargin], ['3.11', '2.30', '5.00', '-1.89'], 'the total does not change, and driver cost is counted once');
+      const record = await one("SELECT delivery_revenue, delivery_margin, gross_driver_earnings FROM reporting.delivery_facts WHERE driver_id = $1 AND business_date = '2026-10-19'", [driverA]);
+      assert.deepEqual([money(record.delivery_revenue), money(record.gross_driver_earnings), money(record.delivery_margin)], ['0.81', '3.00', '-2.19'], 'the record bills 2.61 - 1.80 against its own 3.00 of driver earnings');
+      const byDay = await trendSeries(client, { period, cityIds: city, interval: 'day' });
+      assert.equal(byDay.data.series.find((p) => p.bucketStart === '2026-10-19').deliveryRevenue, '0.81');
+    });
   } finally {
     await client.query('ROLLBACK');
     client.release();

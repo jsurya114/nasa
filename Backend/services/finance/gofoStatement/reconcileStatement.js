@@ -28,6 +28,9 @@ export const reconcileStatement = (statement) => {
     compare('DSP Summary claims = Claims Detail', h.claims, claims);
     compare('DSP Summary adjustments = General Ledger Adjustment', h.adjustments, adjustments);
     compare('DSP Summary total billing = revenue + claims + adjustments', h.totalBilling, settlementPayable);
+    // The prepayment and withdrawal sheets are the detail behind these two controls; a blank control means none.
+    compare('DSP Summary prepaid = Total Prepaid to Driver Account', maybe(h.prepaid), totals.prepaid);
+    compare('DSP Summary withdrawal fees = Total Withdrawal Fees for Drive', maybe(h.withdrawalFees), totals.withdrawalFees);
     compare('DSP Summary remaining payable = total billing - prepayments', h.remainingPayable, settlementPayable - maybe(h.prepaid));
     compare('DSP Summary offset tickets = Offset Details lines', h.offsetTickets, statement.offsets.length);
     // The carrier's delivery count includes offset tickets in this file; NASA keeps its own completed-delivery definition and only checks this control.
