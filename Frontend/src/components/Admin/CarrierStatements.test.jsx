@@ -141,20 +141,20 @@ describe("GOFO import history: a weekly upload waiting for the owner", () => {
     const post = calls.find((c) => c.url.endsWith("/imports/4/publish"));
     expect(post.method).toBe("post");
     expect(post.data instanceof FormData).toBe(false);
-    expect(JSON.parse(post.data)).toEqual({ confirmCorrection: false });
+    expect(JSON.parse(post.data)).toEqual({ replacesStatementId: null });
     expect(await screen.findByText("Revenue updated")).toBeTruthy();
   });
 
   it("asks for a confirmation before a correction replaces the statement that stands", async () => {
     const calls = await mount(async (config) => (config.url.endsWith("/publish") ? { status: 201, data: { status: "published", version: 2 } } : { status: 200, data: { statements: [] } }),
-      { imports: [waiting({ reasonKind: "correction", reasons: ["This corrects the statement that stands for Test GOFO Week 43-2026 (version 1). An owner confirms a correction."] })] });
+      { imports: [waiting({ reasonKind: "correction", outcome: { kind: "correction", version: 1, replaces: "7" }, reasons: ["This corrects the statement that stands for Test GOFO Week 43-2026 (version 1). An owner confirms a correction."] })] });
     const card = await screen.findByTestId("import-4");
     fireEvent.click(within(card).getByRole("button", { name: "Review correction" }));
     expect(calls.some((c) => c.url.endsWith("/publish"))).toBe(false);
-    expect(within(card).getByText(/replaces the statement that stands for this week/)).toBeTruthy();
+    expect(within(card).getByText(/replaces version 1 of the statement for this week/)).toBeTruthy();
     fireEvent.click(within(card).getByRole("button", { name: "Confirm correction" }));
     await waitFor(() => expect(calls.find((c) => c.url.endsWith("/publish"))).toBeTruthy());
-    expect(JSON.parse(calls.find((c) => c.url.endsWith("/publish")).data)).toEqual({ confirmCorrection: true });
+    expect(JSON.parse(calls.find((c) => c.url.endsWith("/publish")).data)).toEqual({ replacesStatementId: "7" });
   });
 
   it("shows why a failed check still fails when the owner checks again, and dismissal needs a reason", async () => {

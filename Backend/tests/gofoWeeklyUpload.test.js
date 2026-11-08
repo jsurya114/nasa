@@ -109,6 +109,54 @@ test('one upload: the weekly file stages pay data, and its statement reaches Ins
       assert.deepEqual(await imports(), [], 'no import was saved for a refused file');
     });
 
+    await t.test('a failed revenue stage cannot attach the preceding workbook to the newly staged pay data', async () => {
+      await client.query('SAVEPOINT failed_revenue_stage');
+      try {
+        const earlier = await upload(file1);
+        await client.query(`
+          CREATE FUNCTION test_revenue_stage_failure() RETURNS trigger LANGUAGE plpgsql AS $$
+          BEGIN RAISE EXCEPTION 'synthetic import insert failure'; END $$;
+          CREATE TRIGGER test_revenue_stage_failure BEFORE INSERT ON carrier_statement_imports
+          FOR EACH ROW EXECUTE FUNCTION test_revenue_stage_failure();
+        `);
+        const newer = await upload(file2);
+        assert.equal(newer.body.data.revenue.state, 'unavailable');
+        assert.match(newer.body.data.revenue.reasons.join(' '), /could not be saved/);
+        const added = await apply();
+        assert.equal(added.body.rowsInserted.inserted, 2);
+        assert.equal(added.body.revenue, null);
+        assert.deepEqual(await statements(), [], 'the preceding workbook was never published');
+        assert.equal((await imports()).find((i) => i.id === earlier.body.data.revenue.importId).applied_at, null);
+      } finally {
+        await client.query('ROLLBACK TO SAVEPOINT failed_revenue_stage');
+      }
+    });
+
+    await t.test('a failed settlement rolls back publication, and the applied import can be recovered without uploading again', async () => {
+      await client.query('SAVEPOINT failed_revenue_settlement');
+      try {
+        await upload(file1);
+        await client.query(`
+          CREATE FUNCTION test_revenue_settlement_failure() RETURNS trigger LANGUAGE plpgsql AS $$
+          BEGIN RAISE EXCEPTION 'synthetic import settlement failure'; END $$;
+          CREATE TRIGGER test_revenue_settlement_failure BEFORE UPDATE ON carrier_statement_imports
+          FOR EACH ROW WHEN (NEW.status = 'published') EXECUTE FUNCTION test_revenue_settlement_failure();
+        `);
+        const added = await apply();
+        assert.equal(added.body.rowsInserted.inserted, 2);
+        assert.equal(added.body.revenue.state, 'unavailable');
+        assert.deepEqual(await statements(), [], 'the statement and the import roll back together');
+        const service = createStatementService(db);
+        const [waiting] = await service.listImports();
+        assert.equal(waiting.canPublish, true);
+        await client.query('DROP TRIGGER test_revenue_settlement_failure ON carrier_statement_imports');
+        assert.equal((await service.publishImport(waiting.id, { user: OWNER })).status, 'published');
+        assert.equal((await summary()).deliveryRevenue, '4.91');
+      } finally {
+        await client.query('ROLLBACK TO SAVEPOINT failed_revenue_settlement');
+      }
+    });
+
     await t.test('a city admin uploads and adds the weekly data: pay works, the revenue waits for the owner, and no company figure is shown to them', async () => {
       const out = await upload(file1, CITY_ADMIN);
       assert.equal(out.status, 200);
@@ -144,7 +192,7 @@ test('one upload: the weekly file stages pay data, and its statement reaches Ins
     await t.test('the owner publishes the saved import without choosing the file again, and Insights shows the reconciled totals', async () => {
       const open = await createStatementService(db).listImports();
       const [saved, duplicate] = open; // the newest first; the older one is the same file from the earlier city admin upload
-      const done = await createStatementService(db).publishImport(Number(saved.id), { user: OWNER, confirmCorrection: false });
+      const done = await createStatementService(db).publishImport(Number(saved.id), { user: OWNER });
       assert.equal(done.status, 'published');
       const [statement] = await statements();
       assert.deepEqual([statement.version, statement.status, String(statement.source_import_id), statement.detail_fee_cents], [1, 'published', saved.id, '671']);
@@ -175,16 +223,21 @@ test('one upload: the weekly file stages pay data, and its statement reaches Ins
       const out = await upload(file2);
       assert.equal(out.body.data.revenue.state, 'needs_review');
       assert.equal(out.body.data.revenue.reasonKind, 'correction');
+      const service = createStatementService(db);
+      assert.deepEqual(await service.listImports(), [], 'a correction cannot be published until the weekly work is applied');
+      assert.equal((await service.publishImport(out.body.data.revenue.importId, { user: OWNER })).status, 'not_open');
       const added = await apply();
       assert.equal(added.body.revenue.state, 'needs_review');
       assert.equal((await summary()).deliveryRevenue, '4.91', 'the verified revenue stays until the owner confirms');
-      const service = createStatementService(db);
       const [waiting] = await service.listImports();
       assert.deepEqual([waiting.reasonKind, waiting.outcome.kind], ['correction', 'correction']);
-      const first = await service.publishImport(Number(waiting.id), { user: OWNER, confirmCorrection: false });
+      const first = await service.publishImport(Number(waiting.id), { user: OWNER });
       assert.equal(first.status, 'needs_confirmation');
+      const stale = await service.publishImport(Number(waiting.id), { user: OWNER, replacesStatementId: '999999' });
+      assert.equal(stale.status, 'needs_confirmation', 'approval for a different statement cannot replace the current one');
+      assert.equal(stale.outcome.replaces, first.outcome.replaces);
       assert.equal((await statements()).length, 1, 'nothing changed without the confirmation');
-      const confirmed = await service.publishImport(Number(waiting.id), { user: OWNER, confirmCorrection: true });
+      const confirmed = await service.publishImport(Number(waiting.id), { user: OWNER, replacesStatementId: first.outcome.replaces });
       assert.deepEqual([confirmed.status, confirmed.version], ['published', 2]);
       assert.deepEqual((await statements()).map((s) => [s.version, s.status]), [[1, 'superseded'], [2, 'published']]);
       assert.equal((await summary()).deliveryRevenue, '5.01');

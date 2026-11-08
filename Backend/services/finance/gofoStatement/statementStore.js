@@ -153,7 +153,7 @@ export const inTransaction = async (db, work) => {
       await db.query(`RELEASE SAVEPOINT ${name}`);
       return result;
     } catch (error) {
-      await db.query(`ROLLBACK TO SAVEPOINT ${name}`).catch(() => {});
+      await db.query(`ROLLBACK TO SAVEPOINT ${name}`).then(() => db.query(`RELEASE SAVEPOINT ${name}`)).catch(() => {});
       throw error;
     }
   }

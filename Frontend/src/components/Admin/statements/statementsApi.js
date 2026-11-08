@@ -7,7 +7,7 @@ export const listStatements = async (signal) => (await axios.get(BASE, { signal 
 // The weekly uploads waiting for the owner. The file was saved when it was uploaded under File Upload, so reviewing one never asks for the file again.
 export const listImports = async (signal) => (await axios.get(`${BASE}/imports`, { signal })).data.imports;
 // 201 published, 200 already imported, 409 needs the correction confirmed (or is no longer open), 422 still fails its checks and 404 are answers with a body to show, not failures.
-export const publishImport = async (id, confirmCorrection = false) => (await axios.post(`${BASE}/imports/${id}/publish`, { confirmCorrection }, { validateStatus: (status) => [200, 201, 404, 409, 422].includes(status) })).data;
+export const publishImport = async (id, replacesStatementId = null) => (await axios.post(`${BASE}/imports/${id}/publish`, { replacesStatementId }, { validateStatus: (status) => [200, 201, 404, 409, 422].includes(status) })).data;
 export const dismissImport = async (id, reason) => (await axios.post(`${BASE}/imports/${id}/dismiss`, { reason })).data;
 export const listUnallocated = async (id) => (await axios.get(`${BASE}/${id}/unallocated`)).data.unallocated;
 export const rematchStatement = async (id) => (await axios.post(`${BASE}/${id}/rematch`)).data.matched;

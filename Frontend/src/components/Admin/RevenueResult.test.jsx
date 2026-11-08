@@ -2,6 +2,8 @@ import React from "react";
 import { afterEach, describe, expect, it } from "vitest";
 import { cleanup, render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
+import dashboardReducer, { selectAppliedRevenue, updateWeeklyExcelToDashboard } from "../../redux/slice/admin/dashboardUpdateSlice.js";
+import { manualLogout } from "../../redux/slice/admin/adminSlice.js";
 import RevenueResult from "./RevenueResult";
 import UploadResultSummary from "./UploadResultSummary";
 
@@ -42,4 +44,16 @@ describe("the revenue result in the upload flow", () => {
     render(<MemoryRouter><UploadResultSummary result={{ claims: { found: false }, assignmentHistory: null, revenue: { state: "updated", message: "Revenue updated", reasons: [] } }} /></MemoryRouter>);
     expect(screen.getByTestId("revenue-message").textContent).toBe("Revenue updated");
   });
+});
+
+it("keeps a weekly apply result in the same admin session and discards a late answer after sign-out", () => {
+  const revenue = { state: "updated", deliveryRevenue: "4.91" };
+  const pending = dashboardReducer(undefined, updateWeeklyExcelToDashboard.pending("owner-request"));
+  const answer = updateWeeklyExcelToDashboard.fulfilled({ revenue, revenueAdminId: 1, revenueAdminRole: "superadmin" }, "owner-request");
+  const dashboard = dashboardReducer(pending, answer);
+  const read = (dashboard, id, role) => selectAppliedRevenue({ dashboard, admin: { isAuthenticated: true, admin: { id, role } } });
+  expect(read(dashboard, 1, "superadmin")).toEqual(revenue);
+  expect(read(dashboard, 2, "admin")).toBeNull();
+  expect(read(dashboard, 1, "admin")).toBeNull();
+  expect(read(dashboardReducer(dashboardReducer(pending, manualLogout()), answer), 1, "superadmin")).toBeNull();
 });

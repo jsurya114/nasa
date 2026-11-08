@@ -19,17 +19,20 @@ function ImportCard({ item, onDone }) {
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState(null);
   const [asking, setAsking] = useState(null); // "correction" | "dismiss"
+  const [replacement, setReplacement] = useState(null);
   const [reason, setReason] = useState("");
 
   const run = async (action) => {
     setBusy(true); setNote(null);
     try { await action(); } catch (error) { setNote(messageFor(error)); } finally { setBusy(false); }
   };
-  const publish = (confirm) => run(async () => {
-    const result = await publishImport(item.id, confirm);
+  const askCorrection = (outcome) => { setReplacement(outcome); setAsking("correction"); };
+  const publish = (replaces) => run(async () => {
+    const result = await publishImport(item.id, replaces);
     if (result.status === "published" || result.status === "already_imported") return onDone(result.status === "published" ? "Revenue updated" : "Already imported");
-    if (result.status === "needs_confirmation") return setAsking("correction");
+    if (result.status === "needs_confirmation") return askCorrection(result.outcome);
     if (result.status === "not_open" || result.status === "not_found") return onDone(null);
+    setAsking(null);
     return setNote(result.reasons?.length ? result.reasons.join(" ") : "The statement still does not pass its checks.");
   });
   const dismiss = () => run(async () => { await dismissImport(item.id, reason.trim()); onDone("Dismissed"); });
@@ -43,8 +46,8 @@ function ImportCard({ item, onDone }) {
       {note && <p role="alert" className="text-sm text-red-700">{note}</p>}
       {asking === "correction" && (
         <div className="space-y-2 rounded-xl bg-amber-50 p-3 text-sm text-amber-900" role="group" aria-label="Confirm the correction">
-          <p>This replaces the statement that stands for this week. The earlier version stays in the history.</p>
-          <button type="button" className={PRIMARY} disabled={busy} onClick={() => publish(true)}>Confirm correction</button>
+          <p>This replaces version {replacement?.version} of the statement for this week. The earlier version stays in the history.</p>
+          <button type="button" className={PRIMARY} disabled={busy || !replacement?.replaces} onClick={() => publish(replacement.replaces)}>Confirm correction</button>
         </div>
       )}
       {asking === "dismiss" && (
@@ -56,7 +59,7 @@ function ImportCard({ item, onDone }) {
         </div>
       )}
       <div className="flex flex-wrap gap-2">
-        {item.canPublish && asking !== "correction" && <button type="button" className={PRIMARY} disabled={busy} onClick={() => (item.reasonKind === "correction" ? setAsking("correction") : publish(false))}>{item.reasonKind === "check_failed" ? "Check again" : item.reasonKind === "correction" ? "Review correction" : "Publish"}</button>}
+        {item.canPublish && asking !== "correction" && <button type="button" className={PRIMARY} disabled={busy} onClick={() => (item.reasonKind === "correction" && item.outcome?.replaces ? askCorrection(item.outcome) : publish(null))}>{item.reasonKind === "check_failed" ? "Check again" : item.reasonKind === "correction" ? "Review correction" : "Publish"}</button>}
         <button type="button" className={BUTTON} disabled={busy} onClick={() => setAsking(asking === "dismiss" ? null : "dismiss")}>Dismiss</button>
       </div>
     </li>

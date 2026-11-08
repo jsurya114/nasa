@@ -85,7 +85,9 @@ export function createStatementRouter({ adminAuth, requireRole, upload, service 
   router.post('/imports/:id/publish', express.json({ limit: '4kb' }), handle('import publish', async (req, res) => {
     const id = idOf(req.params.id);
     if (!id) return res.status(HttpStatus.BAD_REQUEST).json({ message: 'The import id is not valid.' });
-    const result = await service.publishImport(id, { user: { id: req.admin.id }, confirmCorrection: req.body?.confirmCorrection === true });
+    const replacesStatementId = req.body?.replacesStatementId;
+    if (replacesStatementId != null && !idOf(replacesStatementId)) return res.status(HttpStatus.BAD_REQUEST).json({ message: 'The statement version to replace is not valid.' });
+    const result = await service.publishImport(id, { user: { id: req.admin.id }, replacesStatementId: replacesStatementId == null ? null : String(replacesStatementId) });
     const messages = { not_found: 'No such saved import.', not_open: 'This import is no longer waiting for review.' };
     return res.status(IMPORT_STATUS[result.status] ?? HttpStatus.OK).json(messages[result.status] ? { ...result, message: messages[result.status] } : result);
   }));

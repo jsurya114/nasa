@@ -796,9 +796,8 @@ async function processExcelFromBuffer(buffer, client, startTime, user, fileName)
     await client.query('COMMIT');
     logger.info('Weekly upload stored', { processed: totalProcessed, skipped: totalSkipped, groups: totalInserted });
 
-    // Check the statement after the upload is safely stored. Read-only, never throws: a failed revenue check leaves the weekly workflow and the revenue already
-    // verified exactly as they were.
-    const revenue = await reviewImport(pool, staged.id, buffer, user);
+    // Check on the same connection after committing staging. A failed or late check cannot undo the upload.
+    const revenue = await reviewImport(client, staged.id, buffer, user, staged.reason);
 
     return {
       success: true,

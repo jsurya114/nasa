@@ -3,6 +3,7 @@ import logger from "../../utils/logger.js";
 import { lockUploads } from "./uploadSafety.js";
 import { matchAfterWeeklyAdd } from "../finance/gofoStatement/matchAfterWeeklyAdd.js";
 import { companyEarningsSql } from "../finance/companyRates.js";
+import { markWeeklyImportApplied } from "../finance/gofoStatement/weeklyImport.js";
 
         export const WeeklyExcelQueries={
             fetchDashboardDataByDates : async(dates)=>{
@@ -37,6 +38,7 @@ import { companyEarningsSql } from "../finance/companyRates.js";
                           fs INT DEFAULT 0,
                           ds INT DEFAULT 0,
                           del_date DATE NOT NULL,
+                          carrier_statement_import_id BIGINT,
                           CONSTRAINT weeklycount_unique UNIQUE (driver_id, del_date, del_route)
                       );
                     `);
@@ -79,7 +81,7 @@ getWeeklyData: async (id,role,limit,offset) => {
 
 
     
-    let query = `SELECT wc.* FROM weeklycount wc`;
+    let query = `SELECT wc.id, wc.courier_name, wc.driver_id, wc.del_route, wc.total_deliveries, wc.fs, wc.ds, wc.del_date FROM weeklycount wc`;
 const values = [];
 
 if (role === 'admin') {
@@ -436,6 +438,7 @@ createEntriesFromWeeklyCount: async ({ beforeInsert = null } = {}) => {
     `;
 
     const insuranceResult = await client.query(insuranceQuery, [INSURANCE_RATE_PER_DAY, insertedIds]);
+    const revenueImportId = await markWeeklyImportApplied(client);
     await WeeklyExcelQueries.deleteWeeklyTableIfExists('weeklycount', client);
 
     // A carrier statement published before this work reached the Dashboard has groups it could not match yet (issue #252). They are matched now, in a savepoint that
@@ -454,7 +457,8 @@ createEntriesFromWeeklyCount: async ({ beforeInsert = null } = {}) => {
       updated: updateResult.rowCount,
       insuranceApplied: insuranceResult.rowCount,
       totalAffected: insertResult.rowCount,
-      statementGroupsMatched
+      statementGroupsMatched,
+      revenueImportId
     };
   } catch (err) {
     await client.query('ROLLBACK');

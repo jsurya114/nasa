@@ -7,7 +7,7 @@ import {
   selectWeeklyResult,
 } from "../../redux/slice/admin/excelSlice";
 import { fetchDashboardData, fetchWeeklyTempData } from "../../redux/slice/admin/doublestopSlice";
-import { fetchDriverPayment, updateWeeklyExcelToDashboard } from "../../redux/slice/admin/dashboardUpdateSlice";
+import { fetchDriverPayment, selectAppliedRevenue, updateWeeklyExcelToDashboard } from "../../redux/slice/admin/dashboardUpdateSlice";
 import FileUpload from "../../../src/components/Excel-InputTag";
 import UploadedData from "../../reuse/UploadedData";
 import Header from "../../reuse/Header";
@@ -33,7 +33,7 @@ const DoubleStop = () => {
   const weeklyLoading = useSelector((state) => state.excel?.weekly?.loading);
   const dailyLoading = useSelector((state) => state.excel?.daily?.loading);
   const weeklyResult = useSelector(selectWeeklyResult);
-  const appliedRevenue = useSelector((state) => state.dashboard?.revenue);
+  const appliedRevenue = useSelector(selectAppliedRevenue);
 
   // Daily form state
   const [dailyForm, setDailyForm] = useState({

@@ -53,7 +53,8 @@ const summaryOf = (result) => ({
   city: result.city?.name ?? null, week: result.period?.label ?? null, billNumber: result.identity?.billNumber ?? null,
   deliveryRevenue: result.amounts?.deliveryRevenue ?? null, settlementPayable: result.amounts?.settlementPayable ?? null,
   matchedRevenue: result.matching?.matchedRevenue ?? null, unallocatedRevenue: result.matching?.unallocatedRevenue ?? null,
-  outcome: result.outcome ? { kind: result.outcome.kind, version: result.outcome.version ?? result.outcome.replacesVersion ?? null } : null,
+  outcome: result.outcome ? { kind: result.outcome.kind, version: result.outcome.version ?? result.outcome.replacesVersion ?? null,
+    replaces: result.outcome.replaces == null ? null : String(result.outcome.replaces) } : null,
 });
 
 const unavailable = (reason) => ({ state: REVENUE_STATE.unavailable, message: MESSAGE.unavailable, importId: null, reasonKind: null, reasons: reasonsOf(reason), });
@@ -63,19 +64,21 @@ const unavailable = (reason) => ({ state: REVENUE_STATE.unavailable, message: ME
 export const stageImport = async (client, { buffer, fileName, user, assignmentImportId = null }) => {
   await client.query(`SAVEPOINT ${SAVEPOINT}`);
   try {
-    // The weekly staging table is replaced by this upload, so the import tied to the old data is no longer the current one. An unapplied, unchecked import is
-    // replaced; one waiting for an owner stays open for the owner.
+    // Replaced staging can never be applied. Imports already applied remain available to the owner.
     await client.query("UPDATE carrier_statement_imports SET is_current = false WHERE is_current");
-    await client.query("UPDATE carrier_statement_imports SET status = 'replaced', file = NULL, resolved_at = now(), resolve_reason = 'A newer weekly upload replaced it before it was applied.' WHERE status = 'staged'");
+    await client.query("UPDATE carrier_statement_imports SET status = 'replaced', file = NULL, resolved_at = now(), resolve_reason = 'A newer weekly upload replaced it before it was applied.' WHERE applied_at IS NULL AND status IN ('staged', 'needs_review')");
     const { rows } = await client.query(
       `INSERT INTO carrier_statement_imports (report_hash, source_label, uploaded_by, uploaded_by_role, assignment_import_id, status, is_current, file)
        VALUES ($1, $2, $3, $4, $5, 'staged', true, $6) RETURNING id`,
       [createHash('sha256').update(buffer).digest('hex'), String(fileName || 'weekly.xlsx').slice(0, 200), user?.id ?? null, user?.role ?? null, assignmentImportId, buffer]
     );
+    const id = rows[0].id;
+    await client.query('UPDATE weeklycount SET carrier_statement_import_id = $1', [id]);
     await client.query(`RELEASE SAVEPOINT ${SAVEPOINT}`);
-    return { id: rows[0].id };
+    return { id };
   } catch (error) {
     await client.query(`ROLLBACK TO SAVEPOINT ${SAVEPOINT}`);
+    await client.query(`RELEASE SAVEPOINT ${SAVEPOINT}`);
     return { id: null, reason: error.code === UNDEFINED_TABLE ? 'Revenue import is not set up in the database yet.' : 'The revenue import could not be saved.' };
   }
 };
@@ -85,48 +88,58 @@ const load = async (db, id, { forUpdate = false } = {}) => {
   return rows[0] ?? null;
 };
 
-const close = (db, id, fields) => {
-  const { status, reasonKind = null, review = null, statementId = null, userId = null, reason = null, keepFile = false, applied = false } = fields;
-  return db.query(
+const close = async (db, id, fields, { stagedOnly = false } = {}) => {
+  const { status, reasonKind = null, review = null, statementId = null, userId = null, reason = null, keepFile = false } = fields;
+  const { rows } = await db.query(
     `UPDATE carrier_statement_imports
         SET status = $2::text, reason_kind = $3::text, review = COALESCE($4::jsonb, review), statement_id = COALESCE($5::bigint, statement_id), file = CASE WHEN $6::boolean THEN file ELSE NULL END,
             resolved_by = CASE WHEN $2::text IN ('staged', 'needs_review') THEN NULL ELSE $7::integer END, resolved_at = CASE WHEN $2::text IN ('staged', 'needs_review') THEN NULL ELSE now() END,
-            resolve_reason = $8::text, is_current = CASE WHEN $9::boolean THEN false ELSE is_current END, applied_at = CASE WHEN $9::boolean THEN COALESCE(applied_at, now()) ELSE applied_at END
-      WHERE id = $1`,
-    [id, status, reasonKind, review ? JSON.stringify(review) : null, statementId, keepFile, userId, reason, applied]
+            resolve_reason = $8::text
+      WHERE id = $1 AND (NOT $9::boolean OR (is_current AND status = 'staged' AND applied_at IS NULL))
+      RETURNING id, status, reason_kind, review`,
+    [id, status, reasonKind, review ? JSON.stringify(review) : null, statementId, keepFile, userId, reason, stagedOnly]
   );
+  return rows[0] ?? null;
 };
 
 // After the upload committed: check the statement without storing anything, and record what was found. Never throws.
-export const reviewImport = async (pool, importId, buffer, user) => {
-  if (!importId) return unavailable('Revenue import is not set up in the database yet.');
+export const reviewImport = async (db, importId, buffer, user, stageReason = 'Revenue import is not set up in the database yet.') => {
+  if (!importId) return unavailable(stageReason);
   try {
-    const preview = await previewStatement(pool, buffer);
-    const row = await load(pool, importId);
-    if (!row) return unavailable('The saved import was not found.');
-    if (preview.status === 'rejected') {
-      await close(pool, importId, { status: 'needs_review', reasonKind: 'check_failed', review: { reasons: reasonsOf(preview.reasons) }, keepFile: true });
-    } else {
-      const outcome = preview.outcome ?? {};
-      const review = { ...summaryOf(preview), reasons: [] };
-      if (outcome.kind === 'already_published') await close(pool, importId, { status: 'already_imported', review, statementId: outcome.statementId, reason: 'The same statement already stands.' });
-      else if (outcome.kind === 'older_version') await close(pool, importId, { status: 'needs_review', reasonKind: 'older_version', review: { ...review, reasons: [`This is an older version (${outcome.version}) of a statement that was replaced by version ${outcome.currentVersion}.`] }, keepFile: true });
-      else if (outcome.kind === 'correction') await close(pool, importId, { status: 'needs_review', reasonKind: 'correction', review: { ...review, reasons: [`This corrects the statement that stands for ${review.city} ${review.week} (version ${outcome.replacesVersion}). An owner confirms a correction.`] }, keepFile: true });
-      else await close(pool, importId, { status: 'staged', review, keepFile: true });
-    }
-    return present(await load(pool, importId), user);
+    const preview = await previewStatement(db, buffer);
+    const kind = preview.outcome?.kind;
+    const status = kind === 'correction' ? 'needs_confirmation' : kind ?? preview.status;
+    const outcome = status === 'new'
+      ? { status: 'staged', review: { ...summaryOf(preview), reasons: [] }, keepFile: true }
+      : interpret({ ...preview, status });
+    const row = await close(db, importId, outcome, { stagedOnly: true });
+    return row ? present(row, user) : unavailable('The weekly data was already added or replaced while revenue was being checked.');
   } catch (error) {
     logger.error('The weekly upload\'s statement could not be checked', { import: String(importId), code: error?.code, message: error?.message });
     return unavailable('The statement could not be checked.');
   }
 };
 
-// Read just before the weekly apply: the import tied to the staged weekly data. Null when there is none (or the table does not exist yet).
-export const currentImportId = async (pool) => {
+// Record the exact import consumed by this apply, under the same upload lock and transaction as the payroll rows.
+// Staging from an older application has no import id, and a failed revenue stage leaves the id unset.
+export const markWeeklyImportApplied = async (client) => {
+  await client.query(`SAVEPOINT ${SAVEPOINT}`);
   try {
-    const { rows } = await pool.query('SELECT id FROM carrier_statement_imports WHERE is_current');
-    return rows[0]?.id ?? null;
-  } catch {
+    const { rows: [staged] } = await client.query("SELECT to_jsonb(wc)->>'carrier_statement_import_id' AS id FROM weeklycount wc LIMIT 1");
+    let id = null;
+    if (staged?.id) {
+      const { rows } = await client.query(
+        'UPDATE carrier_statement_imports SET is_current = false, applied_at = now() WHERE id = $1 AND is_current RETURNING id',
+        [staged.id]
+      );
+      id = rows[0]?.id ?? null;
+    }
+    await client.query(`RELEASE SAVEPOINT ${SAVEPOINT}`);
+    return id;
+  } catch (error) {
+    await client.query(`ROLLBACK TO SAVEPOINT ${SAVEPOINT}`);
+    await client.query(`RELEASE SAVEPOINT ${SAVEPOINT}`);
+    if (error.code !== UNDEFINED_TABLE) logger.error('The weekly add could not record its revenue import', { code: error.code });
     return null;
   }
 };
@@ -141,15 +154,9 @@ export const settleImport = async (pool, user, importId) => {
     await client.query('BEGIN');
     const row = await load(client, importId, { forUpdate: true });
     if (!row) { await client.query('COMMIT'); return null; }
-    if (!row.is_current) {
-      // A newer upload replaced it between the apply and now, or it was already settled. Report what it is; never publish a file whose data was not the data just applied.
+    if (!row.applied_at || row.status !== 'staged') {
       await client.query('COMMIT');
-      return row.applied_at ? present(row, user) : unavailable('A newer weekly upload replaced this one before its revenue was settled. Check the GOFO import history.');
-    }
-    if (row.status !== 'staged') {
-      await close(client, row.id, { status: row.status, reasonKind: row.reason_kind, keepFile: row.status === 'needs_review', applied: true, reason: row.resolve_reason });
-      await client.query('COMMIT');
-      return present(await load(pool, row.id), user);
+      return row.applied_at ? present(row, user) : unavailable('This import was not applied to the dashboard.');
     }
     // Revenue is published automatically only when an owner both uploaded the file and adds its data. A file a city admin uploaded is never published as a side effect of
     // someone else's weekly add (the staged data is shared): the owner reviews it and publishes it from the import history.
@@ -157,21 +164,21 @@ export const settleImport = async (pool, user, importId) => {
       const reason = isOwner(user)
         ? 'This file was uploaded by a city admin. An owner reviews it and publishes it from the import history; nothing needs to be uploaded again.'
         : 'Only an owner publishes company revenue. The saved import is waiting for the owner; nothing needs to be uploaded again.';
-      await close(client, row.id, { status: 'needs_review', reasonKind: 'owner_required', review: { ...row.review, reasons: [reason] }, keepFile: true, applied: true });
+      const updated = await close(client, row.id, { status: 'needs_review', reasonKind: 'owner_required', review: { ...row.review, reasons: [reason] }, keepFile: true });
       await client.query('COMMIT');
-      return present(await load(pool, row.id), user);
+      return present(updated, user);
     }
-    // The row stays locked while the statement is checked and published on its own connection, so a second apply waits and then finds it settled.
+    // The statement and its import settle together. The publish savepoint lets a failed check leave the file available for owner review.
     let outcome;
     try {
-      const result = await publishStatement(pool, row.file, { user: { id: user.id }, sourceLabel: row.source_label, importId: row.id, allowCorrection: false });
+      const result = await publishStatement(client, row.file, { user: { id: user.id }, sourceLabel: row.source_label, importId: row.id, allowCorrection: false });
       outcome = interpret(result);
     } catch {
       outcome = { status: 'needs_review', reasonKind: 'publish_failed', review: { ...row.review, reasons: ['Publishing the revenue did not finish. Nothing was changed; an owner can try again from the saved import.'] }, keepFile: true };
     }
-    await close(client, row.id, { ...outcome, userId: user.id, applied: true });
+    const updated = await close(client, row.id, { ...outcome, userId: user.id });
     await client.query('COMMIT');
-    return present(await load(pool, row.id), user);
+    return present(updated, user);
   } catch (error) {
     logger.error('The weekly upload\'s revenue could not be settled', { import: String(importId), code: error?.code, message: error?.message });
     if (client) await client.query('ROLLBACK').catch(() => {});
@@ -197,7 +204,7 @@ const interpret = (result) => {
 export const listOpenImports = async (pool, { limit = 50 } = {}) => {
   const { rows } = await pool.query(
     `SELECT id, source_label, uploaded_at, status, reason_kind, review, (file IS NOT NULL) AS has_file
-       FROM carrier_statement_imports WHERE status = 'needs_review' ORDER BY id DESC LIMIT $1`, [limit]);
+       FROM carrier_statement_imports WHERE applied_at IS NOT NULL AND status IN ('staged', 'needs_review') ORDER BY id DESC LIMIT $1`, [limit]);
   return rows.map((r) => ({
     id: String(r.id), sourceLabel: r.source_label, uploadedAt: r.uploaded_at, reasonKind: r.reason_kind, canPublish: r.has_file,
     reasons: reasonsOf(r.review?.reasons ?? []), city: r.review?.city ?? null, week: r.review?.week ?? null, billNumber: r.review?.billNumber ?? null,
@@ -206,14 +213,14 @@ export const listOpenImports = async (pool, { limit = 50 } = {}) => {
 };
 
 // The owner publishes a saved import (or confirms its correction) without uploading the file again. The statement is checked again from the saved bytes.
-export const publishImport = async (pool, id, { user, confirmCorrection = false }) => {
+export const publishImport = async (pool, id, { user, replacesStatementId = null }) => {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
     const row = await load(client, id, { forUpdate: true });
     if (!row) { await client.query('ROLLBACK'); return { status: 'not_found' }; }
-    if (row.status !== 'needs_review' || !row.file) { await client.query('ROLLBACK'); return { status: 'not_open' }; }
-    const result = await publishStatement(pool, row.file, { user: { id: user.id }, sourceLabel: row.source_label, importId: row.id, allowCorrection: confirmCorrection === true });
+    if (!row.applied_at || !OPEN.includes(row.status) || !row.file) { await client.query('ROLLBACK'); return { status: 'not_open' }; }
+    const result = await publishStatement(client, row.file, { user: { id: user.id }, sourceLabel: row.source_label, importId: row.id, allowCorrection: replacesStatementId || false });
     const outcome = interpret(result);
     if (outcome.status === 'needs_review') {
       // Still not publishable (or a correction not yet confirmed): keep it open with what was found now.
@@ -222,7 +229,8 @@ export const publishImport = async (pool, id, { user, confirmCorrection = false 
       await close(client, row.id, { ...outcome, userId: user.id });
     }
     await client.query('COMMIT');
-    return { status: outcome.status === 'needs_review' ? (outcome.reasonKind === 'correction' ? 'needs_confirmation' : 'rejected') : outcome.status, reasons: outcome.review?.reasons ?? [], statementId: outcome.statementId ?? null, version: result.version ?? null };
+    return { status: outcome.status === 'needs_review' ? (outcome.reasonKind === 'correction' ? 'needs_confirmation' : 'rejected') : outcome.status,
+      reasons: outcome.review?.reasons ?? [], outcome: outcome.review?.outcome ?? null, statementId: outcome.statementId ?? null, version: result.version ?? null };
   } catch (error) {
     await client.query('ROLLBACK').catch(() => {});
     throw error;
@@ -234,6 +242,6 @@ export const publishImport = async (pool, id, { user, confirmCorrection = false 
 export const dismissImport = async (pool, id, { user, reason }) => {
   const { rowCount } = await pool.query(
     `UPDATE carrier_statement_imports SET status = 'dismissed', file = NULL, resolved_by = $2, resolved_at = now(), resolve_reason = $3, is_current = false
-      WHERE id = $1 AND status = 'needs_review'`, [id, user.id, String(reason).slice(0, 300)]);
+      WHERE id = $1 AND applied_at IS NOT NULL AND status IN ('staged', 'needs_review')`, [id, user.id, String(reason).slice(0, 300)]);
   return rowCount === 1;
 };

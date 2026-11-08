@@ -89,14 +89,14 @@ test('the owner reviews a saved weekly import from the saved file: list, publish
   calls.length = 0;
   const app = makeApp(makeService());
   assert.deepEqual((await send(app, 'GET', '/imports')).body, { imports: [{ id: '4', reasonKind: 'correction' }] });
-  const published = await send(app, 'POST', '/imports/4/publish', { body: { confirmCorrection: true } });
+  const published = await send(app, 'POST', '/imports/4/publish', { body: { replacesStatementId: "12" } });
   assert.deepEqual([published.status, published.body.version], [201, 2]);
   await send(app, 'POST', '/imports/4/publish', { body: { confirmCorrection: 'yes' } });
   assert.deepEqual((await send(app, 'POST', '/imports/4/dismiss', { body: { reason: ' the carrier sent the wrong file ' } })).body, { dismissed: true });
   assert.deepEqual(calls.map((c) => c[0]), ['listImports', 'publishImport', 'publishImport', 'dismissImport']);
   assert.equal(calls[1][2].user.id, 7, 'who published comes from the token');
-  assert.equal(calls[1][2].confirmCorrection, true);
-  assert.equal(calls[2][2].confirmCorrection, false, 'only a real true confirms a correction');
+  assert.equal(calls[1][2].replacesStatementId, "12");
+  assert.equal(calls[2][2].replacesStatementId, null, 'a boolean cannot approve an unspecified version');
   assert.equal(calls[3][2].reason, 'the carrier sent the wrong file');
   // Each result has its own status, a bad id or reason is refused, and nobody but the owner gets in.
   for (const [status, code] of [['needs_confirmation', 409], ['rejected', 422], ['not_open', 409], ['not_found', 404], ['already_imported', 200]]) {
