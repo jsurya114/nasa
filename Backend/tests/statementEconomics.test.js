@@ -58,6 +58,7 @@ test('a statement\'s economics: revenue, driver earnings, margin before claims, 
       settlementPayable: '2.21', insuranceWithheld: '1.92', driverEarningsAfterInsurance: '4.58', matchedRevenue: '4.91', unallocatedRevenue: '0.00',
       nasaRecords: 3, nasaDeliveries: 6, recordsWithoutBilledFee: 1, recordsWithoutDriverEarnings: 0, carrierDeliveries: 5,
       carrierDeliveriesNote: 'The carrier counts offset tickets as deliveries; NASA keeps its own completed-delivery count.',
+      economicsAvailable: true, unavailableReason: null,
     });
     assert.equal(statement.economics.deliveryRevenue, statement.deliveryRevenue, 'the list and the economics agree on revenue');
 
@@ -66,6 +67,28 @@ test('a statement\'s economics: revenue, driver earnings, margin before claims, 
     assert.match(header, /^City,Billing week,Week start,Week end,Bill number,Version,Status,Delivery revenue,Matched revenue,Unallocated revenue,Driver earnings,Delivery margin,Carrier claims,Ledger adjustments,Contribution,GOFO settlement payable/);
     assert.match(line, /^Test Economics GOFO,Week 43-2026,2026-10-19,2026-10-25,AP0000000001,1,published,4\.91,4\.91,0\.00,6\.50,-1\.59,-0\.70,-2\.00,-4\.29,2\.21,1\.92,4\.58,6,5$/);
     assert.equal(/Economics Test/.test(csv), false, 'no driver name is exported');
+
+    // A correction supersedes this version. The old version keeps what the carrier stated but has no NASA-side economics: unavailable, never zero and never the new version's.
+    const corrected = statementSheets({ idA: '90000501', idB: '90000502' });
+    corrected['Details of Delivery Fees'][4][15] = 0.6;
+    corrected['DSP Summary'][2][6] = 2.31; corrected['DSP Summary'][2][9] = 2.31; corrected['DSP Summary'][2][13] = 5.01;
+    corrected['Driver Summary'][3][2] = 2.4; corrected['Driver Summary'][3][6] = 2.4;
+    corrected['Driver Daily Summary'][3][3] = 2.4; corrected['Driver Daily Summary'][3][7] = 2.4;
+    const second = await publishStatement(db, await statementWorkbook(corrected), { user: { id: 1 }, sourceLabel: 'economics corrected.xlsx' });
+    assert.deepEqual([second.status, second.version], ['published', 2]);
+    const listed = await createStatementService(db).list();
+    const [current, old] = listed;
+    assert.deepEqual([current.version, current.status, current.economics.economicsAvailable, current.economics.driverEarnings, current.economics.deliveryMargin], [2, 'published', true, '6.50', '-1.49']);
+    assert.deepEqual([old.version, old.status, old.economics.economicsAvailable], [1, 'superseded', false]);
+    for (const field of ['driverEarnings', 'deliveryMargin', 'contribution', 'insuranceWithheld', 'driverEarningsAfterInsurance', 'nasaRecords', 'nasaDeliveries', 'recordsWithoutBilledFee', 'recordsWithoutDriverEarnings']) {
+      assert.equal(old.economics[field], null, `${field} is unavailable on a superseded version`);
+    }
+    assert.deepEqual([old.economics.deliveryRevenue, old.economics.carrierClaims, old.economics.ledgerAdjustments, old.economics.settlementPayable, old.economics.carrierDeliveries], ['4.91', '-0.70', '-2.00', '2.21', 5], 'what the carrier stated is kept');
+    assert.match(old.economics.unavailableReason, /no longer the statement that stands/);
+    const history = (await createStatementService(db).exportCsv()).split('\r\n').filter(Boolean).find((l) => /,1,superseded,/.test(l));
+    assert.equal(history, 'Test Economics GOFO,Week 43-2026,2026-10-19,2026-10-25,AP0000000001,1,superseded,4.91,4.91,0.00,,,-0.70,-2.00,,2.21,,,,5', 'unavailable figures are empty cells in the CSV');
+    await client.query("UPDATE carrier_statements SET status = 'voided', voided_at = now(), void_reason = 'test' WHERE version = 2");
+    assert.equal((await createStatementService(db).list()).find((s) => s.version === 2).economics.economicsAvailable, false, 'a voided version has none either');
   } finally {
     await client.query('ROLLBACK');
     client.release();
