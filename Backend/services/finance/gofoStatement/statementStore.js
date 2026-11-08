@@ -45,12 +45,12 @@ export const loadNasaRows = async (db, { cityId, from, to }) => {
   return rows.map((r) => ({ id: r.id, driverId: r.driver_id, driverCode: r.driver_code, day: r.day, routeId: r.route_id, routeCode: r.route_code, delivered: Number(r.delivered), driverCents: Number(r.driver_cents) }));
 };
 
-// Statements of one fleet and week, newest version first, locked so two uploads of the same week run one after another.
-export const lockWeek = async (db, { carrier, fleet, periodStart }) => {
+// Statements of one city and billing week (the verified city, never the fleet's spelling), newest version first, locked so two uploads of the same week run one after another.
+export const lockWeek = async (db, { carrier, cityId, periodStart }) => {
   const { rows } = await db.query(
     `SELECT id, version, status, fingerprint, bill_number FROM carrier_statements
-      WHERE carrier = $1 AND fleet = $2 AND period_start = $3::date ORDER BY version DESC FOR UPDATE`,
-    [carrier, fleet, periodStart]
+      WHERE carrier = $1 AND city_id = $2 AND period_start = $3::date ORDER BY version DESC FOR UPDATE`,
+    [carrier, cityId, periodStart]
   );
   return rows;
 };
