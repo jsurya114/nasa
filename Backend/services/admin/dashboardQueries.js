@@ -1,5 +1,6 @@
 import pool from "../../config/db.js";
 import { closeOnlyRowSql, protectedPayRowSql } from "../finance/payGuards.js";
+import { companyEarningsSql } from "../finance/companyRates.js";
 
 
 // One implementation for "all dates" and "one date". $1 date (or null), $2 allowed jobs (or null).
@@ -16,9 +17,10 @@ const recalculatePayRows = async ({ date, allowedJobs, db }) => {
               fs = dd.first_stop,
               delivered = dd.ds + dd.first_stop,
               driver_payment = (dd.ds * r.driver_doublestop_price) + (dd.first_stop * r.driver_route_price),
-              company_earnings = (dd.ds * (r.company_doublestop_price - r.driver_doublestop_price))+ (dd.first_stop * (r.company_route_price - r.driver_route_price))
+              company_earnings = ${companyEarningsSql({ route: 'r', city: 'rc', ds: 'dd.ds', fs: 'dd.first_stop', keep: 'pd.company_earnings' })}
          FROM dashboard_data dd
          JOIN routes r ON dd.route_id = r.id
+         JOIN city rc ON rc.job = r.job
         WHERE pd.dashboard_data_id = dd.id
           AND ${scope}
           AND NOT ${guard}`,

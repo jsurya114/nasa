@@ -2,6 +2,7 @@ import pool from "../../config/db.js";
 import logger from "../../utils/logger.js";
 import { lockUploads } from "./uploadSafety.js";
 import { matchAfterWeeklyAdd } from "../finance/gofoStatement/matchAfterWeeklyAdd.js";
+import { companyEarningsSql } from "../finance/companyRates.js";
 
         export const WeeklyExcelQueries={
             fetchDashboardDataByDates : async(dates)=>{
@@ -344,8 +345,7 @@ createEntriesFromWeeklyCount: async ({ beforeInsert = null } = {}) => {
         wc.total_deliveries AS delivered,
         ((wc.fs * r.driver_route_price) +
         (wc.ds * r.driver_doublestop_price)) AS driver_payment,
-       ((wc.fs *( r.company_route_price-r.driver_route_price)) +
-        (wc.ds * (r.company_doublestop_price-r.driver_doublestop_price))) AS company_earnings,
+       ${companyEarningsSql({ route: 'r', city: 'c', ds: 'wc.ds', fs: 'wc.fs' })} AS company_earnings,
         TRUE,
         FALSE,
         FALSE
@@ -355,6 +355,8 @@ createEntriesFromWeeklyCount: async ({ beforeInsert = null } = {}) => {
       INNER JOIN routes r
         ON wc.del_route = r.route_code_in_string
       AND r.enabled = TRUE
+      INNER JOIN city c
+        ON c.job = r.job
       WHERE d.enabled = TRUE
       AND NOT EXISTS (
         SELECT 1
