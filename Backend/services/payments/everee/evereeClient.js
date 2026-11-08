@@ -62,10 +62,15 @@ export const createEvereeClient = (config, { fetchImpl = fetch, timeoutMs = REQU
       const detail = typeof payload?.errorMessage === 'string' ? payload.errorMessage.slice(0, 200) : null;
       throw new EvereeError(detail && response.status >= 400 && response.status < 500 && response.status !== 401 ? `${explain(response.status)}: ${detail}` : explain(response.status), {
         status: response.status, code: payload?.errorCode ?? null, requestId,
-        retryAfterSeconds: Number.isFinite(Number(response.headers?.get?.('ratelimit-reset'))) ? Number(response.headers.get('ratelimit-reset')) : null,
+        retryAfterSeconds: response.headers?.get?.('ratelimit-reset') != null && Number.isFinite(Number(response.headers.get('ratelimit-reset'))) ? Number(response.headers.get('ratelimit-reset')) : null,
       });
     }
-    return { status: response.status, data: payload, requestId };
+    const numericHeader = (name) => {
+      const value = response.headers?.get?.(name);
+      return value !== null && value !== undefined && Number.isFinite(Number(value)) ? Number(value) : null;
+    };
+    return { status: response.status, data: payload, requestId,
+      rateLimit: { remaining: numericHeader('ratelimit-remaining'), resetSeconds: numericHeader('ratelimit-reset') } };
   };
 
   return {

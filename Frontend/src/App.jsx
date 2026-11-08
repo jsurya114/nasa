@@ -14,9 +14,11 @@ const AddAccessCodePage = lazy(() => import("./components/Admin/AccessCode.jsx")
 const AdminJourney = lazy(() => import("./components/Admin/AdminJorney.jsx"));
 const AdminDriverAvailability = lazy(() => import("./components/Admin/AdminDriverAvailability.jsx"));
 const AdminDriverAgreements = lazy(() => import("./components/Admin/AdminDriverAgreements.jsx"));
+const AdminPaymentSetupOverview = lazy(() => import("./components/Admin/PaymentSetupOverview.jsx"));
 const AdminPayroll = lazy(() => import("./components/Admin/Payroll.jsx"));
 const AdminPayRuns = lazy(() => import("./components/Admin/PayRuns.jsx"));
 const AdminInsights = lazy(() => import("./components/Admin/Insights.jsx"));
+const AdminCarrierStatements = lazy(() => import("./components/Admin/CarrierStatements.jsx"));
 
 import ProtectedRoutes from "./routes/admin/ProtectedRoute.jsx";
 import AdminPublicOnlyRoute from "./routes/admin/PublicOnlyRoute.jsx";
@@ -66,9 +68,11 @@ function App() {
               <Route path="/admin/journeys" element={<AdminJourney />} />
               <Route path="/admin/driver-availability" element={<AdminDriverAvailability />} />
               <Route element={<SuperAdminRoute />}>
+                <Route path="/admin/payment-setup" element={<AdminPaymentSetupOverview />} />
                 <Route path="/admin/payroll" element={<AdminPayroll />} />
                 <Route path="/admin/pay-runs" element={<AdminPayRuns />} />
                 <Route path="/admin/insights" element={<AdminInsights />} />
+                <Route path="/admin/carrier-statements" element={<AdminCarrierStatements />} />
               </Route>
             </Route>
 

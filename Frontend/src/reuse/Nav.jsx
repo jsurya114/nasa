@@ -12,6 +12,7 @@ import {
   Wallet,
   Banknote,
   BarChart3,
+  Receipt,
 } from "lucide-react";
 import GlassTabBar from "./GlassTabBar.jsx";
 
@@ -31,6 +32,7 @@ function Nav() {
       { to: "/admin/payroll", Icon: Wallet, label: "Payroll" },
       { to: "/admin/pay-runs", Icon: Banknote, label: "Pay runs" },
       { to: "/admin/insights", Icon: BarChart3, label: "Insights" },
+      { to: "/admin/carrier-statements", Icon: Receipt, label: "Statements" },
     ] : []),
   ];
 

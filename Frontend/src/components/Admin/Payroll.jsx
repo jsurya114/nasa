@@ -1,7 +1,7 @@
 import usePersistentState from "../../hooks/usePersistentState.js";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useSelector } from "react-redux";
-import { useSearchParams } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import axios from "../../redux/slice/axiosInstance";
 import Header from "../../reuse/Header";
 import Nav from "../../reuse/Nav";
@@ -100,6 +100,7 @@ export default function Payroll() {
       <Header />
       <div className="mt-14 min-h-dvh bg-canvas p-4 pb-28">
         <div className="mx-auto max-w-5xl">
+          {isSuperAdmin && <Link to="/admin/payment-setup" className="mb-3 inline-flex min-h-11 items-center rounded-xl border border-line bg-white px-4 text-sm font-semibold text-brand">Driver payment setup</Link>}
           <h1 className="text-2xl font-bold tracking-tight text-ink">Payroll</h1>
           <p className="mt-1 text-sm text-gray-500">A driver's statements, what they owe, and manual advances and penalties.</p>
 

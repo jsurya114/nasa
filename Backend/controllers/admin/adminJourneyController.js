@@ -1,4 +1,5 @@
 import AdminJourneyQuery from "../../services/admin/AjourneyQuery.js";
+import { isStatementWorkConflict } from "../../services/finance/gofoStatement/workGuard.js";
 import { addRangeOfSqeunceToDeliveries,addRangeOfSequenceToDeliveriesForAdmin, checkSequenceConflict,syncJourneyDeliveries } from "../../services/driver/journeyQueries.js";
 
 import HttpStatus from "../../utils/statusCodes.js";
@@ -181,6 +182,7 @@ const adminJourneyController = {
 
     } catch (error) {
       if (error instanceof OnboardingRequiredError) return res.status(error.status).json(refusal());
+      if (isStatementWorkConflict(error)) return res.status(HttpStatus.CONFLICT).json({ success: false, message: error.message });
       logger.error("updateJourney error", error);
       res.status(HttpStatus.INTERNAL_SERVER_ERROR).json({
         success: false,
@@ -219,6 +221,7 @@ const adminJourneyController = {
       });
 
     } catch (error) {
+      if (isStatementWorkConflict(error)) return res.status(HttpStatus.CONFLICT).json({ success: false, message: error.message });
       logger.error("deleteJourney error", error);
       res.status(500).json({
         success: false,

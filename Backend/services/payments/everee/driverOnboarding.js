@@ -147,18 +147,24 @@ export const getStatus = async (db, driverId, deps = {}) => {
   const unlinked = config.configured && !link ? await wasUnlinked(db, driverId, config) : false;
   const status = stateOf({ driver, on, configured: config.configured, link, row, tenantId: config.tenantId, unlinked });
   // `enforced` tells the screens whether work and payments are really on hold, so they never say so when the hard gate is off.
-  return { ...status, enforced: enforcement(env).enforced, driverType: driver.driver_type ?? null, agreementSigned: Boolean(driver.agreement_signed), needsFromDriver: status.canStart || status.state === STATES.NOT_STARTED ? profileGaps(driver) : [] };
+  const verified = on && config.configured && driver.enabled && driver.agreement_signed && link?.tenant_id === config.tenantId && link?.onboarding_complete === true;
+  return { ...status, canViewPaymentHistory: Boolean(verified), canManageBankDetails: Boolean(verified && driver.driver_type === 'LOCAL'), enforced: enforcement(env).enforced, driverType: driver.driver_type ?? null, agreementSigned: Boolean(driver.agreement_signed), needsFromDriver: status.canStart || status.state === STATES.NOT_STARTED ? profileGaps(driver) : [] };
 };
 
 // ---------- preconditions shared by the actions ----------
 
-const requireLocalDriver = async (db, driverId, deps) => {
+const requireEnabledDriver = async (db, driverId, deps) => {
   const env = deps.env ?? process.env;
   const config = readEvereeConfig(env);
   const gate = driverOnboardingGate(config, env);
   if (!gate.enabled) throw new OnboardingError(409, 'onboarding_unavailable', gate.reason);
   const driver = await loadDriver(db, driverId);
   if (!driver.enabled) throw new OnboardingError(403, 'driver_disabled', 'this driver account is disabled');
+  return { config, driver };
+};
+
+const requireLocalDriver = async (db, driverId, deps) => {
+  const { config, driver } = await requireEnabledDriver(db, driverId, deps);
   if (!driver.driver_type) throw new OnboardingError(409, 'classification_required', 'an admin must set your driver type first');
   if (driver.driver_type !== 'LOCAL') throw new OnboardingError(403, 'not_local', 'Everee onboarding is only for Local drivers');
   return { config, driver };
@@ -391,7 +397,9 @@ export const startOnboarding = async (db, driverId, input = {}, deps = {}) => {
 const EVEREE_HOST = /(^|\.)everee\.com$/i;
 
 export const createSession = async (db, driverId, input = {}, deps = {}) => {
-  const { config, driver } = await requireLocalDriver(db, driverId, deps);
+  // Reclassification never removes access to the driver's own historical statements. Only this read-only experience bypasses the Local-type rule;
+  // identity, tenant, completed onboarding, agreement, enabled account and feature checks remain unchanged. Bank management remains Local-only.
+  const { config, driver } = await (input.experience === 'PAYMENT_HISTORY' ? requireEnabledDriver : requireLocalDriver)(db, driverId, deps);
   const experience = typeof input.experience === 'string' ? input.experience : '';
   const wanted = Object.hasOwn(EXPERIENCES, experience) ? EXPERIENCES[experience] : null;
   const platform = input.platform === undefined ? 'web' : input.platform;
@@ -453,5 +461,48 @@ export const refreshStatus = async (db, driverId, deps = {}) => {
     if (!(error instanceof EvereeError)) throw error;
     // A timeout or an Everee error never erases what was verified before: the stored state is returned and marked as not refreshed.
     return { ...(await getStatus(db, driverId, deps)), refreshed: false, stale: true };
+  }
+};
+
+// Background recovery only reads Everee. In particular, a missing worker NEVER causes a create: only the driver's explicit Start action can do that.
+export const recoverOnboarding = async (db, driverId, deps = {}) => {
+  const { config, driver } = await requireLocalDriver(db, driverId, deps);
+  if (!driver.agreement_signed) return { outcome: 'agreement_required' };
+  const link = await findLink(db, driverId, config);
+  if (link) {
+    if (link.tenant_id !== config.tenantId) return { outcome: 'needs_review' };
+    const result = await refreshStatus(db, driverId, deps);
+    return { outcome: result.refreshed ? result.state : 'unavailable' };
+  }
+  if (await wasUnlinked(db, driverId, config)) return { outcome: 'needs_review' };
+  const existing = await findRow(db, driverId, config);
+  if (!existing || !['creating', 'verifying', 'in_progress'].includes(existing.state)) return { outcome: 'unchanged' };
+  const { row, mine } = await claim(db, driverId, config);
+  if (!mine) return { outcome: 'busy' };
+  const client = deps.client ?? createEvereeClient(config);
+  try {
+    let worker;
+    try { ({ data: worker } = await client.getWorker(row.external_worker_id)); }
+    catch (error) {
+      if (!(error instanceof EvereeError) || error.status !== 404) throw error;
+      await release(db, row, { error: 'worker not visible yet; driver can retry setup' });
+      return { outcome: 'not_found' };
+    }
+    if (!worker?.id) {
+      await release(db, row, { error: 'worker details not visible yet' });
+      return { outcome: 'verifying' };
+    }
+    const resolved = await resolveWorkerId(client, row.external_worker_id);
+    if (!resolved.workerId) {
+      await release(db, row, resolved.ambiguous ? { state: 'needs_review', reason: 'ambiguous_worker_identity' } : {});
+      return { outcome: resolved.ambiguous ? 'needs_review' : 'verifying' };
+    }
+    const outcome = await saveLink(db, driverId, config, row, worker, resolved.workerId);
+    await record(db, driverId, 'reconciled', outcome);
+    return { outcome };
+  } catch (error) {
+    // Fixed wording only: provider errors can contain private profile details.
+    await release(db, row, { error: 'background verification could not complete' });
+    throw error;
   }
 };

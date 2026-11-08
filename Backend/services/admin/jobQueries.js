@@ -1,3 +1,4 @@
+import { citiesWithVerifiedStatements } from "../finance/companyRates.js";
 import pool from "../../config/db.js"
 import logger from '../../utils/logger.js';
 
@@ -123,8 +124,10 @@ export const jobService = {
       const jobs = await pool.query(jobsQuery, values);
       const total = await pool.query(countQuery, queryParams);
 
+      // Whether a city's routes still take company prices: not once a weekly city has a verified carrier statement (issue #252).
+      const verified = await citiesWithVerifiedStatements(pool, jobs.rows.map((job) => job.id));
       return {
-        jobs: jobs.rows,
+        jobs: jobs.rows.map((job) => ({ ...job, has_verified_statements: verified.has(job.id) })),
         total: parseInt(total.rows[0].count),
       };
     } catch (error) {

@@ -1,0 +1,47 @@
+// Which Dashboard pay rows "Calculate Payment" must leave alone (issue #252). One definition, used by every recalculation of pay rows.
+//
+// A row is protected when recalculating it from today's route rates could change a figure that is already settled:
+//   1. it is an earning on a pay statement (approved or paid pay runs freeze their earnings), or
+//   2. it is part of a verified carrier statement AND already has a driver payment: its figures were reconciled against the carrier's bill.
+//      A row with no driver payment yet is open work and is never protected by a statement, so it can receive its first calculation.
+// Everything else is recalculated exactly as before. Protected rows are counted and reported, never silently skipped.
+//
+// One exception to "left exactly as they are": a row protected only by a carrier statement that is still open (not closed) keeps its amounts but is CLOSED, so open work
+// can finish and enter a pay run (the pay run loads closed rows only). Its driver payment and company figure are not touched. A row on a pay run is never touched at all.
+
+const EARNING_ON_STATEMENT = `EXISTS (SELECT 1 FROM pay_statement_lines psl WHERE psl.payment_dashboard_id = pd.id AND psl.active AND psl.line_type = 'earning')`;
+
+// A weekly row: no sequence numbers (the Dashboard's own rule).
+const WEEKLY_ROW = `(pd.start_seq IS NULL OR pd.end_seq IS NULL OR pd.start_seq = 0 OR pd.end_seq = 0)`;
+
+// A row that already has a calculated driver payment, closed or not: that amount was reconciled, so it stays. A row that has no driver payment yet is still open
+// work: it must be able to get its first calculation, or it can never close and enter a pay run, whatever week it falls in.
+const ALREADY_CALCULATED = `(pd.driver_payment IS NOT NULL)`;
+
+const IN_VERIFIED_STATEMENT = `(
+    ${ALREADY_CALCULATED} AND (
+      EXISTS (SELECT 1 FROM carrier_statement_groups csg JOIN carrier_statements cs ON cs.id = csg.statement_id
+               WHERE csg.payment_dashboard_id = pd.id AND cs.status = 'published')
+      OR (${WEEKLY_ROW} AND EXISTS (SELECT 1 FROM carrier_statements cs2 JOIN routes csr ON csr.id = pd.route_id JOIN city csc ON csc.job = csr.job
+                                     WHERE cs2.status = 'published' AND cs2.city_id = csc.id AND pd.journey_date BETWEEN cs2.period_start AND cs2.period_end))
+    )
+  )`;
+
+// The SQL condition that is true for a protected row (the payment_dashboard table must be aliased `pd`). `db` is a pool or client: the carrier
+// statement tables may not exist yet on an older database, and then only the pay statement rule applies.
+export const protectedPayRowSql = async (db) => {
+  const { rows } = await db.query("SELECT to_regclass('public.carrier_statements') IS NOT NULL AS has_statements, to_regclass('public.pay_statement_lines') IS NOT NULL AS has_lines");
+  const parts = [];
+  if (rows[0].has_lines) parts.push(EARNING_ON_STATEMENT);
+  if (rows[0].has_statements) parts.push(IN_VERIFIED_STATEMENT);
+  return parts.length > 0 ? `(${parts.join(' OR ')})` : 'FALSE';
+};
+
+export const PROTECTED_ROWS_NOTE = 'Rows that belong to an approved pay run or a verified carrier statement were left exactly as they are.';
+
+// The SQL condition (alias `pd`) for a protected row that is only waiting to be closed: it is not closed yet and is not an earning on a pay statement.
+// Used together with protectedPayRowSql, to close such a row without recalculating its amounts.
+export const closeOnlyRowSql = async (db) => {
+  const { rows } = await db.query("SELECT to_regclass('public.pay_statement_lines') IS NOT NULL AS has_lines");
+  return rows[0].has_lines ? `(pd.closed IS NOT TRUE AND NOT ${EARNING_ON_STATEMENT})` : '(pd.closed IS NOT TRUE)';
+};

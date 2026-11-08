@@ -194,21 +194,24 @@ export const updatePaymentData = async (req, res) => {
     // A city admin recalculates only the cities assigned to them
     const allowedJobs = isCityLimited(role) ? await getAllowedJobs(id) : null;
 
-    if (date) {
-      // Calculate payment for specific date
-      await AdminDashboardQueries.updatePaymentTableForDate(date, allowedJobs);
-      res.status(HttpStatus.OK).json({
-        success: true,
-        message: `Payment calculated for ${date}`
-      });
-    } else {
-      // Calculate payment for all dates
-      await AdminDashboardQueries.updatePaymentTable(allowedJobs);
-      res.status(HttpStatus.OK).json({
-        success: true,
-        message: "Payment calculated for all dates"
-      });
-    }
+    const result = date
+      ? await AdminDashboardQueries.updatePaymentTableForDate(date, allowedJobs)
+      : await AdminDashboardQueries.updatePaymentTable(allowedJobs);
+    const base = date ? `Payment calculated for ${date}` : "Payment calculated for all dates";
+    // Rows in an approved pay run or a verified carrier statement are never recalculated; say so instead of skipping them silently.
+    const note = result.protectedRows > 0
+      ? `. ${result.protectedRows} row${result.protectedRows === 1 ? " was" : "s were"} left as ${result.protectedRows === 1 ? "it is" : "they are"} because ${result.protectedRows === 1 ? "it belongs" : "they belong"} to an approved pay run or a verified carrier statement`
+      : "";
+    const closedNote = result.closedOnly > 0
+      ? `. ${result.closedOnly} open row${result.closedOnly === 1 ? "" : "s"} of those kept ${result.closedOnly === 1 ? "its" : "their"} amount and ${result.closedOnly === 1 ? "was" : "were"} closed so ${result.closedOnly === 1 ? "it" : "they"} can go into a pay run`
+      : "";
+    res.status(HttpStatus.OK).json({
+      success: true,
+      message: `${base}${note}${closedNote}`,
+      updated: result.updated,
+      protectedRows: result.protectedRows,
+      closedOnly: result.closedOnly
+    });
   } catch (error) {
     if (error instanceof CityAccessError) {
       return res.status(HttpStatus.FORBIDDEN).json({ success: false, message: error.message });

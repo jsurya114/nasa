@@ -7,6 +7,7 @@ import adminRoutes from './routes/adminRoutes.js'
 import driverRoutes from "./routes/driverRoutes.js"
 import payrollRoutes from "./routes/payrollRoutes.js"
 import insightsRoutes from "./routes/insightsRoutes.js"
+import financeRoutes from "./routes/financeRoutes.js"
 import assignmentHistoryRoutes from "./routes/assignmentHistoryRoutes.js"
 import evereeWebhookRoutes from './routes/evereeWebhookRoutes.js'
 import { mountMcp } from './services/mcp/mountMcp.js';
@@ -16,6 +17,7 @@ import { notFound, errorHandler } from './middlewares/errorHandler.js';
 import rateLimit from './middlewares/rateLimit.js';
 import { trustProxyHops, assertTrustProxyConfigured } from './middlewares/loginRateLimit.js';
 import { initializeAvailabilityResetCron } from './utils/availabilityCronJob.js';
+import { initializeEvereeOnboardingJob } from './utils/evereeOnboardingJob.js';
 import { initializeEvereeStatusJob } from './utils/evereeStatusJob.js';
 import { assertAuthSecrets } from './services/jwtservice.js';
 import logger from './utils/logger.js';
@@ -62,6 +64,7 @@ app.use(rateLimit({ windowMs: 15 * 60 * 1000, max: 1000 }));
 
 initializeAvailabilityResetCron()
 initializeEvereeStatusJob()
+initializeEvereeOnboardingJob()
 
 // Before /admin so payroll requests are handled here and checked once.
 app.use('/admin/payroll', (req, _, next) => {
@@ -74,6 +77,12 @@ app.use('/admin/insights', (req, _, next) => {
   logger.info(`${req.method} ${req.originalUrl.split('?')[0]}`)
   next()
 }, insightsRoutes);
+
+// Carrier statements: super admin only. Before /admin so it is handled here and checked once.
+app.use('/admin/finance/gofo-statements', (req, _, next) => {
+  logger.info(`${req.method} ${req.originalUrl.split('?')[0]}`)
+  next()
+}, financeRoutes);
 
 // Before /admin so these requests are handled here and checked once.
 app.use('/admin/assignment-history', (req, _, next) => {

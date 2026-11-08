@@ -1,4 +1,6 @@
 import { getAllottedRoutes } from "../../services/admin/dashboardService.js";
+import pool from "../../config/db.js";
+import { companyPricesToStore, companyRatesRetired } from "../../services/finance/companyRates.js";
 import {
   insertRoute,
   getAllRoutes,
@@ -44,12 +46,16 @@ export const createRoute = asyncHandler(async (req, res) => {
     return res.status(HttpStatus.BAD_REQUEST).json({ error: "Job is required" });
   }
 
+  // A weekly city with a verified carrier statement has retired the company price fields (issue #252): they are not editable and a new route stores 0 (no company rate).
+  const companyPrices = companyPricesToStore({
+    retired: await companyRatesRetired(pool, job),
+    sent: { companyRoutePrice: parseFloat(companyRoutePrice), companyDoubleStopPrice: parseFloat(companyDoubleStopPrice) },
+  });
   const routeData = {
     name: route,
     job,
-    company_route_price: parseFloat(companyRoutePrice),
+    ...companyPrices,
     driver_route_price: parseFloat(driverRoutePrice),
-    company_doublestop_price: parseFloat(companyDoubleStopPrice),
     driver_doublestop_price: parseFloat(driverDoubleStopPrice),
     route_code_in_string: routeCodeInString ? routeCodeInString.trim() : null,
     enabled: enabled || false,
@@ -159,12 +165,25 @@ export const updateRoute = asyncHandler(async (req, res) => {
   const { route, job, companyRoutePrice, driverRoutePrice, companyDoubleStopPrice, driverDoubleStopPrice, enabled, routeCodeInString } = req.body;
 
 
+  const current = await getRouteByIdQuery(req.params.id);
+  if (!current) {
+    return res.status(404).json({ error: "Route not found" });
+  }
+  // The route must be in one of the admin's cities now, and so must the city it is moved to.
+  if (!(await canAccessJob(req.user, current.job)) || !(await canAccessJob(req.user, job))) {
+    return res.status(HttpStatus.FORBIDDEN).json(CITY_FORBIDDEN);
+  }
+
+  // In a city that has retired the company price fields (a weekly city with a verified carrier statement, issue #252) the route keeps the prices it already has.
   const routeData = {
     name: route,
     job,
-    company_route_price: parseFloat(companyRoutePrice),
+    ...companyPricesToStore({
+      retired: await companyRatesRetired(pool, job),
+      sent: { companyRoutePrice: parseFloat(companyRoutePrice), companyDoubleStopPrice: parseFloat(companyDoubleStopPrice) },
+      current,
+    }),
     driver_route_price: parseFloat(driverRoutePrice),
-    company_doublestop_price: parseFloat(companyDoubleStopPrice),
     driver_doublestop_price: parseFloat(driverDoubleStopPrice),
     route_code_in_string: routeCodeInString ? routeCodeInString.trim() : null,
     enabled: enabled || false,
@@ -179,15 +198,6 @@ export const updateRoute = asyncHandler(async (req, res) => {
     if (isNaN(value) || value == null) {
       throw new Error(`Invalid or missing value for ${key}`);
     }
-  }
-
-  const current = await getRouteByIdQuery(req.params.id);
-  if (!current) {
-    return res.status(404).json({ error: "Route not found" });
-  }
-  // The route must be in one of the admin's cities now, and so must the city it is moved to.
-  if (!(await canAccessJob(req.user, current.job)) || !(await canAccessJob(req.user, job))) {
-    return res.status(HttpStatus.FORBIDDEN).json(CITY_FORBIDDEN);
   }
 
   const updatedDb = await updateRouteQuery(req.params.id, routeData);
