@@ -1,6 +1,8 @@
 // The company price fields on a route (issue #252). For daily SpeedX they stay: revenue is the stored company price figure. For a weekly GOFO city the
-// carrier's statement is the revenue, so once a city has a verified (published) statement its routes no longer take company prices. This is the one place
-// that says what "no company rate" means in SQL and which cities have retired the fields.
+// carrier's statement is the revenue, so once a city has a verified (published) statement its routes are RETIRED: the fields are hidden and cannot be edited,
+// and a week with a statement takes its revenue from the statement. Retiring never erases anything: the stored prices stay on every route as the fallback for
+// the ESTIMATE of a week that has no verified statement yet, so an untouched route and a saved route behave the same, and voiding the last statement brings the
+// same values back. This is the one place that says what "no company rate" means in SQL, which cities have retired the fields, and what a save stores.
 
 const UNDEFINED_TABLE = '42P01';
 
@@ -31,3 +33,9 @@ export const companyRatesRetired = async (db, job) => {
   if (rows.length === 0 || rows[0].city_type !== 'WEEKLY') return false;
   return (await citiesWithVerifiedStatements(db, [rows[0].id])).has(rows[0].id);
 };
+
+// The company prices a route save stores. In a retired city the fields are not editable: whatever the request carries is ignored and the route keeps the prices it
+// has (`current`, the stored row; a new route has none and stores 0, which means "no company rate"). Elsewhere the request's own numbers are used.
+export const companyPricesToStore = ({ retired, sent, current = null }) => (retired
+  ? { company_route_price: current ? Number(current.company_route_price) : 0, company_doublestop_price: current ? Number(current.company_doublestop_price) : 0 }
+  : { company_route_price: sent.companyRoutePrice, company_doublestop_price: sent.companyDoubleStopPrice });
