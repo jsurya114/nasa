@@ -139,14 +139,57 @@ export const loadStatement = async (db, id) => {
   return rows[0] ?? null;
 };
 
-export const voidStatement = async (db, id, { actorId, reason }) => {
-  const { rowCount } = await db.query(
+// Runs `work(client)` as one unit: everything it writes commits together or not at all. `db` is a pool (a transaction of its own is opened) or a client that
+// is already inside a transaction (a savepoint is used, so the caller's transaction decides in the end).
+let savepoints = 0;
+export const inTransaction = async (db, work) => {
+  if (typeof db.release === 'function') {
+    const name = `statement_work_${(savepoints += 1)}`;
+    await db.query(`SAVEPOINT ${name}`);
+    try {
+      const result = await work(db);
+      await db.query(`RELEASE SAVEPOINT ${name}`);
+      return result;
+    } catch (error) {
+      await db.query(`ROLLBACK TO SAVEPOINT ${name}`).catch(() => {});
+      throw error;
+    }
+  }
+  const client = await db.connect();
+  try {
+    await client.query('BEGIN');
+    const result = await work(client);
+    await client.query('COMMIT');
+    return result;
+  } catch (error) {
+    await client.query('ROLLBACK').catch(() => {});
+    throw error;
+  } finally {
+    client.release();
+  }
+};
+
+// The status change and its audit event are one transaction: a failed event leaves the statement published, and a void is never without its event.
+export const voidStatement = (db, id, { actorId, reason }) => inTransaction(db, async (tx) => {
+  const { rowCount } = await tx.query(
     "UPDATE carrier_statements SET status = 'voided', voided_at = now(), voided_by = $2, void_reason = $3 WHERE id = $1 AND status = 'published'",
     [id, actorId ?? null, reason]
   );
-  if (rowCount === 1) await addEvent(db, id, 'voided', actorId, reason);
-  return rowCount === 1;
-};
+  if (rowCount !== 1) return false;
+  await addEvent(tx, id, 'voided', actorId, reason);
+  return true;
+});
+
+// Re-matches one published statement and records who did it, in one transaction. The statement row is locked first, so a void or another re-match cannot
+// run in between. Returns null when the statement is not published, otherwise how many groups were matched.
+export const rematchStatement = (db, id, { actorId }) => inTransaction(db, async (tx) => {
+  const { rows } = await tx.query('SELECT status FROM carrier_statements WHERE id = $1 FOR UPDATE', [id]);
+  if (rows[0]?.status !== 'published') return null;
+  // rematchOpenGroups holds and re-checks the pay rows it attaches, so work that changed meanwhile undoes the whole re-match.
+  const matched = await rematchOpenGroups(tx, { statementId: id });
+  if (matched > 0) await addEvent(tx, id, 'rematched', actorId, `${matched} group${matched === 1 ? '' : 's'} matched`);
+  return matched;
+});
 
 // The list the owner sees: newest week first, with matched and unallocated revenue.
 export const listStatements = async (db, { limit = 50 } = {}) => {
@@ -202,4 +245,23 @@ export const rematchOpenGroups = async (db, { statementId = null, cityId = null 
     if (!(await holdMatchedWork(db, id))) throw new StatementWorkChanged();
   }
   return rows.length;
+};
+
+const REASON = Object.freeze({
+  no_route: 'The carrier gave no route',
+  unknown_route: 'The route is not set up in NASA',
+  unknown_driver: 'No NASA driver has this Delivery ID',
+  no_pay_group: 'NASA has no recorded work for this driver, day and route',
+});
+
+// The unmatched money of one statement, largest first, so the owner can see what is unallocated and why.
+export const listUnallocated = async (db, statementId, { limit = 200 } = {}) => {
+  const { rows } = await db.query(
+    `SELECT g.delivery_id, to_char(g.signed_on, 'YYYY-MM-DD') AS day, g.route_code, g.match_state, g.fee_cents, g.fee_lines, g.offset_lines
+       FROM carrier_statement_groups g
+      WHERE g.statement_id = $1 AND g.match_state <> 'matched'
+      ORDER BY abs(g.fee_cents) DESC, g.signed_on, g.delivery_id, g.route_code LIMIT $2`,
+    [statementId, limit]
+  );
+  return rows.map((r) => ({ deliveryId: r.delivery_id, day: r.day, route: r.route_code || null, state: r.match_state, reason: REASON[r.match_state], revenue: centsToText(Number(r.fee_cents)), lines: r.fee_lines, offsets: r.offset_lines }));
 };

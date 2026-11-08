@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { publishStatement, previewStatement } from '../services/finance/gofoStatement/publishStatement.js';
 import { listStatements, rematchOpenGroups, voidStatement } from '../services/finance/gofoStatement/statementStore.js';
+import { createStatementService } from '../services/finance/gofoStatement/statementService.js';
 import { statementSheets, statementWorkbook } from './helpers/gofoStatementFixture.js';
 
 // Needs a PostgreSQL copy that has the app's tables (never production). Run with PAYROLL_TEST_DB=1 and the usual DB_* variables. Everything happens inside
@@ -98,6 +99,27 @@ test('a carrier statement is previewed, published once, corrected, matched later
     await t.test('payroll is never touched', async () => {
       const { rows } = await client.query('SELECT driver_payment FROM payment_dashboard WHERE id = $1', [rowA]);
       assert.equal(rows[0].driver_payment, '3.00');
+    });
+
+    await t.test('a re-match or a void whose audit event fails is undone completely, so it can be retried', async () => {
+      await client.query('SAVEPOINT audit_failure');
+      const rowB = await work(driverB, routeB, '2026-10-20', '1.50');
+      const withoutEvents = { connect: async () => { const c = await db.connect(); return { release: c.release, query: (sql, params) => (/INSERT INTO carrier_statement_events/.test(sql) ? Promise.reject(new Error('event write failed')) : c.query(sql, params)) }; } };
+      const broken = createStatementService(withoutEvents);
+      const events = () => stored('carrier_statement_events');
+      const eventsBefore = await events();
+      await assert.rejects(broken.rematch(first.statementId, { actorId: 7 }), /event write failed/);
+      assert.equal(await one("SELECT count(*) AS n FROM carrier_statement_groups WHERE match_state <> 'matched'"), 1, 'the failed re-match left the group unmatched');
+      await assert.rejects(broken.void(first.statementId, { actorId: 7, reason: 'wrong week' }), /event write failed/);
+      assert.equal((await client.query('SELECT status FROM carrier_statements WHERE id = $1', [first.statementId])).rows[0].status, 'published', 'the failed void left it published');
+      assert.equal(await events(), eventsBefore);
+      const service = createStatementService(db);
+      assert.equal(await service.rematch(first.statementId, { actorId: 7 }), 1, 'the retry finds the group and succeeds');
+      assert.equal(await events(), eventsBefore + 1);
+      assert.equal(await service.rematch(first.statementId, { actorId: 7 }), 0);
+      assert.equal(await events(), eventsBefore + 1, 'a re-match that changes nothing writes no event');
+      assert.equal(rowB > 0, true);
+      await client.query('ROLLBACK TO SAVEPOINT audit_failure');
     });
 
     await t.test('work that reaches NASA later is matched; matching only ever moves from unmatched to matched', async () => {
