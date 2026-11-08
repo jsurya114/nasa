@@ -1,6 +1,7 @@
 import pool from "../../config/db.js";
 import logger from "../../utils/logger.js";
 import { lockUploads } from "./uploadSafety.js";
+import { matchAfterWeeklyAdd } from "../finance/gofoStatement/matchAfterWeeklyAdd.js";
 
         export const WeeklyExcelQueries={
             fetchDashboardDataByDates : async(dates)=>{
@@ -435,17 +436,23 @@ createEntriesFromWeeklyCount: async ({ beforeInsert = null } = {}) => {
     const insuranceResult = await client.query(insuranceQuery, [INSURANCE_RATE_PER_DAY, insertedIds]);
     await WeeklyExcelQueries.deleteWeeklyTableIfExists('weeklycount', client);
 
+    // A carrier statement published before this work reached the Dashboard has groups it could not match yet (issue #252). They are matched now, in a savepoint that
+    // never fails the weekly add (services/finance/gofoStatement/matchAfterWeeklyAdd.js).
+    const statementGroupsMatched = await matchAfterWeeklyAdd(client, logger);
+
     await client.query('COMMIT');
     logger.info('Weekly data added to the dashboard', {
       inserted: insertResult.rowCount,
-      insuranceApplied: insuranceResult.rowCount
+      insuranceApplied: insuranceResult.rowCount,
+      statementGroupsMatched
     });
 
     return {
       inserted: insertResult.rowCount,
       updated: updateResult.rowCount,
       insuranceApplied: insuranceResult.rowCount,
-      totalAffected: insertResult.rowCount
+      totalAffected: insertResult.rowCount,
+      statementGroupsMatched
     };
   } catch (err) {
     await client.query('ROLLBACK');

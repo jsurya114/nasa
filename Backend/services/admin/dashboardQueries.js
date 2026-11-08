@@ -1,60 +1,66 @@
 import pool from "../../config/db.js";
+import { closeOnlyRowSql, protectedPayRowSql } from "../finance/payGuards.js";
+
+
+// One implementation for "all dates" and "one date". $1 date (or null), $2 allowed jobs (or null).
+const recalculatePayRows = async ({ date, allowedJobs, db }) => {
+  try {
+    const guard = await protectedPayRowSql(db);
+    const scope = `pd.paid = false AND ($1::date IS NULL OR pd.journey_date = $1::date) AND ($2::text[] IS NULL OR r.job = ANY($2::text[]))`;
+    const result = await db.query(
+      `UPDATE payment_dashboard pd
+          SET no_scanned = dd.no_scanned,
+              failed_attempt = dd.failed_attempt,
+              closed = true,
+              ds = dd.ds,
+              fs = dd.first_stop,
+              delivered = dd.ds + dd.first_stop,
+              driver_payment = (dd.ds * r.driver_doublestop_price) + (dd.first_stop * r.driver_route_price),
+              company_earnings = (dd.ds * (r.company_doublestop_price - r.driver_doublestop_price))+ (dd.first_stop * (r.company_route_price - r.driver_route_price))
+         FROM dashboard_data dd
+         JOIN routes r ON dd.route_id = r.id
+        WHERE pd.dashboard_data_id = dd.id
+          AND ${scope}
+          AND NOT ${guard}`,
+      [date, allowedJobs]
+    );
+    // A row protected only by a verified carrier statement keeps its amounts but is still closed, so open work can enter a pay run (services/finance/payGuards.js).
+    const closeOnly = await closeOnlyRowSql(db);
+    const closed = await db.query(
+      `UPDATE payment_dashboard pd
+          SET closed = true
+         FROM dashboard_data dd
+         JOIN routes r ON dd.route_id = r.id
+        WHERE pd.dashboard_data_id = dd.id
+          AND ${scope}
+          AND ${guard} AND ${closeOnly}`,
+      [date, allowedJobs]
+    );
+    const left = await db.query(
+      `SELECT count(*)::int AS n
+         FROM payment_dashboard pd
+         JOIN dashboard_data dd ON pd.dashboard_data_id = dd.id
+         JOIN routes r ON dd.route_id = r.id
+        WHERE ${scope} AND ${guard}`,
+      [date, allowedJobs]
+    );
+    return { updated: result.rowCount, protectedRows: left.rows[0].n, closedOnly: closed.rowCount };
+  } catch (error) {
+    console.error("Error in recalculatePayRows:", error);
+    throw error;
+  }
+};
 
 export const AdminDashboardQueries = {
-  // Update payment table for a specific date only
-  updatePaymentTableForDate: async (selectedDate, allowedJobs = null) => {
-    try {
-      const queryStr = `
-        UPDATE payment_dashboard pd
-        SET 
-            no_scanned = dd.no_scanned,
-            failed_attempt = dd.failed_attempt,
-            closed = true,
-            ds = dd.ds,
-            fs = dd.first_stop,
-            delivered = dd.ds + dd.first_stop,
-            driver_payment = (dd.ds * r.driver_doublestop_price) + (dd.first_stop * r.driver_route_price),
-            company_earnings = (dd.ds * (r.company_doublestop_price - r.driver_doublestop_price))+ (dd.first_stop * (r.company_route_price - r.driver_route_price))
-        FROM dashboard_data dd
-        JOIN routes r ON dd.route_id = r.id
-        WHERE pd.dashboard_data_id = dd.id
-          AND pd.journey_date = $1::date
-          AND pd.paid = false
-          AND ($2::text[] IS NULL OR r.job = ANY($2::text[]));
-      `;
-      const result = await pool.query(queryStr, [selectedDate, allowedJobs]);
-
-      return result;
-    } catch (error) {
-      console.error("Error in updatePaymentTableForDate:", error);
-      throw error;
-    }
+  // Recalculates open pay rows from today's route rates. Rows that are part of an approved pay run or a verified carrier statement are
+  // protected (services/finance/payGuards.js): their figures are settled or reconciled, so they are left exactly as they are and counted.
+  // Returns { updated, protectedRows, closedOnly } so the screen can say how many were left alone and how many of those were only closed.
+  updatePaymentTableForDate: async (selectedDate, allowedJobs = null, db = pool) => {
+    return recalculatePayRows({ date: selectedDate, allowedJobs, db });
   },
 
-  updatePaymentTable: async (allowedJobs = null) => {
-    try {
-      const queryStr = `
-        UPDATE payment_dashboard pd
-        SET 
-            no_scanned = dd.no_scanned,
-            failed_attempt = dd.failed_attempt,
-            closed = true,
-            ds = dd.ds,
-            fs = dd.first_stop,
-            delivered = dd.ds + dd.first_stop,
-            driver_payment = (dd.ds * r.driver_doublestop_price) + (dd.first_stop * r.driver_route_price),
-            company_earnings = (dd.ds * (r.company_doublestop_price - r.driver_doublestop_price))+ (dd.first_stop * (r.company_route_price - r.driver_route_price))
-        FROM dashboard_data dd
-        JOIN routes r ON dd.route_id = r.id
-        WHERE pd.dashboard_data_id = dd.id
-          AND pd.paid = false
-          AND ($1::text[] IS NULL OR r.job = ANY($1::text[]));
-      `;
-      await pool.query(queryStr, [allowedJobs]);
-    } catch (error) {
-      console.error("Error in updatePaymentTable:", error);
-      throw error;
-    }
+  updatePaymentTable: async (allowedJobs = null, db = pool) => {
+    return recalculatePayRows({ date: null, allowedJobs, db });
   },
 
   // ✅ Get summary data for all matching records (not paginated)
