@@ -1,6 +1,6 @@
 import { getAllottedRoutes } from "../../services/admin/dashboardService.js";
 import pool from "../../config/db.js";
-import { companyPricesToStore, companyRatesRetired } from "../../services/finance/companyRates.js";
+import { companyPricesToStore, companyRatesRetired, resetCompanyPrices } from "../../services/finance/companyRates.js";
 import {
   insertRoute,
   getAllRoutes,
@@ -13,6 +13,7 @@ import {
   getRoutesForAdmin,
   getRoutesByDriverCity
 } from "../../services/admin/routeQueries.js";
+import { routeStatementPrices } from "../../services/finance/routeStatementPrices.js";
 import HttpStatus from "../../utils/statusCodes.js";
 import { canAccessJob, canAccessDriverCity } from "../../services/admin/routeAccess.js";
 import logger from '../../utils/logger.js';
@@ -96,9 +97,12 @@ export const fetchPaginatedRoutes = asyncHandler(async (req, res) => {
   
   const { routes, total } = await routePagination(page, limit, search, cityFilter, isSuperAdmin, adminId);
 
+  // Only the owner sees what the carrier paid (company revenue): each weekly route carries it from the city's latest published statement.
+  const statementPrices = isSuperAdmin ? await routeStatementPrices(pool, routes.map((r) => r.id)) : new Map();
+
   res.status(HttpStatus.OK).json({
     success: true,
-    routes: routes.map(mapRoute),
+    routes: routes.map((r) => (isSuperAdmin ? { ...mapRoute(r), statementPrice: statementPrices.get(r.id) ?? null } : mapRoute(r))),
     total,
     page,
     totalPages: Math.ceil(total / limit),
@@ -210,6 +214,28 @@ export const updateRoute = asyncHandler(async (req, res) => {
 }, {
   log: "updateRoute error",
   respond: (err, req, res) => res.status(400).json({ error: `Failed to update route: ${err.message}` }),
+});
+
+// Owner only (the route): sets the company prices of every route in one weekly city to 0.
+const RESET_ANSWERS = {
+  forbidden: [HttpStatus.FORBIDDEN, 'Only an active super admin can reset company prices.'],
+  unknown_city: [HttpStatus.NOT_FOUND, 'That city was not found.'],
+  not_weekly: [HttpStatus.BAD_REQUEST, 'Company prices can only be reset for a weekly city. A daily city earns its revenue from them.'],
+};
+
+export const resetWeeklyCompanyPrices = asyncHandler(async (req, res) => {
+  const job = typeof req.body?.job === 'string' ? req.body.job.trim() : '';
+  if (!job || job.length > 100) return res.status(HttpStatus.BAD_REQUEST).json({ error: 'Choose the city to reset.' });
+  const result = await resetCompanyPrices(pool, job, req.user.id);
+  if (RESET_ANSWERS[result.status]) {
+    const [code, error] = RESET_ANSWERS[result.status];
+    return res.status(code).json({ error });
+  }
+  logger.info(`Company route prices reset for city '${job}': ${result.routesReset} route(s), by admin ${req.user?.id}`);
+  return res.json({ job, routesReset: result.routesReset });
+}, {
+  log: "resetWeeklyCompanyPrices error",
+  respond: (err, req, res) => res.status(HttpStatus.INTERNAL_SERVER_ERROR).json({ error: "The company prices could not be reset. Try again." }),
 });
 
 // Toggle route status

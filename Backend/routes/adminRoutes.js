@@ -5,7 +5,7 @@ const router = express.Router()
 sanitizeRouterParams(router)
 import adminController from '../controllers/admin/adminController.js'
 import jobController from '../controllers/admin/jobController.js';
-import { createRoute, getRouteById, updateRoute, deleteRoute, toggleRouteStatus, fetchPaginatedRoutes, getAdminRoutes, getRoutesByDriver } from "../controllers/admin/routeController.js"
+import { createRoute, getRouteById, updateRoute, resetWeeklyCompanyPrices, deleteRoute, toggleRouteStatus, fetchPaginatedRoutes, getAdminRoutes, getRoutesByDriver } from "../controllers/admin/routeController.js"
 import { changeStatusUser, createUsers, getUsers, updateUser } from '../controllers/admin/addUserController.js';
 import { changeDriverTypes } from '../controllers/admin/driverTypeController.js';
 import { createAccessCode, deleteAccessCode } from '../controllers/admin/accessCodeControllers.js';
@@ -39,6 +39,7 @@ router.post("/routes", superAdminAuth, createRoute);
 router.get("/routes", fetchPaginatedRoutes);
 router.get("/routes-list", getAdminRoutes)
 router.get("/routes/:id", getRouteById);
+router.post("/routes/reset-company-prices", superAdminAuth, resetWeeklyCompanyPrices);
 router.put("/routes/:id", updateRoute);
 router.patch("/routes/:id/status", toggleRouteStatus);
 router.delete("/routes/:id", deleteRoute);
