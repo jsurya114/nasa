@@ -42,7 +42,7 @@ export const getCallback = async (req, res) => {
   try {
     const { code, state, realmId, error } = req.query;
     if (error) throw new PayrollError(HttpStatus.BAD_REQUEST, 'QuickBooks was not approved');
-    await finishConnect(pool, req.admin, { code, state, realmId });
+    await finishConnect(pool, null, { code, state, realmId }); // no login header on this redirect: the admin comes from the single-use state
     return res.status(HttpStatus.OK).type('html').send(page('QuickBooks connected', 'You can close this tab and go back to NASA.'));
   } catch (err) {
     const message = err instanceof PayrollError ? err.message : 'the QuickBooks connection could not be completed; try again';

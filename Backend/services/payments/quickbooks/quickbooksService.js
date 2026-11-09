@@ -31,15 +31,21 @@ export const startConnect = async (db, admin, { env = process.env } = {}) => {
   return { url: authorizationUrl(config, state) };
 };
 
-// Step 2: QuickBooks sends the admin's browser back with a code, the state and the company ID. The state must be unused, recent, and made by this same admin.
+// Step 2: QuickBooks sends the admin's browser back with a code, the state and the company ID. The state must be unused and recent. The return is a plain page visit that
+// carries no login header, so the callback route has no signed-in admin (`admin` is null): the admin is the one who made the state, and must still be an active super admin
+// in the database. When an admin is given, the state must also have been made by that same admin.
 export const finishConnect = async (db, admin, { code, state, realmId }, { env = process.env, fetchImpl, now = new Date() } = {}) => {
-  requireSuperAdmin(admin);
+  if (admin) requireSuperAdmin(admin);
   const config = requireEnabled(env);
   const started = await consumeConnectState(db, state, now);
-  if (!started || started.adminId !== admin.id || started.environment !== config.environment) throw new PayrollError(400, 'this QuickBooks sign-in is not valid or has expired; start the connection again');
+  if (!started || (admin && started.adminId !== admin.id) || started.environment !== config.environment) throw new PayrollError(400, 'this QuickBooks sign-in is not valid or has expired; start the connection again');
+  if (!admin) {
+    const { rows } = await db.query("SELECT id FROM admin WHERE id = $1 AND role = 'superadmin' AND is_active IS TRUE", [started.adminId]);
+    if (rows.length === 0) throw new PayrollError(403, 'only an active super admin can connect QuickBooks');
+  }
   if (typeof code !== 'string' || !code || code.length > 2000) throw new PayrollError(400, 'QuickBooks did not send an approval code');
   try {
-    return await completeConnect(db, config, { code, realmId, adminId: admin.id }, { fetchImpl, now });
+    return await completeConnect(db, config, { code, realmId, adminId: started.adminId }, { fetchImpl, now });
   } catch (error) {
     if (error instanceof QuickbooksError) throw new PayrollError(502, error.message);
     throw error;

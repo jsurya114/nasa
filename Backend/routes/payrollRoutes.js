@@ -21,6 +21,10 @@ import { getAdminStatement, getDriverBalanceList, getDriverDashboardSummary, get
 
 const router = express.Router();
 sanitizeRouterParams(router);
+// QuickBooks sends the admin's browser back here after the sign-in. That is a plain page visit with no Authorization header, so this one route sits before the login
+// check; the single-use state made by the signed-in admin identifies them, and the service checks they are still an active super admin.
+router.get('/quickbooks/callback', getQuickbooksCallback);
+
 router.use(adminAuth);
 
 // This payday's deductions and what is still outstanding, for the Dashboard (#166). The one payroll call an ordinary admin
@@ -55,7 +59,6 @@ router.post('/runs/:runId/void', postVoid);
 // vendor. Super admin only (the guard above); the services check the cities again.
 router.get('/quickbooks/status', getQuickbooksStatus);
 router.post('/quickbooks/connect', postQuickbooksConnect);
-router.get('/quickbooks/callback', getQuickbooksCallback);
 router.post('/quickbooks/check', postQuickbooksCheck);
 router.get('/quickbooks/vendors', getQuickbooksVendors);
 router.post('/quickbooks/vendors/lookup', postQuickbooksLookup);

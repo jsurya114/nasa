@@ -96,13 +96,15 @@ test('the list shows linked, unlinked and blocked Desi drivers with counts', asy
 });
 
 // ---- the connection service ----
-const stateDb = () => {
+const stateDb = ({ activeOwners = new Set([1]) } = {}) => {
   const states = new Map();
-  return { states, query: async (sql, p = []) => {
+  const saved = [];
+  return { states, saved, query: async (sql, p = []) => {
     if (/DELETE FROM quickbooks_connect_state WHERE expires_at/.test(sql)) return { rows: [] };
     if (/INSERT INTO quickbooks_connect_state/.test(sql)) { states.set(p[0], { admin_id: p[1], environment: p[2], expires_at: p[3] }); return { rows: [] }; }
     if (/DELETE FROM quickbooks_connect_state WHERE state_hash/.test(sql)) { const r = states.get(p[0]); states.delete(p[0]); return { rows: r ? [r] : [] }; }
-    if (/INSERT INTO quickbooks_connection/.test(sql)) return { rows: [] };
+    if (/FROM admin WHERE id = \$1 AND role = 'superadmin' AND is_active IS TRUE/.test(sql)) return { rows: activeOwners.has(p[0]) ? [{ id: p[0] }] : [] };
+    if (/INSERT INTO quickbooks_connection/.test(sql)) { saved.push(p); return { rows: [] }; }
     if (/FROM quickbooks_connection/.test(sql)) return { rows: [] };
     throw new Error(`unexpected query ${sql}`);
   } };
@@ -128,6 +130,28 @@ test('the sign-in return must carry a fresh state made by the same admin, and wo
   assert.deepEqual(await finishConnect(db, superAdmin, { code: 'c', state: state2, realmId: '12345678' }, { env, fetchImpl: ok }), { environment: 'sandbox', realmId: '12345678' });
   await assert.rejects(() => finishConnect(db, superAdmin, { code: 'c', state: state2, realmId: '12345678' }, { env, fetchImpl: ok }), (e) => e.status === 400); // used twice
   await assert.rejects(() => finishConnect(db, superAdmin, { code: 'c', state: 'nope', realmId: '12345678' }, { env, fetchImpl: ok }), (e) => e.status === 400);
+});
+
+test('the sign-in return has no login header: the admin comes from the single-use state and must still be an active super admin', async () => {
+  const config = readQuickbooksConfig(env);
+  const ok = async () => ({ ok: true, status: 200, headers: { get: () => null }, json: async () => ({ access_token: 'a', refresh_token: 'r', expires_in: 3600, x_refresh_token_expires_in: 8640000 }) });
+  const db = stateDb();
+  const state = await createConnectState(db, { adminId: 1, environment: config.environment });
+  assert.deepEqual(await finishConnect(db, null, { code: 'c', state, realmId: '12345678' }, { env, fetchImpl: ok }), { environment: 'sandbox', realmId: '12345678' });
+  assert.equal(db.saved.at(-1).at(-1), 1, 'the connection is recorded for the admin who started it');
+  await assert.rejects(() => finishConnect(db, null, { code: 'c', state, realmId: '12345678' }, { env, fetchImpl: ok }), (e) => e.status === 400); // used twice
+  await assert.rejects(() => finishConnect(db, null, { code: 'c', state: 'nope', realmId: '12345678' }, { env, fetchImpl: ok }), (e) => e.status === 400);
+
+  // An admin demoted or deactivated after starting is refused, and nothing is stored.
+  const demoted = stateDb({ activeOwners: new Set() });
+  const state2 = await createConnectState(demoted, { adminId: 1, environment: config.environment });
+  await assert.rejects(() => finishConnect(demoted, null, { code: 'c', state: state2, realmId: '12345678' }, { env, fetchImpl: ok }), (e) => e.status === 403);
+  assert.equal(demoted.saved.length, 0);
+  // Switched off: refused before the state is touched.
+  const off = stateDb();
+  const state3 = await createConnectState(off, { adminId: 1, environment: config.environment });
+  await assert.rejects(() => finishConnect(off, null, { code: 'c', state: state3, realmId: '12345678' }, { env: { ...env, QUICKBOOKS_ENABLED: 'false' }, fetchImpl: ok }), (e) => e.status === 409);
+  assert.equal(off.states.size, 1);
 });
 
 test('the check says what went wrong instead of throwing', async () => {
