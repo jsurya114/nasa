@@ -5,6 +5,7 @@
  */
 import { InputError, parseCityIdsText, parseLimit, parseRange, parseRankBy, parseSource } from '../reporting/inputs.js';
 import { businessSummary, listReportingCities, rankCities } from '../reporting/deliveryReports.js';
+import { claimLosses } from '../reporting/lossReports.js';
 import { parseInterval, trendSeries } from './trendSeries.js';
 import { CURRENCY, DEFINITIONS_VERSION, METRIC_DEFINITIONS, REPORTING_LIMITATIONS } from '../reporting/metricDefinitions.js';
 
@@ -52,6 +53,12 @@ export async function getTrends(run, query, options) {
   // The interval is required: the page chooses it from the length of the period, the server never guesses.
   const interval = parseInterval(query.interval, filters.period);
   return respond(await run((db) => trendSeries(db, { ...filters, interval }), options));
+}
+
+// Claim losses and the margin after them: what the carrier charged NASA and has not been taken back from drivers (see lossReports.js).
+export async function getLosses(run, query, options) {
+  const filters = parseFilters(query);
+  return respond(await run((db) => claimLosses(db, filters), options));
 }
 
 export async function getCities(run, options) {

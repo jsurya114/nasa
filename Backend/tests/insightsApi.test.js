@@ -38,7 +38,7 @@ const call = async (app, path, role) => {
   }
 };
 const PERIOD = 'start_date=2026-10-01&end_date=2026-10-31';
-const PATHS = ['/definitions', '/cities', `/overview?${PERIOD}`, `/rankings/cities?${PERIOD}`, `/trends?${PERIOD}&interval=week`];
+const PATHS = ['/definitions', '/cities', `/overview?${PERIOD}`, `/rankings/cities?${PERIOD}`, `/trends?${PERIOD}&interval=week`, `/losses?${PERIOD}`];
 
 test('only the super admin may use Insights: no token, an ordinary admin and a driver are refused before any report runs', async () => {
   let calls = 0;
@@ -56,7 +56,7 @@ test('only the super admin may use Insights: no token, an ordinary admin and a d
     assert.equal(answer.cache, 'no-store', 'company figures are never cached');
     assert.deepEqual(Object.keys(answer.body).sort(), ['data', 'meta']);
   }
-  assert.equal(calls, 4, 'the four data routes ran one report each; definitions read no data');
+  assert.equal(calls, 5, 'the five data routes ran one report each; definitions read no data');
 });
 
 test('a bad request is refused with a message and runs nothing; a report failure shows no internal detail', async () => {
@@ -67,6 +67,7 @@ test('a bad request is refused with a message and runs nothing; a report failure
     `/overview?${PERIOD}&source=monthly`, `/overview?${PERIOD}&city_ids=abc`, `/overview?${PERIOD}&city_ids=0`, `/overview?${PERIOD}&city_ids=1,,2`,
     `/rankings/cities?${PERIOD}&rank_by=profit`, `/rankings/cities?${PERIOD}&limit=0`, `/rankings/cities?${PERIOD}&limit=abc`, `/rankings/cities?${PERIOD}&limit=51`,
     '/overview?start_date=2020-01-01&end_date=2026-10-31',
+    '/losses', '/losses?start_date=2026-10-01', `/losses?${PERIOD}&city_ids=abc`, `/losses?${PERIOD}&source=monthly`,
     `/trends?${PERIOD}`, `/trends?${PERIOD}&interval=hourly`, `/trends?${PERIOD}&interval=Week`, '/trends?start_date=2025-01-01&end_date=2026-01-31&interval=week&source=monthly',
   ];
   for (const path of bad) {

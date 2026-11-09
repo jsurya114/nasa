@@ -22,6 +22,23 @@ const overview = (data = {}, extra = {}) => ({ meta: meta(extra), data: {
   activeDrivers: 12, activeDriverDays: 60, deliveriesPerActiveDriverDay: "27.50", revenuePerDelivery: "3.64", marginPerDelivery: "0.55",
   records: { total: 30, withStoredAmounts: 28, open: 1, partialAmounts: 1, daily: 10, weekly: 20 }, comparison, ...data } });
 const ranking = (rows) => ({ meta: meta(), data: { rankedBy: "revenue", ranking: rows } });
+// The claim losses report as the server sends it: exact text, every loss apart, and the margin with and without them.
+const lossesReport = (over = {}) => ({
+  meta: meta({ warnings: ["Claims count by their own date in the period. What is recovered is as of now, from finalized pay runs."] }),
+  data: {
+    period: { startDate: "2026-10-01", endDate: "2026-10-31", days: 31 }, cities: "all", inactiveDays: 30,
+    margin: { grossMarginBeforeOverheads: "900.00", totalLosses: "140.00", profitAfterClaimLosses: "760.00" },
+    claimLosses: {
+      total: "90.00",
+      unrecovered: { claims: 3, amount: "65.00", likelyLost: { claims: 2, amount: "50.00" }, stillRecoverable: { claims: 1, amount: "15.00" } },
+      unmatched: { claims: 1, amount: "10.00", oldestClaimDate: "2026-10-05" },
+      exemptAbsorbed: { claims: 1, amount: "15.00" },
+    },
+    insurance: { available: true, statements: 1, carrierPremium: "100.00", withheldFromDrivers: "50.00", difference: "50.00", notRecovered: "50.00" },
+    byCity: [{ cityId: 3, name: "Alpha City", unrecovered: "65.00", likelyLost: "50.00", stillRecoverable: "15.00", unmatched: "10.00", exemptAbsorbed: "15.00", total: "90.00" }],
+    ...over,
+  },
+});
 const ROWS = [
   { rank: 1, cityId: 3, name: "Alpha City", code: "ALP", deliveries: 1000, earnedDeliveryRevenue: "4000.00", grossMarginBeforeOverheads: "600.00", marginPercentage: "15.00", shareOfTotalPercent: "66.67", records: 20, recordsWithoutStoredAmounts: 0 },
   { rank: 2, cityId: 4, name: "Beta City", code: "BET", deliveries: 650, earnedDeliveryRevenue: "2000.00", grossMarginBeforeOverheads: "300.00", marginPercentage: "15.00", shareOfTotalPercent: "33.33", records: 10, recordsWithoutStoredAmounts: 2 },
@@ -60,6 +77,7 @@ const startServer = async (handlers = {}) => {
     if (path === "cities") return { status: 200, data: { meta: meta(), data: { cities: CITIES } } };
     if (path === "definitions") return { status: 200, data: { meta: meta(), data: { definitions: DEFINITIONS } } };
     if (path === "overview") return { status: 200, data: overview() };
+    if (path === "losses") return { status: 200, data: lossesReport() };
     if (path === "trends") return { status: 200, data: trends(config.params) };
     if (path === "rankings/cities") {
       // like the real API: only the chosen cities are ranked
@@ -324,7 +342,8 @@ describe("Insights: top cities", () => {
     expect(within(screen.getByRole("list", { name: "Cities ranked by deliveries" })).getByText("1,000")).toBeTruthy();
     // the same data as a table, with every figure and the headings a screen reader needs
     fireEvent.click(screen.getByRole("button", { name: "Show as table" }));
-    const table = screen.getByRole("table");
+    // the page also has the claim losses tables, so the ranking's own is found inside its section
+    const table = within(screen.getByRole("region", { name: "Top cities" })).getByRole("table");
     expect(within(table).getAllByRole("columnheader").map((h) => h.textContent)).toEqual(["#", "City", "Deliveries", "Delivery revenue", "Delivery margin", "Margin %", "Share"]);
     expect(within(table).getByRole("row", { name: /Beta City/ }).textContent).toContain("$2,000.00");
     fireEvent.click(screen.getByRole("button", { name: "Show bars" }));
@@ -545,5 +564,65 @@ describe("Insights: revenue from the carrier statement (#252)", () => {
     await mount();
     expect((await screen.findByText(/Estimated: some weekly records have no verified carrier statement/))).toBeTruthy();
     expect(screen.getByText(/includes \$12\.00 unallocated carrier revenue/)).toBeTruthy();
+  });
+});
+
+describe("Insights: claim losses and profit", () => {
+  it("shows the margin, the losses and the profit after them, with every loss apart and the server's own total", async () => {
+    const server = await startServer();
+    await mount();
+    const section = await screen.findByTestId("claim-losses");
+    await waitFor(() => expect(within(section).getByTestId("loss-profit")).toBeTruthy());
+    expect(within(within(section).getByTestId("loss-margin")).getByText("$900.00")).toBeTruthy();
+    expect(within(within(section).getByTestId("loss-total")).getByText("$140.00")).toBeTruthy();
+    expect(within(within(section).getByTestId("loss-profit")).getByText("$760.00")).toBeTruthy();
+    const line = (id) => within(section).getByTestId(`loss-line-${id}`).textContent;
+    expect(line("unrecovered")).toContain("$65.00");
+    expect(line("likely-lost")).toContain("$50.00");
+    expect(line("likely-lost")).toContain("30+ days");
+    expect(line("recoverable")).toContain("$15.00");
+    expect(line("unmatched")).toContain("$10.00");
+    expect(line("unmatched")).toContain("Oldest: 2026-10-05");
+    expect(line("exempt")).toContain("$15.00");
+    expect(line("insurance")).toContain("$50.00");
+    expect(line("insurance")).toContain("$100.00 and $50.00 was withheld");
+    expect(line("total")).toContain("$140.00");
+    // it asks for the same period, cities and source as every other figure on the page
+    const asked = server.of("losses")[0].params;
+    expect(asked).toEqual(server.of("overview")[0].params);
+    expect(within(section).getByTestId("loss-notes").textContent).toContain("as of now");
+  });
+
+  it("lists the cities with losses and says nothing when there are none", async () => {
+    await startServer({ losses: () => ({ status: 200, data: lossesReport({ margin: { grossMarginBeforeOverheads: "900.00", totalLosses: "0.00", profitAfterClaimLosses: "900.00" },
+      claimLosses: { total: "0.00", unrecovered: { claims: 0, amount: "0.00", likelyLost: { claims: 0, amount: "0.00" }, stillRecoverable: { claims: 0, amount: "0.00" } }, unmatched: { claims: 0, amount: "0.00", oldestClaimDate: null }, exemptAbsorbed: { claims: 0, amount: "0.00" } },
+      insurance: { available: false, statements: 0, carrierPremium: null, withheldFromDrivers: null, difference: null, notRecovered: null }, byCity: [] }) }) });
+    await mount();
+    expect(await screen.findByTestId("losses-empty")).toBeTruthy();
+    expect(screen.queryByTestId("loss-breakdown")).toBeNull();
+    expect(screen.queryByTestId("loss-by-city")).toBeNull();
+  });
+
+  it("does not invent a profit when there is no margin, and leaves insurance out when there are no carrier statements", async () => {
+    await startServer({ losses: () => ({ status: 200, data: lossesReport({ margin: { grossMarginBeforeOverheads: null, totalLosses: "90.00", profitAfterClaimLosses: null },
+      insurance: { available: false, statements: 0, carrierPremium: null, withheldFromDrivers: null, difference: null, notRecovered: null } }) }) });
+    await mount();
+    const profit = await screen.findByTestId("loss-profit");
+    expect(profit.textContent).toContain("N/A");
+    expect(profit.textContent).toContain("No delivery margin in this period");
+    expect(screen.getByTestId("loss-margin").textContent).toContain("N/A");
+    expect(screen.queryByTestId("loss-line-insurance")).toBeNull();
+  });
+
+  it("shows a recoverable error for this section alone, and loads it again on Try again", async () => {
+    let fail = true;
+    await startServer({ losses: () => (fail ? { status: 500, data: {} } : { status: 200, data: lossesReport() }) });
+    await mount();
+    const section = await screen.findByTestId("claim-losses");
+    expect((await within(section).findByRole("alert")).textContent).toContain("could not be loaded");
+    expect(await screen.findByTestId("kpi-revenue")).toBeTruthy(); // the rest of the page is fine
+    fail = false;
+    fireEvent.click(within(section).getByRole("button", { name: "Try again" }));
+    expect(await within(section).findByTestId("loss-profit")).toBeTruthy();
   });
 });
