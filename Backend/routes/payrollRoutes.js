@@ -15,6 +15,7 @@ import { getEvereePreview } from '../controllers/payroll/evereeBatchController.j
 import { getBatch as getEvereeBatch, getRunBatches as getEvereeRunBatches, getSettings as getEvereeCitySettings, postBatch as postEvereeBatch, postRetry as postEvereeBatchRetry, postCheck as postEvereeBatchCheck, putSettings as putEvereeCitySettings } from '../controllers/payroll/evereePaymentController.js';
 import { getStatus as getEvereeStatus, postCheck as postEvereeCheck } from '../controllers/payroll/evereeController.js';
 import { getWorkers as getEvereeWorkers, postLink as postEvereeLink, postLookup as postEvereeLookup, postRefresh as postEvereeRefresh, postSandboxWorker as postEvereeSandboxWorker, postUnlink as postEvereeUnlink } from '../controllers/payroll/evereeWorkerController.js';
+import { getCallback as getQuickbooksCallback, getStatus as getQuickbooksStatus, getVendors as getQuickbooksVendors, postCheck as postQuickbooksCheck, postConnect as postQuickbooksConnect, postLink as postQuickbooksLink, postLookup as postQuickbooksLookup, postUnlink as postQuickbooksUnlink } from '../controllers/payroll/quickbooksController.js';
 import { getAdminStatement, getDriverBalanceList, getDriverDashboardSummary, getDriverStatementList } from '../controllers/payroll/statementController.js';
 
 const router = express.Router();
@@ -49,6 +50,16 @@ router.get('/runs/:runId', getPayRun);
 router.post('/runs/:runId/finalize', postFinalize);
 router.post('/runs/:runId/discard', postDiscard);
 router.post('/runs/:runId/void', postVoid);
+// QuickBooks for Desi drivers: connect the company (sign-in redirect and its callback), a read-only check, and linking each Desi driver to their existing
+// vendor. Super admin only (the guard above); the services check the cities again.
+router.get('/quickbooks/status', getQuickbooksStatus);
+router.post('/quickbooks/connect', postQuickbooksConnect);
+router.get('/quickbooks/callback', getQuickbooksCallback);
+router.post('/quickbooks/check', postQuickbooksCheck);
+router.get('/quickbooks/vendors', getQuickbooksVendors);
+router.post('/quickbooks/vendors/lookup', postQuickbooksLookup);
+router.post('/quickbooks/vendors/link', postQuickbooksLink);
+router.post('/quickbooks/vendors/unlink', postQuickbooksUnlink);
 // Everee connection (#31): whether the backend is set up and which environment, and a read-only test call. Super admin only, checked in the service.
 router.get('/everee/onboarding-readiness', getOnboardingReadiness);
 router.get('/everee/status', getEvereeStatus);

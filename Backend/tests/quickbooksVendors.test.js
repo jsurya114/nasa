@@ -1,0 +1,140 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { readQuickbooksConfig } from '../services/payments/quickbooks/quickbooksConfig.js';
+import { linkVendor, listCityVendors, lookupVendor, unlinkVendor } from '../services/payments/quickbooks/vendorStore.js';
+import { checkQuickbooks, finishConnect, getQuickbooksStatus, startConnect } from '../services/payments/quickbooks/quickbooksService.js';
+import { createConnectState } from '../services/payments/quickbooks/connectionStore.js';
+import { QuickbooksError } from '../services/payments/quickbooks/quickbooksClient.js';
+
+const env = { QUICKBOOKS_ENABLED: 'true', QUICKBOOKS_ENVIRONMENT: 'sandbox', QUICKBOOKS_CLIENT_ID: 'id', QUICKBOOKS_CLIENT_SECRET: 's', QUICKBOOKS_REDIRECT_URI: 'https://nasa.example/admin/payroll/quickbooks/callback', QUICKBOOKS_TOKEN_KEY: 'a'.repeat(64) };
+const superAdmin = { id: 1, role: 'superadmin' };
+const plainAdmin = { id: 2, role: 'admin' };
+const vendor = (over = {}) => ({ Id: '58', DisplayName: 'Desi One', Active: true, Vendor1099: true, PrimaryEmailAddr: { Address: 'desi@example.com' }, ...over });
+
+// An in-memory stand-in for the queries the store makes.
+const fakeDb = ({ driver = { id: 7, name: 'Desi One', email: 'Desi@Example.com', city_id: 1 }, taken = [], insertError = null } = {}) => {
+  const log = [];
+  return { log, query: async (sql, p = []) => {
+    log.push({ sql, p });
+    if (/FROM drivers WHERE id = \$1 AND city_id = \$2 AND driver_type = 'DESI'/.test(sql)) return { rows: driver && p[0] === driver.id && p[1] === driver.city_id ? [driver] : [] };
+    if (/SELECT driver_id FROM quickbooks_vendors/.test(sql)) return { rows: taken };
+    if (/SELECT realm_id FROM quickbooks_connection/.test(sql)) return { rows: [{ realm_id: '12345678' }] };
+    if (/SAVEPOINT|pg_advisory_xact_lock/.test(sql)) return { rows: [] };
+    if (/INSERT INTO quickbooks_vendors/.test(sql)) { if (insertError) throw insertError; return { rows: [{ id: 1, driver_id: p[0], vendor_id: p[3], link_source: 'existing_vendor', tax_id_supplied: true, vendor_1099: p[4], linked_at: 'now' }] }; }
+    if (/UPDATE quickbooks_vendors/.test(sql)) return { rowCount: 1, rows: [] };
+    if (/FROM drivers d/.test(sql)) return { rows: [
+      { id: 7, name: 'Desi One', email: 'desi@example.com', vendor_id: '58', link_source: 'existing_vendor', tax_id_supplied: true, vendor_1099: true },
+      { id: 8, name: 'Desi Two', email: 'two@example.com', vendor_id: null },
+      { id: 9, name: 'Desi Three', email: '', vendor_id: null }] };
+    throw new Error(`unexpected query ${sql}`);
+  } };
+};
+const clientOf = (vendors) => ({ findVendorsByEmail: async (email) => { clientOf.asked = email; return vendors; } });
+const deps = (vendors) => ({ env, client: clientOf(vendors) });
+const where = { cityId: 1, driverId: 7 };
+
+test('only a super admin may look up, link, unlink or list', async () => {
+  for (const call of [() => lookupVendor(fakeDb(), plainAdmin, where, deps([])), () => linkVendor(fakeDb(), plainAdmin, { ...where, vendorId: '58' }, deps([])),
+    () => unlinkVendor(fakeDb(), plainAdmin, { ...where, reason: 'left' }, deps([])), () => listCityVendors(fakeDb(), plainAdmin, 1, { env })]) {
+    await assert.rejects(call, (e) => e.status === 403);
+  }
+});
+
+test('lookup matches on the driver email only and names the one vendor found', async () => {
+  const result = await lookupVendor(fakeDb(), superAdmin, where, deps([vendor()]));
+  assert.equal(result.result, 'match');
+  assert.equal(clientOf.asked, 'desi@example.com');
+  assert.deepEqual(result.matches[0], { vendorId: '58', displayName: 'Desi One', vendor1099: true, linkedTo: null });
+  assert.deepEqual(result.warnings, []);
+});
+
+test('no vendor, several vendors, an inactive vendor or a different email are never a match', async () => {
+  assert.equal((await lookupVendor(fakeDb(), superAdmin, where, deps([]))).result, 'no_match');
+  assert.equal((await lookupVendor(fakeDb(), superAdmin, where, deps([vendor(), vendor({ Id: '59' })]))).result, 'ambiguous');
+  assert.equal((await lookupVendor(fakeDb(), superAdmin, where, deps([vendor({ Active: false })]))).result, 'no_match');
+  assert.equal((await lookupVendor(fakeDb(), superAdmin, where, deps([vendor({ PrimaryEmailAddr: { Address: 'other@example.com' } })]))).result, 'no_match');
+});
+
+test('a vendor already linked to another driver is blocked; to this driver is flagged; a non-1099 vendor is warned about', async () => {
+  const other = await lookupVendor(fakeDb({ taken: [{ driver_id: 99 }] }), superAdmin, where, deps([vendor()]));
+  assert.equal(other.result, 'blocked');
+  assert.equal(other.reason, 'vendor_linked_to_another_driver');
+  assert.equal((await lookupVendor(fakeDb({ taken: [{ driver_id: 7 }] }), superAdmin, where, deps([vendor()]))).matches[0].linkedTo, 'this_driver');
+  assert.deepEqual((await lookupVendor(fakeDb(), superAdmin, where, deps([vendor({ Vendor1099: false })]))).warnings, ['vendor_not_1099']);
+});
+
+test('a driver with no email is blocked without asking QuickBooks, and a Local driver is not found at all', async () => {
+  const result = await lookupVendor(fakeDb({ driver: { id: 7, name: 'x', email: '', city_id: 1 } }), superAdmin, where, { env, client: { findVendorsByEmail: () => { throw new Error('must not be called'); } } });
+  assert.equal(result.result, 'blocked');
+  await assert.rejects(() => lookupVendor(fakeDb({ driver: null }), superAdmin, where, deps([vendor()])), (e) => e.status === 404);
+});
+
+test('linking saves the vendor of the exact match with the connected company and no tax ID', async () => {
+  const db = fakeDb();
+  const { link } = await linkVendor(db, superAdmin, { ...where, vendorId: '58' }, deps([vendor()]));
+  assert.equal(link.vendorId, '58');
+  const insert = db.log.find((q) => /INSERT INTO quickbooks_vendors/.test(q.sql));
+  assert.deepEqual(insert.p, [7, 'sandbox', '12345678', '58', true, 1]);
+  assert.ok(!/tax_identifier|ssn|tin\b/i.test(insert.sql.replace('tax_id_supplied', '')));
+});
+
+test('linking refuses a different vendor than the one found, a non-match, and a double link', async () => {
+  await assert.rejects(() => linkVendor(fakeDb(), superAdmin, { ...where, vendorId: '999' }, deps([vendor()])), (e) => e.status === 409 && /not the vendor found/.test(e.message));
+  await assert.rejects(() => linkVendor(fakeDb(), superAdmin, { ...where, vendorId: '58' }, deps([])), (e) => e.status === 409);
+  await assert.rejects(() => linkVendor(fakeDb({ insertError: Object.assign(new Error('dup'), { code: '23505' }) }), superAdmin, { ...where, vendorId: '58' }, deps([vendor()])), (e) => e.status === 409 && /already linked/.test(e.message));
+});
+
+test('unlinking needs a reason and keeps history', async () => {
+  await assert.rejects(() => unlinkVendor(fakeDb(), superAdmin, { ...where, reason: ' ' }, { env }), (e) => e.status === 400);
+  assert.deepEqual(await unlinkVendor(fakeDb(), superAdmin, { ...where, reason: 'left the company' }, { env }), { unlinked: true });
+});
+
+test('the list shows linked, unlinked and blocked Desi drivers with counts', async () => {
+  const list = await listCityVendors(fakeDb(), superAdmin, 1, { env });
+  assert.deepEqual(list.summary, { drivers: 3, linked: 1, unlinked: 1, blocked: 1 });
+  assert.equal(list.drivers[2].issues[0], 'no_email');
+});
+
+// ---- the connection service ----
+const stateDb = () => {
+  const states = new Map();
+  return { states, query: async (sql, p = []) => {
+    if (/DELETE FROM quickbooks_connect_state WHERE expires_at/.test(sql)) return { rows: [] };
+    if (/INSERT INTO quickbooks_connect_state/.test(sql)) { states.set(p[0], { admin_id: p[1], environment: p[2], expires_at: p[3] }); return { rows: [] }; }
+    if (/DELETE FROM quickbooks_connect_state WHERE state_hash/.test(sql)) { const r = states.get(p[0]); states.delete(p[0]); return { rows: r ? [r] : [] }; }
+    if (/INSERT INTO quickbooks_connection/.test(sql)) return { rows: [] };
+    if (/FROM quickbooks_connection/.test(sql)) return { rows: [] };
+    throw new Error(`unexpected query ${sql}`);
+  } };
+};
+
+test('the status never shows secrets, and connecting needs the switch on and a super admin', async () => {
+  const status = await getQuickbooksStatus(stateDb(), superAdmin, { env });
+  assert.equal(status.enabled, true);
+  assert.ok(!JSON.stringify(status).includes('a'.repeat(64)));
+  await assert.rejects(() => getQuickbooksStatus(stateDb(), plainAdmin, { env }), (e) => e.status === 403);
+  await assert.rejects(() => startConnect(stateDb(), superAdmin, { env: { ...env, QUICKBOOKS_ENABLED: 'false' } }), (e) => e.status === 409);
+  const { url } = await startConnect(stateDb(), superAdmin, { env });
+  assert.match(url, /^https:\/\/appcenter\.intuit\.com\/connect\/oauth2\?/);
+});
+
+test('the sign-in return must carry a fresh state made by the same admin, and works once', async () => {
+  const config = readQuickbooksConfig(env);
+  const db = stateDb();
+  const ok = async (status) => ({ ok: true, status: 200, headers: { get: () => null }, json: async () => ({ access_token: 'a', refresh_token: 'r', expires_in: 3600, x_refresh_token_expires_in: 8640000 }) });
+  const state = await createConnectState(db, { adminId: 1, environment: config.environment });
+  await assert.rejects(() => finishConnect(db, { id: 5, role: 'superadmin' }, { code: 'c', state, realmId: '12345678' }, { env, fetchImpl: ok }), (e) => e.status === 400); // another admin; state is spent
+  const state2 = await createConnectState(db, { adminId: 1, environment: config.environment });
+  assert.deepEqual(await finishConnect(db, superAdmin, { code: 'c', state: state2, realmId: '12345678' }, { env, fetchImpl: ok }), { environment: 'sandbox', realmId: '12345678' });
+  await assert.rejects(() => finishConnect(db, superAdmin, { code: 'c', state: state2, realmId: '12345678' }, { env, fetchImpl: ok }), (e) => e.status === 400); // used twice
+  await assert.rejects(() => finishConnect(db, superAdmin, { code: 'c', state: 'nope', realmId: '12345678' }, { env, fetchImpl: ok }), (e) => e.status === 400);
+});
+
+test('the check says what went wrong instead of throwing', async () => {
+  const notConfigured = await checkQuickbooks(stateDb(), superAdmin, { env: {} });
+  assert.equal(notConfigured.ok, false);
+  const notConnected = await checkQuickbooks(stateDb(), superAdmin, { env });
+  assert.equal(notConnected.ok, false);
+  assert.match(notConnected.reason, /not connected/);
+  assert.ok(QuickbooksError);
+});

@@ -9,6 +9,7 @@ import Nav from "../../reuse/Nav";
 import { SkeletonList } from "../../reuse/Skeleton.jsx";
 import RecoveryLimitPanel from "./payRuns/RecoveryLimitPanel.jsx";
 import EvereePanel from "./payRuns/EvereePanel.jsx";
+import QuickbooksPanel from "./payRuns/QuickbooksPanel.jsx";
 import NewRunForm from "./payRuns/NewRunForm.jsx";
 import RunDetail from "./payRuns/RunDetail.jsx";
 
@@ -118,6 +119,7 @@ export default function PayRuns() {
             <div className="space-y-3 p-3 pt-0">
               <RecoveryLimitPanel isSuperAdmin={isSuperAdmin} />
               {isSuperAdmin && <EvereePanel />}
+              {isSuperAdmin && <QuickbooksPanel cityId={cityId} />}
             </div>
           </details>
 
