@@ -9,8 +9,6 @@ export const companyRatesRetired = (city) => city?.city_type === "WEEKLY" && cit
 // The price inputs the form shows for the chosen city.
 export const visiblePriceFields = (fields, city) => (companyRatesRetired(city) ? fields.filter(({ field }) => !field.startsWith("company")) : fields);
 
-// What the route table shows in the company price column. A retired route still shows the stored price it keeps as the estimate fallback.
-export const companyPriceCell = (route, city) => {
-  if (!companyRatesRetired(city)) return route.companyRoutePrice;
-  return route.companyRoutePrice > 0 ? `${CARRIER_STATEMENT_LABEL} (estimate fallback ${route.companyRoutePrice})` : CARRIER_STATEMENT_LABEL;
-};
+// What the route table shows in the company price column: always the stored price. A weekly GOFO route keeps 0.00 there, because its revenue comes from the
+// carrier statement, not from a route price.
+export const companyPriceCell = (route) => route.companyRoutePrice;

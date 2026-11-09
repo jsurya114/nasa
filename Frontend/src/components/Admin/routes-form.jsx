@@ -365,7 +365,7 @@ export default function RoutesForm() {
                           {route.job}
                         </span>
                       </td>
-                      <td className="px-3 py-2 border-b border-line">{companyPriceCell(route, enabledJobs.find((city) => city.job === route.job))}</td>
+                      <td className="px-3 py-2 border-b border-line">{companyPriceCell(route)}</td>
                       <td className="px-3 py-2 border-b border-line">{route.driverRoutePrice}</td>
                       <td className="px-3 py-2 border-b border-line">
                         <span

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { CARRIER_STATEMENT_LABEL, companyPriceCell, companyRatesRetired, visiblePriceFields } from "./routeCompanyRates.js";
+import { companyPriceCell, companyRatesRetired, visiblePriceFields } from "./routeCompanyRates.js";
 
 const FIELDS = [
   { label: "Company Route Price", field: "companyRoutePrice" },
@@ -24,9 +24,8 @@ describe("company price fields of a route", () => {
     expect(visiblePriceFields(FIELDS, undefined)).toHaveLength(4);
   });
 
-  it("show the carrier statement in the route table, with the stored price it keeps only as an estimate fallback", () => {
-    expect(companyPriceCell({ companyRoutePrice: 0 }, WEEKLY_VERIFIED)).toBe(CARRIER_STATEMENT_LABEL);
-    expect(companyPriceCell({ companyRoutePrice: 2.5 }, WEEKLY_VERIFIED)).toBe("Carrier statement (estimate fallback 2.5)");
-    expect(companyPriceCell({ companyRoutePrice: 2.5 }, { city_type: "DAILY" })).toBe(2.5);
+  it("show the stored company price in the route table, 0 for a weekly GOFO route", () => {
+    expect(companyPriceCell({ companyRoutePrice: 0 })).toBe(0);
+    expect(companyPriceCell({ companyRoutePrice: 2.5 })).toBe(2.5);
   });
 });
