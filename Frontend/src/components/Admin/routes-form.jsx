@@ -10,6 +10,7 @@ import { fetchPaginatedJobs } from "../../redux/slice/admin/jobSlice";
 import Pagination from "../../reuse/Pagination.jsx";
 import SearchBar from "../../reuse/Search.jsx";
 import Modal from "../../reuse/Modal.jsx";
+import ResetCompanyPrices from "./ResetCompanyPrices.jsx";
 import { CARRIER_STATEMENT_LABEL, companyPriceCell, companyRatesRetired, visiblePriceFields } from "./routeCompanyRates.js";
 
 const ROUTES_PER_PAGE = 10;
@@ -18,6 +19,7 @@ export default function RoutesForm() {
   const dispatch = useDispatch();
   const { routes, status: routesStatus, error: routesError, page, totalPages } = useSelector((state) => state.routes);
   const { cities, status: jobsStatus, error: jobsError } = useSelector((state) => state.jobs);
+  const isSuperAdmin = useSelector((state) => state.admin?.isSuperAdmin);
 
   const [formData, setFormData] = useState({
     route: "",
@@ -61,6 +63,9 @@ export default function RoutesForm() {
 
   // The chosen city decides whether the company price fields are shown (issue #252).
   const formCity = useMemo(() => enabledJobs.find((city) => city.job === formData.job), [enabledJobs, formData.job]);
+
+  // The reset button appears when one weekly city is chosen in the filter.
+  const resetCity = useMemo(() => enabledJobs.find((city) => city.job === cityFilter && city.city_type === "WEEKLY"), [enabledJobs, cityFilter]);
 
   // ✅ ENHANCED: Page change handler with city filter
   const handlePageChange = useCallback((newPage) => {
@@ -275,6 +280,12 @@ export default function RoutesForm() {
               </div>
             </div>
             
+            {isSuperAdmin && (
+              <div className="mt-2">
+                <ResetCompanyPrices city={resetCity} onDone={() => dispatch(fetchRoutes({ page: page || 1, limit: ROUTES_PER_PAGE, search: searchTerm, city: cityFilter }))} />
+              </div>
+            )}
+
             {/* Active Filters Display */}
             {(searchTerm || cityFilter) && (
               <div className="mt-2 flex flex-wrap gap-1.5">
