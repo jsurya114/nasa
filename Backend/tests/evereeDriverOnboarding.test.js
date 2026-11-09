@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { EvereeError } from '../services/payments/everee/evereeClient.js';
 import { lookupDriver, linkDriver } from '../services/payments/everee/workerStore.js';
-import { createSession, getStatus, OnboardingError, refreshStatus, startOnboarding, UNCERTAIN_COOLDOWN_MINUTES } from '../services/payments/everee/driverOnboarding.js';
+import { adoptLegacyLink, createSession, getStatus, OnboardingError, refreshStatus, startOnboarding, UNCERTAIN_COOLDOWN_MINUTES } from '../services/payments/everee/driverOnboarding.js';
 
 // Needs a PostgreSQL copy with the app's tables (never production). Run with PAYROLL_TEST_DB=1 and the DB_* variables. Everything, the migrations
 // included, runs in one transaction that is always rolled back. The drivers are real rows of the copy that get made-up details inside it, and Everee
@@ -56,7 +56,7 @@ test('driver onboarding: intent first, one worker, self only', { skip: !hasDb &&
     await db.query(migration('2026-11-07-issue-242-everee-driver-onboarding.sql'));
     await db.query(migration('2026-11-07-issue-242-everee-driver-onboarding.sql')); // safe to run twice
     const city = (await one("INSERT INTO city (job, city_code, city_type) VALUES ('Test Onboarding City', 'TSTONB', 'WEEKLY') RETURNING id")).id;
-    const [a, b, c] = (await db.query('SELECT id FROM drivers ORDER BY id LIMIT 3')).rows.map((r) => r.id);
+    const [a, b, c] = (await db.query('SELECT id FROM drivers d WHERE NOT EXISTS (SELECT 1 FROM everee_workers w WHERE w.driver_id = d.id) ORDER BY id LIMIT 3')).rows.map((r) => r.id);
     const person = (id, over = {}) => db.query(
       `UPDATE drivers SET name = $2, email = $3, phone_number = $4, city_id = $5, enabled = true, driver_type = $6, agreement_signed = $7, agreement_joining_date = '2026-10-01' WHERE id = $1`,
       [id, over.name ?? `Alice Rider${id}`, over.email ?? `alice${id}@example.com`, over.phone ?? `55512300${String(id).padStart(2, '0').slice(-2)}`, city, over.type === undefined ? 'LOCAL' : over.type, over.signed ?? true]);
@@ -400,6 +400,35 @@ test('driver onboarding: intent first, one worker, self only', { skip: !hasDb &&
         fake.state.getFails = new EvereeError('Everee did not answer in time');
         const timeout = await refreshStatus(db, a, fake.deps);
         assert.deepEqual([timeout.state, timeout.refreshed, timeout.stale], ['complete', false, true]);
+      });
+    });
+
+    await t.test('a link from before tenants were recorded is verified against Everee itself, with no admin review', async () => {
+      await savepoint(async () => {
+        await person(a);
+        const fake = withEveree();
+        // an older link: a worker that exists in this tenant's Everee, linked by an admin, with no tenant recorded
+        fake.state.workers.set(`nasa-old-${a}`, { id: `CAN-old-${a}`, externalWorkerId: `nasa-old-${a}`, onboardingComplete: true });
+        await db.query(`INSERT INTO everee_workers (driver_id, environment, tenant_id, everee_worker_id, external_worker_id, link_source, onboarding_complete, last_checked_at, linked_by)
+                        VALUES ($1, 'sandbox', NULL, $2, $3, 'created_sandbox', true, now(), (SELECT id FROM admin LIMIT 1))`, [a, `CAN-old-${a}`, `nasa-old-${a}`]);
+        const before = await getStatus(db, a, fake.deps);
+        assert.deepEqual([before.state, before.reason], ['needs-review', 'link_not_verified_for_tenant']);
+        // an outage changes nothing
+        const search = fake.client.searchWorkers;
+        fake.client.searchWorkers = async () => { throw new EvereeError('Everee did not answer in time'); };
+        assert.equal((await adoptLegacyLink(db, a, fake.deps)).adopted, false);
+        assert.equal((await getStatus(db, a, fake.deps)).state, 'needs-review');
+        fake.client.searchWorkers = search;
+        // a link that points at a worker Everee does not know in this tenant is not adopted
+        const wrong = withEveree();
+        assert.equal((await adoptLegacyLink(db, a, wrong.deps)).adopted, false);
+        assert.equal((await getStatus(db, a, wrong.deps)).state, 'needs-review');
+        // the worker is there and is the very one the row points to: the tenant is filled in, once
+        assert.equal((await adoptLegacyLink(db, a, fake.deps)).adopted, true);
+        const after = await getStatus(db, a, fake.deps);
+        assert.deepEqual([after.state, after.required], ['complete', false]);
+        assert.equal((await one('SELECT tenant_id FROM everee_workers WHERE driver_id = $1', [a])).tenant_id, '4321');
+        assert.equal((await adoptLegacyLink(db, a, fake.deps)).adopted, false, 'nothing left to verify');
       });
     });
 

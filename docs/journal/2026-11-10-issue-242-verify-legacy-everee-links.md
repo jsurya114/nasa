@@ -1,0 +1,7 @@
+# Verify old Everee links against Everee, with no admin review
+
+A Local driver whose Everee link was made before tenants were recorded (tenant NULL) was held on "needs a review by your admin" under the screen lock, and only an admin could release them. The client wants no admin step. The driver's first status read now asks Everee: the company's own token can only read workers of this tenant, so when the worker the row points to (the same canonical worker ID) is found, the tenant is filled in once (the guard trigger allows NULL to a value and nothing else) and the driver moves on. A worker that is not found, a different worker, or an outage leaves the row untouched, so the driver stays held and the check repeats at most once a minute per driver.
+
+Still sent to an admin, on purpose: a possible existing Everee worker with the driver's email or phone, two workers with NASA's ID, and a driver an admin unlinked earlier. Auto-linking those could pay the wrong person; whether to link an exact email match automatically is a separate decision.
+
+Validation: the onboarding backend suite passes on a local copy (20 of 20), with a new test for the check (outage, wrong worker, right worker, once only). The test now picks drivers that have no Everee link, so it runs on a database that already holds links. Not run against production. A local sandbox link whose worker no longer exists in the tenant (driver 543) is correctly not adopted.
