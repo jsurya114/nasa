@@ -6,6 +6,7 @@ import InsightsFilters from "./insights/InsightsFilters.jsx";
 import KpiCards from "./insights/KpiCards.jsx";
 import CityRanking from "./insights/CityRanking.jsx";
 import DataStatus from "./insights/DataStatus.jsx";
+import ClaimLosses from "./insights/ClaimLosses.jsx";
 import InvoiceButton from "./invoice/InvoiceButton.jsx";
 import TrendSection from "./insights/TrendSection.jsx";
 import WeekdayChart from "./insights/WeekdayChart.jsx";
@@ -41,6 +42,7 @@ export default function Insights() {
   const definitions = useInsightsReport("definitions", {});
   const overview = useInsightsReport("overview", params, { enabled: valid });
   const ranking = useInsightsReport("rankings/cities", rankingParams, { enabled: valid });
+  const losses = useInsightsReport("losses", params, { enabled: valid });
 
   const cityList = cities.report?.data?.cities ?? [];
   const selectedNames = filters.cityIds.map((id) => cityList.find((c) => c.cityId === id)?.name ?? `City ${id}`);
@@ -77,6 +79,7 @@ export default function Insights() {
         ) : (
           <>
             <KpiCards status={overview.status} report={overview.report} message={overview.message} onRetry={overview.reload} range={filters.range} definitions={definitions.report?.data?.definitions} />
+            <ClaimLosses status={losses.status} report={losses.report} message={losses.message} onRetry={losses.reload} definitions={definitions.report?.data?.definitions} />
             <TrendSection status={trends.status} report={trends.report} message={trends.message} onRetry={trends.reload} choice={intervalChoice} onChoice={setIntervalChoice} interval={interval} days={days} />
             <div className="grid gap-4 lg:grid-cols-2">
               <WeekdayChart status={trends.status} report={trends.report} message={trends.message} onRetry={trends.reload} />

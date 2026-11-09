@@ -6,7 +6,7 @@
  * These definitions describe rules that already exist. They do not change how anything is calculated or paid.
  */
 
-export const DEFINITIONS_VERSION = '2026-11-08';
+export const DEFINITIONS_VERSION = '2026-11-10';
 export const CURRENCY = 'USD';
 
 export const METRIC_DEFINITIONS = Object.freeze([
@@ -114,6 +114,24 @@ export const METRIC_DEFINITIONS = Object.freeze([
       'Unmatched claims are never silently assigned to a driver or deducted.',
       'Carrier claims are part of penalty balances, as already approved.',
     ],
+  },
+  {
+    id: 'claim_losses',
+    label: 'Claim losses',
+    unit: CURRENCY,
+    definition: 'What the carrier charged NASA in claims that has not been taken back from a driver, plus the claims no driver can be charged for: unrecovered claims (matched, less what finalized pay runs deducted), unmatched claims and exempt claims (the agreed DFWGOFO + Tracking interruption exemption), and any driver insurance premium the carrier charged beyond what was withheld from drivers.',
+    caveats: [
+      'Every unrecovered claim counts at once. "Likely lost" marks the part whose driver is disabled or has not delivered for 30 days; "still recoverable" claims also reduce profit until they are deducted.',
+      'Claims count by their own date in the period and recovery is as of now. Insurance counts carrier statements by the last day of their billing week; only a shortfall is a loss.',
+      'A refund the carrier paid back for a claim already nets out of the claim, so it is never counted as a loss.',
+    ],
+  },
+  {
+    id: 'profit_after_claim_losses',
+    label: 'Profit after claim losses',
+    unit: CURRENCY,
+    definition: 'Delivery margin minus claim losses. Delivery margin ("gross profit before overheads") itself is not changed and is shown beside it.',
+    caveats: ['Not net profit: overheads and operating costs are not recorded.', 'Not available when there is no delivery margin for the period.'],
   },
   {
     id: 'driver_ranking',
