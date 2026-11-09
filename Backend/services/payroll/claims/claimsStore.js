@@ -60,17 +60,20 @@ const liveManualClaim = async (db, waybill, typeKey) => {
 
 // A new version starts unresolved, or on hold ("review") when a hand-entered claim already covers it: the carrier's
 // evidence is kept, but only one of the two can ever be recovered.
-const insertVersion = async (db, claim, version, source, manual) => {
+const insertVersion = async (db, claim, version, source, manual, withOrigin = false) => {
+  const originFacts = factsKey({ key: claim.key, originalCharge: claim.originalCharge ?? claim.charge, claimAt: claim.claimAt, confirmedAt: claim.confirmedAt });
   const { rows } = await db.query(
     `INSERT INTO courier_claims
        (courier, claim_key, version, waybill, claim_type, claim_type_key, claim_at, confirmed_at,
         original_charge, deduction_amount, declared_value, remarks, import_city_id,
-        source_file, source_sheet, source_row, imported_by, courier_name, courier_name_key)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)
+        source_file, source_sheet, source_row, imported_by, courier_name, courier_name_key${withOrigin ? ', origin_facts_key' : ''})
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19${withOrigin ? ',$20' : ''})
      RETURNING id`,
     [claim.courier, claim.key, version, claim.waybill, claim.claimType, claim.claimTypeKey, claim.claimAt, claim.confirmedAt,
       claim.charge, claim.deduction, claim.declaredValue, claim.remarks, source.importCityId,
-      source.sourceFile, source.sourceSheet, claim.sourceRow, source.importedBy ?? null, claim.courierName ?? null, claim.courierNameKey ?? null]
+      source.sourceFile, source.sourceSheet, claim.sourceRow, source.importedBy ?? null, claim.courierName ?? null, claim.courierNameKey ?? null,
+      // the carrier's original facts, apart from the (possibly refund-lowered) amount stored above
+      ...(withOrigin ? [originFacts] : [])]
   );
   await db.query(
     `INSERT INTO courier_claim_matches (claim_id, status, reason, rule_version) VALUES ($1, $2, $3, $4)`,
@@ -110,6 +113,7 @@ export const importClaims = async (db, claims, source) => {
   if (!Number.isInteger(source?.importCityId)) throw new Error('importCityId is required');
   if (!source.sourceFile || !source.sourceSheet) throw new Error('sourceFile and sourceSheet are required');
   const result = { inserted: [], duplicates: [], amended: [], held: [], otherCity: [] };
+  const withOrigin = await originFactsReady(db);
 
   for (const claim of claims) {
     // Two uploads of the same claim at the same moment wait for each other here.
@@ -143,17 +147,22 @@ export const importClaims = async (db, claims, source) => {
     const manual = await liveManualClaim(db, claim.waybill, claim.claimTypeKey);
     let claimId;
     if (!current) {
-      claimId = await insertVersion(db, claim, 1, source, manual);
+      claimId = await insertVersion(db, claim, 1, source, manual, withOrigin);
       result.inserted.push({ claimId, sourceRow: claim.sourceRow });
     } else {
       if (!current.retired) await db.query('UPDATE courier_claims SET superseded_at = now() WHERE id = $1', [current.id]);
-      claimId = await insertVersion(db, claim, current.version + 1, source, manual);
+      claimId = await insertVersion(db, claim, current.version + 1, source, manual, withOrigin);
       result.amended.push({ claimId, previousId: current.id, sourceRow: claim.sourceRow });
     }
     if (manual) result.held.push({ claimId, sourceRow: claim.sourceRow, ledgerEntryId: manual.id });
   }
   return result;
 };
+
+// Whether courier_claims has origin_facts_key (migration 2026-11-10-courier-claim-adjustments.sql). Without it the column is left out, so claims
+// still store on a database that has not run that migration yet.
+const originFactsReady = async (db) =>
+  (await db.query("SELECT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = 'courier_claims' AND column_name = 'origin_facts_key') AS ready")).rows[0].ready;
 
 // The memory of refunds (courier_claim_adjustments, migration 2026-11-10-courier-claim-adjustments.sql). Before that migration is run there is no
 // memory: refunds are still set against penalties in the same file, but an older report can bring a refunded amount back.
@@ -197,8 +206,8 @@ export const applyKnownAdjustments = async (db, claims, { importCityId }) => {
 };
 
 // Retires the stored claims that a refund in the carrier's file cancels, so the driver is not charged for them. Two kinds, in this city only:
-//  - the version of a penalty a refund cancels in full: the CURRENT version with exactly the original facts in `cancelled` (key, amount, dates), so
-//    an older report can never retire a genuine carrier amendment of the same claim (another amount or date), and
+//  - the version of a penalty a refund cancels in full: the CURRENT version that came from exactly the original facts in `cancelled` (key, amount,
+//    dates; kept per version in origin_facts_key, so a version lowered by an earlier part refund is found too), so an older report can never retire a genuine carrier amendment of the same claim (another amount or date), and
 //  - a refund the older rules stored as if it were a charge (a positive amount with "refund" in the remarks).
 // A retired version is marked superseded, exactly like an amended claim, so nothing treats it as owed. A claim already taken from a driver on a
 // pay run is left alone and counted: taking money back is the ledger's refund, never done silently here. Call inside the upload's transaction.
@@ -214,12 +223,13 @@ export const retireRefundedClaims = async (db, { cityId, cancelled = [] }) => {
   take((await db.query(
     `SELECT c.id, ${applied} AS applied FROM courier_claims c
       WHERE c.superseded_at IS NULL AND c.import_city_id = $1 AND c.original_charge > 0 AND c.remarks ~* 'refund' ORDER BY c.id FOR UPDATE OF c`, [cityId])).rows);
+  const withOrigin = await originFactsReady(db);
   for (const f of cancelled) {
     take((await db.query(
       `SELECT c.id, ${applied} AS applied FROM courier_claims c
         WHERE c.superseded_at IS NULL AND c.import_city_id = $1 AND c.claim_key = $2
-          AND c.original_charge = $3::numeric AND c.claim_at = $4::timestamp AND c.confirmed_at IS NOT DISTINCT FROM $5::timestamp
-        ORDER BY c.id FOR UPDATE OF c`, [cityId, f.key, f.originalCharge, f.claimAt, f.confirmedAt ?? null])).rows);
+          AND (${withOrigin ? 'c.origin_facts_key = $6 OR (c.origin_facts_key IS NULL AND ' : '('}c.original_charge = $3::numeric AND c.claim_at = $4::timestamp AND c.confirmed_at IS NOT DISTINCT FROM $5::timestamp))
+        ORDER BY c.id FOR UPDATE OF c`, withOrigin ? [cityId, f.key, f.originalCharge, f.claimAt, f.confirmedAt ?? null, factsKey(f)] : [cityId, f.key, f.originalCharge, f.claimAt, f.confirmedAt ?? null])).rows);
   }
   const rows = [...found.values()];
   const free = rows.filter((r) => !r.applied).map((r) => r.id);

@@ -182,6 +182,20 @@ test('upload order: an older partial refund cannot raise the deduction, and an o
     assert.equal(older.stored, true, JSON.stringify(older));
     assert.deepEqual(await owed('TESTA'), ['5@v2'], 'an older, smaller refund does not undo a larger one');
 
+    // 1b. a part refund and then a FULL refund of the same penalty: 20.00 -> 5.00 -> nothing, even when the original report is read again (third review)
+    await upload([pen('TESTD', 20)], 'd-original.xlsx');
+    await upload([pen('TESTD', 20), ref('TESTD', 15)], 'd-refund-15.xlsx');
+    assert.deepEqual(await owed('TESTD'), ['5@v2']);
+    await upload([pen('TESTD', 20), ref('TESTD', 20)], 'd-refund-20.xlsx');
+    assert.deepEqual(await owed('TESTD'), [], 'a full refund cancels the part-refunded version too');
+    await upload([pen('TESTD', 20)], 'd-original-again.xlsx');
+    assert.deepEqual(await owed('TESTD'), [], 'the original report read again leaves it cancelled');
+    // a genuine amendment after that is still a charge, and the same refund reports read again leave it alone
+    await upload([pen('TESTD', 25)], 'd-amended.xlsx');
+    assert.deepEqual(await owed('TESTD'), ['25@v3']);
+    await upload([pen('TESTD', 20), ref('TESTD', 20)], 'd-refund-20-again.xlsx');
+    assert.deepEqual(await owed('TESTD'), ['25@v3']);
+
     // 2. a fully refunded 20.00 penalty, then a genuine carrier amendment to 25.00: the refund report read again must not retire the amendment
     await upload([pen('TESTB', 20), ref('TESTB', 20)], 'b-refunded.xlsx');
     assert.deepEqual(await owed('TESTB'), []);

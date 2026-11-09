@@ -25,5 +25,10 @@ CREATE TABLE IF NOT EXISTS courier_claim_adjustments (
   UNIQUE (claim_key, facts_key, import_city_id)
 );
 
+-- Each stored version also keeps the ORIGINAL facts it came from (claim key, the carrier's amount and dates), apart from the amount it deducts: a version
+-- lowered by a refund stores the lowered amount in original_charge, so without this a later full refund could not find it to cancel it. A genuine carrier
+-- amendment has its own facts, so a refund report about the earlier amount never reaches it. NULL on versions stored before this (matched by amount).
+ALTER TABLE courier_claims ADD COLUMN IF NOT EXISTS origin_facts_key text CHECK (origin_facts_key IS NULL OR origin_facts_key ~ '^[0-9a-f]{64}$');
+
 -- Should list the table.
 SELECT table_name FROM information_schema.tables WHERE table_name = 'courier_claim_adjustments';
