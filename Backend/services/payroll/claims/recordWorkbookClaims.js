@@ -11,7 +11,7 @@
 import XLSX from 'xlsx';
 import logger from '../../../utils/logger.js';
 import { CLAIMS_SHEET, parseClaimsWorkbook } from './claimsParser.js';
-import { importClaims, rematchAllOpenClaims } from './claimsStore.js';
+import { importClaims, rematchAllOpenClaims, retireRefundedClaims } from './claimsStore.js';
 import { FEES_SHEET, parseFeeNames } from './courierNames.js';
 import { getAllowedJobs, isCityLimited } from '../../admin/adminCityAccess.js';
 
@@ -130,6 +130,8 @@ export const recordWorkbookClaims = async (client, { buffer, fileName, user, rou
     const stored = await importClaims(client, claimsHere, {
       importCityId: city.id, sourceFile: fileName, sourceSheet: parsed.sheet, importedBy: user?.id ?? null,
     });
+    // A refund in the file cancels its penalty. Copies stored by an earlier upload (the penalty, or the refund itself kept as if it were a charge) are retired.
+    const refunded = await retireRefundedClaims(client, { cityId: city.id, keys: parsed.refundedKeys ?? [] });
     // Matching: the names in this report's Details of Delivery Fees. Every open claim of this city is looked at, so a claim an
     // earlier report could not match is matched now if its driver delivered this week. importClaims stores; it does not match.
     const fees = parseFeeNames(readSheetWorkbook(buffer, FEES_SHEET));
@@ -153,6 +155,9 @@ export const recordWorkbookClaims = async (client, { buffer, fileName, user, rou
       duplicates: stored.duplicates.length + (limited ? otherCity.size : 0),
       amended: stored.amended.length,
       held: stored.held.length,
+      // Earlier claims a refund in this file cancelled (no longer owed), and any already taken from a driver, which are left for the ledger.
+      refunded: refunded.retired,
+      refundedAlreadyTaken: refunded.left,
       // Where this upload's new and changed claims stand now. `exempt` carries no deduction.
       matched: { chargeable: by.chargeable ?? 0, exempt: by.exempt ?? 0 },
       waiting: { unresolved: by.unresolved ?? 0, ambiguous: by.ambiguous ?? 0 },

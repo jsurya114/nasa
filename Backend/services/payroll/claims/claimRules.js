@@ -4,6 +4,8 @@
 // - Only real rows of the carrier's "Claims Detail" sheet are claims. Nothing is inferred from delivery statuses.
 // - The deduction is the absolute value of "The total expenses-exclusive of taxes": +40 and -40 both mean 40.
 //   "Declared value (USD)" is never used.
+//   Except a refund: a positive amount whose remarks say "Refund" (the carrier's "Prior Period Claim Refund") is money given back for an
+//   earlier penalty, not a charge. It is set against the penalty for the same waybill (claimsParser.js), so a refunded penalty nets to nothing.
 // - City DFW GOFO (key "dfwgofo") together with claim type "Tracking interruption" is exempt: no deduction.
 //   Both must hold. Every other exactly matched claim is chargeable.
 // - The driver comes only from waybill -> carrier Delivery ID -> NASA driver, with the historical city.
@@ -12,7 +14,7 @@
 import { createHash } from 'node:crypto';
 
 // Bump when a rule below changes, so stored results show which rules produced them.
-export const CLAIM_RULES_VERSION = 'claims-2026-11-03';
+export const CLAIM_RULES_VERSION = 'claims-2026-11-10';
 
 export const COURIERS = Object.freeze(['gofo', 'speedx']);
 

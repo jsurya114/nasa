@@ -30,6 +30,37 @@ const text = (v) => (isBlank(v) ? null : String(v).trim().slice(0, MAX_TEXT));
 // Two rows name different drivers only when both give a name and the names differ (case and spacing do not count).
 const namesDiffer = (a, b) => Boolean(a.courierNameKey && b.courierNameKey && a.courierNameKey !== b.courierNameKey);
 
+const toCents = (text) => Math.round(Number(text) * 100);
+const fromCents = (c) => `${Math.floor(c / 100)}.${String(c % 100).padStart(2, '0')}`;
+const isRefund = (charge, remarks) => typeof charge === 'string' && !charge.startsWith('-') && /refund/i.test(remarks ?? '');
+
+// Sets each refund against the penalties for the same waybill (a lost parcel that was refunded later cancels out: -13.86 and +13.86 deduct nothing).
+// A penalty covered in full is dropped from the claims; a part-refunded one keeps only what is left. A refund with no penalty to cancel in this file
+// (its penalty was in an earlier period) deducts nothing and is reported, so it is never mistaken for a charge. Never invents a credit for the driver.
+const netRefunds = (claims, refunds, problems) => {
+  for (const refund of refunds) {
+    let left = refund.cents;
+    for (const claim of claims) {
+      if (left <= 0) break;
+      if (claim.refunded || claim.waybill !== refund.waybill || !claim.charge.startsWith('-')) continue;
+      const owed = toCents(claim.deduction);
+      if (owed <= 0) continue;
+      const used = Math.min(owed, left);
+      left -= used;
+      if (used === owed) {
+        claim.refunded = true;
+        problems.push({ row: refund.excelRow, message: `refund of ${fromCents(used)} cancels the penalty in row ${claim.sourceRow} for the same waybill; nothing is deducted for it` });
+      } else {
+        claim.deduction = fromCents(owed - used);
+        claim.charge = `-${claim.deduction}`;
+        problems.push({ row: refund.excelRow, message: `refund of ${fromCents(used)} reduces the penalty in row ${claim.sourceRow} for the same waybill to ${claim.deduction}` });
+      }
+    }
+    if (left === refund.cents) problems.push({ row: refund.excelRow, message: `refund of ${fromCents(refund.cents)} has no penalty for the same waybill in this file; nothing is deducted and nothing is credited here` });
+    else if (left > 0) problems.push({ row: refund.excelRow, message: `${fromCents(left)} of this refund is more than the penalty for the same waybill; the rest is not credited here` });
+  }
+};
+
 // rows: the sheet as an array of arrays (first non-blank row is the header).
 // Returns { claims, problems }. A problem is { row, message } with the Excel row number.
 export const parseClaimsRows = (rows, { courier }) => {
@@ -49,6 +80,7 @@ export const parseClaimsRows = (rows, { courier }) => {
   }
 
   const byKey = new Map();
+  const refunds = [];
   for (let i = headerIndex + 1; i < all.length; i += 1) {
     const row = Array.isArray(all[i]) ? all[i] : [];
     if (row.every(isBlank)) continue;
@@ -72,6 +104,13 @@ export const parseClaimsRows = (rows, { courier }) => {
 
     if (rowProblems.length) {
       problems.push({ row: excelRow, message: rowProblems.join('; ') });
+      continue;
+    }
+
+    // A refund the carrier pays back for an earlier penalty (a positive amount with "Refund" in the remarks, e.g. "Prior Period Claim Refund") is
+    // never a deduction. It is set against the penalty for the same waybill below, so a penalty that was refunded nets out.
+    if (isRefund(amount.charge, text(cell('remarks')))) {
+      refunds.push({ excelRow, waybill, cents: toCents(amount.deduction) });
       continue;
     }
 
@@ -114,7 +153,10 @@ export const parseClaimsRows = (rows, { courier }) => {
     }
   }
 
-  return { claims: claims.filter((c) => !c.conflict), problems };
+  const kept = claims.filter((c) => !c.conflict);
+  netRefunds(kept, refunds, problems);
+  // refundedKeys: penalties a refund cancelled in full. A copy stored by an earlier upload is retired by the caller (see retireRefundedClaims).
+  return { claims: kept.filter((c) => !c.refunded), problems, refundedKeys: kept.filter((c) => c.refunded).map((c) => c.key) };
 };
 
 // The range the sheet's cells really occupy. A workbook's saved range ("!ref") can say less than it holds (carrier

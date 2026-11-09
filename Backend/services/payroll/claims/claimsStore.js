@@ -152,6 +152,30 @@ export const importClaims = async (db, claims, source) => {
   return result;
 };
 
+// Retires the stored claims that a refund in the carrier's file cancels, so the driver is not charged for them. Two kinds, in this city only:
+//  - a penalty the file's refund cancels in full (`keys`, from parseClaimsRows), and
+//  - a refund the older rules stored as if it were a charge (a positive amount with "refund" in the remarks).
+// A retired version is marked superseded, exactly like an amended claim, so nothing treats it as owed. A claim already taken from a driver on a
+// pay run is left alone and counted: taking money back is the ledger's refund, never done silently here. Call inside the upload's transaction.
+// Returns { retired, left }.
+export const retireRefundedClaims = async (db, { cityId, keys = [] }) => {
+  await lockCityPayroll(db, cityId);
+  const { rows: ready } = await db.query("SELECT to_regclass('pay_statement_lines') IS NOT NULL AS ready");
+  const applied = ready[0].ready
+    ? `EXISTS (SELECT 1 FROM pay_statement_lines l JOIN courier_claims v ON v.id = l.claim_id WHERE v.claim_key = c.claim_key AND l.active AND l.line_type = 'claim')`
+    : 'false';
+  const { rows } = await db.query(
+    `SELECT c.id, ${applied} AS applied FROM courier_claims c
+      WHERE c.superseded_at IS NULL AND c.import_city_id = $1
+        AND (c.claim_key = ANY($2::text[]) OR (c.original_charge > 0 AND c.remarks ~* 'refund'))
+      ORDER BY c.id FOR UPDATE OF c`,
+    [cityId, keys]
+  );
+  const free = rows.filter((r) => !r.applied).map((r) => r.id);
+  if (free.length) await db.query('UPDATE courier_claims SET superseded_at = now() WHERE id = ANY($1::bigint[])', [free]);
+  return { retired: free.length, left: rows.length - free.length };
+};
+
 // Tries again to match one batch of current claims that are still unresolved or ambiguous, in claim order after
 // `afterId`. findCandidates({ courier, waybill, nameKey }) returns the candidate drivers: [{ driverId, cityId, cityName,
 // carrierDeliveryId, routeId, journeyDate }]. Weekly uploads match by the Courier name (#180: nameKey, found in Details of
