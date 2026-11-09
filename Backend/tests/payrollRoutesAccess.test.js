@@ -19,10 +19,19 @@ test('the file has one super admin guard, after the sign-in check', () => {
   assert.ok(signIn > 0 && signIn < guardLine, 'adminAuth must run before the guard');
 });
 
-test('only the Dashboard penalty summary is open to an ordinary admin', () => {
+// The QuickBooks sign-in return is a plain page visit from Intuit with no login header, so it is the one route that must sit before the sign-in check. It is safe to leave
+// open only because the service accepts nothing but a single-use state made by a signed-in super admin and re-checks that admin in the database.
+const CALLBACK = "router.get('/quickbooks/callback'";
+
+test('only the Dashboard penalty summary is open to an ordinary admin, and the QuickBooks sign-in return is open to no login header', () => {
   const open = routeLines.filter(({ line }) => line < guardLine);
-  assert.equal(open.length, 1);
-  assert.ok(open[0].text.startsWith(SUMMARY));
+  assert.equal(open.length, 2);
+  const callback = open.find(({ text }) => text.startsWith(CALLBACK));
+  assert.ok(callback, 'the QuickBooks callback must be reachable without a login header');
+  assert.ok(open.some(({ text }) => text.startsWith(SUMMARY)));
+  const signIn = source.findIndex((text) => text.trim() === 'router.use(adminAuth);');
+  assert.ok(callback.line < signIn, 'the callback is registered before the sign-in check');
+  assert.equal(open.filter(({ text }) => !text.startsWith(CALLBACK) && !text.startsWith(SUMMARY)).length, 0, 'no other route may be open');
 });
 
 test('every other payroll, payment and Everee route is behind the guard', () => {

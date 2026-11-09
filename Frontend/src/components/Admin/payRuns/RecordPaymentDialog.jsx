@@ -16,6 +16,9 @@ import EvereeApprovalLink from "./everee/EvereeApprovalLink.jsx";
 import EvereeSummary from "./everee/EvereeSummary.jsx";
 import ProviderPaymentLine from "./everee/ProviderPaymentLine.jsx";
 import useEvereeAvailable from "./everee/useEvereeAvailable.js";
+import QuickbooksSummary from "./quickbooks/QuickbooksSummary.jsx";
+import QuickbooksResult from "./quickbooks/QuickbooksResult.jsx";
+import useQuickbooksPaymentsAvailable from "./quickbooks/useQuickbooksPaymentsAvailable.js";
 import DriverTypeTabs from "./DriverTypeTabs.jsx";
 import { typeOf } from "./driverTypes.js";
 
@@ -27,6 +30,8 @@ const METHODS = {
 };
 const CASH = "cash";
 const EVEREE = "everee";
+const QUICKBOOKS = "quickbooks";
+const QUICKBOOKS_LABEL = "Cash in Hand, recorded in QuickBooks";
 const EVEREE_LABEL = "Bank transfer (Everee)";
 const EVEREE_BASE = "/admin/payroll";
 const paid = (d) => d.payoutStatus === "paid";
@@ -56,6 +61,7 @@ export default function RecordPaymentDialog({
   const bodyRef = useRef(null);
   const stepTitle = useRef(null);
   const evereeAvailable = useEvereeAvailable();
+  const quickbooksAvailable = useQuickbooksPaymentsAvailable();
   const [form, setForm] = useState(() => ({
     requestId: newRequestId(),
     paidOn: toLocalDateString(new Date()),
@@ -65,6 +71,9 @@ export default function RecordPaymentDialog({
   }));
   const [everee, setEveree] = useState({ preview: null, loading: false, error: "" });
   const [evereeSent, setEvereeSent] = useState(false);
+  const [qb, setQb] = useState({ preview: null, loading: false, error: "" });
+  const [qbBatchId, setQbBatchId] = useState(null);
+  const qbConfirm = useRef({ hash: null, requestId: null });
   const [resultsKey, setResultsKey] = useState(0);
   const evereeConfirm = useRef({ hash: null, requestId: null });
   const [errors, setErrors] = useState({});
@@ -123,8 +132,8 @@ export default function RecordPaymentDialog({
   );
   // Drivers of the open tab that can be chosen: unpaid, not processing, and with a type (a driver with no type is never selectable).
   const selectable = (d) => payable(d) && typeOf(d) === tab && tab !== "NONE";
-  // Desi drivers are paid in Cash in Hand only, so that method is fixed; a Local payment chooses between Cash in Hand and Everee.
-  const method = tab === "DESI" ? CASH : form.method;
+  // Desi drivers are recorded in QuickBooks when that is switched on, otherwise in Cash in Hand: the method is fixed either way. A Local payment chooses between Cash in Hand and Everee.
+  const method = tab === "DESI" ? (quickbooksAvailable ? QUICKBOOKS : CASH) : form.method;
   const chosen = drivers.filter((d) =>
     selected?.includes(String(d.statementId)),
   );
@@ -141,6 +150,7 @@ export default function RecordPaymentDialog({
   const chosenIds = chosen.map((d) => Number(d.statementId));
   const chosenKey = chosenIds.join(",");
   const viaEveree = method === EVEREE;
+  const viaQuickbooks = method === QUICKBOOKS;
 
   // With Bank transfer (Everee) chosen, the server previews exactly the chosen drivers: who can be paid, the total and what stops anyone.
   useEffect(() => {
@@ -155,6 +165,19 @@ export default function RecordPaymentDialog({
       });
     return () => controller.abort();
   }, [step, viaEveree, chosenKey, runId, version]);
+  // With QuickBooks, the server previews exactly the chosen drivers: who can be recorded, the total and what stops anyone.
+  useEffect(() => {
+    if (step !== "payment" || !viaQuickbooks || !chosenKey) return undefined;
+    const controller = new AbortController();
+    setQb({ preview: null, loading: true, error: "" });
+    axios
+      .get(`${EVEREE_BASE}/runs/${runId}/quickbooks-preview`, { params: { statementIds: chosenKey }, signal: controller.signal })
+      .then(({ data }) => { if (!controller.signal.aborted) setQb({ preview: data, loading: false, error: "" }); })
+      .catch((error) => {
+        if (!controller.signal.aborted) setQb({ preview: null, loading: false, error: error.response?.data?.message ?? "QuickBooks could not be checked for these drivers. Try again." });
+      });
+    return () => controller.abort();
+  }, [step, viaQuickbooks, chosenKey, runId, version]);
   const set = (key) => (e) => {
     setForm((f) => ({
       ...f,
@@ -211,6 +234,29 @@ export default function RecordPaymentDialog({
     }
   };
 
+  // One click records exactly the preview the server showed. The request ID stays the same until the preview changes, so a repeated click or a lost answer
+  // never records twice. The results are read back from the server; nothing here decides what is paid.
+  const payThroughQuickbooks = async () => {
+    const { preview } = qb;
+    if (!preview || !preview.canSubmit || busy) return;
+    if (qbConfirm.current.hash !== preview.previewHash) qbConfirm.current = { hash: preview.previewHash, requestId: newRequestId() };
+    setBusy(true);
+    setMessage("");
+    try {
+      const { data } = await axios.post(`${EVEREE_BASE}/runs/${runId}/quickbooks-batches`, { requestId: qbConfirm.current.requestId, previewHash: preview.previewHash, paidOn: form.paidOn, note: form.note.trim(), confirmed: form.confirmed, statementIds: chosenIds });
+      if (mounted.current) { setQbBatchId(data.batch.id); onRecorded(); }
+    } catch (error) {
+      if (error.response?.status === 409 && error.response.data?.preview) {
+        setQb({ preview: error.response.data.preview, loading: false, error: "" });
+        setMessage("What would be recorded changed since it was shown. Check the new summary, then press Pay again.");
+      } else {
+        setMessage(error.response?.data?.message ?? "The payment could not be confirmed. Refresh and look at the drivers before trying again; pressing Pay again will not record it twice.");
+      }
+    } finally {
+      if (mounted.current) setBusy(false);
+    }
+  };
+
   const submit = async (e) => {
     e.preventDefault();
     if (step === "review") {
@@ -238,6 +284,10 @@ export default function RecordPaymentDialog({
       return;
     if (viaEveree) {
       await payThroughEveree();
+      return;
+    }
+    if (viaQuickbooks) {
+      await payThroughQuickbooks();
       return;
     }
     setBusy(true);
@@ -281,7 +331,9 @@ export default function RecordPaymentDialog({
           <div className="flex items-start justify-between gap-3 border-b border-line p-4 sm:p-6">
             <div>
               <DialogTitle className="text-xl font-bold text-ink">
-                {evereeSent
+                {qbBatchId
+                  ? "Payment recorded"
+                  : evereeSent
                   ? "Submitted to Everee"
                   : result
                     ? "Payment recorded"
@@ -304,7 +356,14 @@ export default function RecordPaymentDialog({
               <X className="h-5 w-5" />
             </button>
           </div>
-          {evereeSent ? (
+          {qbBatchId ? (
+            <div className="space-y-4 overflow-y-auto p-5 sm:p-8">
+              <p className="text-lg font-semibold">Payment recorded</p>
+              <p className="text-sm text-ink-muted">The drivers are marked paid in Cash in Hand. Each driver's bill and bill payment is recorded in QuickBooks for the 1099 reports; if one is not recorded yet, the payment still stands and you can retry the QuickBooks record.</p>
+              <QuickbooksResult batchId={qbBatchId} onChanged={onRecorded} />
+              <button type="button" onClick={onClose} className={buttonClass}>Done</button>
+            </div>
+          ) : evereeSent ? (
             <div className="space-y-4 overflow-y-auto p-5 sm:p-8">
               <CheckCircle2 className="h-10 w-10 text-green-600" aria-hidden="true" />
               <p className="text-lg font-semibold">Submitted to Everee</p>
@@ -403,7 +462,9 @@ export default function RecordPaymentDialog({
                     ? "All driver payments in this run are recorded. Payment dates, notes and confirmation details are kept below."
                     : step === "review"
                       ? "Choose the drivers to pay. The amounts are the approved amounts of this pay run."
-                      : viaEveree
+                      : viaQuickbooks
+                        ? "Records the cash you hand to each driver as paid, and sends the same amount to QuickBooks as a bill and a bill payment for the 1099 reports. QuickBooks does not pay anyone."
+                        : viaEveree
                         ? "Sends the approved amounts through Everee. Nothing is paid until you approve the payroll run in Everee and Everee confirms the deposits."
                         : "Records money you paid outside NASA, such as cash. Nothing is sent."}
                 </p>
@@ -519,6 +580,13 @@ export default function RecordPaymentDialog({
                               {d.payment.recorded_by_name}
                             </p>
                           )}
+                          {d.quickbooksPayment && (
+                            <p className="mt-1 text-xs text-ink-muted">
+                              QuickBooks · {d.quickbooksPayment.status === "paid" ? "recorded" : d.quickbooksPayment.status} · {d.quickbooksPayment.paidOn}
+                              {d.quickbooksPayment.billId ? ` · bill ${d.quickbooksPayment.billId}` : ""}
+                              {d.quickbooksPayment.note ? ` · ${d.quickbooksPayment.note}` : ""}
+                            </p>
+                          )}
                           {d.providerPayment && (
                             <ProviderPaymentLine payment={d.providerPayment} />
                           )}
@@ -548,7 +616,7 @@ export default function RecordPaymentDialog({
                     <div className="grid gap-3 sm:grid-cols-2">
                       {tab === "DESI" ? (
                         <Field label="Payment method">
-                          <p className={`${inputClass} flex items-center`}>{METHODS[CASH]} (Desi drivers are paid in cash only)</p>
+                          <p className={`${inputClass} flex items-center`}>{viaQuickbooks ? `${QUICKBOOKS_LABEL} (Desi drivers)` : `${METHODS[CASH]} (Desi drivers are paid in cash only)`}</p>
                         </Field>
                       ) : (
                         <Field label="Payment method" error={errors.method}>
@@ -578,6 +646,7 @@ export default function RecordPaymentDialog({
                       )}
                     </div>
                     {viaEveree && <EvereeSummary preview={everee.preview} loading={everee.loading} error={everee.error} />}
+                    {viaQuickbooks && <QuickbooksSummary preview={qb.preview} loading={qb.loading} error={qb.error} />}
                     {method && (
                       <ul aria-label="Drivers in this payment" className="max-h-40 divide-y divide-line overflow-y-auto rounded-xl border border-line text-sm">
                         {chosen.map((d) => (
@@ -600,7 +669,7 @@ export default function RecordPaymentDialog({
                         />
                       </Field>
                     )}
-                    {method && (!viaEveree || everee.preview) && (
+                    {method && !viaQuickbooks && (!viaEveree || everee.preview) && (
                       <p role="status" aria-label="Payment summary" className="rounded-xl border border-line p-3 font-semibold">
                         {viaEveree ? EVEREE_LABEL : METHODS[method]} ·{" "}
                         {viaEveree ? everee.preview.summary.eligible : chosen.length}{" "}
@@ -622,7 +691,9 @@ export default function RecordPaymentDialog({
                       </label>
                     )}
                     <p className="text-xs text-ink-muted">
-                      {viaEveree
+                      {viaQuickbooks
+                        ? "This marks the drivers paid in Cash in Hand and records the same payment in QuickBooks. Check the drivers, date and total above before pressing Pay."
+                        : viaEveree
                         ? "This sends the payment to Everee. Check the method, drivers and total above before pressing Pay."
                         : "This creates a permanent payment record. Check the method, drivers and total above before pressing Pay."}
                     </p>
@@ -699,7 +770,7 @@ export default function RecordPaymentDialog({
                     onClick={
                       step === "review" ? () => setStep("payment") : undefined
                     }
-                    disabled={busy || !chosen.length || blocked || (step === "payment" && viaEveree && !everee.preview?.canSubmit)}
+                    disabled={busy || !chosen.length || blocked || (step === "payment" && viaEveree && !everee.preview?.canSubmit) || (step === "payment" && viaQuickbooks && !qb.preview?.canSubmit)}
                     className={primaryClass}
                   >
                     {busy

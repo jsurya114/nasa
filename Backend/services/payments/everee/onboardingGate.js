@@ -1,4 +1,5 @@
 import { readEvereeConfig } from './evereeConfig.js';
+import { quickbooksOnboardingEnforced, readQuickbooksConfig } from '../quickbooks/quickbooksConfig.js';
 import { translateError } from '../../../utils/backendI18n.js';
 import { withDriverLock } from './driverLock.js';
 
@@ -15,7 +16,7 @@ import { withDriverLock } from './driverLock.js';
 
 export const ONBOARDING_REQUIRED = Object.freeze({
   code: 'onboarding_required',
-  message: 'Everee payment setup is not complete. Work and payments are on hold until the driver finishes it.',
+  message: 'Payment setup is not complete. Work and payments are on hold until the driver finishes it (Everee for a Local driver, QuickBooks for a Desi driver).',
 });
 
 const flag = (value) => String(value ?? '').trim().toLowerCase() === 'true';
@@ -30,7 +31,25 @@ export const enforcement = (env = process.env) => ({
 export const blockedDriverIds = async (db, driverIds, { env = process.env, lock = false } = {}) => {
   const { enforced, config } = enforcement(env);
   const ids = [...new Set((driverIds ?? []).map(Number).filter(Number.isInteger))];
-  if (!enforced || ids.length === 0) return new Set();
+  const desiEnforced = quickbooksOnboardingEnforced(env);
+  if ((!enforced && !desiEnforced) || ids.length === 0) return new Set();
+  const held = new Set();
+  // A DESI driver is held until they have a live QuickBooks vendor link for the company connected now (fails closed: with no connection, every Desi driver is held).
+  if (desiEnforced) {
+    const qb = readQuickbooksConfig(env);
+    if (lock) {
+      await db.query('SELECT id FROM drivers WHERE id = ANY($1::int[]) ORDER BY id FOR SHARE', [ids]);
+      await db.query('SELECT id FROM quickbooks_vendors WHERE driver_id = ANY($1::int[]) AND unlinked_at IS NULL ORDER BY id FOR SHARE', [ids]);
+    }
+    const { rows } = await db.query(
+      `SELECT d.id FROM drivers d
+        WHERE d.id = ANY($1::int[]) AND d.driver_type = 'DESI'
+          AND NOT EXISTS (SELECT 1 FROM quickbooks_vendors v JOIN quickbooks_connection c ON c.environment = v.environment AND c.realm_id = v.realm_id
+                           WHERE v.driver_id = d.id AND v.environment = $2 AND v.unlinked_at IS NULL)
+        ORDER BY d.id`, [ids, qb.environment]);
+    for (const r of rows) held.add(r.id);
+  }
+  if (!enforced) return held;
   const params = [ids, config.environment, config.tenantId];
   if (lock) {
     // Lock every requested classification before deciding eligibility. A permitted driver must remain permitted until the caller's write commits.
@@ -44,7 +63,8 @@ export const blockedDriverIds = async (db, driverIds, { env = process.env, lock 
         AND NOT EXISTS (SELECT 1 FROM everee_workers w
                          WHERE w.driver_id = d.id AND w.environment = $2 AND w.tenant_id = $3 AND w.unlinked_at IS NULL AND w.onboarding_complete)
       ORDER BY d.id ${lock ? 'FOR SHARE OF d' : ''}`, params);
-  return new Set(rows.map((r) => r.id));
+  for (const r of rows) held.add(r.id);
+  return held;
 };
 
 export class OnboardingRequiredError extends Error {

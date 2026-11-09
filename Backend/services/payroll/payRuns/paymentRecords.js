@@ -6,6 +6,7 @@ import { blockersFor, reviewRunAsBatch } from "./payBatchReview.js";
 import { fromCents, toCents } from "./payCalculator.js";
 import { parseDate } from "../ledger/ledgerRules.js";
 import { CASH, methodAllowed, typeBlockers } from "./driverPaymentRules.js";
+import { quickbooksPaymentsOn } from "../../payments/quickbooks/quickbooksConfig.js";
 import { blockedDriverIds, ONBOARDING_REQUIRED } from "../../payments/everee/onboardingGate.js";
 
 const UUID =
@@ -147,7 +148,8 @@ export const settlePaidStatements = async (db, { statementIds, earnings, paidOn,
   );
 };
 
-export const recordRunPayment = async (db, admin, runId, request) => {
+// `viaQuickbooks`: the QuickBooks batch (a Desi driver's cash payment, recorded in QuickBooks for the 1099) is the one caller allowed to record Desi cash while QuickBooks payments are on.
+export const recordRunPayment = async (db, admin, runId, request, { viaQuickbooks = false } = {}) => {
   const found = (
     await db.query("SELECT id,city_id FROM pay_runs WHERE id=$1", [runId])
   ).rows[0];
@@ -230,6 +232,9 @@ export const recordRunPayment = async (db, admin, runId, request) => {
   // Recording by hand is Cash in Hand only (Everee has its own route), and the type must allow it.
   if (request.method !== CASH || targets.some((s) => !methodAllowed(s.driver_type, request.method)))
     throw new PayrollError(409, "This payment method is not allowed for a selected driver.");
+  // With QuickBooks payments on, a Desi driver's payment must be recorded in QuickBooks (it is their 1099 record), never by hand as cash.
+  if (quickbooksPaymentsOn() && !viaQuickbooks && targets.some((s) => s.driver_type === "DESI"))
+    throw new PayrollError(409, "Desi cash payments are recorded with QuickBooks. Use Pay to drivers on the Desi tab, so the payment also reaches QuickBooks for the 1099.");
   const ids = targets.map((s) => s.id);
   // Lock source rows before derived pay rows, matching the upload's lock order.
   const earnings = await lockApprovedEarnings(db, ids);
@@ -353,6 +358,20 @@ const providerPaymentsFor = async (db, admin, runId) => {
   );
 };
 
+// What was recorded in QuickBooks for each statement of the run (super admin only: it carries QuickBooks IDs). Empty when the tables are not installed.
+const quickbooksPaymentsFor = async (db, admin, runId) => {
+  if (!isSuperAdmin(admin)) return new Map();
+  const { rows: [installed] } = await db.query("SELECT to_regclass('quickbooks_payment_items') IS NOT NULL AS yes");
+  if (!installed.yes) return new Map();
+  const { rows } = await db.query(
+    `SELECT i.pay_statement_id, i.status, i.bill_id, i.bill_payment_id, i.error_message, i.paid_at, to_char(b.paid_on,'YYYY-MM-DD') AS paid_on, b.environment
+       FROM quickbooks_payment_items i JOIN quickbooks_payment_batches b ON b.id=i.batch_id WHERE b.pay_run_id=$1 ORDER BY i.id`, [runId]);
+  return new Map(rows.map((r) => [String(r.pay_statement_id), {
+    provider: "quickbooks", status: r.status, billId: r.bill_id, billPaymentId: r.bill_payment_id, paidOn: r.paid_on, confirmedAt: r.paid_at, environment: r.environment,
+    needsReview: r.status === "unconfirmed" || r.status === "failed", note: r.error_message,
+  }]));
+};
+
 export const reviewRunPayments = async (db, admin, runId) => {
   const review = await reviewRunAsBatch(db, admin, runId);
   const history = (
@@ -364,6 +383,7 @@ export const reviewRunPayments = async (db, admin, runId) => {
     )
   ).rows;
   const providerPayments = await providerPaymentsFor(db, admin, runId);
+  const quickbooksPayments = await quickbooksPaymentsFor(db, admin, runId);
   // A legacy mark must be reconciled, never silently treated as a fresh payment confirmation.
   const unpaid = (
     await db.query(
@@ -400,6 +420,7 @@ export const reviewRunPayments = async (db, admin, runId) => {
       history.find((p) => String(p.statement_id) === String(d.statementId)) ??
       null,
     providerPayment: providerPayments.get(String(d.statementId)) ?? null,
+    quickbooksPayment: quickbooksPayments.get(String(d.statementId)) ?? null,
   }));
   const eligible = drivers.filter((d) => d.eligible);
   const eligibleTotals = Object.fromEntries(

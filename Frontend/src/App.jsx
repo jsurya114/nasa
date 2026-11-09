@@ -34,6 +34,7 @@ const DriverAgreement = lazy(() => import("./components/Drivers/DriverAgreement.
 const DriverViewAgreement = lazy(() => import("./components/Drivers/DriverViewAgreement.jsx"));
 const DriverPay = lazy(() => import("./components/Drivers/Pay.jsx"));
 const DriverPaymentSetup = lazy(() => import("./components/Drivers/PaymentSetup.jsx"));
+const DriverQuickbooksSetup = lazy(() => import("./components/Drivers/QuickbooksSetup.jsx"));
 
 import DPublicRoutes from "./routes/driver/DPublicRoutes.jsx";
 import DProtectRoutes from "./routes/driver/DProtectedRoutes.jsx";
@@ -91,6 +92,7 @@ function App() {
               <Route path="/driver/availability" element={<DriverAvailability />} />
               <Route path="/driver/pay" element={<DriverPay />} />
               <Route path="/driver/payment-setup" element={<DriverPaymentSetup />} />
+              <Route path="/driver/quickbooks-setup" element={<DriverQuickbooksSetup />} />
               <Route path="/driver/update-password" element={<UpdatePassword />} />
             </Route>
 

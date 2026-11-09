@@ -1,12 +1,14 @@
 import React from "react";
 import { LayoutDashboard, KeyRound, Truck, CalendarDays, Wallet, FileText, Lock, CreditCard } from "lucide-react";
 import { useEvereeSetup } from "../../hooks/useEvereeSetup.js";
+import { useQuickbooksSetup } from "../../hooks/useQuickbooksSetup.js";
 import useTranslation from "../../hooks/useTranslation.js";
 import GlassTabBar from "../GlassTabBar.jsx";
 
 function Nav() {
   const { t, currentLanguage } = useTranslation();
   const { required } = useEvereeSetup();
+  const qb = useQuickbooksSetup();
 
   const links = [
     { to: "/driver/dashboard", Icon: LayoutDashboard, label: t('dashboard') },
@@ -18,6 +20,7 @@ function Nav() {
     { to: "/driver/update-password", Icon: Lock, label: t('password') },
     // A permanent entry while the payment setup is unfinished, so it cannot be lost by closing a popup.
     ...(required ? [{ to: "/driver/payment-setup", Icon: CreditCard, label: t('psetTitle') }] : []),
+    ...(qb.required ? [{ to: "/driver/quickbooks-setup", Icon: CreditCard, label: t('qbsetTitle') }] : []),
   ];
 
   return (

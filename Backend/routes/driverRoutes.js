@@ -11,6 +11,7 @@ import driverAuth from '../middlewares/driverAuth.js';
 import validateCityType, { attachCityType } from '../middlewares/validateCityType.js';
 import { requireSelf } from '../middlewares/requireSelf.js';
 import { createOnboardingSession, getOnboardingStatus, refreshOnboarding, startDriverOnboarding } from "../controllers/driver/evereeOnboardingController.js";
+import { getQuickbooksStatus, startQuickbooksOnboarding } from "../controllers/driver/quickbooksOnboardingController.js";
 import { getOwnTransfers } from "../controllers/driver/evereeTransfersController.js";
 import { loginRateLimit } from '../middlewares/loginRateLimit.js';
 import driverAvailabilityController from "../controllers/driver/driveravailabilityController.js";
@@ -38,6 +39,9 @@ router.get("/everee/status", getOnboardingStatus)
 router.post("/everee/onboarding", startDriverOnboarding)
 router.post("/everee/session", createOnboardingSession)
 router.post("/everee/refresh", refreshOnboarding)
+// QuickBooks setup of the signed-in Desi driver. Self only, like the Everee routes: the driver comes from the token. The body holds the tax ID and is never logged.
+router.get("/quickbooks/status", getQuickbooksStatus)
+router.post("/quickbooks/onboarding", startQuickbooksOnboarding)
 // The driver's own Everee transfers and where each stands, from NASA's records (read only).
 router.get("/everee/transfers", getOwnTransfers)
 
