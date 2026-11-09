@@ -44,14 +44,21 @@ export const companyPricesToStore = ({ retired, sent, current = null }) => (reti
 
 // Sets the company route and double-stop prices of every route in a WEEKLY city back to 0 ("no company rate"), whenever the owner asks. Daily cities are refused: their revenue
 // is the stored price. Only the route prices change: records already saved keep the company figure they have (see companyEarningsSql), so nothing paid is rewritten.
-export const resetCompanyPrices = (db, job) => inTransaction(db, async (tx) => {
+export const resetCompanyPrices = (db, job, adminId) => inTransaction(db, async (tx) => {
+  // An older session token may still carry the owner's former role. Lock the live authorization through the reset.
+  const { rows: [owner] } = await tx.query(
+    "SELECT id FROM admin WHERE id = $1 AND role = 'superadmin' AND is_active IS TRUE FOR SHARE",
+    [adminId],
+  );
+  if (!owner) return { status: 'forbidden' };
+
   // The city row is locked until the write is done, so its type cannot be edited (or the city renamed) between the check and the update: a city that turns daily
   // meanwhile makes this wait, then be refused, instead of losing its company prices.
   const { rows } = await tx.query('SELECT city_type FROM city WHERE job = $1 FOR SHARE', [job]);
   if (rows.length === 0) return { status: 'unknown_city' };
   if (rows[0].city_type !== 'WEEKLY') return { status: 'not_weekly' };
   const { rowCount } = await tx.query(
-    'UPDATE routes SET company_route_price = 0, company_doublestop_price = 0 WHERE job = $1 AND (company_route_price <> 0 OR company_doublestop_price <> 0)',
+    'UPDATE routes SET company_route_price = 0, company_doublestop_price = 0 WHERE job = $1 AND (company_route_price IS DISTINCT FROM 0 OR company_doublestop_price IS DISTINCT FROM 0)',
     [job],
   );
   return { status: 'reset', routesReset: rowCount };
