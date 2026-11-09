@@ -1,6 +1,6 @@
 import { useState, useRef, forwardRef, useImperativeHandle } from "react";
 
-// import { X } from "lucide-react";
+import { X } from "lucide-react";
 
 const FileUpload = forwardRef(function FileUpload({ onFileSelect }, ref) {
   const [file, setFile] = useState(null);
@@ -48,7 +48,7 @@ const FileUpload = forwardRef(function FileUpload({ onFileSelect }, ref) {
           name="file"
           accept=".xls,.xlsx,.csv"
           onChange={handleChange}
-          className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-purple-600 ${
+          className={`file:mr-3 file:rounded-lg file:border-0 file:bg-brand-50 file:px-3 file:py-2 file:text-sm file:font-semibold file:text-brand-800 hover:file:bg-brand-100 file:cursor-pointer w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-purple-600 ${
             error ? "border-red-500" : "border-gray-300"
           }`}
         />
@@ -56,9 +56,10 @@ const FileUpload = forwardRef(function FileUpload({ onFileSelect }, ref) {
           <button
             type="button"
             onClick={clearInput}
-            className="absolute right-2 bg-gray-200 hover:bg-gray-300 p-1 rounded-full"
+            className="absolute right-2 grid h-8 w-8 place-items-center rounded-full bg-gray-100 text-gray-600 hover:bg-red-50 hover:text-red-600"
+            aria-label="Remove selected file"
           >
-            <span size={16}>❌</span>
+            <X className="h-4 w-4" aria-hidden="true" />
           </button>
         )}
       </div>

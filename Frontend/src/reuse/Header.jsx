@@ -1,9 +1,9 @@
-import React, { useEffect, useState } from "react";
+import React, { useState } from "react";
 import logo from "../assets/logo.png";
-import { accessAdminUser, adminLogout } from "../redux/slice/admin/adminSlice";
+import { adminLogout } from "../redux/slice/admin/adminSlice";
 import { useDispatch, useSelector } from "react-redux";
 import { useNavigate } from "react-router-dom";
-import { Menu, X } from "lucide-react";
+import { Menu, X, User } from "lucide-react";
 
 function Header() {
   const dispatch = useDispatch();
@@ -21,8 +21,10 @@ function Header() {
     navigate("/admin/login");
   };
 
+  // The bar is solid #462976 because the logo image has that exact background colour.
+  // A see-through bar would show a box around the logo.
   return (
-    <header className="sticky top-0 z-50 flex items-center justify-between h-16 bg-[#462976] text-white px-4 border-b border-white/10">
+    <header className="sticky top-0 z-50 flex items-center justify-between h-[calc(4rem+env(safe-area-inset-top))] pt-[env(safe-area-inset-top)] bg-[#462976] text-white px-4 sm:px-6 border-b border-white/10 shadow-[0_6px_24px_-14px_rgb(30_16_60/0.6)]">
       {/* Left Side (Hide on mobile) */}
       <div className="hidden md:block font-semibold text-sm md:text-lg">
         Dashboard Admin
@@ -41,7 +43,7 @@ function Header() {
       <div className="hidden md:flex items-center gap-3 text-sm md:text-base">
         <div className="flex flex-col items-center">
           <div className="w-7 h-7 md:w-8 md:h-8 rounded-full bg-yellow-400 text-black font-bold grid place-items-center">
-            👤
+            <User className="w-4 h-4 md:w-5 md:h-5" aria-hidden="true" />
           </div>
           <div className="font-semibold truncate max-w-[120px] md:max-w-[150px]">
             {admin?.name}
@@ -49,7 +51,7 @@ function Header() {
         </div>
 
         <button
-          className="bg-red-600 hover:bg-red-700 text-white px-3 py-2 rounded-md font-semibold"
+          className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-xl font-semibold shadow-sm"
           onClick={handleLogout}
         >
           Logout
@@ -58,27 +60,32 @@ function Header() {
 
      {/* Hamburger Menu - Mobile (<768px) */}
 <div className="md:hidden relative ml-auto">
-  <button onClick={() => setMenuOpen(!menuOpen)}>
+  <button
+    onClick={() => setMenuOpen(!menuOpen)}
+    aria-label="Toggle menu"
+    aria-expanded={menuOpen}
+    className="p-2 -mr-2 rounded-md hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-white/60"
+  >
     {menuOpen ? <X size={24} /> : <Menu size={24} />}
   </button>
 
   {/* Dropdown */}
   {menuOpen && (
-    <div className="absolute right-0 top-12 bg-white text-black rounded-md shadow-md w-48 p-3 space-y-3 z-50">
+    <div className="glass-light animate-sheet-in origin-top-right absolute right-0 top-12 text-ink rounded-2xl w-56 p-3 space-y-3 z-50">
       {/* Dashboard title inside menu for mobile */}
-      <div className="font-semibold text-center text-[#462976]">
+      <div className="font-semibold text-center text-brand">
         Dashboard Admin
       </div>
 
       <div className="flex flex-col items-center">
         <div className="w-8 h-8 rounded-full bg-yellow-400 text-black font-bold grid place-items-center">
-          👤
+          <User className="w-5 h-5" aria-hidden="true" />
         </div>
         <div className="font-semibold text-center">{admin?.name}</div>
       </div>
 
       <button
-        className="w-full bg-red-600 hover:bg-red-700 text-white px-3 py-2 rounded-md font-semibold"
+        className="w-full bg-red-600 hover:bg-red-700 text-white px-3 py-3 rounded-xl font-semibold"
         onClick={handleLogout}
       >
         Logout

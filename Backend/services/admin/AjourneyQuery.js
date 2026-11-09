@@ -37,7 +37,8 @@ const AdminJourneyQuery = {
     return result.rows;
   },
 
-  updateJourneyById: async (id, data) => {
+  // `db` is the pool, or the client of a transaction the caller owns (the onboarding gate's).
+  updateJourneyById: async (id, data, db = pool) => {
     const { start_seq, end_seq, route_id, driver_id } = data;
     let packages = (end_seq - start_seq) + 1;
     
@@ -48,8 +49,17 @@ const AdminJourneyQuery = {
       RETURNING *, TO_CHAR(journey_date, 'YYYY-MM-DD') as journey_date
     `;
     const values = [start_seq, end_seq, route_id, driver_id, packages, id];
-    const result = await pool.query(query, values);
+    const result = await db.query(query, values);
     return result.rows[0];
+  },
+
+  // Rows with the journey's date as YYYY-MM-DD (none when the journey does not exist).
+  getJourneyDateById: async (journey_id) => {
+    const result = await pool.query(
+      `SELECT TO_CHAR(journey_date, 'YYYY-MM-DD') as journey_date FROM dashboard_data WHERE id = $1`,
+      [journey_id]
+    );
+    return result.rows;
   },
 
   checkDriverExists: async (driver_id) => {
@@ -95,7 +105,7 @@ const AdminJourneyQuery = {
     return result.rows;
   },
 
-  addJourney: async (data) => {
+  addJourney: async (data, db = pool) => {
     const { driver_id, route_id, start_seq, end_seq, journey_date } = data;
     const packages = (end_seq - start_seq) + 1;
 
@@ -107,7 +117,7 @@ const AdminJourneyQuery = {
     `;
 
     const values = [driver_id, route_id, start_seq, end_seq, journey_date, packages];
-    const result = await pool.query(query, values);
+    const result = await db.query(query, values);
     return result.rows[0];
   },
 

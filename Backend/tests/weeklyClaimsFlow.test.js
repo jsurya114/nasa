@@ -1,0 +1,441 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import ExcelJS from 'exceljs';
+import { randomUUID } from 'node:crypto';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+
+// Runs the real weekly upload with a Claims Detail sheet against a PostgreSQL copy that has the app's tables (never
+// production). Run with ASSIGNMENT_TEST_DB=1 and the usual DB_* variables. One outer transaction, always rolled back
+// (the handlers' own BEGIN, COMMIT and ROLLBACK become savepoints). All values are made up.
+const hasDb = process.env.ASSIGNMENT_TEST_DB === '1';
+const migration = (name) => readFileSync(fileURLToPath(new URL(`../migrations/${name}`, import.meta.url)), 'utf8');
+
+const FEE_HEADER = ['Waybill No', 'Courier', 'Region/route', 'Delivery ID', 'Signing time', 'The total expenses-exclusive of taxes', 'STOP Point Details'];
+// A claim row is [date, waybill, type, declared, confirm, charge, courier]: the Courier (the driver's name) is the last column, which
+// the reader finds by its title (issue #180).
+const CLAIM_HEADER = ['date', 'Waybill No.', 'Claim Type', 'Declared value (USD)', 'Confirm date.', 'The total expenses-exclusive of taxes', 'Courier'];
+
+const fileOf = async ({ fee = [], claims = null }) => {
+  const workbook = new ExcelJS.Workbook();
+  const feeSheet = workbook.addWorksheet('Details of Delivery Fees');
+  feeSheet.addRow(FEE_HEADER);
+  fee.forEach((r) => feeSheet.addRow(r));
+  workbook.addWorksheet('Offset Details').addRow(FEE_HEADER);
+  if (claims) {
+    const sheet = workbook.addWorksheet('Claims Detail');
+    sheet.addRow(CLAIM_HEADER);
+    claims.forEach((r) => sheet.addRow(r));
+  }
+  return Buffer.from(await workbook.xlsx.writeBuffer());
+};
+
+const callHandler = async (handler, req) => {
+  let out;
+  const res = { statusCode: 200, status(c) { this.statusCode = c; return this; }, json(body) { out = { status: this.statusCode, body }; return this; } };
+  await handler({ query: {}, params: {}, body: {}, ...req }, res);
+  return out;
+};
+
+test('the weekly upload stores the Claims Detail sheet, matches it by the driver name, and never changes what it stages', { skip: !hasDb && 'set ASSIGNMENT_TEST_DB=1 and the DB_* variables to run' }, async (t) => {
+  const { default: pool } = await import('../config/db.js');
+  const { weeklyExcelUpload } = await import('../controllers/admin/weeklyUploadsController.js');
+  const { importAssignmentHistory } = await import('../controllers/admin/assignmentHistoryController.js');
+  const { createEntry } = await import('../services/payroll/ledger/ledgerStore.js');
+  const { parseNewEntry } = await import('../services/payroll/ledger/ledgerRules.js');
+  const { generateRun, setRecoveryLimit, getRun } = await import('../services/payroll/payRuns/payRunStore.js');
+
+  const client = await pool.connect();
+  const realConnect = pool.connect.bind(pool);
+  let depth = 0;
+  const shared = {
+    query: (sql, params) => {
+      if (sql === 'BEGIN') return client.query(`SAVEPOINT handler_${++depth}`);
+      if (sql === 'COMMIT') return client.query(`RELEASE SAVEPOINT handler_${depth--}`);
+      if (sql === 'ROLLBACK') return client.query(`ROLLBACK TO SAVEPOINT handler_${depth}`).then(() => client.query(`RELEASE SAVEPOINT handler_${depth--}`));
+      return client.query(sql, params);
+    },
+    release: () => {},
+  };
+  pool.connect = async () => shared;
+  pool.query = (sql, params) => client.query(sql, params);
+
+  try {
+    await client.query('BEGIN');
+    for (const m of ['2026-11-03-issue-140-carrier-assignment-history.sql', '2026-11-03-issue-141-courier-claims.sql', '2026-11-03-issue-142-driver-ledger.sql', '2026-11-03-issue-143-pay-runs.sql', '2026-11-03-issue-166-ledger-settlements.sql', '2026-11-04-issue-180-claim-courier-name.sql']) await client.query(migration(m));
+
+    const one = async (sql, params) => (await client.query(sql, params)).rows[0];
+    // The Dallas GOFO city has the code "DFW GOFO" (the exemption keys on the code). A test copy of it keeps the data made up.
+    await client.query("UPDATE city SET city_code = city_code || ' (old)' WHERE city_code = 'DFW GOFO'");
+    const dfw = await one("INSERT INTO city (job, city_code, city_type) VALUES ('Claims Flow Dallas', 'DFW GOFO', 'WEEKLY') RETURNING id, job");
+    const other = await one("INSERT INTO city (job, city_code, city_type) VALUES ('Claims Flow Tyler', 'CLF TYLER', 'WEEKLY') RETURNING id, job");
+    const route = (job, code) => client.query(
+      'INSERT INTO routes (name, job, company_route_price, driver_route_price, company_doublestop_price, driver_doublestop_price, route_code_in_string) VALUES ($1, $2, 2, 1.6, 0.5, 0.25, $3)',
+      [`Test ${code}`, job, code]);
+    await route(dfw.job, 'CLFD 01-1');
+    await route(other.job, 'CLFT 01-1');
+    const driverRow = async (name, code, cityId) => (await one("INSERT INTO drivers (password, name, email, driver_code, city_id) VALUES ('x', $1, $2, $3, $4) RETURNING id", [name, `${name.replace(/ /g, '.')}@example.test`, code, cityId])).id;
+    const driverD = await driverRow('Claims Driver D', 91000011, dfw.id);
+    const driverT = await driverRow('Claims Driver T', 91000012, other.id);
+    const driverD2 = await driverRow('Claims Driver D2', 91000013, dfw.id);
+    const superAdmin = await one("INSERT INTO admin (password, name, email, role) VALUES ('x', 'Claims Super', 'claims.super@example.test', 'superadmin') RETURNING id, role");
+    const cityAdmin = await one("INSERT INTO admin (password, name, email, role) VALUES ('x', 'Claims City', 'claims.city@example.test', 'admin') RETURNING id, role");
+    await client.query('INSERT INTO admin_city_ref (admin_id, city_id) VALUES ($1, $2)', [cityAdmin.id, other.id]);
+
+    const SUPER = { id: superAdmin.id, role: 'superadmin' };
+    const upload = (buffer, user = SUPER, originalname = 'weekly.xlsx') => callHandler(weeklyExcelUpload, { file: { buffer, originalname }, user });
+    const staged = async () => (await client.query('SELECT driver_id, del_route, del_date::text AS d, total_deliveries FROM weeklycount ORDER BY driver_id, del_date, del_route')).rows;
+    const claimState = async (prefix) => Object.fromEntries((await client.query(
+      `SELECT c.waybill, m.status, m.eligible_deduction, m.driver_id FROM courier_claim_matches m JOIN courier_claims c ON c.id = m.claim_id
+        WHERE c.waybill LIKE $1 AND c.superseded_at IS NULL ORDER BY c.waybill`, [`${prefix}%`])).rows.map((r) => [r.waybill, [r.status, r.eligible_deduction, r.driver_id]]));
+
+    const NAME_OF = { 91000011: 'Claims Driver D', 91000012: 'Claims Driver T', 91000013: 'Claims Driver D2' };
+    const fee = (waybill, route, deliveryId, when = '12/07/2030 10:00:00', name = NAME_OF[deliveryId] ?? 'Sam') => [waybill, name, route, deliveryId, when, 4.5, '1'];
+    const D = 'Claims Driver D';
+    const T = 'Claims Driver T';
+    const file1 = await fileOf({
+      fee: [fee('WCL001', 'CLFD 01-1', 91000011), fee('WCL002', 'CLFD 01-1', 91000011)],
+      claims: [
+        ['12/07/2030 09:00:00', 'WCL001', 'Damaged Item', 500, null, -12.5, D],        // the name is in this file's fee sheet: chargeable
+        ['12/07/2030 09:00:00', 'WCL002', 'Tracking interruption', 80, null, -9, D],    // DFW GOFO + tracking interruption: exempt
+        ['12/07/2030 09:00:00', 'WCL003', 'Damaged Item', 500, null, -4, 'Nobody Known'], // the name is not in the fee sheet: waits
+        ['12/07/2030 09:00:00', 'WCL004', 'Damaged Item', 500, null, 'abc', D],         // bad amount: reported, not skipped
+      ],
+    });
+
+    await t.test('the claims are stored, matched by the driver name in this upload\'s Details of Delivery Fees, and the bad row is reported with its row number', async () => {
+      const result = await upload(file1);
+      assert.equal(result.status, 200);
+      const claims = result.body.data.claims;
+      assert.deepEqual([claims.found, claims.stored, claims.inFile, claims.inserted, claims.duplicates, claims.amended, claims.held], [true, true, 3, 3, 0, 0, 0]);
+      assert.deepEqual(claims.matched, { chargeable: 1, exempt: 1 });
+      assert.deepEqual(claims.waiting, { unresolved: 1, ambiguous: 0 });
+      assert.equal(claims.problems, 1);
+      assert.equal(claims.problemRows[0].row, 5);
+      assert.deepEqual(await claimState('WCL'), {
+        WCL001: ['chargeable', '12.50', driverD],
+        WCL002: ['exempt', '0.00', driverD],
+        WCL003: ['unresolved', null, null],
+      });
+      assert.equal(result.body.data.recordsInserted, 1, 'the pay staging is what it always was');
+    });
+
+    await t.test('the same file twice stores no new claim and charges nothing twice', async () => {
+      const before = await staged();
+      const again = await upload(file1, SUPER, 'renamed.xlsx');
+      assert.equal(again.status, 200);
+      assert.deepEqual([again.body.data.claims.inserted, again.body.data.claims.duplicates], [0, 3]);
+      assert.deepEqual(await staged(), before);
+      assert.equal(Number((await client.query("SELECT count(*) n FROM courier_claims WHERE waybill LIKE 'WCL%'")).rows[0].n), 3);
+    });
+
+    await t.test('a changed amount becomes a new version', async () => {
+      const changed = await fileOf({ fee: [fee('WCL001', 'CLFD 01-1', 91000011)], claims: [['12/07/2030 09:00:00', 'WCL001', 'Damaged Item', 500, null, -15, D]] });
+      const result = await upload(changed, SUPER, 'changed.xlsx');
+      assert.equal(result.body.data.claims.amended, 1);
+      assert.equal((await claimState('WCL')).WCL001[1], '15.00');
+    });
+
+    await t.test('a claim whose driver is not in the report waits, then matches when a later report names that driver', async () => {
+      assert.equal((await claimState('WCL')).WCL003[0], 'unresolved');
+      assert.match((await one("SELECT m.reason FROM courier_claim_matches m JOIN courier_claims c ON c.id = m.claim_id WHERE c.waybill = 'WCL003' AND c.superseded_at IS NULL")).reason, /courier name was not found in Details of Delivery Fees/);
+      // a later report whose fee sheet has "Nobody Known" on Delivery ID 91000011 (driver D's code), with any claims sheet
+      const later = await fileOf({
+        fee: [fee('WCL030', 'CLFD 01-1', 91000011, '12/07/2030 11:00:00', 'Nobody Known')],
+        claims: [['12/07/2030 09:30:00', 'WCL031', 'Damaged Item', 500, null, -1, 'Nobody Known']],
+      });
+      const result = await upload(later, SUPER, 'later.xlsx');
+      assert.equal(result.status, 200);
+      assert.deepEqual((await claimState('WCL')).WCL003, ['chargeable', '4.00', driverD]);
+      assert.equal((await one("SELECT m.reason FROM courier_claim_matches m JOIN courier_claims c ON c.id = m.claim_id WHERE c.waybill = 'WCL003' AND c.superseded_at IS NULL")).reason, 'matched by courier name and Delivery ID');
+    });
+
+    await t.test('the waybill plays no part: a claim whose waybill is in no fee row still matches by name', async () => {
+      assert.equal((await claimState('WCL')).WCL031[0], 'chargeable');
+      assert.equal((await claimState('WCL')).WCL031[2], driverD);
+    });
+
+    await t.test('the history-only import no longer matches claims, and the name rules: case and spaces, two IDs, no NASA driver, wrong city, Offset Details, no name', async () => {
+      // history-only import: nothing about claims
+      const imported = await callHandler(importAssignmentHistory, { file: { buffer: await fileOf({ fee: [fee('WCL039', 'CLFD 01-1', 91000011)] }), originalname: 'history.xlsx' }, user: SUPER });
+      assert.equal(imported.status, 200);
+      assert.equal(imported.body.data.claimsRematched, null);
+
+      const workbook = new ExcelJS.Workbook();
+      const feeSheet = workbook.addWorksheet('Details of Delivery Fees');
+      feeSheet.addRow(FEE_HEADER);
+      const when = '12/18/2030 10:00:00';
+      feeSheet.addRow(['WCL040', '  claims   DRIVER d ', 'CLFD 01-1', 91000011, when, 4.5, '1']);      // case and spaces differ
+      feeSheet.addRow(['WCL041', 'Two Ids', 'CLFD 01-1', 91000011, when, 4.5, '1']);                     // one name, two Delivery IDs
+      feeSheet.addRow(['WCL042', 'Two Ids', 'CLFD 01-1', 91000012, when, 4.5, '1']);
+      feeSheet.addRow(['WCL043', 'No Such Driver', 'CLFD 01-1', 91999999, when, 4.5, '1']);              // a Delivery ID with no NASA driver
+      feeSheet.addRow(['WCL044', 'Tyler Person', 'CLFD 01-1', 91000012, when, 4.5, '1']);                // driver T belongs to the other city
+      const offset = workbook.addWorksheet('Offset Details');
+      offset.addRow(FEE_HEADER);
+      offset.addRow(['WCL045', 'Only In Offset', 'CLFD 01-1', 91000011, when, -1, null]);                // Offset Details is not used
+      const claims = workbook.addWorksheet('Claims Detail');
+      claims.addRow(CLAIM_HEADER);
+      claims.addRow(['12/18/2030 09:00:00', 'WCL050', 'Damaged Item', 500, null, -5, 'CLAIMS driver D']);
+      claims.addRow(['12/18/2030 09:00:00', 'WCL051', 'Damaged Item', 500, null, -6, 'Two Ids']);
+      claims.addRow(['12/18/2030 09:00:00', 'WCL052', 'Damaged Item', 500, null, -7, 'No Such Driver']);
+      claims.addRow(['12/18/2030 09:00:00', 'WCL053', 'Damaged Item', 500, null, -8, 'Tyler Person']);
+      claims.addRow(['12/18/2030 09:00:00', 'WCL054', 'Damaged Item', 500, null, -9, 'Only In Offset']);
+      claims.addRow(['12/18/2030 09:00:00', 'WCL055', 'Damaged Item', 500, null, -10, null]);
+      const result = await upload(Buffer.from(await workbook.xlsx.writeBuffer()), SUPER, 'name-rules.xlsx');
+      assert.equal(result.status, 200);
+      assert.equal(result.body.data.claims.stored, true);
+      assert.equal(result.body.data.claims.claimsWithoutName, 1);
+      const state = await claimState('WCL05');
+      const reason = async (w) => (await one("SELECT m.reason FROM courier_claim_matches m JOIN courier_claims c ON c.id = m.claim_id WHERE c.waybill = $1 AND c.superseded_at IS NULL", [w])).reason;
+      assert.deepEqual(state.WCL050, ['chargeable', '5.00', driverD], 'case and spaces do not matter');
+      assert.equal(state.WCL051[0], 'ambiguous');
+      assert.match(await reason('WCL051'), /more than one driver/);
+      assert.equal(state.WCL052[0], 'unresolved');
+      assert.match(await reason('WCL052'), /not linked to a NASA driver/);
+      assert.equal(state.WCL053[0], 'ambiguous');
+      assert.match(await reason('WCL053'), /differs from the city/);
+      assert.equal(state.WCL054[0], 'unresolved', 'a name only in Offset Details is not used');
+      assert.match(await reason('WCL054'), /not found in Details of Delivery Fees/);
+      assert.equal(state.WCL055[0], 'unresolved', 'a claim with no courier name cannot be matched');
+    });
+
+    await t.test('a claim stored before names were read learns its name when it comes again, and is then matched', async () => {
+      const legacy = await fileOf({ fee: [fee('WCL060', 'CLFD 01-1', 91000011, '12/19/2030 10:00:00')], claims: [['12/19/2030 09:00:00', 'WCL061', 'Damaged Item', 500, null, -2]] });
+      assert.equal((await upload(legacy, SUPER, 'no-name.xlsx')).status, 200);
+      assert.equal((await claimState('WCL061')).WCL061[0], 'unresolved');
+      assert.equal((await one("SELECT courier_name_key FROM courier_claims WHERE waybill = 'WCL061'")).courier_name_key, null);
+      const again = await fileOf({ fee: [fee('WCL060', 'CLFD 01-1', 91000011, '12/19/2030 10:00:00')], claims: [['12/19/2030 09:00:00', 'WCL061', 'Damaged Item', 500, null, -2, D]] });
+      const result = await upload(again, SUPER, 'with-name.xlsx');
+      assert.deepEqual([result.body.data.claims.inserted, result.body.data.claims.duplicates], [0, 1]);
+      assert.deepEqual((await claimState('WCL061')).WCL061, ['chargeable', '2.00', driverD]);
+    });
+
+    await t.test('one claim twice in a report under different driver names stores neither: no driver is picked by position', async () => {
+      const file = await fileOf({
+        fee: [fee('WCL080', 'CLFD 01-1', 91000011, '12/20/2030 10:00:00'), fee('WCL081', 'CLFD 01-1', 91000013, '12/20/2030 10:00:00')],
+        claims: [['12/20/2030 09:00:00', 'WCL082', 'Damaged Item', 500, null, -25, D], ['12/20/2030 09:00:00', 'WCL082', 'Damaged Item', 500, null, -25, 'Claims Driver D2']],
+      });
+      const result = await upload(file, SUPER, 'conflicting-names.xlsx');
+      assert.equal(result.status, 200);
+      assert.equal(result.body.data.claims.stored, false, 'every claim row had a problem');
+      assert.match(result.body.data.claims.problemRows[0].message, /different driver name/);
+      assert.equal(Object.keys(await claimState('WCL082')).length, 0, 'nothing was stored, so nobody is charged');
+    });
+
+    await t.test('a corrected driver name is a new version charged to the corrected driver; a spelling or case change is only a repeat', async () => {
+      const claimRow = (name) => ['12/21/2030 09:00:00', 'WCL083', 'Damaged Item', 500, null, -30, name];
+      const feeRows = [fee('WCL084', 'CLFD 01-1', 91000011, '12/21/2030 10:00:00'), fee('WCL085', 'CLFD 01-1', 91000013, '12/21/2030 10:00:00')];
+      const first = await upload(await fileOf({ fee: feeRows, claims: [claimRow(D)] }), SUPER, 'name-a.xlsx');
+      assert.equal(first.body.data.claims.inserted, 1);
+      assert.deepEqual((await claimState('WCL083')).WCL083, ['chargeable', '30.00', driverD]);
+      // the same claim again with the name in other letters and spacing: still the same fact, nothing new
+      const same = await upload(await fileOf({ fee: feeRows, claims: [claimRow('  claims   DRIVER d ')] }), SUPER, 'name-a-again.xlsx');
+      assert.deepEqual([same.body.data.claims.duplicates, same.body.data.claims.amended], [1, 0]);
+      assert.deepEqual((await claimState('WCL083')).WCL083, ['chargeable', '30.00', driverD]);
+      // the carrier corrects only the driver: a new version, charged to the corrected driver; the old version is kept as history
+      const corrected = await upload(await fileOf({ fee: feeRows, claims: [claimRow('Claims Driver D2')] }), SUPER, 'name-b.xlsx');
+      assert.deepEqual([corrected.body.data.claims.amended, corrected.body.data.claims.duplicates], [1, 0]);
+      assert.deepEqual((await claimState('WCL083')).WCL083, ['chargeable', '30.00', driverD2]);
+      assert.equal(Number((await client.query("SELECT count(*) n FROM courier_claims WHERE waybill = 'WCL083'")).rows[0].n), 2, 'both versions are kept');
+      assert.equal(Number((await client.query("SELECT count(*) n FROM courier_claims WHERE waybill = 'WCL083' AND superseded_at IS NULL")).rows[0].n), 1);
+    });
+
+    await t.test('a report whose Claims Detail sheet has no new rows still matches the waiting claims its fee sheet now explains', async () => {
+      const waiting = await upload(await fileOf({ fee: [fee('WCL090', 'CLFD 01-1', 91000011, '12/22/2030 10:00:00')], claims: [['12/22/2030 09:00:00', 'WCL091', 'Damaged Item', 500, null, -11, 'Late Name']] }), SUPER, 'late-1.xlsx');
+      assert.equal(waiting.body.data.claims.stored, true);
+      assert.equal((await claimState('WCL091')).WCL091[0], 'unresolved');
+      // a later report: the Claims Detail sheet is there, with a header and no claims; the fee sheet names "Late Name" on driver D's code
+      const empty = await upload(await fileOf({ fee: [fee('WCL092', 'CLFD 01-1', 91000011, '12/23/2030 10:00:00', 'Late Name')], claims: [] }), SUPER, 'late-2.xlsx');
+      assert.equal(empty.status, 200);
+      assert.equal(empty.body.data.claims.found, true);
+      assert.equal(empty.body.data.claims.stored, false);
+      assert.match(empty.body.data.claims.reason, /no claims/);
+      assert.ok(empty.body.data.claims.rematched.chargeable >= 1);
+      assert.deepEqual((await claimState('WCL091')).WCL091, ['chargeable', '11.00', driverD]);
+    });
+
+    await t.test('an empty Claims Detail sheet without evidence changes nothing, and one that cannot confirm its city does not match', async () => {
+      const before = await claimState('WCL');
+      const noEvidence = await upload(await fileOf({ fee: [fee('WCL093', 'CLFD 01-1', 91000011, '12/24/2030 10:00:00', 'Someone Else')], claims: [] }), SUPER, 'empty-no-evidence.xlsx');
+      assert.equal(noEvidence.status, 200);
+      assert.deepEqual(await claimState('WCL'), before);
+      const unknownRoute = await upload(await fileOf({ fee: [fee('WCL094', 'NOSUCH 99-9', 91000011, '12/24/2030 10:00:00', 'Late Name')], claims: [] }), SUPER, 'empty-unknown-route.xlsx');
+      assert.equal(unknownRoute.body.data.claims.stored, false);
+      assert.equal(unknownRoute.body.data.claims.rematched, undefined, 'the city could not be confirmed, so nothing was matched');
+    });
+
+    await t.test('a claim already entered by hand is held in review, never deducted twice', async () => {
+      const parsed = parseNewEntry({
+        requestId: randomUUID(), type: 'manual_claim', driverId: driverT, cityId: other.id, amount: '6.00', reason: 'Test manual claim',
+        effectiveDate: '2030-12-01', claimType: 'Damaged Item', waybill: 'WCL005', recoveryPlan: 'full_next_payday',
+      });
+      assert.ok(parsed.entry, JSON.stringify(parsed.errors));
+      await createEntry(client, superAdmin, parsed.entry);
+      const file = await fileOf({
+        fee: [fee('WCL005', 'CLFT 01-1', 91000012)],
+        claims: [['12/07/2030 09:00:00', 'WCL005', 'Damaged Item', 100, null, -6, T]],
+      });
+      const result = await upload(file, SUPER, 'tyler.xlsx');
+      assert.equal(result.body.data.claims.held, 1);
+      assert.equal(result.body.data.claims.onHold, 1);
+      assert.equal((await claimState('WCL')).WCL005[0], 'review');
+    });
+
+    await t.test('a draft pay run deducts the matched claims once, and nothing for the exempt one', async () => {
+      await setRecoveryLimit(client, superAdmin, { type: 'percent_of_available', value: 100 }, 'Test limit');
+      const routeId = (await one("SELECT id FROM routes WHERE route_code_in_string = 'CLFD 01-1'")).id;
+      const dd = (await one('INSERT INTO dashboard_data (driver_id, route_id, start_seq, end_seq, journey_date, packages) VALUES ($1,$2,0,0,$3,10) RETURNING id', [driverD, routeId, '2030-12-07'])).id;
+      await client.query('UPDATE payment_dashboard SET closed = true, paid = false, driver_payment = 100, insurance_deduction = 0 WHERE dashboard_data_id = $1', [dd]);
+      const { run } = await generateRun(client, superAdmin, { requestId: randomUUID(), cityId: dfw.id, periodStart: '2030-12-01', periodEnd: '2030-12-14', dataType: 'weekly' });
+      const statement = (await getRun(client, superAdmin, run.id)).statements.find((s) => s.driver_id === driverD);
+      // Every chargeable claim of driver D takes its amount once (WCL001 was amended to 15.00); the exempt WCL002 takes nothing.
+      const owed = (await client.query(
+        `SELECT COALESCE(SUM(m.eligible_deduction), 0)::numeric(12,2)::text AS total FROM courier_claim_matches m JOIN courier_claims c ON c.id = m.claim_id
+          WHERE m.status = 'chargeable' AND m.driver_id = $1 AND c.superseded_at IS NULL`, [driverD])).rows[0].total;
+      assert.ok(Number(owed) > 19, 'more than the first two upload claims, from the later reports');
+      assert.equal(statement.claim_deductions, owed);
+      assert.equal(statement.net, (100 - Number(owed)).toFixed(2));
+    });
+
+    await t.test('a report whose routes belong to two cities stores no claim, and says why', async () => {
+      const mixed = await fileOf({
+        fee: [fee('WCL006', 'CLFD 01-1', 91000011, '12/08/2030 10:00:00'), fee('WCL007', 'CLFT 01-1', 91000012, '12/08/2030 10:00:00')],
+        claims: [['12/08/2030 09:00:00', 'WCL006', 'Damaged Item', 500, null, -7, D]],
+      });
+      const result = await upload(mixed, SUPER, 'mixed.xlsx');
+      assert.equal(result.status, 200);
+      assert.deepEqual([result.body.data.claims.stored, result.body.data.claims.inFile], [false, 1]);
+      assert.match(result.body.data.claims.reason, /more than one city/);
+      assert.equal(result.body.data.recordsInserted, 2, 'the pay upload is unaffected');
+      assert.equal(Object.keys(await claimState('WCL006')).length, 0);
+    });
+
+    await t.test('a report with a known route and an unknown route stores no claim, and names the unknown route', async () => {
+      const file = await fileOf({
+        fee: [fee('WCL020', 'CLFD 01-1', 91000011, '12/13/2030 10:00:00'), fee('WCL021', 'NOSUCH 99-9', 91000011, '12/13/2030 10:00:00')],
+        claims: [['12/13/2030 09:00:00', 'WCL020', 'Damaged Item', 500, null, -7, D]],
+      });
+      const result = await upload(file, SUPER, 'unknown-route.xlsx');
+      assert.equal(result.status, 200);
+      assert.equal(result.body.data.claims.stored, false);
+      assert.match(result.body.data.claims.reason, /1 route .* not set up \(NOSUCH 99-9\)/);
+      assert.equal(Object.keys(await claimState('WCL020')).length, 0);
+      assert.ok(result.body.data.recordsInserted >= 1, 'the pay upload is unaffected');
+    });
+
+    await t.test('a row with no waybill does not narrow the city check: two cities with an incomplete row store no claim', async () => {
+      const file = await fileOf({
+        fee: [fee('WCL022', 'CLFD 01-1', 91000011, '12/14/2030 10:00:00'), fee('', 'CLFT 01-1', 91000012, '12/14/2030 10:00:00')],
+        claims: [['12/14/2030 09:00:00', 'WCL022', 'Damaged Item', 500, null, -7, D]],
+      });
+      const result = await upload(file, SUPER, 'two-cities-incomplete.xlsx');
+      assert.equal(result.status, 200);
+      assert.equal(result.body.data.assignmentHistory.problems, 1, 'the row without a waybill is an identity problem');
+      assert.equal(result.body.data.claims.stored, false);
+      assert.match(result.body.data.claims.reason, /more than one city/);
+      assert.equal(Object.keys(await claimState('WCL022')).length, 0);
+    });
+
+    await t.test('a single-city report whose fee row has no waybill still stores its claims, and matches them by the name on that row', async () => {
+      const file = await fileOf({
+        fee: [fee('', 'CLFD 01-1', 91000011, '12/15/2030 10:00:00')],
+        claims: [['12/15/2030 09:00:00', 'WCL023', 'Damaged Item', 500, null, -7, D]],
+      });
+      const result = await upload(file, SUPER, 'single-city-incomplete.xlsx');
+      assert.equal(result.status, 200);
+      assert.equal(result.body.data.claims.stored, true);
+      assert.equal(result.body.data.claims.cityId, dfw.id);
+      assert.equal((await claimState('WCL023')).WCL023[0], 'chargeable', 'the name and Delivery ID are on the row; the waybill is not needed');
+    });
+
+    await t.test('an unknown route on the Offset Details sheet also blocks the claims', async () => {
+      const workbook = new ExcelJS.Workbook();
+      const feeSheet = workbook.addWorksheet('Details of Delivery Fees');
+      feeSheet.addRow(FEE_HEADER);
+      feeSheet.addRow(fee('WCL024', 'CLFD 01-1', 91000011, '12/16/2030 10:00:00'));
+      const offset = workbook.addWorksheet('Offset Details');
+      offset.addRow(FEE_HEADER);
+      offset.addRow(['WCL025', 'Sam', 'NOSUCH 98-8', 91000011, '12/16/2030 10:00:00', -1, null]);
+      const claims = workbook.addWorksheet('Claims Detail');
+      claims.addRow(CLAIM_HEADER);
+      claims.addRow(['12/16/2030 09:00:00', 'WCL024', 'Damaged Item', 500, null, -7, D]);
+      const result = await upload(Buffer.from(await workbook.xlsx.writeBuffer()), SUPER, 'offset-unknown.xlsx');
+      assert.equal(result.body.data.claims.stored, false);
+      assert.match(result.body.data.claims.reason, /NOSUCH 98-8/);
+    });
+
+    await t.test('a city admin cannot upload a report of a city that is not theirs, so no claim is stored either', async () => {
+      const file = await fileOf({
+        fee: [fee('WCL008', 'CLFD 01-1', 91000011, '12/09/2030 10:00:00')],
+        claims: [['12/09/2030 09:00:00', 'WCL008', 'Damaged Item', 500, null, -3, D]],
+      });
+      const result = await upload(file, { id: cityAdmin.id, role: 'admin' }, 'dallas-by-tyler-admin.xlsx');
+      assert.equal(result.status, 403, 'the existing city check refuses the whole upload');
+      assert.equal(Object.keys(await claimState('WCL008')).length, 0);
+    });
+
+    await t.test('a city admin uploading their own city stores its claims', async () => {
+      const file = await fileOf({
+        fee: [fee('WCL011', 'CLFT 01-1', 91000012, '12/09/2030 10:00:00')],
+        claims: [['12/09/2030 09:00:00', 'WCL011', 'Damaged Item', 500, null, -3, T]],
+      });
+      const result = await upload(file, { id: cityAdmin.id, role: 'admin' }, 'tyler-by-tyler-admin.xlsx');
+      assert.equal(result.status, 200);
+      assert.deepEqual([result.body.data.claims.stored, result.body.data.claims.cityId], [true, other.id]);
+      assert.equal((await claimState('WCL011')).WCL011[0], 'chargeable');
+    });
+
+    await t.test('a claim already held for another city is neither amended nor counted by this city\'s upload', async () => {
+      const before = await claimState('WCL001');
+      const file = await fileOf({
+        fee: [fee('WCL012', 'CLFT 01-1', 91000012, '12/12/2030 10:00:00')],
+        claims: [
+          ['12/12/2030 09:00:00', 'WCL001', 'Damaged Item', 500, null, -99, T],  // Dallas's claim, named in a Tyler report
+          ['12/12/2030 09:00:00', 'WCL012', 'Damaged Item', 500, null, -2, T],   // Tyler's own
+        ],
+      });
+      let round = 0;
+      for (const user of [{ id: cityAdmin.id, role: 'admin' }, SUPER]) {
+        const result = await upload(file, user, `tyler-${user.role}.xlsx`);
+        assert.equal(result.status, 200);
+        const c = result.body.data.claims;
+        const limited = user.role !== 'superadmin';
+        // A city admin is told only "already recorded", as for their own repeat; a super admin also gets the count.
+        assert.equal(c.notStored, limited ? undefined : 1);
+        assert.equal(c.inFile, 2);
+        // Only Tyler's own claim can be new or a duplicate; the other city's claim shows up only in notStored.
+        assert.deepEqual([c.amended, c.duplicates, c.inserted], [0, round + (limited ? 1 : 0), 1 - round]);
+        round += 1;
+      }
+      assert.deepEqual(await claimState('WCL001'), before, 'Dallas\'s claim is untouched');
+      assert.equal(Number((await client.query("SELECT count(*) n FROM courier_claims WHERE waybill = 'WCL001'")).rows[0].n), 2, 'no new version was made');
+      assert.equal((await claimState('WCL012')).WCL012[0], 'chargeable');
+    });
+
+    await t.test('a report without a Claims Detail sheet says so and changes nothing', async () => {
+      const result = await upload(await fileOf({ fee: [fee('WCL009', 'CLFD 01-1', 91000011, '12/10/2030 10:00:00')] }), SUPER, 'no-claims.xlsx');
+      assert.deepEqual(result.body.data.claims, { found: false, stored: false });
+    });
+
+    await t.test('if the claims tables are missing, the pay upload and the history still go through and the answer says so', async () => {
+      // Hide the table instead of running rollback scripts: the ledger, pay-run and later migrations depend on it, and
+      // this works whichever of them exist in the test database. The transaction is rolled back at the end.
+      await client.query('ALTER TABLE courier_claims RENAME TO courier_claims_hidden_by_test');
+      const result = await upload(await fileOf({
+        fee: [fee('WCL010', 'CLFD 01-1', 91000011, '12/11/2030 10:00:00')],
+        claims: [['12/11/2030 09:00:00', 'WCL010', 'Damaged Item', 500, null, -3, D]],
+      }), SUPER, 'late.xlsx');
+      assert.equal(result.status, 200);
+      assert.equal(result.body.data.recordsInserted, 1);
+      assert.equal(result.body.data.assignmentHistory.saved, true);
+      assert.equal(result.body.data.claims.stored, false);
+      assert.match(result.body.data.claims.reason, /not set up/);
+    });
+  } finally {
+    pool.connect = realConnect;
+    delete pool.query;
+    await client.query('ROLLBACK');
+    client.release();
+    await pool.end();
+  }
+});

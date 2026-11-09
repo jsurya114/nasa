@@ -2,18 +2,25 @@ import { Navigate, Outlet, useLocation } from "react-router-dom";
 import { useEffect } from "react";
 import { useSelector, useDispatch } from "react-redux";
 import { accessDriver } from "../../redux/slice/driver/driverSlice.js";
+import AuthCheckRetry from "../../native/AuthCheckRetry.jsx";
+import PushSetup from "../../native/PushSetup.jsx";
+import EvereeSetupProvider from "../../hooks/EvereeSetupProvider.jsx";
+import QuickbooksSetupProvider from "../../hooks/QuickbooksSetupProvider.jsx";
+import PaymentSetupBanner from "../../components/Drivers/everee/PaymentSetupBanner.jsx";
+import SetupLock from "../../components/Drivers/everee/SetupLock.jsx";
+import PaymentSetupPrompt from "../../components/Drivers/everee/PaymentSetupPrompt.jsx";
 
 function DProtectRoutes() {
     const dispatch = useDispatch()
     const location = useLocation()
-    const { isAuthenticated, driver } = useSelector((state) => state.driver)
+    const { isAuthenticated, driver, authCheckFailed } = useSelector((state) => state.driver)
     
     useEffect(() => {
         dispatch(accessDriver())
     }, [dispatch])
 
     if (isAuthenticated === null) {
-        return null;
+        return authCheckFailed ? <AuthCheckRetry onRetry={() => dispatch(accessDriver())} /> : null;
     }
 
     if (!isAuthenticated) {
@@ -25,12 +32,22 @@ function DProtectRoutes() {
         return <Navigate to="/driver/agreement" />;
     }
 
-    // If they are on the agreement page but have already signed, redirect to dashboard
+    // On the agreement page but already signed: on to the payment setup, which sends a driver with nothing to set up to the dashboard.
+    // (Unsigned drivers are sent to the agreement above, so the two redirects cannot loop.)
     if (driver && driver.agreement_signed === true && location.pathname === "/driver/agreement") {
-        return <Navigate to="/driver/dashboard" />;
+        return <Navigate to="/driver/payment-setup" replace />;
     }
 
-    return <Outlet />;
+    return (
+        <EvereeSetupProvider>
+          <QuickbooksSetupProvider>
+            <PushSetup area="driver" />
+            <PaymentSetupBanner />
+            <PaymentSetupPrompt />
+            <SetupLock><Outlet /></SetupLock>
+          </QuickbooksSetupProvider>
+        </EvereeSetupProvider>
+    );
 }
 
 export default DProtectRoutes

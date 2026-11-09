@@ -1,12 +1,16 @@
 import React, { useState, useEffect } from "react";
+import { Globe } from "lucide-react";
 import logo from "../../assets/logo.png";
 import { useDispatch, useSelector } from "react-redux";
-import { driverLogin, clearError } from "../../redux/slice/driver/driverSlice.js";
+import { driverLogin } from "../../redux/slice/driver/driverSlice.js";
 import { useNavigate } from "react-router-dom";
-import { toast } from "react-toastify";
+import { toast } from "../../utils/toast";
+import useTranslation from "../../hooks/useTranslation.js";
 import { AiOutlineEye, AiOutlineEyeInvisible } from "react-icons/ai";
+import SignOutNotice from "../../native/SignOutNotice.jsx";
 
 const DriverLogin = () => {
+  const { t } = useTranslation();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [fieldErrors, setFieldErrors] = useState({ email: "", password: "" });
@@ -16,25 +20,28 @@ const DriverLogin = () => {
   const dispatch = useDispatch();
   const navigate = useNavigate();
 
-  const { loading, error, isAuthenticated } = useSelector((state) => state.driver);
+  const { loading } = useSelector((state) => state.driver);
 
   // DETECT TIMEZONE ON COMPONENT MOUNT
   useEffect(() => {
     const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
     setDetectedTimezone(timezone);
-    console.log("🌍 Detected timezone:", timezone);
   }, []);
 
   useEffect(() => {
     if (email && fieldErrors.email) {
       setFieldErrors((prev) => ({ ...prev, email: "" }));
     }
+    // Clears the email error when the person types. It must not run again when the error itself is set, or an error from the server would vanish at once.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [email]);
 
   useEffect(() => {
     if (password && fieldErrors.password) {
       setFieldErrors((prev) => ({ ...prev, password: "" }));
     }
+    // Same as the email effect above: only typing clears the password error.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [password]);
 
   const handleSubmit = async (e) => {
@@ -50,9 +57,9 @@ const DriverLogin = () => {
     }
 
     try {
-      const res = await dispatch(driverLogin({ email, password })).unwrap();
+      await dispatch(driverLogin({ email, password })).unwrap();
 
-      toast.success(`Login successful! Timezone: ${detectedTimezone}`, {
+      toast.success(`${t('loginSuccessful')} ${t('timezone')}: ${detectedTimezone}`, {
         position: "top-right",
         autoClose: 3000,
         pauseOnHover: true,
@@ -79,32 +86,34 @@ const DriverLogin = () => {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-100 font-poppins">
-      <div className="bg-white rounded-2xl shadow-lg w-full max-w-md">
-        <div className="bg-[oklch(0.36_0.13_296.97)] rounded-t-2xl py-6 flex justify-center">
+    <div className="bg-aurora min-h-dvh flex items-center justify-center px-4 py-10 pt-[calc(env(safe-area-inset-top)+2.5rem)] pb-[calc(env(safe-area-inset-bottom)+2.5rem)]">
+      <div className="bg-white rounded-3xl shadow-[var(--shadow-float)] ring-1 ring-white/20 w-full max-w-md overflow-hidden">
+        <div className="bg-[#462976] py-7 flex justify-center">
           <img src={logo} alt="Nasa Logistic Carriers Logo" className="w-44" />
         </div>
 
-        <div className="px-10 py-6 text-center">
-          <h2 className="text-2xl font-semibold text-blue-900 mb-2">Driver Login</h2>
+        <div className="px-6 sm:px-10 pt-7 pb-8 text-center">
+          <SignOutNotice area="driver" />
+          <h2 className="text-2xl font-semibold tracking-tight text-ink mb-6">Driver Login</h2>
 
           <form onSubmit={handleSubmit}>
             <div className="text-left mb-4">
-              <label htmlFor="email" className="block text-gray-700 mb-1 font-medium">
+              <label htmlFor="email" className="block text-sm text-ink mb-1.5 font-medium">
                 Email Address
               </label>
               <input
                 type="email"
                 id="email"
                 name="email"
+                autoComplete="email"
                 placeholder="Enter your driver email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                className={`w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 
+                className={`bg-white text-ink placeholder:text-ink-muted/70 min-h-11 w-full h-12 px-4 text-base border rounded-xl focus:outline-none focus:ring-4 transition-shadow 
                   ${
                     fieldErrors.email
-                      ? "border-red-500 focus:ring-red-500"
-                      : "border-gray-300 focus:ring-purple-600"
+                      ? "border-red-500 focus:ring-red-500/20"
+                      : "border-line focus:ring-brand-500/20 focus:border-brand-500"
                   }`}
               />
               {fieldErrors.email && (
@@ -113,33 +122,36 @@ const DriverLogin = () => {
             </div>
 
             <div className="text-left mb-4 relative">
-              <label htmlFor="password" className="block text-gray-700 mb-1 font-medium">
+              <label htmlFor="password" className="block text-sm text-ink mb-1.5 font-medium">
                 Password
               </label>
 
               <input
                 type={showPassword ? "text" : "password"}
                 id="password"
+                autoComplete="current-password"
                 value={password}
                 onChange={(e) => {
                   setPassword(e.target.value);
                   setFieldErrors((prev) => ({ ...prev, password: "" }));
                 }}
                 placeholder="Enter your password"
-                className={`w-full px-4 py-3 pr-12 border rounded-lg focus:outline-none focus:ring-2
+                className={`bg-white text-ink placeholder:text-ink-muted/70 min-h-11 w-full h-12 px-4 pr-12 text-base border rounded-xl focus:outline-none focus:ring-4 transition-shadow
                   ${
                     fieldErrors.password
-                      ? "border-red-500 focus:ring-red-500"
-                      : "border-gray-300 focus:ring-purple-600"
+                      ? "border-red-500 focus:ring-red-500/20"
+                      : "border-line focus:ring-brand-500/20 focus:border-brand-500"
                   }`}
               />
 
-              <span
+              <button
+                type="button"
                 onClick={() => setShowPassword(!showPassword)}
-                className="absolute right-4 top-10 cursor-pointer text-gray-600"
+                aria-label={showPassword ? "Hide password" : "Show password"}
+                className="absolute right-1.5 top-[1.85rem] p-2.5 cursor-pointer text-ink-muted hover:text-ink rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
               >
                 {showPassword ? <AiOutlineEyeInvisible size={22} /> : <AiOutlineEye size={22} />}
-              </span>
+              </button>
 
               {fieldErrors.password && (
                 <p className="text-red-600 text-sm mt-1">{fieldErrors.password}</p>
@@ -149,7 +161,7 @@ const DriverLogin = () => {
             <button
               type="submit"
               disabled={loading}
-              className="w-full bg-[oklch(0.36_0.13_296.97)] hover:bg-purple-900 text-white font-semibold py-3 rounded-lg shadow-md mt-4 transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
+              className="w-full bg-brand hover:bg-brand-900 text-white font-semibold h-12 rounded-xl shadow-[0_10px_24px_-12px_rgb(59_31_107/0.8)] mt-6 transition-colors duration-200 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
             >
               {loading ? (
                 <>
@@ -183,9 +195,10 @@ const DriverLogin = () => {
 
           {/* SHOW DETECTED TIMEZONE */}
           {detectedTimezone && (
-            <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
-              <p className="text-xs text-gray-600">
-                🌍 Your timezone: <span className="font-semibold text-blue-800">
+            <div className="mt-5 p-3 bg-brand-50 border border-brand-100 rounded-xl">
+              <p className="text-xs text-ink-muted">
+                <Globe className="inline w-4 h-4 mr-1 -mt-0.5" aria-hidden="true" />
+                Your timezone: <span className="font-semibold text-brand-800">
                   {detectedTimezone}
                 </span>
               </p>

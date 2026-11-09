@@ -1,0 +1,623 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { randomUUID } from 'node:crypto';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { getBatchView, getCitySettings, PreviewChangedError, retryBatch, setCitySettings, submitBatch } from '../services/payments/everee/batchSubmit.js';
+import { previewEvereeBatch } from '../services/payments/everee/batchPreview.js';
+import { EvereeError } from '../services/payments/everee/evereeClient.js';
+import { listOwnTransfers, transferStatusOf } from '../services/payments/everee/driverTransfers.js';
+import { noonInZone } from '../services/payments/everee/payableRules.js';
+import { finalizeRun, generateRun } from '../services/payroll/payRuns/payRunStore.js';
+import { recordRunPayment } from '../services/payroll/payRuns/paymentRecords.js';
+
+// Needs a PostgreSQL copy with the app's tables (never production): PAYROLL_TEST_DB=1 and the DB_* variables. One transaction, always rolled back.
+// Everything is made up, and Everee is a fake: no request leaves this machine, no money moves.
+const hasDb = process.env.PAYROLL_TEST_DB === '1';
+const migration = (name) => readFileSync(fileURLToPath(new URL(`../migrations/${name}`, import.meta.url)), 'utf8');
+const SANDBOX = { EVEREE_API_TOKEN: 'tsk_test_ABCDEF123456', EVEREE_TENANT_ID: '4321' };
+const ARMED = { ...SANDBOX, EVEREE_PAYMENTS_ENABLED: 'true' };
+const PRODUCTION = { EVEREE_API_TOKEN: 'tsk_prod_ABCDEF123456', EVEREE_TENANT_ID: '4321', EVEREE_ENVIRONMENT: 'production', EVEREE_PAYMENTS_ENABLED: 'true' };
+
+// A fake Everee. `behaviors` says what happens to a payable by its worker ID: ok, refuse (422), timeout, down, server (500), wrong (another
+// payable's ID in the answer), or a function of how many times that payable has been sent.
+const makeEveree = (behaviors = {}) => {
+  const state = { creates: [], payouts: [], reads: [], payout: 'ok', payableStatus: 'PENDING_APPROVAL', readFails: false };
+  const client = {
+    createPayable: async (body) => {
+      state.creates.push(body);
+      const key = body.workerId ?? body.externalWorkerId;
+      const sent = state.creates.filter((c) => c.externalId === body.externalId).length;
+      const b = behaviors[key] ?? 'ok';
+      const kind = typeof b === 'function' ? b(sent) : b;
+      if (kind === 'ok') return { status: 201, data: { externalId: body.externalId }, requestId: 'req-ok' };
+      if (kind === 'wrong') return { status: 201, data: { externalId: 'nasa-stmt-999999' }, requestId: 'req-wrong' };
+      if (kind === 'refuse') throw new EvereeError('Everee answered 422: Validation failed', { status: 422, requestId: 'req-422' });
+      if (kind === 'timeout') throw new EvereeError('Everee did not answer in time');
+      if (kind === 'down') throw new EvereeError('Everee could not be reached');
+      if (kind === 'server') throw new EvereeError('Everee answered 500', { status: 500, requestId: 'req-500' });
+      if (kind === 'limit') throw new EvereeError('Everee is limiting requests; try again in a moment', { status: 429, retryAfterSeconds: 1 });
+      throw new Error(`unknown behavior ${kind}`);
+    },
+    getPayable: async (externalId) => {
+      state.reads.push(externalId);
+      if (state.readFails) throw new EvereeError('Everee could not be reached');
+      return { status: 200, data: { externalId, paymentStatus: state.payableStatus }, requestId: 'req-get' };
+    },
+    requestPayout: async (ids) => {
+      state.payouts.push(ids);
+      if (state.payout === 'server') throw new EvereeError('Everee answered 500', { status: 500, requestId: 'req-p500' });
+      if (state.payout === 'empty') return { status: 200, data: { payableCount: 0 }, requestId: 'req-empty' };
+      return { status: 201, data: { id: 5, payableCount: ids.length, payableExternalIds: ids }, requestId: 'req-pay' };
+    },
+  };
+  return { state, client };
+};
+
+test('everee submit: reserve, send, payout request, replay, partial failure, retry, and the guards', { skip: !hasDb && 'set PAYROLL_TEST_DB=1 and the DB_* variables to run' }, async (t) => {
+  const { default: pool } = await import('../config/db.js');
+  const db = await pool.connect();
+  const one = async (sql, params) => (await db.query(sql, params)).rows[0];
+  const savepoint = async (fn) => {
+    await db.query('SAVEPOINT guard');
+    try { return await fn(); } finally { await db.query('ROLLBACK TO SAVEPOINT guard'); }
+  };
+  try {
+    await db.query('BEGIN');
+    for (const m of ['2026-11-03-issue-141-courier-claims.sql', '2026-11-03-issue-142-driver-ledger.sql', '2026-11-03-issue-143-pay-runs.sql', '2026-11-03-issue-166-ledger-settlements.sql',
+      '2026-11-04-approved-run-payment-records.sql', '2026-11-04-issue-031-everee-workers.sql', '2026-11-04-issue-031-everee-payments.sql', '2026-11-04-issue-031-everee-payment-status.sql']) await db.query(migration(m));
+
+    const tag = randomUUID();
+    const admin = async (role, n) => one("INSERT INTO admin (password, name, email, role) VALUES ('x', $1, $2, $3) RETURNING id, role", [`Test ${n} ${tag}`, `${n}${tag}@example.com`, role]);
+    const sup1 = await admin('superadmin', 'one'); // the owner: finalizes the runs, and may also confirm and retry them
+    const sup2 = await admin('superadmin', 'two'); // a second super admin; allowed, but never required
+    const cityAdmin = await admin('admin', 'city');
+    const [dA, dB, dC, dD, dE] = (await db.query('SELECT id FROM drivers ORDER BY id LIMIT 5')).rows.map((r) => r.id);
+    await db.query("UPDATE drivers SET driver_type = 'LOCAL' WHERE id = ANY($1::int[])", [[dA, dB, dC, dD, dE]]); // payments need a driver type (rolled back with the rest)
+    const workers = { [dA]: 'EW-A', [dB]: 'EW-B', [dC]: 'EW-C', [dD]: 'EW-D', [dE]: 'EW-E' };
+    for (const [driver, worker] of Object.entries(workers)) {
+      await db.query(`INSERT INTO everee_workers (driver_id, environment, everee_worker_id, link_source, onboarding_complete, tin_status, linked_by)
+        VALUES ($1, 'sandbox', $2, 'created_sandbox', true, 'VERIFIED', $3)`, [driver, worker, sup1.id]);
+    }
+
+    let seq = 9900;
+    const scenario = async (label, pairs) => {
+      const job = `Test Submit ${label}`;
+      const city = (await one("INSERT INTO city (job, city_code, city_type) VALUES ($1, $2, 'DAILY') RETURNING id", [job, `TS${label}`])).id;
+      const route = (await one(`INSERT INTO routes (name, job, company_route_price, driver_route_price, company_doublestop_price, driver_doublestop_price, route_code_in_string)
+        VALUES ($1, $2, 2, 1.6, 0.5, 0.25, $3) RETURNING id`, [`TS ${label}`, job, `TS-${label}`])).id;
+      await db.query('INSERT INTO admin_city_ref (admin_id, city_id) VALUES ($1, $2)', [cityAdmin.id, city]);
+      for (const [driver, gross] of pairs) {
+        const dd = (await one('INSERT INTO dashboard_data (driver_id, route_id, start_seq, end_seq, journey_date, packages) VALUES ($1,$2,$3,$4,$5,10) RETURNING id', [driver, route, seq, seq + 9, '2026-11-02'])).id;
+        seq += 10;
+        await db.query('UPDATE payment_dashboard SET closed = true, paid = false, driver_payment = $2, insurance_deduction = 0 WHERE dashboard_data_id = $1', [dd, gross]);
+      }
+      const run = (await generateRun(db, sup1, { requestId: randomUUID(), cityId: city, periodStart: '2026-11-01', periodEnd: '2026-11-07', dataType: 'daily' })).run;
+      await finalizeRun(db, sup1, run.id);
+      return { run, city, route };
+    };
+    const hashOf = async (run, env = ARMED) => (await previewEvereeBatch(db, sup2, run.id, { env })).previewHash;
+    const sleeps = [];
+    const deps = (client, extra = {}) => ({ env: ARMED, client, sleep: async (ms) => { sleeps.push(ms); }, throttleMs: 0, ...extra });
+    const submit = async (run, client, { who = sup2, requestId = randomUUID(), previewHash, extra } = {}) =>
+      submitBatch(db, who, { runId: run.id, requestId, previewHash: previewHash ?? await hashOf(run) }, deps(client, extra));
+    const statement = async (run, driver) => one('SELECT id, payout_status, payout_reference, paid_at FROM pay_statements WHERE pay_run_id = $1 AND driver_id = $2', [run.id, driver]);
+    const item = async (run, driver) => one(
+      `SELECT i.* FROM everee_payment_items i JOIN pay_statements s ON s.id = i.pay_statement_id WHERE s.pay_run_id = $1 AND s.driver_id = $2`, [run.id, driver]);
+    const counts = async () => one('SELECT (SELECT count(*) FROM everee_payment_batches)::int b, (SELECT count(*) FROM everee_payment_items)::int i, (SELECT count(*) FROM everee_payment_attempts)::int a')
+    const periodEnd = (run) => one("SELECT to_char(period_end, 'YYYY-MM-DD') d FROM pay_runs WHERE id = $1", [run.id]).then((r) => r.d);
+
+    const happy = await scenario('H', [[dA, '100.00'], [dB, '50.00']]);
+
+    await t.test('nothing is sent without the switch, a real super admin, a valid confirmation and an unchanged preview', async () => {
+      const fake = makeEveree();
+      const hash = await hashOf(happy.run);
+      const before = await counts();
+      await assert.rejects(submit(happy.run, fake.client, { previewHash: hash, extra: { env: SANDBOX } }), { status: 409, message: /switched off/ });
+      await assert.rejects(submit(happy.run, fake.client, { previewHash: hash, who: cityAdmin }), { status: 403 });
+      await assert.rejects(submit(happy.run, fake.client, { previewHash: hash, requestId: 'not-a-uuid' }), { status: 400 });
+      await assert.rejects(submit(happy.run, fake.client, { previewHash: 'abc' }), { status: 400 });
+      await assert.rejects(submit(happy.run, fake.client, { previewHash: '0'.repeat(64) }), (error) => {
+        assert.ok(error instanceof PreviewChangedError);
+        assert.equal(error.status, 409);
+        assert.equal(error.preview.previewHash, hash, 'the answer carries the new preview');
+        return true;
+      });
+      assert.deepEqual(fake.state.creates, []);
+      assert.deepEqual(await counts(), before, 'nothing was reserved or written by any refusal');
+      assert.deepEqual([(await statement(happy.run, dA)).payout_status, (await statement(happy.run, dB)).payout_status], ['not_submitted', 'not_submitted']);
+    });
+
+    let happyBatch;
+    await t.test('a confirmed batch reserves, sends one payable per driver with a stable ID, then ONE payout request, and never says "paid"', async () => {
+      const fake = makeEveree();
+      happyBatch = await submit(happy.run, fake.client);
+      assert.equal(happyBatch.replay, false);
+      assert.deepEqual(happyBatch.counts, { submitted: 2, paid: 0, failed: 0, unconfirmed: 0 });
+      assert.deepEqual([happyBatch.batch.drivers, happyBatch.batch.total, happyBatch.batch.environment], [2, '150.00', 'sandbox']);
+
+      assert.equal(fake.state.creates.length, 2);
+      const a = fake.state.creates.find((c) => c.workerId === 'EW-A');
+      const sa = await statement(happy.run, dA);
+      assert.deepEqual(a, {
+        externalId: `nasa-stmt-${sa.id}`, workerId: 'EW-A', type: 'NASA_PAY_RUN', label: 'NASA pay 2026-11-01 to 2026-11-07',
+        amount: { amount: 100, currency: 'USD' }, payableModel: 'PRE_CALCULATED', payCode: 'CONTRACTOR',
+        earningTimestamp: noonInZone(await periodEnd(happy.run), 'America/Chicago'),
+      });
+      assert.ok(!JSON.stringify(fake.state.creates).includes(`Test one ${tag}`), 'no name or email is sent');
+      assert.equal(fake.state.payouts.length, 1, 'one payout request for the whole batch');
+      assert.deepEqual(fake.state.payouts[0].sort(), fake.state.creates.map((c) => c.externalId).sort(), 'exactly this batch\'s payables');
+
+      for (const driver of [dA, dB]) {
+        const s = await statement(happy.run, driver);
+        const i = await item(happy.run, driver);
+        assert.deepEqual([s.payout_status, s.paid_at, s.payout_reference], ['submitted', null, `nasa-stmt-${s.id}`]);
+        assert.deepEqual([i.status, i.attempts, i.external_id, i.payout_requested_at !== null], ['submitted', 1, `nasa-stmt-${s.id}`, true]);
+      }
+      const attempts = (await db.query('SELECT outcome, http_status, everee_request_id, finished_at IS NOT NULL AS done FROM everee_payment_attempts')).rows;
+      assert.deepEqual(attempts.map((r) => [r.outcome, r.http_status, r.everee_request_id, r.done]), [['accepted', 201, 'req-ok', true], ['accepted', 201, 'req-ok', true]]);
+      assert.equal(happyBatch.payoutRequests[0].outcome, 'requested');
+      // Submitting is not paying: the earning rows are untouched and nothing is "paid".
+      // Scoped to this run, so a copy of real data that already has paid history does not fail it.
+      assert.equal((await one(
+        `SELECT count(*)::int n FROM payment_dashboard pd JOIN pay_statement_lines l ON l.payment_dashboard_id = pd.id JOIN pay_statements s ON s.id = l.statement_id
+          WHERE s.pay_run_id = $1 AND pd.paid`, [happy.run.id])).n, 0);
+      assert.equal((await one("SELECT count(*)::int n FROM pay_statements WHERE pay_run_id = $1 AND payout_status = 'paid'", [happy.run.id])).n, 0);
+    });
+
+    await t.test('the same confirmation again returns the same batch and sends nothing; the same ID for something else is refused', async () => {
+      const fake = makeEveree();
+      const before = await counts();
+      const requestId = happyBatch.batch.requestId;
+      const hash = (await one('SELECT preview_hash FROM everee_payment_batches WHERE id = $1', [happyBatch.batch.id])).preview_hash;
+      const again = await submitBatch(db, sup2, { runId: happy.run.id, requestId, previewHash: hash }, deps(fake.client));
+      assert.deepEqual([again.replay, again.batch.id], [true, happyBatch.batch.id]);
+      assert.deepEqual(fake.state.creates, []);
+      assert.deepEqual(await counts(), before);
+      await assert.rejects(submitBatch(db, sup2, { runId: happy.run.id, requestId, previewHash: '1'.repeat(64) }, deps(fake.client)), { status: 409, message: /already used/ });
+      const other = await admin('superadmin', 'three');
+      await assert.rejects(submitBatch(db, other, { runId: happy.run.id, requestId, previewHash: hash }, deps(fake.client)), { status: 409 });
+    });
+
+    await t.test('while a batch is submitted manual recording is blocked, and a second batch for the same statements is refused', async () => {
+      await assert.rejects(recordRunPayment(db, sup2, happy.run.id, {
+        requestId: randomUUID(), paidOn: new Date().toISOString().slice(0, 10), method: 'cash', reference: 'Test reference', statementIds: null,
+      }), { status: 409, message: /processing/ });
+      const fake = makeEveree();
+      await assert.rejects(submit(happy.run, fake.client), { status: 409, message: /no driver in this run can be paid/ });
+      assert.deepEqual(fake.state.creates, []);
+      const preview = await previewEvereeBatch(db, sup2, happy.run.id, { env: ARMED });
+      assert.ok(preview.drivers.every((d) => d.blockers.some((b) => b.code === 'in_everee_batch')));
+    });
+
+    await t.test('a statement already paid by hand is never sent', async () => {
+      const manual = await scenario('M', [[dA, '20.00']]);
+      await recordRunPayment(db, sup2, manual.run.id, {
+        requestId: randomUUID(), paidOn: new Date().toISOString().slice(0, 10), method: 'cash', reference: 'Test cash handover', statementIds: null,
+      });
+      const fake = makeEveree();
+      await assert.rejects(submit(manual.run, fake.client), { status: 409 });
+      assert.deepEqual(fake.state.creates, []);
+    });
+
+    let partial;
+    let partialBatch;
+    await t.test('partial failure: refused is "failed", a timeout and a server error are "unconfirmed", and only what Everee took is asked for payout', async () => {
+      partial = await scenario('P', [[dA, '100.00'], [dB, '50.00'], [dC, '40.00'], [dD, '30.00'], [dE, '25.50']]);
+      const fake = makeEveree({ 'EW-B': 'refuse', 'EW-C': 'timeout', 'EW-D': 'server' });
+      partialBatch = await submit(partial.run, fake.client);
+      assert.deepEqual(partialBatch.counts, { submitted: 2, paid: 0, failed: 1, unconfirmed: 2 });
+      const by = (driver) => partialBatch.items.find((i) => i.driverId === driver);
+      assert.deepEqual([by(dA).status, by(dB).status, by(dC).status, by(dD).status, by(dE).status], ['submitted', 'failed', 'unconfirmed', 'unconfirmed', 'submitted']);
+      assert.match(by(dB).error, /422/);
+      assert.equal((await statement(partial.run, dB)).payout_status, 'failed');
+      assert.equal((await statement(partial.run, dC)).payout_status, 'unconfirmed', 'a timeout is never "failed"');
+      assert.equal((await statement(partial.run, dD)).payout_status, 'unconfirmed');
+      assert.equal(fake.state.payouts.length, 1);
+      assert.deepEqual(fake.state.payouts[0].length, 2, 'only the two Everee accepted');
+      const outcomeOf = async (driver) => (await db.query(
+        `SELECT a.outcome FROM everee_payment_attempts a JOIN everee_payment_items i ON i.id = a.item_id WHERE i.batch_id = $1 AND i.driver_id = $2`, [partialBatch.batch.id, driver])).rows.map((r) => r.outcome);
+      assert.deepEqual(await Promise.all([dA, dB, dC, dD, dE].map(outcomeOf)), [['accepted'], ['refused'], ['timeout'], ['server_error'], ['accepted']]);
+      assert.equal(partialBatch.canRetry, true);
+    });
+
+    await t.test('a driver sees only their own transfers, each kept in its own status, as exact decimals, with nothing from Everee beyond NASA’s records', async () => {
+      await savepoint(async () => {
+        const run = await scenario('T', [[dA, '100.10'], [dB, '50.05'], [dC, '40.00'], [dD, '30.30'], [dE, '25.50']]);
+        const fake = makeEveree({ 'EW-B': 'refuse', 'EW-C': 'timeout', 'EW-D': 'server' });
+        await submit(run.run, fake.client);
+        // earlier cases also sent payments for these drivers, so this run's transfers are picked out by their statement
+        const of = async (driver) => { const mine = (await statement(run.run, driver)).id; return (await listOwnTransfers(db, driver)).transfers.filter((x) => String(x.statementId) === String(mine)); };
+        assert.deepEqual([(await of(dA)).map((x) => x.status), (await of(dB)).map((x) => x.status), (await of(dC)).map((x) => x.status), (await of(dD)).map((x) => x.status)], [['pending'], ['failed'], ['unconfirmed'], ['unconfirmed']]);
+        assert.deepEqual((await of(dA)).map((x) => x.amount), ['100.10'], 'exact decimal strings');
+        assert.deepEqual((await of(dB)).map((x) => x.amount), ['50.05']);
+        // a payment NASA marked paid is completed; one whose deposit a bank returned is returned, never completed, whatever else is true
+        await db.query("UPDATE everee_payment_items SET status = 'paid', paid_at = now() WHERE id = $1", [(await item(run.run, dA)).id]);
+        assert.deepEqual((await of(dA)).map((x) => [x.status, x.paidAt !== null]), [['completed', true]]);
+        await db.query('UPDATE everee_payment_items SET deposit_returned = true WHERE id = $1', [(await item(run.run, dA)).id]);
+        assert.deepEqual((await of(dA)).map((x) => [x.status, x.paidAt]), [['returned', null]]);
+        // privacy: a driver never sees another driver's transfer, and the fields are only NASA's own
+        const all = (await listOwnTransfers(db, dB)).transfers;
+        assert.ok(all.length > 0 && all.every((x) => ['id', 'statementId', 'periodStart', 'periodEnd', 'amount', 'status', 'sentAt', 'lastCheckedAt', 'paidAt'].every((k) => k in x) && Object.keys(x).length === 9));
+        const aStatement = String((await statement(run.run, dA)).id);
+        assert.equal(all.some((x) => String(x.statementId) === aStatement), false, 'driver B never sees driver A’s transfer');
+        assert.deepEqual((await listOwnTransfers(db, 2147483647)).transfers, []);
+        assert.equal(transferStatusOf({ status: 'submitted', deposit_returned: false }), 'pending');
+        // Simulated deposits cannot appear as real transfers after changing environments.
+        const production = await scenario('TP', [[dA, '7.00']]);
+        const prodStatement = await statement(production.run, dA);
+        const prodBatch = await one(`INSERT INTO everee_payment_batches
+          (request_id, pay_run_id, city_id, environment, preview_hash, driver_count, total, created_by)
+          VALUES ($1, $2, $3, 'production', $4, 1, '7.00', $5) RETURNING id`,
+          [randomUUID(), production.run.id, production.run.city_id, '0'.repeat(64), sup1.id]);
+        await db.query(`INSERT INTO everee_payment_items
+          (batch_id, pay_statement_id, driver_id, everee_worker_id, external_id, amount, driver_type)
+          VALUES ($1, $2, $3, 'PROD-WORKER', $4, '7.00', 'LOCAL')`,
+          [prodBatch.id, prodStatement.id, dA, `nasa-stmt-${prodStatement.id}`]);
+        const real = await listOwnTransfers(db, dA, { env: { EVEREE_ENVIRONMENT: 'production' } });
+        assert.deepEqual(real.transfers.map((x) => x.statementId), [prodStatement.id]);
+        assert.equal((await listOwnTransfers(db, dA, { env: SANDBOX })).transfers.some((x) => x.statementId === prodStatement.id), false);
+
+      });
+    });
+
+    await t.test('retry sends only what failed, with the same ID; unconfirmed and submitted items are never touched; a refusal stays failed', async () => {
+      const refusing = makeEveree({ 'EW-B': 'refuse' });
+      let view = await retryBatch(db, sup2, partialBatch.batch.id, deps(refusing.client));
+      assert.deepEqual(refusing.state.creates.map((c) => c.workerId), ['EW-B'], 'only the failed one');
+      assert.equal(view.items.find((i) => i.driverId === dB).status, 'failed');
+      assert.equal(view.items.find((i) => i.driverId === dB).attempts, 2);
+      assert.equal(refusing.state.payouts.length, 0, 'nothing new to pay out');
+
+      const ok = makeEveree();
+      const idBefore = (await item(partial.run, dB)).external_id;
+      view = await retryBatch(db, sup2, partialBatch.batch.id, deps(ok.client));
+      assert.deepEqual(ok.state.creates.map((c) => [c.workerId, c.externalId]), [['EW-B', idBefore]], 'the same external ID, so Everee cannot make a second payable');
+      assert.deepEqual(ok.state.payouts, [[idBefore]], 'and only that payable is asked for payout');
+      assert.deepEqual(view.counts, { submitted: 3, paid: 0, failed: 0, unconfirmed: 2 });
+      assert.deepEqual([(await statement(partial.run, dC)).payout_status, (await statement(partial.run, dD)).payout_status], ['unconfirmed', 'unconfirmed']);
+      assert.equal(view.canRetry, false, 'the unconfirmed ones wait for reconciliation, not a blind retry');
+      const none = makeEveree();
+      await retryBatch(db, sup2, partialBatch.batch.id, deps(none.client));
+      assert.deepEqual([none.state.creates, none.state.payouts], [[], []]);
+    });
+
+    await t.test('retry skips a statement paid by hand or a worker who is no longer ready, and needs the same permission as confirming', async () => {
+      const run = await scenario('R', [[dA, '10.00'], [dB, '11.00']]);
+      const first = makeEveree({ 'EW-A': 'refuse', 'EW-B': 'refuse' });
+      const batch = await submit(run.run, first.client);
+      assert.equal(batch.counts.failed, 2);
+      await db.query("UPDATE pay_statements SET payout_status = 'paid', paid_at = now() WHERE pay_run_id = $1 AND driver_id = $2", [run.run.id, dA]);
+      await db.query("UPDATE everee_workers SET terminated = true WHERE driver_id = $1 AND environment = 'sandbox'", [dB]);
+      const retry = makeEveree();
+      const view = await retryBatch(db, sup2, batch.batch.id, deps(retry.client));
+      assert.deepEqual(retry.state.creates, [], 'the paid-by-hand statement and the worker who left are not sent');
+      assert.equal(view.counts.failed, 2);
+      await db.query("UPDATE everee_workers SET terminated = false WHERE driver_id = $1 AND environment = 'sandbox'", [dB]);
+      await assert.rejects(retryBatch(db, cityAdmin, batch.batch.id, deps(retry.client)), { status: 403 });
+      await assert.rejects(retryBatch(db, sup2, batch.batch.id, deps(retry.client, { env: SANDBOX })), { status: 409, message: /switched off/ });
+    });
+
+    await t.test('the onboarding gate: a Local driver without verified onboarding is never sent (the batch is refused whole), and a retry leaves them failed with the reason', async () => {
+      await savepoint(async () => {
+        await db.query(migration('2026-11-07-issue-242-everee-driver-onboarding.sql'));
+        const GATED = { ...ARMED, EVEREE_DRIVER_ONBOARDING_ENABLED: 'true', EVEREE_ONBOARDING_ENFORCED: 'true' };
+        const keys = Object.keys(GATED);
+        const saved = Object.fromEntries(keys.map((k) => [k, process.env[k]]));
+        try {
+          // First send while the gate is off: dA's payment fails (refused by Everee), so there is something to retry.
+          const run = await scenario('G', [[dA, '10.00'], [dB, '11.00']]);
+          const first = makeEveree({ 'EW-A': 'refuse' });
+          const batch = await submit(run.run, first.client);
+          assert.deepEqual([batch.counts.failed, batch.counts.submitted], [1, 1]);
+          // The gate comes on. Nobody has a tenant on their link yet, so every Local driver is held.
+          Object.assign(process.env, GATED);
+          const held = makeEveree();
+          const afterRun = await scenario('G2', [[dA, '12.00'], [dB, '13.00']]);
+          const before = await counts();
+          const preview = await previewEvereeBatch(db, sup2, afterRun.run.id, { env: GATED });
+          assert.ok(preview.drivers.every((d) => d.blockers.some((b) => b.code === 'onboarding_required' && b.severity === 'blocking')), 'the preview names the stable reason for each held driver');
+          assert.equal(preview.canSubmit, false);
+          await assert.rejects(
+            submitBatch(db, sup2, { runId: afterRun.run.id, requestId: randomUUID(), previewHash: preview.previewHash }, deps(held.client, { env: GATED })),
+            { status: 409 },
+          );
+          assert.deepEqual(await counts(), before, 'nothing was reserved or sent');
+          assert.deepEqual(held.state.creates, []);
+          // A retry does not send the held driver; the payment stays failed and says why.
+          const retry = makeEveree();
+          const view = await retryBatch(db, sup2, batch.batch.id, deps(retry.client, { env: GATED }));
+          assert.deepEqual(retry.state.creates, []);
+          assert.equal(view.counts.failed, 1);
+          assert.match((await item(run.run, dA)).error_message, /payment setup is not complete/i);
+          // Once the link is verified for this tenant and complete, the retry goes out.
+          await db.query("UPDATE everee_workers SET tenant_id = '4321', onboarding_complete = true WHERE driver_id = $1 AND environment = 'sandbox'", [dA]);
+          const ok = makeEveree();
+          assert.equal((await retryBatch(db, sup2, batch.batch.id, deps(ok.client, { env: GATED }))).counts.failed, 0);
+        } finally {
+          for (const k of keys) { if (saved[k] === undefined) delete process.env[k]; else process.env[k] = saved[k]; }
+        }
+      });
+    });
+
+    await t.test('a retry goes only to the worker saved on the payment: a driver linked to another worker since is not sent to', async () => {
+      const run = await scenario('N', [[dA, '10.00']]);
+      const batch = await submit(run.run, makeEveree({ 'EW-A': 'refuse' }).client);
+      assert.equal(batch.counts.failed, 1);
+      // the driver is unlinked and linked to a DIFFERENT Everee worker that is ready
+      await db.query("UPDATE everee_workers SET unlinked_by = $2, unlinked_at = now(), unlink_reason = 'Test relink' WHERE driver_id = $1 AND unlinked_at IS NULL AND environment = 'sandbox'", [dA, sup1.id]);
+      await db.query(`INSERT INTO everee_workers (driver_id, environment, everee_worker_id, link_source, onboarding_complete, tin_status, linked_by)
+        VALUES ($1, 'sandbox', 'EW-A-OTHER', 'created_sandbox', true, 'VERIFIED', $2)`, [dA, sup1.id]);
+      const other = makeEveree();
+      const view = await retryBatch(db, sup2, batch.batch.id, deps(other.client));
+      assert.deepEqual(other.state.creates, [], 'nothing is sent to the old or the new worker');
+      assert.equal(view.items[0].status, 'failed');
+      assert.match(view.items[0].error, /different Everee worker/);
+      // linked back to the worker the payment was made for: it is sent again
+      await db.query("UPDATE everee_workers SET unlinked_by = $2, unlinked_at = now(), unlink_reason = 'Test relink back' WHERE driver_id = $1 AND unlinked_at IS NULL AND environment = 'sandbox'", [dA, sup1.id]);
+      await db.query(`INSERT INTO everee_workers (driver_id, environment, everee_worker_id, link_source, onboarding_complete, tin_status, linked_by)
+        VALUES ($1, 'sandbox', 'EW-A', 'created_sandbox', true, 'VERIFIED', $2)`, [dA, sup1.id]);
+      const back = makeEveree();
+      await retryBatch(db, sup2, batch.batch.id, deps(back.client));
+      assert.deepEqual(back.state.creates.map((c) => c.workerId), ['EW-A']);
+    });
+
+    await t.test('a retry obeys the batch-level rules too: a live city that lost its settings, and a run that is no longer finalized', async () => {
+      const LIVE = { ...PRODUCTION, EVEREE_PRODUCTION_PAYMENTS_APPROVED: 'true' };
+      for (const [driver, id] of [[dA, 'PW-A'], [dB, 'PW-B']]) {
+        await db.query(`INSERT INTO everee_workers (driver_id, environment, everee_worker_id, link_source, onboarding_complete, tin_status, linked_by)
+          VALUES ($1, 'production', $2, 'matched_email', true, 'VERIFIED', $3)`, [driver, id, sup1.id]);
+      }
+      const run = await scenario('V', [[dA, '10.00'], [dB, '11.00']]);
+      await setCitySettings(db, sup2, run.city, { timeZone: 'America/Chicago', workLocationId: 5 });
+      const batch = await submit(run.run, makeEveree({ 'PW-A': 'refuse' }).client, { previewHash: await hashOf(run.run, LIVE), extra: { env: LIVE } });
+      assert.deepEqual([batch.batch.environment, batch.counts.failed, batch.counts.submitted], ['production', 1, 1]);
+
+      await setCitySettings(db, sup2, run.city, { timeZone: null, workLocationId: null });
+      const fake = makeEveree();
+      await assert.rejects(retryBatch(db, sup2, batch.batch.id, deps(fake.client, { env: LIVE })), { status: 409, message: /time zone and work location/ });
+      assert.deepEqual([fake.state.creates, fake.state.payouts], [[], []]);
+      await setCitySettings(db, sup2, run.city, { timeZone: 'America/Chicago', workLocationId: 5 });
+      assert.equal((await retryBatch(db, sup2, batch.batch.id, deps(fake.client, { env: LIVE }))).counts.failed, 0, 'with its settings back the retry goes through');
+
+      const second = await scenario('Y', [[dA, '10.00']]);
+      const batch2 = await submit(second.run, makeEveree({ 'EW-A': 'refuse' }).client);
+      await db.query("UPDATE pay_runs SET status = 'voided', closed_at = now(), closed_by = $2, close_reason = 'Test void' WHERE id = $1", [second.run.id, sup1.id]);
+      const none = makeEveree();
+      await assert.rejects(retryBatch(db, sup2, batch2.batch.id, deps(none.client)), { status: 409, message: /not finalized/ });
+      assert.deepEqual(none.state.creates, []);
+    });
+
+    await t.test('one super admin does it all: finalizes the run, previews, confirms, and retries a failure; both roles are recorded', async () => {
+      const run = await scenario('O', [[dA, '10.00'], [dB, '11.00']]);
+      const hash = (await previewEvereeBatch(db, sup1, run.run.id, { env: ARMED })).previewHash;
+      const batch = await submit(run.run, makeEveree({ 'EW-A': 'refuse' }).client, { who: sup1, previewHash: hash });
+      assert.deepEqual([batch.counts.submitted, batch.counts.failed], [1, 1]);
+      const roles = await one('SELECT r.finalized_by, b.created_by FROM pay_runs r JOIN everee_payment_batches b ON b.pay_run_id = r.id WHERE b.id = $1', [batch.batch.id]);
+      assert.deepEqual([roles.finalized_by, roles.created_by], [sup1.id, sup1.id], 'the finalizer and the payment actor are both recorded, even when equal');
+      const retry = makeEveree();
+      const view = await retryBatch(db, sup1, batch.batch.id, deps(retry.client));
+      assert.equal(view.counts.failed, 0, 'the same super admin retries the definite failure');
+      assert.equal(retry.state.creates.length, 1, 'only the refused payable is sent again');
+      await assert.rejects(submit(run.run, makeEveree().client, { who: cityAdmin }), { status: 403 }, 'a city admin still cannot');
+    });
+
+    await t.test('only the chosen drivers are previewed and sent; a statement of another run is refused', async () => {
+      const run = await scenario('X1', [[dA, '10.00'], [dB, '11.00'], [dC, '12.00']]);
+      const other = await scenario('X2', [[dA, '5.00']]);
+      const [sa, sb] = [(await statement(run.run, dA)).id, (await statement(run.run, dB)).id];
+      const everyone = await previewEvereeBatch(db, sup1, run.run.id, { env: ARMED });
+      const some = await previewEvereeBatch(db, sup1, run.run.id, { env: ARMED, statementIds: [sa, sb] });
+      assert.deepEqual([everyone.summary.drivers, some.summary.drivers, some.summary.eligible, some.summary.total], [3, 2, 2, '21.00']);
+      assert.notEqual(some.previewHash, everyone.previewHash, 'the hash covers only what is paid');
+      await assert.rejects(previewEvereeBatch(db, sup1, run.run.id, { env: ARMED, statementIds: [sa, (await statement(other.run, dA)).id] }), { status: 400 });
+      await assert.rejects(previewEvereeBatch(db, sup1, run.run.id, { env: ARMED, statementIds: [] }), { status: 400 });
+      const fake = makeEveree();
+      const batch = await submitBatch(db, sup1, { runId: run.run.id, requestId: randomUUID(), previewHash: some.previewHash, statementIds: [sa, sb] }, deps(fake.client));
+      assert.deepEqual([batch.batch.drivers, batch.batch.total], [2, '21.00']);
+      assert.deepEqual(fake.state.creates.map((c) => c.workerId).sort(), ['EW-A', 'EW-B'], 'the driver who was not chosen is not sent');
+      assert.equal((await statement(run.run, dC)).payout_status, 'not_submitted');
+      await assert.rejects(submitBatch(db, sup1, { runId: run.run.id, requestId: randomUUID(), previewHash: everyone.previewHash }, deps(makeEveree().client)), (error) => error instanceof PreviewChangedError, 'a hash for the whole run does not fit the chosen drivers');
+    });
+
+    await t.test('a rate limit is waited out and repeated (it means Everee did not run the request); one that never clears is "failed", not "unconfirmed"', async () => {
+      const run = await scenario('L', [[dA, '10.00'], [dB, '11.00']]);
+      sleeps.length = 0;
+      const fake = makeEveree({ 'EW-A': (n) => (n === 1 ? 'limit' : 'ok'), 'EW-B': 'limit' });
+      const batch = await submit(run.run, fake.client);
+      assert.equal(batch.items.find((i) => i.driverId === dA).status, 'submitted');
+      assert.equal(batch.items.find((i) => i.driverId === dB).status, 'failed');
+      assert.match(batch.items.find((i) => i.driverId === dB).error, /limiting/);
+      assert.ok(sleeps.length >= 4 && sleeps.some((ms) => ms >= 1000), 'it waited at least what Everee asked');
+      assert.equal(fake.state.creates.filter((c) => c.workerId === 'EW-A').length, 2);
+      assert.equal(fake.state.creates.filter((c) => c.workerId === 'EW-B').length, 4, 'one try and three repeats, then it stops');
+    });
+
+    await t.test('if the payout request fails the payables stay submitted and only the payout request is repeated', async () => {
+      const run = await scenario('Q', [[dA, '10.00'], [dB, '11.00']]);
+      const fake = makeEveree();
+      fake.state.payout = 'server';
+      const batch = await submit(run.run, fake.client);
+      assert.deepEqual(batch.counts, { submitted: 2, paid: 0, failed: 0, unconfirmed: 0 });
+      assert.equal(batch.payoutRequests[0].outcome, 'server_error');
+      assert.equal(batch.items.every((i) => i.everee.payoutRequested === false), true);
+      assert.equal(batch.canRetry, true);
+      fake.state.payout = 'ok';
+      fake.state.creates.length = 0;
+      const view = await retryBatch(db, sup2, batch.batch.id, deps(fake.client));
+      assert.deepEqual(fake.state.creates, [], 'the payables are not created again');
+      assert.equal(fake.state.payouts.length, 2);
+      assert.equal(view.items.every((i) => i.everee.payoutRequested), true);
+      assert.equal(view.canRetry, false);
+    });
+
+    await t.test('an answer for another payable is "unconfirmed"; a payout request that takes nothing is recorded as such', async () => {
+      const run = await scenario('W', [[dA, '10.00'], [dB, '11.00']]);
+      const fake = makeEveree({ 'EW-A': 'wrong' });
+      fake.state.payout = 'empty';
+      const batch = await submit(run.run, fake.client);
+      assert.equal(batch.items.find((i) => i.driverId === dA).status, 'unconfirmed');
+      assert.equal(batch.items.find((i) => i.driverId === dB).status, 'submitted');
+      assert.equal(batch.payoutRequests[0].outcome, 'nothing_to_process');
+      const attempt = await one(`SELECT outcome FROM everee_payment_attempts a JOIN everee_payment_items i ON i.id = a.item_id JOIN pay_statements s ON s.id = i.pay_statement_id WHERE s.pay_run_id = $1 AND s.driver_id = $2`, [run.run.id, dA]);
+      assert.equal(attempt.outcome, 'unexpected_answer');
+      assert.deepEqual(fake.state.reads, [(await item(run.run, dB)).external_id], 'only the payable the request did not take was looked at');
+      assert.equal(batch.items.find((i) => i.driverId === dB).everee.payableStatus, 'PENDING_APPROVAL');
+      assert.equal(batch.items.find((i) => i.driverId === dB).everee.payoutRequested, true, 'Everee already has it in payment (a lost reply to an earlier request): recorded, not asked again');
+    });
+
+    await t.test('a payable Everee took but will not pay out (status ERROR, as the real sandbox does) is "unconfirmed": blocked for manual recording and for a blind retry', async () => {
+      const run = await scenario('K', [[dA, '10.00'], [dB, '11.00']]);
+      const fake = makeEveree();
+      fake.state.payout = 'empty';
+      fake.state.payableStatus = 'ERROR';
+      const batch = await submit(run.run, fake.client);
+      assert.deepEqual(batch.counts, { submitted: 0, paid: 0, failed: 0, unconfirmed: 2 });
+      assert.ok(batch.items.every((i) => i.everee.payableStatus === 'ERROR' && /Check the worker in Everee/.test(i.error)));
+      assert.deepEqual([(await statement(run.run, dA)).payout_status, (await statement(run.run, dB)).payout_status], ['unconfirmed', 'unconfirmed']);
+      await assert.rejects(recordRunPayment(db, sup2, run.run.id, {
+        requestId: randomUUID(), paidOn: new Date().toISOString().slice(0, 10), method: 'cash', reference: 'Test reference', statementIds: null,
+      }), { status: 409 }, 'it cannot be marked paid by hand while Everee might still pay it');
+      const retry = makeEveree();
+      const view = await retryBatch(db, sup2, batch.batch.id, deps(retry.client));
+      assert.deepEqual([retry.state.creates, retry.state.payouts], [[], []], 'nothing is sent again');
+      assert.equal(view.counts.unconfirmed, 2);
+      assert.equal(view.canRetry, false);
+    });
+
+    await t.test('if the status of an untaken payable cannot be read it stays submitted, to be looked at again', async () => {
+      const run = await scenario('U', [[dA, '10.00']]);
+      const fake = makeEveree();
+      fake.state.payout = 'empty';
+      fake.state.readFails = true;
+      const batch = await submit(run.run, fake.client);
+      assert.deepEqual(batch.counts, { submitted: 1, paid: 0, failed: 0, unconfirmed: 0 });
+      assert.equal(batch.items[0].everee.payoutRequested, false);
+      assert.equal(batch.canRetry, true);
+      fake.state.readFails = false;
+      fake.state.payout = 'ok';
+      const view = await retryBatch(db, sup2, batch.batch.id, deps(fake.client));
+      assert.equal(view.items[0].everee.payoutRequested, true, 'the next try asks for payout again');
+    });
+
+    await t.test('earnings that changed after approval stop the batch before anything is reserved', async () => {
+      const run = await scenario('E', [[dA, '10.00']]);
+      const hash = await hashOf(run.run);
+      await db.query("UPDATE payment_dashboard SET paid = true WHERE id = (SELECT pd.id FROM payment_dashboard pd JOIN dashboard_data dd ON dd.id = pd.dashboard_data_id WHERE dd.route_id = $1 LIMIT 1)", [run.route]);
+      const fake = makeEveree();
+      const before = await counts();
+      await assert.rejects(submit(run.run, fake.client, { previewHash: hash }), { status: 409 });
+      assert.deepEqual(fake.state.creates, []);
+      assert.deepEqual(await counts(), before);
+      assert.equal((await statement(run.run, dA)).payout_status, 'not_submitted');
+    });
+
+    await t.test('the time zone and work location are per city: they change the earning date and go on the payable; live payments need both', async () => {
+      const run = await scenario('C', [[dA, '10.00']]);
+      await assert.rejects(setCitySettings(db, cityAdmin, run.city, { timeZone: 'UTC' }), { status: 403 });
+      await assert.rejects(setCitySettings(db, sup2, run.city, { timeZone: 'Mars/Olympus' }), { status: 400 });
+      await assert.rejects(setCitySettings(db, sup2, run.city, { workLocationId: -3 }), { status: 400 });
+      await assert.rejects(setCitySettings(db, sup2, 999999, { timeZone: 'UTC' }), { status: 404 });
+      assert.deepEqual(await getCitySettings(db, sup2, run.city), { cityId: run.city, timeZone: null, effectiveTimeZone: 'America/Chicago', workLocationId: null });
+      const settings = await setCitySettings(db, sup2, run.city, { timeZone: 'America/New_York', workLocationId: 77 });
+      assert.deepEqual([settings.timeZone, settings.workLocationId], ['America/New_York', 77]);
+
+      const fake = makeEveree();
+      await submit(run.run, fake.client);
+      const sent = fake.state.creates[0];
+      assert.equal(sent.earningTimestamp, noonInZone(await periodEnd(run.run), 'America/New_York'));
+      assert.equal(sent.workLocationId, 77);
+
+      const bare = await scenario('B', [[dA, '10.00']]);
+      const live = await previewEvereeBatch(db, sup2, bare.run.id, { env: PRODUCTION });
+      assert.ok(live.batchBlockers.some((b) => b.code === 'city_settings_missing'), 'live needs the city settings');
+      assert.equal(live.citySettings.timeZoneIsDefault, true);
+      const sandbox = await previewEvereeBatch(db, sup2, bare.run.id, { env: ARMED });
+      assert.ok(!sandbox.batchBlockers.some((b) => b.code === 'city_settings_missing'), 'the sandbox does not');
+    });
+
+    await t.test('live payments are refused until they are approved, however the rest is set', async () => {
+      const run = await scenario('X', [[dA, '10.00']]);
+      const fake = makeEveree();
+      await assert.rejects(submitBatch(db, sup2, { runId: run.run.id, requestId: randomUUID(), previewHash: '2'.repeat(64) }, deps(fake.client, { env: PRODUCTION })), { status: 409, message: /not approved/ });
+      assert.deepEqual(fake.state.creates, []);
+    });
+
+    await t.test('the database keeps every payment record: one item per statement for ever, nothing deleted, and identity never changes', async () => {
+      await savepoint(() => assert.rejects(db.query('DELETE FROM everee_payment_items'), /cannot be deleted/));
+      await savepoint(() => assert.rejects(db.query('DELETE FROM everee_payment_attempts'), /cannot be deleted/));
+      await savepoint(() => assert.rejects(db.query('DELETE FROM everee_payout_requests'), /cannot be deleted/));
+      await savepoint(() => assert.rejects(db.query('DELETE FROM everee_payment_batches'), /cannot be deleted/));
+      await savepoint(() => assert.rejects(db.query('UPDATE everee_payment_batches SET total = 1'), /cannot be changed/));
+      const first = await item(happy.run, dA);
+      await savepoint(() => assert.rejects(db.query('UPDATE everee_payment_items SET amount = 1 WHERE id = $1', [first.id]), /cannot be changed/));
+      await savepoint(() => assert.rejects(db.query("UPDATE everee_payment_items SET external_id = external_id || '0' WHERE id = $1", [first.id]), /cannot be changed/));
+      await savepoint(() => assert.rejects(db.query("UPDATE everee_payment_attempts SET outcome = 'refused' WHERE outcome = 'accepted'"), /once finished/));
+      await savepoint(() => assert.rejects(db.query(
+        `INSERT INTO everee_payment_items (batch_id, pay_statement_id, driver_id, everee_worker_id, external_id, amount) VALUES ($1, $2, $3, 'EW-A', 'nasa-stmt-777777', 1)`,
+        [first.batch_id, first.pay_statement_id, dA]), /duplicate key|everee_payment_items_pay_statement_id_key/), 'a second item for the same statement');
+      await savepoint(() => assert.rejects(db.query(
+        `INSERT INTO everee_payment_items (batch_id, pay_statement_id, driver_id, everee_worker_id, external_id, amount) VALUES ($1, 1, $2, 'EW-A', $3, 1)`,
+        [first.batch_id, dA, first.external_id]), /duplicate key|everee_payment_items_external_id_key/), 'the same external ID twice');
+    });
+
+    await t.test('reading a batch is for a super admin of its city', async () => {
+      await assert.rejects(getBatchView(db, cityAdmin, happyBatch.batch.id), { status: 403 });
+      await assert.rejects(getBatchView(db, sup2, 987654321), { status: 404 });
+      const view = await getBatchView(db, sup2, happyBatch.batch.id);
+      assert.deepEqual(view.items.map((i) => i.status), ['submitted', 'submitted']);
+      assert.ok(!JSON.stringify(view).includes('EW-A'), 'no Everee worker ID is shown');
+    });
+
+    await t.test('only Local drivers ever go to Everee: a Desi driver and a driver with no type are blocked and never sent, and a driver changed to Desi after a failure is not retried', async () => {
+      try {
+        await db.query("UPDATE drivers SET driver_type = 'DESI' WHERE id = $1", [dB]);
+        await db.query('UPDATE drivers SET driver_type = NULL WHERE id = $1', [dC]);
+        const run = await scenario('DL', [[dA, '10.00'], [dB, '11.00'], [dC, '12.00']]);
+        const preview = await previewEvereeBatch(db, sup1, run.run.id, { env: ARMED });
+        const by = (driver) => preview.drivers.find((d) => d.driverId === driver);
+        assert.equal(by(dA).eligible, true);
+        assert.deepEqual([by(dB).eligible, by(dB).blockers.map((b) => b.code).filter((c) => c.includes('desi') || c.includes('type'))], [false, ['desi_not_everee']]);
+        assert.deepEqual([by(dC).eligible, by(dC).blockers.map((b) => b.code).filter((c) => c.includes('desi') || c.includes('type'))], [false, ['driver_type_not_set']]);
+        assert.deepEqual([preview.summary.eligible, preview.summary.total], [1, '10.00']);
+
+        const ids = [];
+        for (const driver of [dA, dB, dC]) ids.push((await statement(run.run, driver)).id);
+        // Choosing only the Desi driver leaves nobody to pay: nothing is sent.
+        const onlyDesi = await previewEvereeBatch(db, sup1, run.run.id, { env: ARMED, statementIds: [ids[1]] });
+        assert.equal(onlyDesi.canSubmit, false);
+        const before = await counts();
+        await assert.rejects(submitBatch(db, sup1, { runId: run.run.id, requestId: randomUUID(), previewHash: onlyDesi.previewHash ?? '0'.repeat(64), statementIds: [ids[1]] }, deps(makeEveree().client)), { status: 409 });
+        assert.deepEqual(await counts(), before, 'nothing was reserved');
+
+        // Everyone chosen: only the Local driver is sent, and the type is kept on its payment item.
+        const fake = makeEveree();
+        const batch = await submitBatch(db, sup1, { runId: run.run.id, requestId: randomUUID(), previewHash: preview.previewHash, statementIds: ids }, deps(fake.client));
+        assert.deepEqual(fake.state.creates.map((c) => c.workerId), ['EW-A']);
+        assert.equal((await item(run.run, dA)).driver_type, 'LOCAL');
+        assert.equal(await item(run.run, dB), undefined);
+        assert.equal(await item(run.run, dC), undefined);
+        assert.deepEqual([(await statement(run.run, dB)).payout_status, (await statement(run.run, dC)).payout_status], ['not_submitted', 'not_submitted']);
+        assert.equal(batch.batch.drivers, 1);
+
+        // A failure, then the driver is changed to Desi: the retry does not send them to Everee.
+        const failing = await scenario('DR', [[dD, '10.00']]);
+        const refusing = makeEveree({ 'EW-D': 'refuse' });
+        const failed = await submit(failing.run, refusing.client);
+        assert.equal(failed.items.find((i) => i.driverId === dD).status, 'failed');
+        await db.query("UPDATE drivers SET driver_type = 'DESI' WHERE id = $1", [dD]);
+        const again = makeEveree();
+        const view = await retryBatch(db, sup2, failed.batch.id, deps(again.client));
+        assert.deepEqual(again.state.creates, [], 'a driver who is no longer Local is not sent');
+        assert.equal(view.items.find((i) => i.driverId === dD).status, 'failed');
+        assert.match((await item(failing.run, dD)).error_message, /no longer a Local driver/);
+      } finally {
+        await db.query("UPDATE drivers SET driver_type = 'LOCAL' WHERE id = ANY($1::int[])", [[dA, dB, dC, dD]]);
+      }
+    });
+  } finally {
+    await db.query('ROLLBACK');
+    db.release();
+    await pool.end();
+  }
+});

@@ -1,0 +1,18 @@
+
+# <type>(<scope>): <subject>
+#   ≤ 72 chars · imperative ("add", not "added") · lowercase · no full stop
+#
+# Why the change is needed: the problem, requirement or context.
+# (Required for feat and fix. Wrap at 72 characters.)
+#
+# - What changed, one bullet per notable change
+# - Anything teammates must do: "New env var REFRESH_TOKEN_SECRET"
+#
+# Refs: #12
+# Co-authored-by: Name <email>
+# BREAKING CHANGE: <only if an API or the schema changes incompatibly>
+#
+# types   feat fix docs style refactor perf test build ci chore revert
+# scopes  listed in .githooks/scopes
+#
+# Full rules: CONTRIBUTING.md §3. Lines starting with # are ignored.

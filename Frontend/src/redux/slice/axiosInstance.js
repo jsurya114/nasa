@@ -1,5 +1,13 @@
 import axios from "axios";
 import { API_BASE_URL } from "../../config";
+import { isNativeShell } from "../../native/bridge";
+import {
+  clearSession,
+  getAccessToken,
+  getRefreshToken,
+  refreshInApp,
+  saveRotatedTokens,
+} from "../../native/sessionStore";
 
 // Create a separate instance for refresh token requests to avoid interceptor loops
 const refreshInstance = axios.create({
@@ -12,14 +20,26 @@ const refreshInstance = axios.create({
 // Set base URL for global axios
 axios.defaults.baseURL = API_BASE_URL;
 
-// Request interceptor - Add token to all requests
-axios.interceptors.request.use(
-  (config) => {
-    // Check for admin or driver token
-    const adminToken = localStorage.getItem('adminToken');
-    const driverToken = localStorage.getItem('driverToken');
+// The app has two separate sign-ins: admin and driver. A browser can hold both
+// at once, so every request must use the tokens of its own area, never "whichever exists".
+const AREAS = ['admin', 'driver'];
 
-    const token = adminToken || driverToken;
+// Which area a request belongs to: from its URL ("/admin/..." or "/driver/..."),
+// otherwise from the page the user is on. Returns null when neither tells.
+const getArea = (url = '') => {
+  const path = String(url).replace(/^https?:\/\/[^/]+/i, '');
+  const fromUrl = AREAS.find((a) => path === `/${a}` || path.startsWith(`/${a}/`));
+  if (fromUrl) return fromUrl;
+
+  const page = typeof window !== 'undefined' ? window.location.pathname : '';
+  return AREAS.find((a) => page === `/${a}` || page.startsWith(`/${a}/`)) || null;
+};
+
+// Request interceptor - Add the token of the request's own area
+axios.interceptors.request.use(
+  async (config) => {
+    const area = getArea(config.url);
+    const token = area ? await getAccessToken(area) : null;
 
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
@@ -31,14 +51,16 @@ axios.interceptors.request.use(
   }
 );
 
-// Response interceptor - Handle 401 errors and refresh tokens
+// Response interceptor - Handle 401 errors and refresh the area's own tokens
 axios.interceptors.response.use(
   (response) => response,
   async (error) => {
     const originalRequest = error.config;
+    const area = originalRequest ? getArea(originalRequest.url) : null;
 
     // If error is 401 and it's not a retry and not a login/refresh request
     if (
+      area &&
       error.response?.status === 401 &&
       !originalRequest._retry &&
       !originalRequest.url.includes('/login') &&
@@ -47,24 +69,41 @@ axios.interceptors.response.use(
       originalRequest._retry = true;
 
       try {
-        const adminRefreshToken = localStorage.getItem('adminRefreshToken');
-        const driverRefreshToken = localStorage.getItem('driverRefreshToken');
+        // In the mobile app the shell holds the refresh token and returns only a new access token
+        if (isNativeShell()) {
+          // Another request may already have refreshed since this one was sent: use the newer token as is
+          const current = await getAccessToken(area);
+          const sent = String(originalRequest.headers?.Authorization || '').replace(/^Bearer /, '');
+          const accessToken = current && current !== sent ? current : await refreshInApp(area);
+          originalRequest.headers.Authorization = `Bearer ${accessToken}`;
+          return axios(originalRequest);
+        }
 
-        const refreshToken = adminRefreshToken || driverRefreshToken;
-        const role = adminRefreshToken ? 'admin' : 'driver';
+        const refreshToken = getRefreshToken(area);
 
         if (refreshToken) {
-          const response = await refreshInstance.post(`/${role}/refresh-token`, { refreshToken });
+          const response = await refreshInstance.post(`/${area}/refresh-token`, { refreshToken });
 
           if (response.status === 200) {
             const { accessToken, refreshToken: newRefreshToken } = response.data;
 
-            if (role === 'admin') {
-              localStorage.setItem('adminToken', accessToken);
-              localStorage.setItem('adminRefreshToken', newRefreshToken);
-            } else {
-              localStorage.setItem('driverToken', accessToken);
-              localStorage.setItem('driverRefreshToken', newRefreshToken);
+            saveRotatedTokens(area, { accessToken, refreshToken: newRefreshToken });
+
+            // A logout that triggered this refresh carries the old refresh token. Send the new one
+            // as well, so the whole session is revoked and no usable token is left behind.
+            if (originalRequest.url.endsWith('/logout')) {
+              try {
+                const body = JSON.parse(originalRequest.data || '{}');
+                originalRequest.data = JSON.stringify({
+                  ...body,
+                  refreshToken: newRefreshToken,
+                  previousRefreshToken: body.refreshToken,
+                });
+                // The body is longer now; let axios work out its length again.
+                originalRequest.headers.delete?.('Content-Length');
+              } catch {
+                originalRequest.data = JSON.stringify({ refreshToken: newRefreshToken });
+              }
             }
 
             // Retry the original request with the new token
@@ -73,17 +112,32 @@ axios.interceptors.response.use(
           }
         }
       } catch (refreshError) {
-        console.error("Token refresh failed:", refreshError);
-        // If refresh fails, clear tokens and redirect to login
-        localStorage.removeItem('adminToken');
-        localStorage.removeItem('adminRefreshToken');
-        localStorage.removeItem('driverToken');
-        localStorage.removeItem('driverRefreshToken');
+        const code = refreshError?.code || refreshError?.message;
 
-        if (window.location.pathname.startsWith('/admin')) {
-          window.location.href = '/admin/login';
-        } else if (window.location.pathname.startsWith('/driver')) {
-          window.location.href = '/driver/login';
+        if (isNativeShell()) {
+          // Nobody is signed in here (a fresh app start), or someone just signed out: there is nothing to clear
+          // and nothing to redirect to. Let the route guard show the sign-in form.
+          if (code === 'no_session' || code === 'signed_out') {
+            error.noSession = true;
+            return Promise.reject(error);
+          }
+          // A lost connection, a server error or a bridge timeout is not a reason to end the session. Keep it,
+          // mark the failure so the screen can offer "Try again", and only sign out when the server refused it.
+          if (code !== 'refresh_failed') {
+            error.transient = true;
+            return Promise.reject(error);
+          }
+        }
+
+        // If refresh fails, sign out of this area only. The other area keeps its session.
+        await clearSession(area).catch(() => {});
+        if (area === 'driver') {
+          localStorage.removeItem('driverTimezone');
+        }
+
+        const loginPath = `/${area}/login`;
+        if (window.location.pathname.startsWith(`/${area}`) && window.location.pathname !== loginPath) {
+          window.location.href = loginPath;
         }
       }
     }

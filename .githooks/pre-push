@@ -1,0 +1,14 @@
+#!/bin/sh
+# pre-push hook: blocks direct pushes to main and develop (CONTRIBUTING.md §1).
+set -eu
+
+while read -r local_ref local_sha remote_ref remote_sha; do
+  case "$remote_ref" in
+    refs/heads/main | refs/heads/develop)
+      printf '%s\n' "Direct pushes to ${remote_ref#refs/heads/} are blocked. Push a feature branch and open a pull request into develop." >&2
+      exit 1
+      ;;
+  esac
+done
+
+exit 0

@@ -1,4 +1,5 @@
 import HttpStatus from '../utils/statusCodes.js';
+import logger from '../utils/logger.js';
 import { verifyToken } from '../services/jwtservice.js';
 import { dbService } from '../services/admin/dbQueries.js';
 
@@ -56,7 +57,7 @@ const superAdminAuth = async (req, res, next) => {
     next();
 
   } catch (error) {
-    console.error('SuperAdmin Auth Error:', error);
+    logger.error('Superadmin auth error', error);
     return res.status(HttpStatus.INTERNAL_SERVER_ERROR).json({ 
       message: "Authentication error" 
     });

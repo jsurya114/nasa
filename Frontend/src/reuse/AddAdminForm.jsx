@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { Info } from "lucide-react";
 import { useSelector } from 'react-redux';
 import Select from 'react-select';
 
@@ -91,25 +92,16 @@ function AddAdminForm({ onSubmit, editData, isEdit, onCancel }) {
       return;
     }
 
-    const { confirmPassword, ...adminData } = form;
+    const { confirmPassword: _confirmPassword, ...adminData } = form; // leaves confirmPassword out of what is sent
     
     // If editing and password is empty, don't send password field
     if (isEdit && !adminData.password.trim()) {
       delete adminData.password;
     }
     
+    // The form lives in a dialog that closes when the save worked, so nothing is cleared here: a failed save keeps what was typed.
     onSubmit(adminData);
-    
-    if (!isEdit) {
-      setForm({
-        name: "",
-        email: "",
-        password: "",
-        confirmPassword: "",
-        role: "admin",
-        cities: [],
-      });
-    }
+
     setErrors({});
   };
 
@@ -165,7 +157,7 @@ function AddAdminForm({ onSubmit, editData, isEdit, onCancel }) {
         value={form.name}
         onChange={handleChange}
         placeholder="Admin Name"
-        className="px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
+        className="bg-white text-ink placeholder:text-ink-muted/70 transition-shadow border-line min-h-11 px-3 py-2 border rounded-xl focus:outline-none focus:ring-4 focus:ring-brand-500/20"
       />
       {errors.name && <p className="text-red-500 text-sm">{errors.name}</p>}
 
@@ -175,7 +167,7 @@ function AddAdminForm({ onSubmit, editData, isEdit, onCancel }) {
         value={form.email}
         onChange={handleChange}
         placeholder="Email"
-        className="px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
+        className="bg-white text-ink placeholder:text-ink-muted/70 transition-shadow border-line min-h-11 px-3 py-2 border rounded-xl focus:outline-none focus:ring-4 focus:ring-brand-500/20"
       />
       {errors.email && <p className="text-red-500 text-sm">{errors.email}</p>}
 
@@ -186,7 +178,7 @@ function AddAdminForm({ onSubmit, editData, isEdit, onCancel }) {
           value={form.password}
           onChange={handleChange}
           placeholder={isEdit ? "New Password (leave blank to keep current)" : "Password"}
-          className="px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
+          className="bg-white text-ink placeholder:text-ink-muted/70 transition-shadow border-line min-h-11 px-3 py-2 border rounded-xl focus:outline-none focus:ring-4 focus:ring-brand-500/20"
         />
         {isEdit && (
           <p className="text-xs text-gray-500 flex items-center gap-1">
@@ -205,7 +197,7 @@ function AddAdminForm({ onSubmit, editData, isEdit, onCancel }) {
         value={form.confirmPassword}
         onChange={handleChange}
         placeholder="Confirm Password"
-        className="px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
+        className="bg-white text-ink placeholder:text-ink-muted/70 transition-shadow border-line min-h-11 px-3 py-2 border rounded-xl focus:outline-none focus:ring-4 focus:ring-brand-500/20"
       />
       {errors.confirmPassword && (
         <p className="text-red-500 text-sm">{errors.confirmPassword}</p>
@@ -216,15 +208,16 @@ function AddAdminForm({ onSubmit, editData, isEdit, onCancel }) {
           name="role"
           value={form.role}
           onChange={handleChange}
-          className="px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
+          className="bg-white text-ink placeholder:text-ink-muted/70 transition-shadow border-line min-h-11 px-3 py-2 border rounded-xl focus:outline-none focus:ring-4 focus:ring-brand-500/20"
           disabled={isEdit}
         >
           <option value="admin">Admin</option>
           <option value="superadmin">Super Admin</option>
         </select>
         {isEdit && (
-          <p className="text-xs text-gray-500">
-            ℹ️ Role cannot be changed during edit
+          <p className="text-xs text-gray-500 flex items-center gap-1.5">
+            <Info className="w-3.5 h-3.5 flex-shrink-0" aria-hidden="true" />
+            Role cannot be changed during edit
           </p>
         )}
       </div>
@@ -264,15 +257,14 @@ function AddAdminForm({ onSubmit, editData, isEdit, onCancel }) {
           {loading ? (isEdit ? 'Updating Admin' : 'Adding Admin') : (isEdit ? 'Update Admin' : 'Add Admin')}
         </button>
 
-        {isEdit && (
-          <button
-            type="button"
-            onClick={handleCancel}
-            className="px-6 py-2 bg-gray-300 text-gray-800 rounded-lg hover:bg-gray-400 transition-colors"
-          >
-            Cancel
-          </button>
-        )}
+        <button
+          type="button"
+          onClick={handleCancel}
+          disabled={loading}
+          className="px-6 py-2 bg-gray-300 text-gray-800 rounded-lg hover:bg-gray-400 transition-colors disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          Cancel
+        </button>
       </div>
     </form>
   );

@@ -1,5 +1,7 @@
 "use client";
 
+import { SkeletonList } from "../../reuse/Skeleton.jsx";
+import { Camera, ListChecks, Save, LoaderCircle } from "lucide-react";
 import { useState, useEffect } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import {
@@ -11,21 +13,26 @@ import {
   setPage,
   setPageLimit,
   setSearchTerm,
-  setZipCodeFilter,
 } from "../../redux/slice/admin/accessCodeSlice";
+import { getAdminCities } from "../../redux/slice/admin/userLoadSlice";
 import Header from "../../reuse/Header";
 import Nav from "../../reuse/Nav";
-import Swal from "sweetalert2";
-import { toast } from "react-toastify";
+import { toast } from "../../utils/toast";
+import { confirmDialog } from "../../utils/confirmDialog";
 import AccessCodeDetailsDialog from "../AccessCodeDetailsDialog";
 import AccessCodeEditDialog from "./AccessCodeEditDialog";
+import Modal from "../../reuse/Modal.jsx";
+
+// The delete dialog is built as HTML, so every stored value shown in it must be escaped first.
+// Drivers can create access codes too, so the text is not always typed by an admin.
+const escapeHtml = (value) =>
+  String(value ?? "").replace(/[&<>"'`]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;", "`": "&#96;" }[c]));
 
 export default function AddAccessCodePage() {
   const dispatch = useDispatch();
   const {
     accessCodes = [],
     status = "idle",
-    error: reduxError,
     currentPage,
     pageLimit,
     totalPages,
@@ -33,25 +40,43 @@ export default function AddAccessCodePage() {
     searchTerm,
     zipCodeFilter,
   } = useSelector((state) => state.accessCodes || {});
+  // The cities this admin may use (every city for a superadmin).
+  const cities = useSelector((state) => state.users?.city) || [];
+  const isSuperAdmin = useSelector((state) => state.admin?.isSuperAdmin);
+  // Several selectable cities need a choice. With exactly one, the picker is hidden and that city is
+  // sent, because the server counts every assigned city (also switched-off ones) before filling one in.
+  const mustChooseCity = !isSuperAdmin && cities.length > 1;
+  const showCityPicker = isSuperAdmin || cities.length > 1;
+  const soleCityId = !isSuperAdmin && cities.length === 1 ? String(cities[0].id) : "";
 
   const [address, setAddress] = useState("");
   const [accessCode, setAccessCode] = useState("");
   const [zipCode, setZipCode] = useState("");
+  const [cityId, setCityId] = useState("");
   const [errors, setErrors] = useState({});
   const [touched, setTouched] = useState({});
-  const [localSearch, setLocalSearch] = useState("");
-  const [localZipCodeFilter, setLocalZipCodeFilter] = useState("");
+  const [localSearch, setLocalSearch] = useState(searchTerm ?? "");
+  const [localZipCodeFilter] = useState("");
   const [images, setImages] = useState([]);
   const [imageError, setImageError] = useState("");
   const [showDetails, setShowDetails] = useState(false);
   const [selectedAC, setSelectedAC] = useState(null);
   const [showEdit, setShowEdit] = useState(false);
+  // The Add form opens in a dialog; `saving` keeps it from being dismissed while the code is being saved.
+  const [addOpen, setAddOpen] = useState(false);
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     if (status === "idle") {
       dispatch(fetchAccessCodes({ page: currentPage, limit: pageLimit, search: searchTerm, zipCodeFilter }));
     }
+    // Loads the list once, when it has not been loaded yet. Page and filter changes fetch on their own, so they are not dependencies.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dispatch, status]);
+
+  useEffect(() => {
+    dispatch(getAdminCities());
+  }, [dispatch]);
 
   useEffect(() => {
     return () => {
@@ -115,6 +140,18 @@ export default function AddAccessCodePage() {
     }
   };
 
+  const closeAddForm = () => {
+    setAddress("");
+    setAccessCode("");
+    setZipCode("");
+    setCityId("");
+    setImages([]);
+    setImageError("");
+    setErrors({});
+    setTouched({});
+    setAddOpen(false);
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
 
@@ -129,6 +166,11 @@ export default function AddAccessCodePage() {
 
     if (Object.values(newErrors).some((error) => error !== "")) {
       toast.error("Please fix all validation errors", { position: "top-right" });
+      return;
+    }
+
+    if (mustChooseCity && !cityId) {
+      toast.error("Please choose a city", { position: "top-right" });
       return;
     }
 
@@ -147,26 +189,25 @@ export default function AddAccessCodePage() {
       }
     }
 
+    setSaving(true);
     try {
       const formData = new FormData();
       formData.append("zip_code", zipCode.trim());
       formData.append("address", address.trim());
       formData.append("access_code", accessCode.trim());
+      const chosenCityId = cityId || soleCityId;
+      if (chosenCityId) formData.append("city_id", chosenCityId);
       images.forEach((file) => formData.append("images", file));
 
       await dispatch(createAccessCode(formData)).unwrap();
 
       toast.success("Access code created successfully!", { position: "top-right", autoClose: 3000 });
 
-      setAddress("");
-      setAccessCode("");
-      setZipCode("");
-      setImages([]);
-      setImageError("");
-      setErrors({});
-      setTouched({});
+      closeAddForm();
     } catch (err) {
       toast.error(err || "Failed to create access code", { position: "top-right", autoClose: 4000 });
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -206,24 +247,20 @@ export default function AddAccessCodePage() {
   };
 
   const handleDelete = async (ac) => {
-    const result = await Swal.fire({
+    const confirmed = await confirmDialog({
       title: 'Delete Access Code?',
       html: `
         <div class="text-left">
-          <p class="mb-2"><strong>Address:</strong> ${ac.address}</p>
-          <p class="mb-2"><strong>Zip Code:</strong> ${ac.zip_code}</p>
-          <p class="mb-2"><strong>Access Code:</strong> ${ac.access_code}</p>
+          <p class="mb-2"><strong>Address:</strong> ${escapeHtml(ac.address)}</p>
+          <p class="mb-2"><strong>Zip Code:</strong> ${escapeHtml(ac.zip_code)}</p>
+          <p class="mb-2"><strong>Access Code:</strong> ${escapeHtml(ac.access_code)}</p>
         </div>
       `,
-      icon: 'warning',
-      showCancelButton: true,
-      confirmButtonColor: '#dc2626',
-      cancelButtonColor: '#6b7280',
-      confirmButtonText: 'Yes, delete it!',
-      cancelButtonText: 'Cancel'
+      confirmText: 'Yes, delete it!',
+      cancelText: 'Cancel',
     });
 
-    if (result.isConfirmed) {
+    if (confirmed) {
       try {
         await dispatch(deleteAccessCode(ac.id)).unwrap();
         toast.success("Access code deleted successfully!", { position: "top-right", autoClose: 2000 });
@@ -237,13 +274,6 @@ export default function AddAccessCodePage() {
     dispatch(setSearchTerm(localSearch));
     dispatch(setPage(1));
     dispatch(fetchAccessCodes({ page: 1, limit: pageLimit, search: localSearch, zipCodeFilter: localZipCodeFilter }));
-  };
-
-  const handleFilterChange = (filter) => {
-    setLocalZipCodeFilter(filter);
-    dispatch(setZipCodeFilter(filter));
-    dispatch(setPage(1));
-    dispatch(fetchAccessCodes({ page: 1, limit: pageLimit, search: localSearch, zipCodeFilter: filter }));
   };
 
   const handlePageChange = (newPage) => {
@@ -301,192 +331,36 @@ export default function AddAccessCodePage() {
 
   return (
     <div
-      className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50 overflow-x-hidden"
+      className="min-h-dvh bg-canvas overflow-x-hidden"
       style={{ fontFamily: "Poppins, sans-serif" }}
     >
       <Header />
 
       <main className="max-w-7xl mx-auto p-3 sm:p-4 lg:p-6 py-6 sm:py-12 pb-32">
-        {/* Add New Access Code Card */}
-        <div className="bg-white/80 backdrop-blur-sm border border-white/20 rounded-2xl shadow-xl p-4 sm:p-8 mb-6 sm:mb-8">
-          <div className="flex flex-col sm:flex-row sm:items-center mb-6 sm:mb-8">
-            <div className="bg-gradient-to-r from-[#8200db] to-[#9d00ff] p-3 rounded-xl mb-4 sm:mb-0 sm:mr-4 w-fit">
-              <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
-              </svg>
-            </div>
-            <div>
-              <h1 className="text-xl sm:text-2xl lg:text-3xl font-bold bg-gradient-to-r from-gray-900 to-gray-600 bg-clip-text text-transparent">
-                Add New Access Code
-              </h1>
-              <p className="text-gray-600 mt-1 text-sm sm:text-base">
-                Create secure access codes for specific zip codes and addresses
-              </p>
-            </div>
-          </div>
-
-          <form onSubmit={handleSubmit} className="space-y-4 sm:space-y-6">
-            {/* Zip Code Input */}
-            <div className="space-y-2">
-              <label htmlFor="zipCode" className="block text-sm font-semibold text-gray-800 mb-2">
-                Zip Code <span className="text-red-500">*</span>
-              </label>
-              <input
-                id="zipCode"
-                type="text"
-                placeholder="Enter zip code (e.g., 12345 or 12345-6789)"
-                value={zipCode}
-                onChange={(e) => handleFieldChange("zipCode", e.target.value)}
-                onBlur={() => handleBlur("zipCode")}
-                className={`w-full px-4 py-3 border-2 ${
-                  touched.zipCode && errors.zipCode ? "border-red-500" : "border-gray-200"
-                } rounded-xl focus:ring-4 focus:ring-purple-100 focus:border-[#8200db] bg-white text-gray-900 transition-all`}
-                disabled={status === "loading"}
-              />
-              {touched.zipCode && errors.zipCode && (
-                <p className="text-red-500 text-sm mt-1 flex items-center">
-                  <svg className="w-4 h-4 mr-1" fill="currentColor" viewBox="0 0 20 20">
-                    <path
-                      fillRule="evenodd"
-                      d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z"
-                      clipRule="evenodd"
-                    />
-                  </svg>
-                  {errors.zipCode}
-                </p>
-              )}
-              <p className="text-xs text-gray-500 mt-1">Enter 5-digit zip code or 5+4 format (e.g., 12345-6789)</p>
-            </div>
-
-            {/* Address Input */}
-            <div className="space-y-2">
-              <label htmlFor="address" className="block text-sm font-semibold text-gray-800 mb-2">
-                Address <span className="text-red-500">*</span>
-              </label>
-              <input
-                id="address"
-                type="text"
-                placeholder="Enter the complete address..."
-                value={address}
-                onChange={(e) => handleFieldChange("address", e.target.value)}
-                onBlur={() => handleBlur("address")}
-                className={`w-full px-4 py-3 border-2 ${
-                  touched.address && errors.address ? "border-red-500" : "border-gray-200"
-                } rounded-xl focus:ring-4 focus:ring-purple-100 focus:border-[#8200db] text-gray-900 transition-all`}
-                disabled={status === "loading"}
-              />
-              {touched.address && errors.address && (
-                <p className="text-red-500 text-sm mt-1 flex items-center">
-                  <svg className="w-4 h-4 mr-1" fill="currentColor" viewBox="0 0 20 20">
-                    <path
-                      fillRule="evenodd"
-                      d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z"
-                      clipRule="evenodd"
-                    />
-                  </svg>
-                  {errors.address}
-                </p>
-              )}
-            </div>
-
-            {/* Access Code Input */}
-            <div className="space-y-2">
-              <label htmlFor="accessCode" className="block text-sm font-semibold text-gray-800 mb-2">
-                Access Code <span className="text-red-500">*</span>
-              </label>
-              <input
-                id="accessCode"
-                type="text"
-                placeholder="Enter alphanumeric access code..."
-                value={accessCode}
-                onChange={(e) => handleFieldChange("accessCode", e.target.value)}
-                onBlur={() => handleBlur("accessCode")}
-                className={`w-full px-4 py-3 border-2 ${
-                  touched.accessCode && errors.accessCode ? "border-red-500" : "border-gray-200"
-                } rounded-xl focus:ring-4 focus:ring-purple-100 focus:border-[#8200db] text-gray-900 transition-all`}
-                disabled={status === "loading"}
-              />
-              {touched.accessCode && errors.accessCode && (
-                <p className="text-red-500 text-sm mt-1 flex items-center">
-                  <svg className="w-4 h-4 mr-1" fill="currentColor" viewBox="0 0 20 20">
-                    <path
-                      fillRule="evenodd"
-                      d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z"
-                      clipRule="evenodd"
-                    />
-                  </svg>
-                  {errors.accessCode}
-                </p>
-              )}
-              <p className="text-xs text-gray-500 mt-1">Only letters and numbers, minimum 4 characters</p>
-            </div>
-
-            {/* Images Upload */}
-            <div className="space-y-2">
-              <label htmlFor="images" className="block text-sm font-semibold text-gray-800 mb-2">
-                Upload Images (optional, up to 3)
-              </label>
-              <input
-                id="images"
-                type="file"
-                accept="image/jpeg,image/png,image/webp,image/jpg"
-                multiple
-                onChange={onImagesChange}
-                className="block w-full text-sm text-gray-900 border-2 border-gray-200 rounded-xl cursor-pointer bg-white focus:outline-none focus:ring-4 focus:ring-purple-100 focus:border-[#8200db]"
-                disabled={status === "loading"}
-              />
-              <p className="text-xs text-gray-500">Allowed types: JPG, JPEG, PNG, WEBP. Max 3 images.</p>
-              {imageError && (
-                <p className="text-red-500 text-sm mt-1">{imageError}</p>
-              )}
-              {images && images.length > 0 && (
-                <ul className="text-xs text-gray-600 list-disc pl-5">
-                  {images.map((f, i) => (
-                    <li key={i}>{f.name}</li>
-                  ))}
-                </ul>
-              )}
-            </div>
-
-            {/* Submit Button */}
-            <div className="flex justify-end pt-4">
-              <button
-                type="submit"
-                className={`px-6 sm:px-8 py-3 bg-gradient-to-r from-[#8200db] to-[#9d00ff] text-white rounded-xl shadow-lg hover:from-[#7300c4] hover:to-[#8a00e6] focus:outline-none focus:ring-4 focus:ring-purple-200 transition-all font-semibold ${
-                  status === "loading"
-                    ? "opacity-50 cursor-not-allowed"
-                    : "hover:shadow-xl transform hover:-translate-y-0.5"
-                }`}
-                disabled={status === "loading"}
-              >
-                {status === "loading" ? "Saving..." : "Save Access Code"}
-              </button>
-            </div>
-          </form>
-        </div>
-
         {/* Saved Access Codes Table */}
-        <div className="bg-white/80 backdrop-blur-sm border border-white/20 rounded-2xl shadow-xl overflow-hidden mb-20">
+        <div className="card-surface overflow-hidden mb-20">
           <div className="px-3 sm:px-4 lg:px-8 py-4 sm:py-6 border-b border-gray-100">
             <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
               <div className="flex flex-col sm:flex-row sm:items-center">
-                <div className="bg-gradient-to-r from-emerald-500 to-teal-600 p-3 rounded-xl mb-4 sm:mb-0 sm:mr-4 w-fit">
-                  <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
-                    />
-                  </svg>
+                <div className="mb-4 sm:mb-0 sm:mr-4 grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-brand-50 text-brand-700 ring-1 ring-brand-100">
+                  <ListChecks className="h-6 w-6" aria-hidden="true" />
                 </div>
                 <div>
-                  <h2 className="text-xl sm:text-2xl lg:text-3xl font-bold bg-gradient-to-r from-gray-900 to-gray-600 bg-clip-text text-transparent">
+                  <h2 className="text-xl sm:text-2xl lg:text-3xl font-bold tracking-tight text-ink">
                     Saved Access Codes
                   </h2>
                   <p className="text-gray-600 mt-1 text-sm sm:text-base">Total: {totalItems} codes</p>
                 </div>
               </div>
+
+              <div className="flex flex-wrap items-center justify-center lg:justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => setAddOpen(true)}
+                className="min-h-11 rounded-xl bg-brand px-5 py-2 text-sm font-semibold text-white shadow hover:bg-brand-dark focus:outline-none focus:ring-4 focus:ring-brand-500/30 transition-all"
+              >
+                + Add Access Code
+              </button>
 
               {/* Items per page */}
               <div className="flex items-center justify-center lg:justify-end space-x-2">
@@ -494,7 +368,7 @@ export default function AddAccessCodePage() {
                 <select
                   value={pageLimit}
                   onChange={(e) => handleLimitChange(Number(e.target.value))}
-                  className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 text-sm"
+                  className="bg-white text-ink placeholder:text-ink-muted/70 focus:outline-none transition-shadow min-h-11 px-3 py-2 border border-line rounded-xl focus:ring-4 focus:ring-brand-500/20 text-sm"
                 >
                   <option value={5}>5</option>
                   <option value={10}>10</option>
@@ -503,6 +377,7 @@ export default function AddAccessCodePage() {
                   <option value={40}>40</option>
                   <option value={50}>50</option>
                 </select>
+              </div>
               </div>
             </div>
 
@@ -516,11 +391,11 @@ export default function AddAccessCodePage() {
                     value={localSearch}
                     onChange={(e) => setLocalSearch(e.target.value)}
                     onKeyPress={(e) => e.key === "Enter" && handleSearch()}
-                    className="w-full px-4 py-2 pr-10 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 text-sm"
+                    className="bg-white text-ink placeholder:text-ink-muted/70 focus:outline-none transition-shadow min-h-11 w-full px-4 py-2 pr-10 border border-line rounded-xl focus:ring-4 focus:ring-brand-500/20 text-sm"
                   />
                   <button
                     onClick={handleSearch}
-                    className="absolute right-2 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-[#8200db] p-1"
+                    className="absolute right-2 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-brand p-1"
                   >
                     <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path
@@ -538,25 +413,7 @@ export default function AddAccessCodePage() {
 
           <div className="p-2 sm:p-3 lg:p-6">
             {status === "loading" ? (
-              <div className="text-center py-16">
-                <svg className="animate-spin h-12 w-12 text-[#8200db] mx-auto mb-4" viewBox="0 0 24 24">
-                  <circle
-                    cx="12"
-                    cy="12"
-                    r="10"
-                    stroke="currentColor"
-                    strokeWidth="4"
-                    fill="none"
-                    className="opacity-25"
-                  ></circle>
-                  <path
-                    fill="currentColor"
-                    d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                    className="opacity-75"
-                  ></path>
-                </svg>
-                <p className="text-gray-600">Loading access codes...</p>
-              </div>
+              <SkeletonList rows={4} label="Loading access codes..." className="py-2" />
             ) : accessCodes.length === 0 ? (
               <div className="text-center py-16">
                 <div className="bg-gray-100 rounded-full p-6 w-24 h-24 mx-auto mb-6 flex items-center justify-center">
@@ -581,8 +438,8 @@ export default function AddAccessCodePage() {
                 {/* Desktop Table View - Hidden on mobile */}
                 <div className="hidden md:block w-full overflow-hidden">
                   <div className="shadow ring-1 ring-black ring-opacity-5 md:rounded-lg">
-                    <table className="w-full divide-y divide-gray-200">
-                      <thead className="bg-gradient-to-r from-gray-50 to-gray-100">
+                    <table className="w-full divide-y divide-line">
+                      <thead className="bg-brand-50/60">
                         <tr>
                           <th className="px-3 lg:px-4 py-3 sm:py-4 text-left text-xs font-bold text-gray-600 uppercase tracking-wider whitespace-nowrap">
                             Zip Code
@@ -640,7 +497,7 @@ export default function AddAccessCodePage() {
                               <div className="flex items-center gap-2">
                                 <button
                                   onClick={(e) => { e.stopPropagation(); handleEdit(ac); }}
-                                  className="inline-flex items-center justify-center px-3 py-2 bg-[#8200db] text-white text-xs font-medium rounded-lg hover:bg-[#7300c4] transition-all whitespace-nowrap"
+                                  className="inline-flex items-center justify-center px-3 py-2 bg-brand text-white text-xs font-medium rounded-lg hover:bg-brand-dark transition-all whitespace-nowrap"
                                 >
                                   <svg
                                     className="w-4 h-4 mr-1"
@@ -687,10 +544,10 @@ export default function AddAccessCodePage() {
 
                 {/* Mobile Card View - Shown only on mobile */}
                 <div className="md:hidden space-y-4">
-                  {accessCodes.map((ac, index) => (
+                  {accessCodes.map((ac) => (
                     <div
                       key={ac.id}
-                      className="bg-white border border-gray-200 rounded-xl shadow-sm p-4 hover:shadow-md transition-shadow"
+                      className="card-surface p-4 hover:shadow-md transition-shadow"
                     >
                       <div
                         onClick={() => { setSelectedAC(ac); setShowDetails(true); }}
@@ -702,7 +559,8 @@ export default function AddAccessCodePage() {
                             {ac.zip_code}
                           </span>
                           <span className="inline-flex items-center justify-center px-2 py-1 rounded-full text-xs font-medium bg-indigo-100 text-indigo-800 border border-indigo-200">
-                            📷 {ac.imageCount ?? 0}
+                            <Camera className="w-3.5 h-3.5 mr-1" aria-hidden="true" />
+                            {ac.imageCount ?? 0}
                           </span>
                         </div>
 
@@ -733,7 +591,7 @@ export default function AddAccessCodePage() {
                         <div className="grid grid-cols-2 gap-2">
                           <button
                             onClick={(e) => { e.stopPropagation(); handleEdit(ac); }}
-                            className="inline-flex items-center justify-center px-3 py-2.5 bg-gradient-to-r from-[#8200db] to-[#9d00ff] text-white text-sm font-semibold rounded-lg hover:from-[#7300c4] hover:to-[#8a00e6] transition-all shadow-md hover:shadow-lg"
+                            className="inline-flex items-center justify-center px-3 py-2.5 bg-brand text-white text-sm font-semibold rounded-lg hover:bg-brand-dark transition-all shadow-md hover:shadow-lg"
                           >
                             <svg
                               className="w-4 h-4 mr-1.5"
@@ -752,7 +610,7 @@ export default function AddAccessCodePage() {
                           </button>
                           <button
                             onClick={(e) => { e.stopPropagation(); handleDelete(ac); }}
-                            className="inline-flex items-center justify-center px-3 py-2.5 bg-gradient-to-r from-red-600 to-red-700 text-white text-sm font-semibold rounded-lg hover:from-red-700 hover:to-red-800 transition-all shadow-md hover:shadow-lg"
+                            className="inline-flex items-center justify-center px-3 py-2.5 bg-red-600 text-white text-sm font-semibold rounded-lg hover:bg-red-700 transition-all shadow-md hover:shadow-lg"
                           >
                             <svg
                               className="w-4 h-4 mr-1.5"
@@ -786,7 +644,7 @@ export default function AddAccessCodePage() {
                         group relative inline-flex items-center px-2 sm:px-4 py-2 text-xs sm:text-sm font-semibold 
                         rounded-lg border transition-all duration-200 ease-out transform
                         ${currentPage === 1
-                          ? "bg-gray-50 text-gray-400 cursor-not-allowed border-gray-200"
+                          ? "bg-gray-50 text-gray-400 cursor-not-allowed border-line"
                           : "bg-white text-gray-700 border-gray-300 hover:bg-gray-50 hover:text-gray-900 hover:border-gray-400 hover:shadow-md hover:scale-[1.02]"
                         }
                       `}
@@ -841,7 +699,7 @@ export default function AddAccessCodePage() {
                         group relative inline-flex items-center px-2 sm:px-4 py-2 text-xs sm:text-sm font-semibold 
                         rounded-lg border transition-all duration-200 ease-out transform
                         ${currentPage === totalPages
-                          ? "bg-gray-50 text-gray-400 cursor-not-allowed border-gray-200"
+                          ? "bg-gray-50 text-gray-400 cursor-not-allowed border-line"
                           : "bg-white text-gray-700 border-gray-300 hover:bg-gray-50 hover:text-gray-900 hover:border-gray-400 hover:shadow-md hover:scale-[1.02]"
                         }
                       `}
@@ -860,6 +718,184 @@ export default function AddAccessCodePage() {
         </div>
       </main>
 
+      {addOpen && (
+        <Modal title="Add Access Code" onClose={closeAddForm} busy={saving}>
+          <form onSubmit={handleSubmit} className="space-y-4 sm:space-y-6 mt-4">
+            {/* Zip Code Input */}
+            <div className="space-y-2">
+              <label htmlFor="zipCode" className="block text-sm font-semibold text-gray-800 mb-2">
+                Zip Code <span className="text-red-500">*</span>
+              </label>
+              <input
+                id="zipCode"
+                type="text"
+                placeholder="Enter zip code (e.g., 12345 or 12345-6789)"
+                value={zipCode}
+                onChange={(e) => handleFieldChange("zipCode", e.target.value)}
+                onBlur={() => handleBlur("zipCode")}
+                className={`placeholder:text-ink-muted/70 focus:outline-none transition-shadow min-h-11 w-full px-4 py-3 border ${
+                  touched.zipCode && errors.zipCode ? "border-red-500" : "border-line"
+                } rounded-xl focus:ring-4 focus:ring-brand-500/20 focus:border-brand-500 bg-white text-gray-900 transition-all`}
+                disabled={status === "loading"}
+              />
+              {touched.zipCode && errors.zipCode && (
+                <p className="text-red-500 text-sm mt-1 flex items-center">
+                  <svg className="w-4 h-4 mr-1" fill="currentColor" viewBox="0 0 20 20">
+                    <path
+                      fillRule="evenodd"
+                      d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z"
+                      clipRule="evenodd"
+                    />
+                  </svg>
+                  {errors.zipCode}
+                </p>
+              )}
+              <p className="text-xs text-gray-500 mt-1">Enter 5-digit zip code or 5+4 format (e.g., 12345-6789)</p>
+            </div>
+
+            {/* Address Input */}
+            <div className="space-y-2">
+              <label htmlFor="address" className="block text-sm font-semibold text-gray-800 mb-2">
+                Address <span className="text-red-500">*</span>
+              </label>
+              <input
+                id="address"
+                type="text"
+                placeholder="Enter the complete address..."
+                value={address}
+                onChange={(e) => handleFieldChange("address", e.target.value)}
+                onBlur={() => handleBlur("address")}
+                className={`bg-white placeholder:text-ink-muted/70 focus:outline-none transition-shadow min-h-11 w-full px-4 py-3 border ${
+                  touched.address && errors.address ? "border-red-500" : "border-line"
+                } rounded-xl focus:ring-4 focus:ring-brand-500/20 focus:border-brand-500 text-gray-900 transition-all`}
+                disabled={status === "loading"}
+              />
+              {touched.address && errors.address && (
+                <p className="text-red-500 text-sm mt-1 flex items-center">
+                  <svg className="w-4 h-4 mr-1" fill="currentColor" viewBox="0 0 20 20">
+                    <path
+                      fillRule="evenodd"
+                      d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z"
+                      clipRule="evenodd"
+                    />
+                  </svg>
+                  {errors.address}
+                </p>
+              )}
+            </div>
+
+            {/* City: shown when the admin has several cities (or is a superadmin) */}
+            {showCityPicker && (
+              <div className="space-y-2">
+                <label htmlFor="cityId" className="block text-sm font-semibold text-gray-800 mb-2">
+                  City {mustChooseCity && <span className="text-red-500">*</span>}
+                </label>
+                <select
+                  id="cityId"
+                  value={cityId}
+                  onChange={(e) => setCityId(e.target.value)}
+                  className="placeholder:text-ink-muted/70 focus:outline-none transition-shadow min-h-11 w-full px-4 py-3 border border-line rounded-xl focus:ring-4 focus:ring-brand-500/20 focus:border-brand-500 text-gray-900 transition-all bg-white"
+                  disabled={status === "loading"}
+                >
+                  <option value="">{mustChooseCity ? "Select a city" : "No city"}</option>
+                  {cities.map((city) => (
+                    <option key={city.id} value={city.id}>
+                      {city.job}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+
+            {/* Access Code Input */}
+            <div className="space-y-2">
+              <label htmlFor="accessCode" className="block text-sm font-semibold text-gray-800 mb-2">
+                Access Code <span className="text-red-500">*</span>
+              </label>
+              <input
+                id="accessCode"
+                type="text"
+                placeholder="Enter alphanumeric access code..."
+                value={accessCode}
+                onChange={(e) => handleFieldChange("accessCode", e.target.value)}
+                onBlur={() => handleBlur("accessCode")}
+                className={`bg-white placeholder:text-ink-muted/70 focus:outline-none transition-shadow min-h-11 w-full px-4 py-3 border ${
+                  touched.accessCode && errors.accessCode ? "border-red-500" : "border-line"
+                } rounded-xl focus:ring-4 focus:ring-brand-500/20 focus:border-brand-500 text-gray-900 transition-all`}
+                disabled={status === "loading"}
+              />
+              {touched.accessCode && errors.accessCode && (
+                <p className="text-red-500 text-sm mt-1 flex items-center">
+                  <svg className="w-4 h-4 mr-1" fill="currentColor" viewBox="0 0 20 20">
+                    <path
+                      fillRule="evenodd"
+                      d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z"
+                      clipRule="evenodd"
+                    />
+                  </svg>
+                  {errors.accessCode}
+                </p>
+              )}
+              <p className="text-xs text-gray-500 mt-1">Only letters and numbers, minimum 4 characters</p>
+            </div>
+
+            {/* Images Upload */}
+            <div className="space-y-2">
+              <label htmlFor="images" className="block text-sm font-semibold text-gray-800 mb-2">
+                Upload Images (optional, up to 3)
+              </label>
+              <input
+                id="images"
+                type="file"
+                accept="image/jpeg,image/png,image/webp,image/jpg"
+                multiple
+                onChange={onImagesChange}
+                className="file:mr-3 file:rounded-lg file:border-0 file:bg-brand-50 file:px-3 file:py-2 file:text-sm file:font-semibold file:text-brand-800 hover:file:bg-brand-100 file:cursor-pointer block w-full text-sm text-gray-900 border-2 border-line rounded-xl cursor-pointer bg-white focus:outline-none focus:ring-4 focus:ring-purple-100 focus:border-brand"
+                disabled={status === "loading"}
+              />
+              <p className="text-xs text-gray-500">Allowed types: JPG, JPEG, PNG, WEBP. Max 3 images.</p>
+              {imageError && (
+                <p className="text-red-500 text-sm mt-1">{imageError}</p>
+              )}
+              {images && images.length > 0 && (
+                <ul className="text-xs text-gray-600 list-disc pl-5">
+                  {images.map((f, i) => (
+                    <li key={i}>{f.name}</li>
+                  ))}
+                </ul>
+              )}
+            </div>
+
+            {/* Cancel and Submit */}
+            <div className="flex justify-end gap-3 pt-4">
+              <button
+                type="button"
+                onClick={closeAddForm}
+                disabled={saving}
+                className="px-6 sm:px-8 py-3 bg-gray-200 text-gray-800 rounded-xl hover:bg-gray-300 focus:outline-none focus:ring-4 focus:ring-gray-300/50 transition-all font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                className={`px-6 sm:px-8 py-3 bg-brand text-white rounded-xl shadow-lg hover:bg-brand-dark focus:outline-none focus:ring-4 focus:ring-brand-500/30 transition-all font-semibold ${
+                  status === "loading"
+                    ? "opacity-50 cursor-not-allowed"
+                    : "hover:shadow-xl transform hover:-translate-y-0.5"
+                }`}
+                disabled={status === "loading"}
+              >
+                <span className="inline-flex items-center justify-center gap-2">
+                  {status === "loading"
+                    ? <LoaderCircle className="h-5 w-5 animate-spin" aria-hidden="true" />
+                    : <Save className="h-5 w-5" aria-hidden="true" />}
+                  {status === "loading" ? "Saving..." : "Save Access Code"}
+                </span>
+              </button>
+            </div>
+          </form>
+        </Modal>
+      )}
       <AccessCodeDetailsDialog
         open={showDetails}
         onClose={() => { setShowDetails(false); setSelectedAC(null); }}

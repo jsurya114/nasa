@@ -1,0 +1,9 @@
+# Create an invoice as a PDF from the Insights page
+
+The owner needs to send clients an invoice in NASA's own format (the "NASA FD INVOICE 0028" template). A **Create invoice** button in the header of the Insights page (super admin only, like the page) opens a form: invoice number, schedule dates, bill-to name and address, and one or more jobs (job, total RE hours, overtime, total hours, total cost). **Download PDF** makes the invoice in the browser and saves it as `NASA FD INVOICE <number>.pdf`.
+
+Nothing is stored or sent: there is no endpoint, no database table, no upload and no browser storage; closing the dialog discards what was typed. Total hours follows RE hours + overtime until a total is typed (a total that differs only gets a hint). A job line holds up to seven jobs; every number is a plain non-negative decimal with at most two places.
+
+The page is drawn with `pdf-lib` and `@pdf-lib/fontkit` (Montserrat and Open Sans from `@fontsource`, bundled with the app), measured against the supplied template: colours, the side bar and corner, the logo panel, the table, the justified terms, the contact block with its icons, and the owner's signature as vector paths (switch it off with "Include the signature"). The fixed text (company, address, phone, email, terms) lives in `invoiceTemplate.js`. The PDF code and fonts are a separate chunk (about 1.2 MB, 0.5 MB gzipped) fetched only when the dialog is first used.
+
+Validation: rules, form and PDF tests pass (24), the whole frontend suite passes (553), lint and the production build pass. The generated page was compared side by side with the template, and the download was run in a real browser (a 33 KB PDF with the right name). Not done: opening the downloaded file in other PDF viewers than macOS Preview and the browser's own.

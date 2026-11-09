@@ -1,9 +1,19 @@
 import HttpStatus from '../../utils/statusCodes.js';
 import { loginService } from "../../services/driver/loginQueries.js";
 import { generateToken, verifyToken, generateRefreshToken, verifyRefreshToken } from '../../services/jwtservice.js';
-import { blackListToken } from '../../services/redis-jwt-service.js';
-import pool from '../../config/db.js';
+import { blackListToken, revokeRefreshToken, isTokenRevoked } from '../../services/redis-jwt-service.js';
+import agreementQueries from '../../services/driver/agreementQueries.js';
 import { translateError } from "../../utils/backendI18n.js";
+import { DRIVER_ROLE } from '../../middlewares/requireRole.js';
+import logger from '../../utils/logger.js';
+
+// Token payload for a driver. The role keeps driver tokens out of admin routes.
+const driverTokenPayload = (driver) => ({
+  id: driver.id,
+  email: driver.email,
+  name: driver.name,
+  role: DRIVER_ROLE
+});
 
 // Helper to get language from request
 const getLang = (req) => {
@@ -47,15 +57,12 @@ const driverController = {
       }
 
       // UPDATE: Save driver's timezone on login
-      await pool.query(
-        'UPDATE drivers SET timezone = $1 WHERE id = $2',
-        [timezone, driver.id]
-      );
+      await loginService.updateTimezone(driver.id, timezone);
 
-      console.log(`✅ ${translateError(lang, 'driver.timezoneUpdated')}: ${timezone} (Driver ${driver.id})`);
+      logger.debug('Driver timezone updated', { driverId: driver.id, timezone });
 
-      let accessToken = generateToken({ id: driver.id, email: driver.email, name: driver.name });
-      let refreshToken = generateRefreshToken({ id: driver.id, email: driver.email, name: driver.name });
+      let accessToken = generateToken(driverTokenPayload(driver));
+      let refreshToken = generateRefreshToken(driverTokenPayload(driver));
       if (!accessToken || !refreshToken) {
         return res.status(HttpStatus.UNAUTHORIZED).json({
           message: translateError(lang, 'common.unauthorized')
@@ -77,7 +84,7 @@ const driverController = {
       });
     } catch (error) {
       const lang = getLang(req);
-      console.error(error.message);
+      logger.error('Driver login failed', error);
       res.status(HttpStatus.INTERNAL_SERVER_ERROR).json({
         message: translateError(lang, 'common.serverError')
       });
@@ -127,7 +134,7 @@ const driverController = {
       });
     } catch (error) {
       const lang = getLang(req);
-      console.error(error.message);
+      logger.error('getDriver failed', error);
       res.status(HttpStatus.INTERNAL_SERVER_ERROR).json({
         message: translateError(lang, 'common.serverError')
       });
@@ -143,7 +150,15 @@ const driverController = {
       : null;
 
     if (token) {
-      blackListToken(token);
+      await blackListToken(token);
+    }
+
+    // Also revoke the refresh token, so it cannot be used to sign in again.
+    // Only the caller's own refresh token is revoked. Old tokens have no role.
+    // An automatic refresh during logout replaces the refresh token, so the app also sends the one it replaced.
+    const ownsRefreshToken = (decoded) => decoded.id === req.driver?.id && (decoded.role === undefined || decoded.role === DRIVER_ROLE);
+    for (const refreshToken of [req.body?.refreshToken, req.body?.previousRefreshToken]) {
+      await revokeRefreshToken(refreshToken, ownsRefreshToken);
     }
 
     return res.status(HttpStatus.OK).json({
@@ -160,6 +175,22 @@ const driverController = {
       }
 
       const decoded = verifyRefreshToken(refreshToken);
+
+      // An admin refresh token must never mint a driver token.
+      // Old driver tokens have no role and are still accepted (issue #14 removes this).
+      if (decoded.role !== undefined && decoded.role !== DRIVER_ROLE) {
+        return res.status(HttpStatus.UNAUTHORIZED).json({
+          message: translateError(lang, 'common.unauthorized')
+        });
+      }
+
+      // A refresh token revoked at logout can no longer be used.
+      if (await isTokenRevoked(refreshToken)) {
+        return res.status(HttpStatus.UNAUTHORIZED).json({
+          message: translateError(lang, 'common.unauthorized')
+        });
+      }
+
       const driver = await loginService.getDriverByEmail(decoded.email);
 
       if (!driver || !driver.enabled) {
@@ -168,8 +199,8 @@ const driverController = {
         });
       }
 
-      const newAccessToken = generateToken({ id: driver.id, email: driver.email, name: driver.name });
-      const newRefreshToken = generateRefreshToken({ id: driver.id, email: driver.email, name: driver.name });
+      const newAccessToken = generateToken(driverTokenPayload(driver));
+      const newRefreshToken = generateRefreshToken(driverTokenPayload(driver));
 
       return res.status(HttpStatus.OK).json({
         accessToken: newAccessToken,
@@ -177,7 +208,7 @@ const driverController = {
       });
     } catch (error) {
       const lang = getLang(req);
-      console.error("❌ Refresh Token Error:", error);
+      logger.error("Refresh Token Error", error);
       return res.status(HttpStatus.UNAUTHORIZED).json({
         message: translateError(lang, 'common.unauthorized')
       });
@@ -195,22 +226,14 @@ const driverController = {
         });
       }
 
-      await pool.query(
-        `UPDATE drivers 
-         SET agreement_signed = TRUE, 
-             agreement_signed_at = NOW(), 
-             agreement_signature_name = $1, 
-             agreement_joining_date = $2 
-         WHERE id = $3`,
-        [name, joining_date, driverId]
-      );
+      await agreementQueries.signAgreement(driverId, name, joining_date);
 
       return res.status(HttpStatus.OK).json({
         success: true,
         message: "Agreement signed successfully"
       });
     } catch (error) {
-      console.error("❌ Submit Agreement Error:", error);
+      logger.error("Submit Agreement Error", error);
       return res.status(HttpStatus.INTERNAL_SERVER_ERROR).json({
         message: "Internal server error"
       });

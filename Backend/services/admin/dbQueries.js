@@ -1,6 +1,39 @@
 import pool  from "../../config/db.js";
 import bcrypt from "bcrypt";
 import { jobService } from "./jobQueries.js";
+import logger from '../../utils/logger.js';
+
+/**
+ * Turns the city list sent by the admin form (`[{ value: 3, label: "..." }]`)
+ * into a plain list of unique whole numbers, or returns null if anything in it
+ * is not a positive whole number. City IDs are sent to the database as a
+ * query parameter, never joined into the SQL text.
+ */
+export const parseCityIds = (cities) => {
+    if (!Array.isArray(cities)) return null;
+
+    const ids = [];
+    for (const city of cities) {
+        const raw = city?.value;
+        const ok =
+            (typeof raw === "number" && Number.isInteger(raw)) ||
+            (typeof raw === "string" && /^[0-9]+$/.test(raw.trim()));
+        const id = ok ? Number(raw) : NaN;
+        if (!Number.isSafeInteger(id) || id < 1) return null;
+        ids.push(id);
+    }
+    return [...new Set(ids)];
+};
+
+// Saves the admin's cities using query parameters only.
+const insertAdminCities = async (client, adminId, cityIds) => {
+    await client.query(
+        `INSERT INTO admin_city_ref(admin_id, city_id)
+         SELECT $1, UNNEST($2::int[])
+         ON CONFLICT (admin_id, city_id) DO NOTHING`,
+        [adminId, cityIds]
+    );
+};
 
 export const dbService = {
     getAdminByEmail: async (email) => {
@@ -65,7 +98,7 @@ export const dbService = {
     
     getAllDrivers: async (lim, offset, search = "", city = "") => {
         let query = `
-            SELECT d.id, d.driver_code, d.name, d.email, d.phone_number, c.job, d.enabled 
+            SELECT d.id, d.driver_code, d.name, d.email, d.phone_number, c.job, d.enabled, d.driver_type 
             FROM drivers d
             JOIN city c ON d.city_id = c.id 
             WHERE 1=1`;
@@ -119,16 +152,16 @@ export const dbService = {
             const hashedPwd = await dbService.hashedPassword(data.password);
 
             const result = await pool.query(
-                `INSERT INTO drivers (name, email, driver_code, password, city_id, enabled, phone_number) 
-                 VALUES ($1, $2, $3, $4, $5, $6, $7)
+                `INSERT INTO drivers (name, email, driver_code, password, city_id, enabled, phone_number, driver_type) 
+                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
                  RETURNING id, name, email, enabled, city_id, driver_code, phone_number`,
-                [data.name, data.email, data.driver_code, hashedPwd, city_id, data.enabled, data.phoneNumber || null]
+                [data.name, data.email, data.driver_code, hashedPwd, city_id, data.enabled, data.phoneNumber || null, data.driverType ?? null]
             );
             
             const driver = result.rows[0];
             
             const driverWithCity = await pool.query(
-                `SELECT d.id, d.driver_code, d.name, d.email, d.phone_number, c.job, d.enabled
+                `SELECT d.id, d.driver_code, d.name, d.email, d.phone_number, c.job, d.enabled, d.driver_type
                  FROM drivers d
                  JOIN city c ON d.city_id = c.id
                  WHERE d.id = $1`,
@@ -137,7 +170,7 @@ export const dbService = {
             
             return driverWithCity.rows[0];
         } catch (err) {
-            console.error("Error inserting user:", err.message);
+            logger.error("Error inserting user", err);
             throw err;
         }
     },
@@ -158,13 +191,9 @@ export const dbService = {
 
             const cities = Array.isArray(data.city) ? data.city : [];
             if (data.role === 'admin' && cities.length > 0) {
-                const values = data.city.map((c) => `(${admin.id}, ${c.value})`).join(',');
-                const query = `
-                    INSERT INTO admin_city_ref(admin_id, city_id)
-                    VALUES ${values}
-                    ON CONFLICT (admin_id, city_id) DO NOTHING;
-                `;
-                await client.query(query);
+                const cityIds = parseCityIds(cities);
+                if (!cityIds) throw new Error('Invalid city selection');
+                await insertAdminCities(client, admin.id, cityIds);
             }
 
             await client.query('COMMIT');
@@ -188,7 +217,7 @@ export const dbService = {
             return adminWithCities.rows[0];
         } catch (err) {
             await client.query('ROLLBACK');
-            console.error("Error inserting new admin:", err.message);
+            logger.error("Error inserting new admin", err);
             throw err;
         } finally {
             client.release();
@@ -208,7 +237,7 @@ export const dbService = {
         if (!updated) return null;
 
         const joined = await pool.query(
-            `SELECT d.id, d.driver_code, d.name, d.email, d.phone_number, c.job, d.enabled
+            `SELECT d.id, d.driver_code, d.name, d.email, d.phone_number, c.job, d.enabled, d.driver_type
              FROM drivers d
              JOIN city c ON d.city_id = c.id
              WHERE d.id = $1`,
@@ -260,7 +289,6 @@ export const dbService = {
             // Hash the new password
             const hashedPwd = await dbService.hashedPassword(data.password);
             
-            console.log("updateuser",id,data)
          updateQuery = `
   UPDATE drivers
   SET 
@@ -270,7 +298,8 @@ export const dbService = {
     enabled=$4,
     phone_number=$5,
     password=$6,
-    driver_code=$7
+    driver_code=$7,
+    driver_type=COALESCE($9, driver_type)
   WHERE id=$8
 `;
 
@@ -282,7 +311,8 @@ updateParams = [
   data.phoneNumber,
   hashedPwd,
   data.driver_code || null,
-  id
+  id,
+  data.driverType ?? null
 ];
 
         } else {
@@ -295,7 +325,8 @@ updateParams = [
     city_id=$3,
     enabled=$4,
     phone_number=$5,
-    driver_code=$6
+    driver_code=$6,
+    driver_type=COALESCE($8, driver_type)
   WHERE id=$7
 `;
 
@@ -306,7 +337,8 @@ updateParams = [
   data.enabled,
   data.phoneNumber,
   data.driver_code || null,
-  id
+  id,
+  data.driverType ?? null
 ];
 
         }
@@ -314,7 +346,7 @@ updateParams = [
         await pool.query(updateQuery, updateParams);
 
         const joined = await pool.query(
-            `SELECT d.id, d.driver_code, d.name, d.email, d.phone_number, c.job, d.enabled
+            `SELECT d.id, d.driver_code, d.name, d.email, d.phone_number, c.job, d.enabled, d.driver_type
              FROM drivers d
              JOIN city c ON d.city_id = c.id
              WHERE d.id = $1`,
@@ -350,13 +382,9 @@ updateParams = [
 
             const cities = Array.isArray(data.city) ? data.city : [];
             if (data.role === 'admin' && cities.length > 0) {
-                const values = cities.map((c) => `(${admin.id},${c.value})`).join(',');
-                const query = `
-                    INSERT INTO admin_city_ref(admin_id, city_id)
-                    VALUES ${values}
-                    ON CONFLICT (admin_id, city_id) DO NOTHING;
-                `;
-                await client.query(query);
+                const cityIds = parseCityIds(cities);
+                if (!cityIds) throw new Error('Invalid city selection');
+                await insertAdminCities(client, admin.id, cityIds);
             }
 
             await client.query('COMMIT');
@@ -380,7 +408,7 @@ updateParams = [
             return joined.rows[0];
         } catch (err) {
             await client.query('ROLLBACK');
-            console.error("Error updating admin:", err.message);
+            logger.error("Error updating admin", err);
             throw err;
         } finally {
             client.release();
@@ -390,7 +418,7 @@ updateParams = [
     getAdminCities: async (adminId) => {
         try {
             const result = await pool.query(
-                `SELECT c.id, c.job, c.city_code, c.enabled
+                `SELECT c.id, c.job, c.city_code, c.enabled, c.city_type
                  FROM city c
                  INNER JOIN admin_city_ref acr ON c.id = acr.city_id
                  WHERE acr.admin_id = $1 AND c.enabled = true
@@ -401,7 +429,7 @@ updateParams = [
    
             return result.rows;
         } catch (error) {
-            console.error("Error in getAdminCities:", error.message);
+            logger.error("Error in getAdminCities", error);
             throw error;
         }
     },
@@ -409,7 +437,7 @@ updateParams = [
     getDriversByAdminCities: async (adminId, limit, offset, search = "", city = "") => {
         try {
             let query = `
-                SELECT d.id, d.driver_code, d.name, d.email, d.phone_number, c.job, d.enabled 
+                SELECT d.id, d.driver_code, d.name, d.email, d.phone_number, c.job, d.enabled, d.driver_type 
                 FROM drivers d
                 JOIN city c ON d.city_id = c.id
                 JOIN admin_city_ref acr ON c.id = acr.city_id
@@ -436,7 +464,7 @@ updateParams = [
             const result = await pool.query(query, params);
             return result.rows;
         } catch (error) {
-            console.error("Error in getDriversByAdminCities:", error.message);
+            logger.error("Error in getDriversByAdminCities", error);
             throw error;
         }
     },
@@ -468,7 +496,7 @@ updateParams = [
             const result = await pool.query(query, params);
             return parseInt(result.rows[0].count, 10);
         } catch (error) {
-            console.error("Error in getCountOfDriversByAdminCities:", error.message);
+            logger.error("Error in getCountOfDriversByAdminCities", error);
             throw error;
         }
     }

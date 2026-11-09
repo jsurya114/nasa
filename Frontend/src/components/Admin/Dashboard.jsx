@@ -1,4 +1,6 @@
-import React, { useState, useMemo, useCallback, useEffect } from "react";
+import usePersistentState from "../../hooks/usePersistentState.js";
+import { buildFilterParams, summaryParamsOf } from "./dashboard/filterParams.js";
+import React, { useState, useMemo, useCallback, useEffect, useRef } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import { useNavigate } from "react-router-dom";
 import {
@@ -9,13 +11,27 @@ import {
   fetchTodayPaymentData,
   fetchSummaryData,
   clearFilteredData,
-  payDriver,
   setDataType
 } from "../../redux/slice/admin/dashSlice.js";
 import Header from "../../reuse/Header.jsx";
 import Nav from "../../reuse/Nav.jsx";
 import PaymentDashboardTable from "./DashboardTable.jsx";
+import usePenaltySummary from "./dashboard/usePenaltySummary.js";
+import { summaryItems, summaryLook } from "./dashboard/penaltyDisplay.js";
+import { ownerRevenueRows } from "./dashboard/ownerRevenueRows.js";
+import PaymentRuns from "./payRuns/PaymentRuns.jsx";
 import Loader from "../Loader.jsx"
+import { CalendarDays, CalendarRange, ChevronDown, Gavel, LayoutGrid, ShieldCheck, Banknote } from "lucide-react";
+
+const BLANK_FILTERS = {
+  job: "All",
+  driver: "All",
+  route: "All",
+  startDate: "",
+  endDate: "",
+  paymentStatus: "All",
+  companyEarnings: false,
+};
 
 export default function Dashboard() {
   const dispatch = useDispatch();
@@ -31,36 +47,28 @@ export default function Dashboard() {
     summaryData,
     summaryLoading,
     isFiltered,
-    paymentProcessing,
-    pagination,
     filters: reduxFilters,
     selectedDataType,
-    showTodayOnly
+    showTodayOnly,
+    tableOwnerId,
+    driversLoading,
+    routesLoading
   } = useSelector((state) => state.dash);
+  // While a city's drivers or routes load, only that dropdown waits; the rest of the page stays as it is.
+  const isLoadingOptions = (name) => (name === "driver" && driversLoading) || (name === "route" && routesLoading);
 
-  const { isSuperAdmin } = useSelector((state) => state.admin);
-
-  const getTodayDate = () => {
-    const today = new Date();
-    return today.toLocaleDateString("en-CA")
-  };
+  const { isSuperAdmin, admin } = useSelector((state) => state.admin);
+  const penalty = usePenaltySummary();
+  const penaltyLines = useMemo(() => summaryItems(penalty, Number(summaryData?.total_driver_payment || 0) - Number(summaryData?.total_insurance_deduction || 0)), [penalty, summaryData]);
 
   // Local state for form inputs only
-  const [localFilters, setLocalFilters] = useState({
-    job: "All",
-    driver: "All",
-    route: "All",
-    startDate: "",
-    endDate: "",
-    paymentStatus: "All",
-    companyEarnings: false,
-  });
+  // The form is kept for when the admin leaves this page and comes back; `applied` is the form as it was when Filter Data was pressed.
+  const [localFilters, setLocalFilters] = usePersistentState("admin", "dashboard", "form", BLANK_FILTERS);
+  const [applied, setApplied] = usePersistentState("admin", "dashboard", "applied", null);
 
   const [currentPage, setCurrentPage] = useState(1);
-  const [itemsPerPage, setItemsPerPage] = useState(10);
-  const [showExtraFields, setShowExtraFields] = useState(false);
-  const [showConfirmModal, setShowConfirmModal] = useState(false);
-  const [selectedPaymentType, setSelectedPaymentType] = useState(null); // 'daily' or 'weekly'
+  const [itemsPerPage] = usePersistentState("admin", "dashboard", "perPage", 10);
+  const [showExtraFields, setShowExtraFields] = usePersistentState("admin", "dashboard", "extra", false);
 
   // Calculate available data types based on filtered data
   const [originalDataTypes, setOriginalDataTypes] = useState({ daily: false, weekly: false });
@@ -94,55 +102,6 @@ export default function Dashboard() {
       (availableDataTypes.daily || availableDataTypes.weekly);
   }, [isFiltered, reduxFilters.driver, availableDataTypes]);
 
-  // ✅ UPDATED: Check for closed status as well as payment status
-  const shouldShowPayButton = useMemo(() => {
-    if (!isFiltered ||
-      !reduxFilters.driver ||
-      reduxFilters.driver === "All" ||
-      reduxFilters.paymentStatus !== "Pending" ||
-      filteredPaymentData.length === 0) {
-      return false;
-    }
-
-    // ✅ Only show pay button if there are unpaid AND closed journeys
-    const hasUnpaidClosedJourneys = filteredPaymentData.some(row => !row.paid && row.closed);
-    return hasUnpaidClosedJourneys;
-  }, [isFiltered, reduxFilters.driver, reduxFilters.paymentStatus, filteredPaymentData]);
-
-  // ✅ UPDATED: Calculate separate counts for daily and weekly payments
-  const paymentCounts = useMemo(() => {
-    if (!filteredPaymentData.length) {
-      return { dailyClosedUnpaid: 0, weeklyClosedUnpaid: 0, openUnpaid: 0 };
-    }
-
-    const dailyClosedUnpaid = filteredPaymentData.filter(row =>
-      row.closed && !row.paid && row.data_type === 'daily'
-    ).length;
-    const weeklyClosedUnpaid = filteredPaymentData.filter(row =>
-      row.closed && !row.paid && row.data_type === 'weekly'
-    ).length;
-    const openUnpaid = filteredPaymentData.filter(row => !row.closed && !row.paid).length;
-
-    return { dailyClosedUnpaid, weeklyClosedUnpaid, openUnpaid };
-  }, [filteredPaymentData]);
-
-  // ✅ NEW: Separate conditions for showing daily and weekly pay buttons
-  const shouldShowDailyPayButton = useMemo(() => {
-    return isFiltered &&
-      reduxFilters.driver &&
-      reduxFilters.driver !== "All" &&
-      reduxFilters.paymentStatus === "Pending" &&
-      paymentCounts.dailyClosedUnpaid > 0;
-  }, [isFiltered, reduxFilters.driver, reduxFilters.paymentStatus, paymentCounts.dailyClosedUnpaid]);
-
-  const shouldShowWeeklyPayButton = useMemo(() => {
-    return isFiltered &&
-      reduxFilters.driver &&
-      reduxFilters.driver !== "All" &&
-      reduxFilters.paymentStatus === "Pending" &&
-      paymentCounts.weeklyClosedUnpaid > 0;
-  }, [isFiltered, reduxFilters.driver, reduxFilters.paymentStatus, paymentCounts.weeklyClosedUnpaid]);
-
   const extraFieldsData = useMemo(() => {
     if (!isFiltered || !summaryData) {
       return {
@@ -154,6 +113,11 @@ export default function Dashboard() {
         delivered: 0,
         driversPayment: 0,
         companyEarnings: 0,
+        deliveryRevenue: null,
+        driverEarnings: null,
+        deliveryMargin: null,
+        unallocatedRevenue: null,
+        revenueEstimated: false,
         insuranceDeduction: 0,
         netDriverPayment: 0,
       };
@@ -171,15 +135,41 @@ export default function Dashboard() {
       delivered: Number(summaryData.total_delivered) || 0,
       driversPayment: totalDriverPayment.toFixed(2),
       companyEarnings: Number(summaryData.total_company_earnings) || 0,
+      // The owner's figures from the shared revenue definition (null from a server that has not sent them).
+      deliveryRevenue: summaryData.total_delivery_revenue ?? null,
+      driverEarnings: summaryData.total_driver_earnings ?? null,
+      deliveryMargin: summaryData.total_delivery_margin ?? null,
+      unallocatedRevenue: summaryData.total_unallocated_revenue ?? null,
+      revenueEstimated: summaryData.revenue_is_estimated === true,
       insuranceDeduction: totalInsurance.toFixed(2),
       netDriverPayment: (totalDriverPayment - totalInsurance).toFixed(2),
     };
   }, [summaryData, isFiltered]);
 
-  // Fetch dropdown data AND today's data on mount
+  // Fetch dropdown data AND the table on mount. Coming back to the page, the admin finds what they had: the dropdowns narrowed to the
+  // chosen city, and the table they filtered (kept in Redux, or asked again with the same filters after a reload) instead of today's.
+  const latest = useRef({});
+  latest.current = { localFilters, applied, isFiltered, showTodayOnly, showExtraFields, isSuperAdmin, adminId: admin?.id ?? null, tableOwnerId };
+  const lastPerPage = useRef(null);
   useEffect(() => {
-    dispatch(fetchDashboardData());
-    dispatch(fetchTodayPaymentData({ page: 1, limit: itemsPerPage }));
+    const perPageChanged = lastPerPage.current !== null && lastPerPage.current !== itemsPerPage;
+    lastPerPage.current = itemsPerPage;
+    const { localFilters: form, applied: before, isFiltered: held, showTodayOnly: today, showExtraFields: extra, isSuperAdmin: superAdmin, adminId, tableOwnerId: owner } = latest.current;
+    dispatch(fetchDashboardData()).then(() => {
+      if (form.job && form.job !== "All") {
+        dispatch(fetchDriversByCity(form.job));
+        dispatch(fetchRoutesByCity(form.job));
+      }
+    });
+    // Held only if the signed-in administrator asked for it: a table is never carried over from another person.
+    const redisHoldsFilteredTable = held && !today && adminId !== null && owner === adminId;
+    if (perPageChanged || (!redisHoldsFilteredTable && !before)) {
+      dispatch(fetchTodayPaymentData({ page: 1, limit: itemsPerPage }));
+    } else if (!redisHoldsFilteredTable) {
+      const params = buildFilterParams(before, { limit: itemsPerPage, isSuperAdmin: superAdmin });
+      dispatch(fetchFilteredPaymentData(params));
+      if (extra) dispatch(fetchSummaryData(summaryParamsOf(params)));
+    }
   }, [dispatch, itemsPerPage]);
 
   // Handle job city change to fetch filtered drivers and routes
@@ -198,7 +188,7 @@ export default function Dashboard() {
       dispatch(fetchDriversByCity("All"));
       dispatch(fetchRoutesByCity("All")); // ✅ Fetch all routes
     }
-  }, [dispatch]);
+  }, [dispatch, setLocalFilters]);
   const handleFilterChange = useCallback((e) => {
     const { name, value, type, checked } = e.target;
 
@@ -212,69 +202,32 @@ export default function Dashboard() {
       ...prev,
       [name]: type === "checkbox" ? checked : value,
     }));
-  }, [handleJobChange]);
+  }, [handleJobChange, setLocalFilters]);
 
   // ✅ UPDATED: Handle Filter Data button - check if filters are applied
   const handleFilterClick = () => {
+    penalty.rememberScope(localFilters); // keep the applied city and driver IDs even if the dropdowns change before the next apply
+    penalty.retry(); // and ask again, so a record saved or completed since then shows up
     setShowExtraFields(localFilters.companyEarnings);
 
-    // ✅ NEW: Check if any filters are actually applied
-    const hasFilters =
-      localFilters.job !== "All" ||
-      localFilters.driver !== "All" ||
-      localFilters.route !== "All" ||
-      localFilters.startDate ||
-      localFilters.endDate ||
-      localFilters.paymentStatus !== "All";
-
-    const filterParams = {
-      page: 1,
-      limit: itemsPerPage,
-      dataType: "all"
-    };
+    const filterParams = buildFilterParams(localFilters, { limit: itemsPerPage, isSuperAdmin });
+    setApplied(localFilters);
 
     dispatch(setDataType("all"));
-
-    // ✅ NEW: If no filters, show all data instead of filtered
-    if (!hasFilters) {
-      // No filters applied - fetch all data
-      filterParams.allData = true; // This will fetch all data without date restriction
-    } else {
-      // Filters applied - add them to params
-      if (localFilters.job !== "All") filterParams.job = localFilters.job;
-      if (localFilters.driver !== "All") filterParams.driver = localFilters.driver;
-      if (localFilters.route !== "All") filterParams.route = localFilters.route;
-      if (localFilters.startDate) filterParams.startDate = localFilters.startDate;
-      if (localFilters.endDate) filterParams.endDate = localFilters.endDate;
-      if (localFilters.paymentStatus !== "All") filterParams.paymentStatus = localFilters.paymentStatus;
-    }
-
-    if (isSuperAdmin && localFilters.companyEarnings) filterParams.companyEarnings = localFilters.companyEarnings;
 
     setCurrentPage(1);
 
     dispatch(fetchFilteredPaymentData(filterParams));
 
     if (localFilters.companyEarnings) {
-      const summaryParams = { ...filterParams };
-      delete summaryParams.page;
-      delete summaryParams.limit;
-      delete summaryParams.companyEarnings;
-      dispatch(fetchSummaryData(summaryParams));
+      dispatch(fetchSummaryData(summaryParamsOf(filterParams)));
     }
   };
 
   // ✅ UPDATED: Handle Clear Filters - reset to today's data
   const handleClearFilters = () => {
-    setLocalFilters({
-      job: "All",
-      driver: "All",
-      route: "All",
-      startDate: "",
-      endDate: "",
-      paymentStatus: "All",
-      companyEarnings: false,
-    });
+    setLocalFilters(BLANK_FILTERS);
+    setApplied(null);
     setShowExtraFields(false);
     setCurrentPage(1);
     setOriginalDataTypes({ daily: false, weekly: false });
@@ -312,48 +265,13 @@ export default function Dashboard() {
     }
   };
 
-  // ✅ UPDATED: handlePayDriver now accepts dataType for separate payments
-  const handlePayDriver = async (dataType) => {
-    setShowConfirmModal(false);
-    setSelectedPaymentType(null);
-
-    const result = await dispatch(payDriver({
-      driverName: reduxFilters.driver,
-      startDate: reduxFilters.startDate || null,
-      endDate: reduxFilters.endDate || null,
-      dataType: dataType, // 'daily' or 'weekly'
-      job: reduxFilters.job || null, // ✅ FIX: Pass selected city to scope payment
-    }));
-
-    if (result.type === 'dashboard/payDriver/fulfilled') {
-      setLocalFilters(prev => ({
-        ...prev,
-        paymentStatus: "All"
-      }));
-
-      const filterParams = {
-        page: currentPage,
-        limit: itemsPerPage,
-        dataType: selectedDataType
-      };
-
-      if (reduxFilters.job && reduxFilters.job !== "All") filterParams.job = reduxFilters.job;
-      if (reduxFilters.driver && reduxFilters.driver !== "All") filterParams.driver = reduxFilters.driver;
-      if (reduxFilters.route && reduxFilters.route !== "All") filterParams.route = reduxFilters.route;
-      if (reduxFilters.startDate) filterParams.startDate = reduxFilters.startDate;
-      if (reduxFilters.endDate) filterParams.endDate = reduxFilters.endDate;
-      if (reduxFilters.companyEarnings) filterParams.companyEarnings = reduxFilters.companyEarnings;
-
-      dispatch(fetchFilteredPaymentData(filterParams));
-
-      if (showExtraFields) {
-        const summaryParams = { ...filterParams };
-        delete summaryParams.page;
-        delete summaryParams.limit;
-        delete summaryParams.companyEarnings;
-        dispatch(fetchSummaryData(summaryParams));
-      }
-    }
+  const refreshAfterPayment = () => {
+    if (isFiltered && applied) {
+      const params = { ...buildFilterParams(applied, { limit: itemsPerPage, isSuperAdmin }), page: currentPage, dataType: selectedDataType };
+      dispatch(fetchFilteredPaymentData(params));
+      if (showExtraFields) dispatch(fetchSummaryData(summaryParamsOf(params)));
+    } else dispatch(fetchTodayPaymentData({ page: 1, limit: itemsPerPage }));
+    penalty.retry();
   };
 
   const handleAddDelivery = useCallback(() => {
@@ -363,7 +281,7 @@ export default function Dashboard() {
   const filterOptions = useMemo(
     () => [
       {
-        label: "Job",
+        label: "City",
         type: "select",
         name: "job",
         options: ["All", ...(cities?.map((city) => city.job) || [])],
@@ -413,21 +331,24 @@ export default function Dashboard() {
         
         .data-type-tab {
           position: relative;
+          display: inline-flex;
+          align-items: center;
+          gap: 0.5rem;
           padding: 0.75rem 1.5rem;
           font-weight: 600;
-          border-radius: 0.5rem;
+          border-radius: 0.75rem;
           transition: all 0.2s ease;
           cursor: pointer;
         }
         
         .data-type-tab:hover:not(.active):not(.disabled) {
-          background-color: #e0f2fe;
+          background-color: var(--color-brand-50);
         }
         
         .data-type-tab.active {
-          background-color: #3b82f6;
+          background-color: var(--color-brand);
           color: white;
-          box-shadow: 0 4px 6px -1px rgba(59, 130, 246, 0.3);
+          box-shadow: 0 4px 10px -2px rgb(59 31 107 / 0.35);
         }
         
         .data-type-tab.disabled {
@@ -437,21 +358,25 @@ export default function Dashboard() {
         }
       `}</style>
 
-      <div className="min-h-screen bg-gray-100 text-gray-900 font-poppins">
+      <div className="min-h-dvh bg-canvas text-ink">
         <Header />
 
         <main className="max-w-[1450px] mx-auto p-2 sm:p-4 pb-20 sm:pb-40">
-          <section className="bg-white border border-gray-200 rounded-xl shadow-sm mb-4">
-            <div className="font-bold text-gray-900 bg-gray-50 border-b border-gray-200 px-4 py-3 flex items-center justify-between">
+          {/* The payment list is a super admin call on the server; an ordinary admin gets no card, no request and no pay run link. */}
+          {isSuperAdmin && <PaymentRuns cities={cities ?? []} onRecorded={refreshAfterPayment} />}
+          <section className="card-surface mb-4">
+            <div className="font-bold text-ink bg-brand-50/60 border-b border-line px-4 py-3 flex items-center justify-between">
               <span>Data Filters</span>
               {showTodayOnly && (
-                <span className="text-sm font-normal text-blue-600">
-                  📅 Showing today's journeys
+                <span className="inline-flex items-center gap-1.5 text-sm font-medium text-brand-700">
+                  <CalendarDays className="h-4 w-4" aria-hidden="true" />
+                  Showing today's journeys
                 </span>
               )}
               {isFiltered && !showTodayOnly && (
-                <span className="text-sm font-normal text-gray-600">
-                  📅 Showing filtered data
+                <span className="inline-flex items-center gap-1.5 text-sm font-medium text-ink-muted">
+                  <CalendarDays className="h-4 w-4" aria-hidden="true" />
+                  Showing filtered data
                 </span>
               )}
             </div>
@@ -461,13 +386,15 @@ export default function Dashboard() {
                   key={i}
                   className="grid grid-cols-1 sm:grid-cols-[160px_1fr_40px] items-center gap-2 sm:gap-3 px-4 py-3"
                 >
-                  <div className="text-gray-600">{item.label}</div>
+                  <div className="text-gray-600">{item.label}{isLoadingOptions(item.name) && " (loading...)"}</div>
                   {item.type === "select" ? (
                     <select
-                      className="w-full border border-gray-200 rounded-lg px-3 py-2"
+                      className="bg-white text-ink placeholder:text-ink-muted/70 focus:outline-none transition-shadow focus:ring-4 focus:ring-brand-500/20 focus:border-brand-500 min-h-11 w-full border border-line rounded-xl px-3 py-2"
                       name={item.name}
                       value={localFilters[item.name]}
                       onChange={handleFilterChange}
+                      disabled={isLoadingOptions(item.name)}
+                      aria-busy={isLoadingOptions(item.name)}
                     >
                       {item.options.map((opt, j) => (
                         <option key={j} value={opt}>
@@ -481,16 +408,18 @@ export default function Dashboard() {
                       name={item.name}
                       value={localFilters[item.name]}
                       onChange={handleFilterChange}
-                      className="w-full border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-400"
+                      className="bg-white text-ink placeholder:text-ink-muted/70 transition-shadow min-h-11 w-full border border-line rounded-xl px-3 py-2 focus:outline-none focus:ring-4 focus:ring-brand-500/20"
                     />
                   )}
-                  <div className="text-gray-400 text-center hidden sm:block">
-                    {item.type === "select" ? "▾" : "📅"}
+                  <div className="text-ink-muted hidden sm:flex justify-center">
+                    {item.type === "select"
+                      ? <ChevronDown className="h-4 w-4" aria-hidden="true" />
+                      : <CalendarDays className="h-5 w-5" aria-hidden="true" />}
                   </div>
                 </div>
               ))}
 
-              <div className="flex items-center gap-3 px-4 py-3 bg-blue-50 border-l-4 border-blue-500">
+              <div className="flex items-center gap-3 px-4 py-3 bg-brand-50 border-l-4 border-brand-500">
                 <input
                   type="checkbox"
                   name="companyEarnings"
@@ -506,7 +435,7 @@ export default function Dashboard() {
               <div className="px-4 py-3 flex flex-wrap gap-3">
                 <button
                   onClick={handleFilterClick}
-                  className="bg-blue-600 text-white font-semibold px-4 py-2 rounded-lg shadow-md hover:bg-blue-700 transition-colors"
+                  className="bg-brand text-white font-semibold px-4 py-2.5 rounded-xl shadow-md hover:bg-brand-900 transition-colors"
                 >
                   Filter Data
                 </button>
@@ -518,41 +447,15 @@ export default function Dashboard() {
                 </button>
                 <button
                   onClick={handleAddDelivery}
-                  className="bg-blue-600 text-white font-semibold px-4 py-2 rounded-lg shadow-md hover:bg-blue-700 transition-colors"
+                  className="bg-brand text-white font-semibold px-4 py-2.5 rounded-xl shadow-md hover:bg-brand-900 transition-colors"
                 >
                   Add Delivery
                 </button>
 
-                {/* ✅ UPDATED: Separate Daily and Weekly Pay Buttons */}
-                {shouldShowDailyPayButton && (
-                  <button
-                    onClick={() => {
-                      setSelectedPaymentType('daily');
-                      setShowConfirmModal(true);
-                    }}
-                    disabled={paymentProcessing}
-                    className="bg-green-600 text-white font-semibold px-4 py-2 rounded-lg shadow-md hover:bg-green-700 transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed"
-                  >
-                    {paymentProcessing ? "Processing..." : `📅 Pay Daily (${paymentCounts.dailyClosedUnpaid})`}
-                  </button>
-                )}
-
-                {shouldShowWeeklyPayButton && (
-                  <button
-                    onClick={() => {
-                      setSelectedPaymentType('weekly');
-                      setShowConfirmModal(true);
-                    }}
-                    disabled={paymentProcessing}
-                    className="bg-purple-600 text-white font-semibold px-4 py-2 rounded-lg shadow-md hover:bg-purple-700 transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed"
-                  >
-                    {paymentProcessing ? "Processing..." : `📆 Pay Weekly (${paymentCounts.weeklyClosedUnpaid})`}
-                  </button>
-                )}
               </div>
 
               {showExtraFields && (
-                <div className="px-4 py-3 grid grid-cols-1 gap-3 bg-blue-50">
+                <div className="px-4 py-3 grid grid-cols-1 gap-3 bg-brand-50">
                   <div className="mb-2 font-semibold text-gray-700 flex items-center gap-2">
                     <svg className="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
@@ -570,29 +473,39 @@ export default function Dashboard() {
                     { field: "delivered", label: "Total Delivered" },
                     { field: "driversPayment", label: "Total Drivers Payment" },
                     ...(Number(extraFieldsData.insuranceDeduction) > 0 ? [
-                      { field: "insuranceDeduction", label: "🛡️ Insurance Deduction", highlight: false, isNegative: true },
-                      { field: "netDriverPayment", label: "💵 Net Driver Payment", highlight: false, isBold: true },
+                      { field: "insuranceDeduction", label: "Insurance Deduction", icon: ShieldCheck, highlight: false, isNegative: true },
                     ] : []),
-                    ...(isSuperAdmin ? [{ field: "companyEarnings", label: "Total Company Earnings", highlight: true }] : []),
-                  ].map((item, i) => (
-                    <div key={i} className="flex items-center gap-3">
-                      <label className={`w-48 ${item.isNegative ? 'text-red-600' : item.isBold ? 'text-green-700 font-bold' : 'text-gray-600'}`}>{item.label}:</label>
-                      <input
-                        type="text"
-                        name={item.field}
-                        value={item.isNegative ? `-$${extraFieldsData[item.field]}` : item.isBold ? `$${extraFieldsData[item.field]}` : extraFieldsData[item.field]}
-                        readOnly
-                        className={`flex-1 border border-gray-200 rounded-lg px-3 py-2 bg-white font-semibold ${item.isNegative ? 'text-red-600' : item.isBold ? 'text-green-700' : 'text-gray-700'}`}
-                      />
-                    </div>
-                  ))}
+                    // #166: this payday's Penalty & Others and what is still owed, below the insurance deduction; then the net.
+                    ...penaltyLines.afterInsurance,
+                    { field: "netDriverPayment", kind: "net", preview: penaltyLines.net.preview, muted: penaltyLines.net.muted, icon: Banknote, label: penaltyLines.net.label,
+                      text: `$${penaltyLines.net.net.toFixed(2)}` },
+                    ...(isSuperAdmin ? ownerRevenueRows(extraFieldsData) : []),
+                  ].map((item, i) => {
+                    const look = summaryLook(item);
+                    const Icon = item.icon ?? (item.kind === "deducted" || item.kind === "notice" ? Gavel : item.kind === "net" ? Banknote : null);
+                    return (
+                      <div key={i} className="flex items-center gap-3" data-testid={item.kind ? `summary-${item.kind}` : undefined}>
+                        <label className={`w-48 inline-flex items-center gap-1.5 ${look.label}`}>
+                          {Icon && <Icon className="h-4 w-4 shrink-0" aria-hidden="true" />}
+                          {item.label}:
+                        </label>
+                        <input
+                          type="text"
+                          name={item.field ?? item.kind}
+                          value={item.text ?? (item.isNegative ? `-$${extraFieldsData[item.field]}` : item.isBold || item.isMoney ? `$${extraFieldsData[item.field]}` : extraFieldsData[item.field])}
+                          readOnly
+                          className={`placeholder:text-ink-muted/70 focus:outline-none transition-shadow focus:ring-4 focus:ring-brand-500/20 focus:border-brand-500 min-h-11 flex-1 border border-line rounded-xl px-3 py-2 bg-white font-semibold ${look.input}`}
+                        />
+                      </div>
+                    );
+                  })}
                 </div>
               )}
             </div>
           </section>
 
           {shouldShowDataTypeTabs && (
-            <section className="bg-white border border-gray-200 rounded-xl shadow-sm mb-4 p-4">
+            <section className="card-surface mb-4 p-4">
               <div className="flex items-center gap-2 flex-wrap">
                 <span className="text-sm font-semibold text-gray-700 mr-2">View:</span>
 
@@ -600,7 +513,8 @@ export default function Dashboard() {
                   onClick={() => handleDataTypeChange("all")}
                   className={`data-type-tab ${selectedDataType === "all" ? "active" : ""}`}
                 >
-                  📊 All Data
+                  <LayoutGrid className="h-4 w-4" aria-hidden="true" />
+                  All Data
                 </button>
 
                 <button
@@ -608,7 +522,8 @@ export default function Dashboard() {
                   disabled={!availableDataTypes.daily}
                   className={`data-type-tab ${selectedDataType === "daily" ? "active" : ""} ${!availableDataTypes.daily ? "disabled" : ""}`}
                 >
-                  📅 SPEEDX
+                  <CalendarDays className="h-4 w-4" aria-hidden="true" />
+                  SPEEDX
                 </button>
 
                 <button
@@ -616,7 +531,8 @@ export default function Dashboard() {
                   disabled={!availableDataTypes.weekly}
                   className={`data-type-tab ${selectedDataType === "weekly" ? "active" : ""} ${!availableDataTypes.weekly ? "disabled" : ""}`}
                 >
-                  📆 GOFO
+                  <CalendarRange className="h-4 w-4" aria-hidden="true" />
+                  GOFO
                 </button>
 
                 <span className="ml-auto text-xs text-gray-500">
@@ -629,91 +545,17 @@ export default function Dashboard() {
           )}
 
           {isFiltered && (
-            <section className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-x-auto">
-              <div className="font-bold text-gray-900 bg-gray-50 border-b border-gray-200 px-4 py-3">
+            <section className="card-surface">
+              <div className="font-bold text-ink bg-brand-50/60 border-b border-line px-4 py-3">
                 Driver Jobs
               </div>
-              <PaymentDashboardTable showExtraFields={showExtraFields} />
+              <PaymentDashboardTable showExtraFields={showExtraFields} penalty={penalty} />
             </section>
           )}
         </main>
 
         <Nav />
 
-        {/* ✅ UPDATED: Confirmation Modal for Separate Daily/Weekly Payments */}
-        {showConfirmModal && (
-          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-            <div className="bg-white rounded-lg shadow-xl max-w-md w-full animate-fadeIn border border-gray-200">
-              <div className="p-6">
-                <div className="flex items-center gap-3 mb-4">
-                  <div className={`w-12 h-12 rounded-full flex items-center justify-center ${selectedPaymentType === 'weekly' ? 'bg-purple-100' : 'bg-green-100'}`}>
-                    <svg className={`w-6 h-6 ${selectedPaymentType === 'weekly' ? 'text-purple-600' : 'text-green-600'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                    </svg>
-                  </div>
-                  <h3 className="text-lg font-semibold text-gray-900">
-                    Confirm {selectedPaymentType === 'daily' ? 'Daily (SPEEDX)' : 'Weekly (GOFO)'} Payment
-                  </h3>
-                </div>
-
-                <div className="mb-4 space-y-3">
-                  <p className="text-gray-700">
-                    Mark <span className="font-semibold">{selectedPaymentType === 'daily' ? 'daily' : 'weekly'}</span> payments as paid for <span className="font-semibold text-gray-900">{reduxFilters.driver}</span>?
-                  </p>
-
-                  <div className={`border rounded-lg p-3 ${selectedPaymentType === 'weekly' ? 'bg-purple-50 border-purple-200' : 'bg-green-50 border-green-200'}`}>
-                    <div className="flex items-start gap-2">
-                      <svg className={`w-5 h-5 mt-0.5 ${selectedPaymentType === 'weekly' ? 'text-purple-600' : 'text-green-600'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                      </svg>
-                      <div>
-                        <p className={`text-sm font-semibold ${selectedPaymentType === 'weekly' ? 'text-purple-800' : 'text-green-800'}`}>
-                          {selectedPaymentType === 'daily' ? paymentCounts.dailyClosedUnpaid : paymentCounts.weeklyClosedUnpaid} closed {selectedPaymentType} journey(s) will be marked as paid
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-
-                  {paymentCounts.openUnpaid > 0 && (
-                    <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">
-                      <div className="flex items-start gap-2">
-                        <svg className="w-5 h-5 text-amber-600 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-                        </svg>
-                        <div>
-                          <p className="text-sm font-semibold text-amber-800">
-                            {paymentCounts.openUnpaid} journey(s) with open status will NOT be paid
-                          </p>
-                          <p className="text-xs text-amber-700 mt-1">
-                            Only journeys with closed status "Yes" can be marked as paid
-                          </p>
-                        </div>
-                      </div>
-                    </div>
-                  )}
-                </div>
-
-                <div className="flex gap-3 justify-end">
-                  <button
-                    onClick={() => {
-                      setShowConfirmModal(false);
-                      setSelectedPaymentType(null);
-                    }}
-                    className="px-4 py-2 text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-md transition-colors font-medium"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    onClick={() => handlePayDriver(selectedPaymentType)}
-                    className={`px-4 py-2 text-white rounded-md transition-colors font-medium ${selectedPaymentType === 'weekly' ? 'bg-purple-600 hover:bg-purple-700' : 'bg-green-600 hover:bg-green-700'}`}
-                  >
-                    Confirm Payment
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
       </div>
     </>
   );

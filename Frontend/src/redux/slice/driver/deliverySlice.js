@@ -35,7 +35,6 @@ export const fetchDeliverySummary = createAsyncThunk(
       if (err.name === 'AbortError' || axios.isCancel(err)) {
         return rejectWithValue(translateError(lang, 'delivery.requestCancelled'));
       }
-      console.error("fetchDeliverySummary error:", err);
       return rejectWithValue(err.response?.data?.message || err.message || translateError(lang, 'delivery.errorFetching'));
     }
   }
@@ -79,7 +78,6 @@ const deliverySlice = createSlice({
       })
       .addCase(fetchDeliverySummary.fulfilled, (state, action) => {
         state.status = "succeeded";
-        console.log("Deliveries ", action.payload);
         state.deliveries = action.payload;
         state.error = null;
         state.lastFetch = Date.now();

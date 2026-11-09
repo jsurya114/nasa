@@ -302,8 +302,25 @@ import ExcelJS from 'exceljs';
 import moment from 'moment';
 
 import { WeeklyExcelQueries } from "../../services/admin/weeklyExcelQueries.js";
+import {
+  CityAccessError,
+  assertJobsAllowed,
+  getAllowedJobs,
+  getJobsForRouteCodes,
+  isCityLimited
+} from "../../services/admin/adminCityAccess.js";
+
+import logger from "../../utils/logger.js";
+import {
+  UploadFileError,
+  lockUploads,
+  respondToUploadError
+} from "../../services/admin/uploadSafety.js";
 
 import { unlink } from "fs";
+import { recordWorkbookHistory } from "../../services/excel/assignmentHistory/recordWorkbookHistory.js";
+import { recordWorkbookClaims } from "../../services/payroll/claims/recordWorkbookClaims.js";
+import { reviewImport, stageImport } from "../../services/finance/gofoStatement/weeklyImport.js";
 
 
 export const getWeeklyTempData=async(req,res)=>{
@@ -359,7 +376,7 @@ export const weeklyExcelUpload = async (req, res) => {
 
     // console.log(`[${Date.now() - startTime}ms] File received, size: ${file.buffer.length} bytes`);
 
-    const result = await processExcelFromBuffer(file.buffer, client, startTime);
+    const result = await processExcelFromBuffer(file.buffer, client, startTime, req.user, file.originalname);
 
     const totalTime = Date.now() - startTime;
     // console.log(`[${totalTime}ms] ✅ Total processing completed`);
@@ -372,12 +389,14 @@ export const weeklyExcelUpload = async (req, res) => {
     });
 
   } catch (err) {
-    const totalTime = Date.now() - startTime;
-    console.error(`[${totalTime}ms] ❌ Error:`, err.message);
+    if (err instanceof CityAccessError) {
+      return res.status(HttpStatus.FORBIDDEN).json({ success: false, message: err.message });
+    }
+    if (respondToUploadError(res, err)) return;
+    logger.error('Weekly upload failed', err);
     res.status(500).json({
       success: false,
-      message: 'Internal server error',
-      error: err.message
+      message: 'The weekly upload failed. Nothing was changed.'
     });
   } finally {
     client.release();
@@ -559,16 +578,20 @@ export const weeklyExcelUpload = async (req, res) => {
 // }
 
 
-async function processExcelFromBuffer(buffer, client, startTime) {
+async function processExcelFromBuffer(buffer, client, startTime, user, fileName) {
 
   const workbook = new ExcelJS.Workbook();
-  await workbook.xlsx.load(buffer);
+  try {
+    await workbook.xlsx.load(buffer);
+  } catch {
+    throw new UploadFileError("The file could not be read. Upload the Excel (.xlsx) file as downloaded. Nothing was changed.");
+  }
 
   const worksheet = workbook.getWorksheet("Details of Delivery Fees");
   if (!worksheet) {
     const availableSheets = workbook.worksheets.map(ws => ws.name);
-    throw new Error(
-      `Sheet "Details of Delivery Fees" not found. Available sheets: ${availableSheets.join(', ')}`
+    throw new UploadFileError(
+      `Sheet "Details of Delivery Fees" not found. Available sheets: ${availableSheets.join(', ')}. Nothing was changed.`
     );
   }
 
@@ -623,7 +646,7 @@ async function processExcelFromBuffer(buffer, client, startTime) {
 
   for (const aliases of requiredHeaders) {
     if (!resolveHeader(aliases)) {
-      throw new Error(`Missing required column in Excel: ${aliases.join(' / ')}`);
+      throw new UploadFileError(`Missing required column in Excel: ${aliases.join(' / ')}. Nothing was changed.`);
     }
   }
 
@@ -688,20 +711,39 @@ async function processExcelFromBuffer(buffer, client, startTime) {
 
       totalProcessed++;
 
-    } catch (rowError) {
-      console.error(`Row ${rowNumber} Error:`, rowError.message);
+    } catch {
       totalSkipped++;
     }
   });
 
+  if (aggregatedData.size === 0) {
+    throw new UploadFileError(
+      `No usable rows were found in the file (${totalSkipped} skipped). Each row needs a Delivery ID, a Signing Time (MM/DD/YYYY HH:mm:ss) and Stop Point Details. Nothing was changed.`
+    );
+  }
+
+  // A city admin may upload only a file whose routes all belong to their cities.
+  // This runs before the staging table is touched, so a refused file changes nothing.
+  if (isCityLimited(user.role)) {
+    const routeCodes = [...new Set(Array.from(aggregatedData.values(), (entry) => entry.del_route))].filter(Boolean);
+    assertJobsAllowed(
+      await getJobsForRouteCodes(routeCodes, client),
+      await getAllowedJobs(user.id, client),
+      "This file includes routes for cities outside your assigned cities. Nothing was changed."
+    );
+  }
+
   const tableName = "weeklycount";
 
-  await WeeklyExcelQueries.deleteWeeklyTableIfExists(tableName);
-  await WeeklyExcelQueries.createWeeklyTable(tableName);
-
+  // Drop, create and fill happen in one transaction, one upload at a time. If anything fails, the
+  // previous staged data is still there.
   await client.query('BEGIN');
-  
+
   try {
+    await lockUploads(client);
+    await WeeklyExcelQueries.deleteWeeklyTableIfExists(tableName, client);
+    await WeeklyExcelQueries.createWeeklyTable(tableName, client);
+
     const BATCH_SIZE = 1000;
     const dataArray = Array.from(aggregatedData.values());
     let totalInserted = 0;
@@ -739,7 +781,23 @@ async function processExcelFromBuffer(buffer, client, startTime) {
       totalInserted += batch.length;
     }
 
+    // Keep who carried which package (issue #140). Inside this transaction, but in a savepoint: if the history
+    // cannot be saved, the pay data above is stored exactly as it always was.
+    const { routeCodes, ...assignmentHistory } = await recordWorkbookHistory(client, workbook, { buffer, fileName, user, bestEffort: true });
+
+    // Courier claims on the report's Claims Detail sheet (issue #141), stored after the history so they can be matched
+    // against it. Also in a savepoint: a claims problem never changes what the pay upload stores.
+    const claims = await recordWorkbookClaims(client, { buffer, fileName, user, routeCodes });
+
+    // The same file is also the carrier's statement (issue #252): keep it as the import tied to this staged data, in a savepoint, so a problem here never
+    // changes what the pay upload stores.
+    const staged = await stageImport(client, { buffer, fileName, user, assignmentImportId: assignmentHistory.importId ?? null });
+
     await client.query('COMMIT');
+    logger.info('Weekly upload stored', { processed: totalProcessed, skipped: totalSkipped, groups: totalInserted });
+
+    // Check on the same connection after committing staging. A failed or late check cannot undo the upload.
+    const revenue = await reviewImport(client, staged.id, buffer, user, staged.reason);
 
     return {
       success: true,
@@ -747,7 +805,10 @@ async function processExcelFromBuffer(buffer, client, startTime) {
       recordsSkipped: totalSkipped,
       recordsInserted: totalInserted,
       batchSize: BATCH_SIZE,
-      numberOfBatches: Math.ceil(dataArray.length / BATCH_SIZE)
+      numberOfBatches: Math.ceil(dataArray.length / BATCH_SIZE),
+      assignmentHistory,
+      claims,
+      revenue
     };
 
   } catch (dbError) {

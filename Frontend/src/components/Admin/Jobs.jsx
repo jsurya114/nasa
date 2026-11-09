@@ -1,11 +1,14 @@
+import usePersistentState from "../../hooks/usePersistentState.js";
 import React, { useEffect, useState, useCallback, useMemo, useRef } from "react";
+import { SkeletonList } from "../../reuse/Skeleton.jsx";
+import { TriangleAlert, Info } from "lucide-react";
 import { useDispatch, useSelector } from "react-redux";
-import { toast, ToastContainer } from 'react-toastify';
-import 'react-toastify/dist/ReactToastify.css';
+import { toast } from "../../utils/toast";
 import Header from "../../reuse/Header";
 import Nav from "../../reuse/Nav";
 import SearchBar from "../../reuse/Search.jsx";
 import Pagination from "../../reuse/Pagination.jsx";
+import Modal from "../../reuse/Modal.jsx";
 import {
   addJob,
   jobStatus,
@@ -14,7 +17,7 @@ import {
 } from "../../redux/slice/admin/jobSlice";
 
 const DEBOUNCE_MS = 400;
-const ITEMS_PER_PAGE = 3;
+const ITEMS_PER_PAGE = 10;
 const FILTER = {
   ALL: 'all',
   ENABLED: 'enabled',
@@ -38,10 +41,10 @@ const CityRow = React.memo(function CityRow({
 }) {
   return (
     <tr className={index % 2 === 0 ? 'bg-gray-50' : 'bg-white'}>
-      <td className="px-3 py-2 border-b border-gray-200">{serialNo}</td>
-      <td className="px-3 py-2 border-b border-gray-200">{job}</td>
-      <td className="px-3 py-2 border-b border-gray-200">{city_code}</td>
-      <td className="px-3 py-2 border-b border-gray-200">
+      <td className="px-3 py-2 border-b border-line">{serialNo}</td>
+      <td className="px-3 py-2 border-b border-line">{job}</td>
+      <td className="px-3 py-2 border-b border-line">{city_code}</td>
+      <td className="px-3 py-2 border-b border-line">
         <span className={`px-2 py-1 rounded-full text-xs font-medium ${
           city_type === 'WEEKLY' 
             ? 'bg-blue-100 text-blue-700' 
@@ -51,7 +54,7 @@ const CityRow = React.memo(function CityRow({
         </span>
       </td>
       {isSuperAdmin && (
-        <td className="px-3 py-2 border-b border-gray-200">
+        <td className="px-3 py-2 border-b border-line">
           <span className={`px-2 py-1 rounded-full text-sm font-medium ${
             enabled ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
           }`}>
@@ -60,7 +63,7 @@ const CityRow = React.memo(function CityRow({
         </td>
       )}
       {isSuperAdmin && (
-        <td className="px-3 py-2 border-b border-gray-200">
+        <td className="px-3 py-2 border-b border-line">
           <div className="flex items-center gap-4">
             <label className="relative inline-flex items-center cursor-pointer">
               <input 
@@ -81,7 +84,7 @@ const CityRow = React.memo(function CityRow({
 
             <button 
               onClick={() => onEdit({ id, job, city_code, enabled, city_type })} 
-              className="group relative px-4 py-1.5 bg-gradient-to-r from-blue-500 to-blue-600 text-white text-xs font-medium rounded-md hover:from-blue-600 hover:to-blue-700 transition-all duration-200 shadow-sm hover:shadow-md flex items-center gap-1.5"
+              className="group relative px-4 py-2 bg-brand text-white text-xs font-medium rounded-md hover:bg-brand-dark transition-all duration-200 shadow-sm hover:shadow-md flex items-center gap-1.5"
             >
               <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
@@ -97,10 +100,7 @@ const CityRow = React.memo(function CityRow({
 CityRow.displayName = 'CityRow';
 
 const Loading = () => (
-  <div className="flex flex-col items-center gap-3">
-    <div className="w-12 h-12 border-4 border-purple-200 border-t-purple-600 rounded-full animate-spin" />
-    <p className="text-gray-600 font-medium">Loading...</p>
-  </div>
+  <SkeletonList rows={4} label="Loading..." className="w-full max-w-3xl px-4" />
 );
 
 const Empty = ({ hasFilters }) => (
@@ -131,10 +131,13 @@ export default function Jobs() {
   });
   const [errors, setErrors] = useState({});
   const [editingId, setEditingId] = useState(null);
+  // The Add / Edit form opens in a dialog; `saving` keeps it from being dismissed while a save runs.
+  const [formOpen, setFormOpen] = useState(false);
+  const [saving, setSaving] = useState(false);
 
-  const [search, setSearch] = useState('');
+  const [search, setSearch] = usePersistentState("admin", "jobs", "search", '');
   const [currentPage, setCurrentPage] = useState(1);
-  const [filter, setFilter] = useState(FILTER.ALL);
+  const [filter, setFilter] = usePersistentState("admin", "jobs", "filter", FILTER.ALL);
   const [showDropdown, setShowDropdown] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
 
@@ -151,6 +154,11 @@ export default function Jobs() {
     setErrors({});
     setEditingId(null);
   }, []);
+
+  const closeForm = useCallback(() => {
+    resetForm();
+    setFormOpen(false);
+  }, [resetForm]);
 
   const validate = useCallback(() => {
     const e = {};
@@ -202,6 +210,8 @@ export default function Jobs() {
   useEffect(() => {
     if (!mountedRef.current) return;
     fetchJobs({ pageNum: currentPage, q: search, statusFilter: filter });
+    // Runs when the page changes. Search and filter changes are handled (with a delay) by the effect above, so they are not dependencies here.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentPage, fetchJobs]);
 
   useEffect(() => {
@@ -228,23 +238,16 @@ export default function Jobs() {
       city_type: payload.city_type || 'DAILY'
     });
     setEditingId(payload.id);
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+    setFormOpen(true);
   }, []);
-
-  const onCancelEdit = useCallback(() => resetForm(), [resetForm]);
 
   const onSubmit = useCallback(async () => {
     const eObj = validate();
     if (Object.keys(eObj).length) return setErrors(eObj);
 
+    setSaving(true);
     try {
       if (isEditing) {
-        console.log('Updating city with data:', {
-          id: editingId,
-          job: form.job,
-          city_code: form.city_code,
-          city_type: form.city_type
-        });
         
         const res = await dispatch(updateJob({
           id: editingId,
@@ -255,10 +258,9 @@ export default function Jobs() {
         
         if (updateJob.fulfilled.match(res)) {
           toast.success("City updated");
-          resetForm();
+          closeForm();
           fetchJobs({ pageNum: currentPage, q: search, statusFilter: filter });
         } else {
-          console.error('Update failed:', res);
           toast.error("Failed to update city");
         }
       } else {
@@ -270,16 +272,17 @@ export default function Jobs() {
         }));
         if (addJob.fulfilled.match(res)) {
           toast.success("City added");
-          resetForm();
+          closeForm();
           setCurrentPage(1);
           fetchJobs({ pageNum: 1, q: search, statusFilter: filter });
         }
       }
-    } catch (error) {
-      console.error('Submit error:', error);
+    } catch {
       toast.error("Failed to save city");
+    } finally {
+      setSaving(false);
     }
-  }, [validate, isEditing, editingId, form, dispatch, resetForm, fetchJobs, currentPage, search, filter]);
+  }, [validate, isEditing, editingId, form, dispatch, closeForm, fetchJobs, currentPage, search, filter]);
 
   const onToggleStatus = useCallback(async (id) => {
     try {
@@ -310,104 +313,37 @@ export default function Jobs() {
   const hasActiveFilters = search !== '' || (isSuperAdmin && filter !== FILTER.ALL);
 
   return (
-    <div className="min-h-screen bg-gray-100 text-gray-900 font-poppins">
+    <div className="min-h-dvh bg-canvas text-ink">
       <Header />
       <main className="max-w-[1450px] mx-auto p-4 pb-40">
 
-        {isSuperAdmin && (
-          <section className="bg-white border border-gray-200 rounded-xl shadow-sm mb-4 p-6">
-            <h2 className="font-bold text-gray-900 bg-gray-50 border-b border-gray-200 px-4 py-3 -mx-6 -mt-6 rounded-t-xl">
-              {isEditing ? 'Edit City' : 'Add City'}
-            </h2>
-
-            <div className="flex flex-col gap-4 mt-6">
-              <div>
-                <label className="block mb-1 font-medium">City</label>
-                <input
-                  name="job"
-                  value={form.job}
-                  onChange={onChangeField}
-                  placeholder="Enter City"
-                  className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-purple-600 ${errors.job ? 'border-red-500' : 'border-gray-300'}`}
-                />
-                {errors.job && <p className="text-red-500 text-sm mt-1">{errors.job}</p>}
-              </div>
-
-              <div>
-                <label className="block mb-1 font-medium">City Code</label>
-                <input
-                  name="city_code"
-                  value={form.city_code}
-                  onChange={onChangeField}
-                  placeholder="Enter city code"
-                  className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-purple-600 ${errors.city_code ? 'border-red-500' : 'border-gray-300'}`}
-                />
-                {errors.city_code && <p className="text-red-500 text-sm mt-1">{errors.city_code}</p>}
-              </div>
-
-              <div>
-                <label className="block mb-1 font-medium">City Type</label>
-                <select
-                  name="city_type"
-                  value={form.city_type}
-                  onChange={onChangeField}
-                  className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-purple-600 ${errors.city_type ? 'border-red-500' : 'border-gray-300'}`}
-                >
-                  <option value="DAILY">Daily</option>
-                  <option value="WEEKLY">Weekly</option>
-                </select>
-                {errors.city_type && <p className="text-red-500 text-sm mt-1">{errors.city_type}</p>}
-                <p className="text-xs text-gray-500 mt-1">
-                  {form.city_type === 'WEEKLY' 
-                    ? '⚠️ Weekly cities have predefined routes and drivers cannot create journeys manually' 
-                    : 'ℹ️ Daily cities allow manual journey creation by drivers'}
-                </p>
-              </div>
-
-              {!isEditing && (
-                <div className="flex items-center space-x-2">
-                  <input 
-                    type="checkbox" 
-                    name="enabled" 
-                    checked={form.enabled} 
-                    onChange={onChangeField} 
-                    className="w-4 h-4 text-purple-600" 
-                  />
-                  <label className="font-medium">Enabled</label>
-                </div>
-              )}
-
-              <div className="flex justify-end gap-2">
-                {isEditing && (
-                  <button onClick={onCancelEdit} className="px-6 py-2 bg-gray-500 text-white rounded-lg">
-                    Cancel
-                  </button>
-                )}
-                <button onClick={onSubmit} className="px-6 py-2 bg-purple-700 text-white rounded-lg">
-                  {isEditing ? 'Update City' : 'Add City'}
-                </button>
-              </div>
-            </div>
-          </section>
-        )}
-
-        <section className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-x-auto">
-          <div className="flex items-center justify-between bg-gray-50 border-b border-gray-200 px-4 py-3 rounded-t-xl">
+        <section className="card-surface">
+          <div className="flex items-center justify-between bg-gray-50 border-b border-line px-4 py-3 rounded-t-xl">
             <h2 className="font-bold text-gray-900">
               {isSuperAdmin ? 'All Cities' : 'Assigned Cities'}
             </h2>
 
-            <button
-              onClick={handleRefresh}
-              disabled={loading}
-              className={`flex items-center gap-2 px-4 py-2 bg-purple-700 text-white rounded-lg ${loading ? 'opacity-50 cursor-not-allowed' : ''}`}
-            >
-              <IconRefresh spinning={isRefreshing} />
-              <span>Refresh</span>
-            </button>
+            <div className="flex items-center gap-2">
+              {isSuperAdmin && (
+                <button
+                  onClick={() => { resetForm(); setFormOpen(true); }}
+                  className="px-4 py-2.5 bg-brand hover:bg-brand-dark text-white rounded-lg"
+                >
+                  + Add City
+                </button>
+              )}
+              <button
+                onClick={handleRefresh}
+                disabled={loading}
+                className={`flex items-center gap-2 px-4 py-2.5 bg-brand hover:bg-brand-dark text-white rounded-lg ${loading ? 'opacity-50 cursor-not-allowed' : ''}`}
+              >
+                <IconRefresh spinning={isRefreshing} />
+                <span>Refresh</span>
+              </button>
+            </div>
           </div>
 
-          <div className="flex items-center gap-3 px-4 py-3 border-b border-gray-200 bg-gray-50">
+          <div className="flex items-center gap-3 px-4 py-3 border-b border-line bg-gray-50">
             <div className="flex-1">
               <SearchBar value={search} onChange={e => setSearch(e.target.value)} placeholder="Search city..." />
             </div>
@@ -416,7 +352,7 @@ export default function Jobs() {
               <div className="relative" ref={dropdownRef}>
                 <button
                   onClick={() => setShowDropdown(s => !s)}
-                  className={`flex items-center gap-2 px-4 py-2 border rounded-lg ${filter !== FILTER.ALL ? 'bg-purple-600 text-white' : 'bg-white text-gray-700'}`}
+                  className={`flex items-center gap-2 px-4 py-2 border rounded-lg ${filter !== FILTER.ALL ? 'bg-brand text-white' : 'bg-white text-gray-700'}`}
                 >
                   <span className="font-medium">
                     {filter === FILTER.ENABLED ? 'Enabled' :
@@ -425,7 +361,7 @@ export default function Jobs() {
                 </button>
 
                 {showDropdown && (
-                  <div className="absolute right-0 mt-2 w-48 bg-white border border-gray-200 rounded-lg shadow-lg z-20">
+                  <div className="absolute right-0 mt-2 w-48 bg-white border border-line rounded-lg shadow-lg z-20">
                     <button onClick={() => { setFilter(FILTER.ALL); setShowDropdown(false); }} className="w-full text-left px-4 py-2 hover:bg-gray-100">All Status</button>
                     <button onClick={() => { setFilter(FILTER.ENABLED); setShowDropdown(false); }} className="w-full text-left px-4 py-2 hover:bg-gray-100">Enabled</button>
                     <button onClick={() => { setFilter(FILTER.DISABLED); setShowDropdown(false); }} className="w-full text-left px-4 py-2 hover:bg-gray-100">Disabled</button>
@@ -445,7 +381,7 @@ export default function Jobs() {
             )}
           </div>
 
-          <div className="relative min-h-[300px] px-6 py-4">
+          <div className="relative min-h-[300px] overflow-x-auto px-4 sm:px-6 py-4">
             {loading && (
               <div className="absolute inset-0 bg-white bg-opacity-75 flex items-center justify-center z-10">
                 <Loading />
@@ -456,7 +392,7 @@ export default function Jobs() {
               <thead>
                 <tr className="bg-gray-50 text-left">
                   {headers.map((h, i) => (
-                    <th key={i} className="px-3 py-2 border-b border-gray-200 font-semibold text-gray-800">{h}</th>
+                    <th key={i} className="px-3 py-2 border-b border-line font-semibold text-gray-800">{h}</th>
                   ))}
                 </tr>
               </thead>
@@ -493,8 +429,82 @@ export default function Jobs() {
         <Pagination page={page} totalPages={totalPages} onPageChange={page => setCurrentPage(page)} />
 
       </main>
+      {isSuperAdmin && formOpen && (
+        <Modal title={isEditing ? 'Edit City' : 'Add City'} onClose={closeForm} busy={saving}>
+          <div className="flex flex-col gap-4 mt-4">
+            <div>
+              <label className="block mb-1 font-medium">City</label>
+              <input
+                name="job"
+                value={form.job}
+                onChange={onChangeField}
+                placeholder="Enter City"
+                className={`bg-white text-ink placeholder:text-ink-muted/70 focus:outline-none transition-shadow min-h-11 w-full px-3 py-3 sm:py-2 border rounded-xl focus:ring-4 focus:ring-brand-500/20 ${errors.job ? 'border-red-500' : 'border-line'}`}
+              />
+              {errors.job && <p className="text-red-500 text-sm mt-1">{errors.job}</p>}
+            </div>
+
+            <div>
+              <label className="block mb-1 font-medium">City Code</label>
+              <input
+                name="city_code"
+                value={form.city_code}
+                onChange={onChangeField}
+                placeholder="Enter city code"
+                className={`bg-white text-ink placeholder:text-ink-muted/70 focus:outline-none transition-shadow min-h-11 w-full px-3 py-3 sm:py-2 border rounded-xl focus:ring-4 focus:ring-brand-500/20 ${errors.city_code ? 'border-red-500' : 'border-line'}`}
+              />
+              {errors.city_code && <p className="text-red-500 text-sm mt-1">{errors.city_code}</p>}
+            </div>
+
+            <div>
+              <label className="block mb-1 font-medium">City Type</label>
+              <select
+                name="city_type"
+                value={form.city_type}
+                onChange={onChangeField}
+                className={`bg-white text-ink placeholder:text-ink-muted/70 focus:outline-none transition-shadow min-h-11 w-full px-3 py-3 sm:py-2 border rounded-xl focus:ring-4 focus:ring-brand-500/20 ${errors.city_type ? 'border-red-500' : 'border-line'}`}
+              >
+                <option value="DAILY">Daily</option>
+                <option value="WEEKLY">Weekly</option>
+              </select>
+              {errors.city_type && <p className="text-red-500 text-sm mt-1">{errors.city_type}</p>}
+              <p className="text-xs text-gray-500 mt-1 flex items-start gap-1.5">
+                {form.city_type === 'WEEKLY'
+                  ? <TriangleAlert className="w-3.5 h-3.5 mt-0.5 text-amber-600 flex-shrink-0" aria-hidden="true" />
+                  : <Info className="w-3.5 h-3.5 mt-0.5 flex-shrink-0" aria-hidden="true" />}
+                <span>
+                  {form.city_type === 'WEEKLY'
+                    ? 'Weekly cities have predefined routes and drivers cannot create journeys manually'
+                    : 'Daily cities allow manual journey creation by drivers'}
+                </span>
+              </p>
+            </div>
+
+            {!isEditing && (
+              <div className="flex items-center space-x-2">
+                <input 
+                  type="checkbox" 
+                  name="enabled" 
+                  checked={form.enabled} 
+                  onChange={onChangeField} 
+                  className="w-4 h-4 text-purple-600" 
+                />
+                <label className="font-medium">Enabled</label>
+              </div>
+            )}
+
+            <div className="flex justify-end gap-2">
+              <button onClick={closeForm} disabled={saving} className="px-6 py-2 bg-gray-500 text-white rounded-lg disabled:opacity-50">
+                Cancel
+              </button>
+              <button onClick={onSubmit} disabled={saving} className="px-6 py-2.5 bg-brand hover:bg-brand-dark text-white rounded-lg disabled:opacity-50">
+                {isEditing ? 'Update City' : 'Add City'}
+              </button>
+            </div>
+          </div>
+        </Modal>
+      )}
       <Nav />
-      <ToastContainer position="top-right" autoClose={3000} />
     </div>
   );
 }

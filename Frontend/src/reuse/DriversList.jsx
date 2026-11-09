@@ -1,25 +1,41 @@
 import { useState, useEffect } from 'react';
+import { SkeletonTableRows } from "./Skeleton.jsx";
 import { useDispatch, useSelector } from 'react-redux';
-import { getUsers, toggleAvailUser, setSearchTerm, setSelectedCity } from '../redux/slice/admin/userLoadSlice';
+import { getUsers, toggleAvailUser, setSearchTerm, setSelectedCity, changeDriverTypes } from '../redux/slice/admin/userLoadSlice';
 import Pagination from './Pagination';
-import { toast } from 'react-toastify';
+import DriverTypeModal from './DriverTypeModal';
+import { countByType, driverTypeLabel } from './driverType';
+import { toast } from "../utils/toast";
+
+const TYPE_BADGE = {
+  LOCAL: "bg-blue-100 text-blue-800",
+  DESI: "bg-orange-100 text-orange-800",
+};
+
+const EMPTY_SET = new Set();
 
 function DriversList({ onEdit }) {
   const dispatch = useDispatch();  
   const { 
     drivers = [], 
     loading: usersLoad, 
-    error: usersError, 
-    page, 
     totalPages,
     city,
     searchTerm: reduxSearchTerm,
-    selectedCity: reduxSelectedCity
+    selectedCity: reduxSelectedCity,
+    changingType
   } = useSelector((state) => state.users);   
   
   const [localSearchTerm, setLocalSearchTerm] = useState(reduxSearchTerm || "");
   const [localSelectedCity, setLocalSelectedCity] = useState(reduxSelectedCity || "All");
   const [currentPage, setCurrentPage] = useState(1);
+
+  // The selection survives moving between pages, but belongs to one search and city: changing either starts it again, so a driver
+  // you can no longer see is never changed by accident.
+  const filtersKey = `${reduxSearchTerm}|${reduxSelectedCity}`;
+  const [selection, setSelection] = useState({ key: filtersKey, ids: new Set() });
+  const selectedIds = selection.key === filtersKey ? selection.ids : EMPTY_SET;
+  const [showTypeModal, setShowTypeModal] = useState(false);
 
   useEffect(() => {
     dispatch(getUsers({ 
@@ -56,11 +72,7 @@ function DriversList({ onEdit }) {
   };
 
   function handleToggleChange(id) {    
-    try {
-      dispatch(toggleAvailUser(id));
-    } catch (err) {
-      console.error("Failed to toggle status:", err);
-    }
+    dispatch(toggleAvailUser(id));
   }
 
   function handleEdit(driver) {
@@ -71,10 +83,53 @@ function DriversList({ onEdit }) {
     onEdit(driver);
   }
 
+  const changeSelection = (update) => setSelection({ key: filtersKey, ids: update(new Set(selectedIds)) });
+
+  const toggleSelected = (id) => changeSelection((ids) => {
+    if (!ids.delete(id)) ids.add(id);
+    return ids;
+  });
+
+  const pageIds = drivers.map((d) => d.id);
+  const allOnPage = pageIds.length > 0 && pageIds.every((id) => selectedIds.has(id));
+  const someOnPage = pageIds.some((id) => selectedIds.has(id));
+
+  const togglePage = () => changeSelection((ids) => {
+    pageIds.forEach((id) => (allOnPage ? ids.delete(id) : ids.add(id)));
+    return ids;
+  });
+
+  const selectedVisible = drivers.filter((d) => selectedIds.has(d.id));
+  const typeSummary = () => {
+    // Only the drivers on this page are known here; the others (from earlier pages) are still changed.
+    if (selectedVisible.length !== selectedIds.size) return "";
+    const c = countByType(selectedVisible);
+    return `Now: ${c.LOCAL} Local, ${c.DESI} Desi, ${c.NONE} not set.`;
+  };
+
+  const confirmTypeChange = async (driverType) => {
+    if (changingType) return;
+    // Everyone selected is on this page and already has this type: nothing to send.
+    if (selectedVisible.length === selectedIds.size && selectedVisible.every((d) => d.driver_type === driverType)) {
+      toast.info(`Already ${driverTypeLabel(driverType)}. No change needed.`);
+      setShowTypeModal(false);
+      return;
+    }
+    const result = await dispatch(changeDriverTypes({ driverIds: [...selectedIds], driverType }));
+    if (changeDriverTypes.fulfilled.match(result)) {
+      const { updated, unchanged } = result.payload;
+      toast.success(updated === 0 ? "No change needed" : `${updated} ${updated === 1 ? "driver" : "drivers"} changed to ${driverTypeLabel(driverType)}${unchanged ? `, ${unchanged} already ${driverTypeLabel(driverType)}` : ""}`);
+      setSelection({ key: filtersKey, ids: new Set() });
+      setShowTypeModal(false);
+    } else {
+      toast.error(result.payload || "Could not change the driver type");
+    }
+  };
+
   const hasActiveFilters = localSearchTerm || (localSelectedCity && localSelectedCity !== "All");
 
   return (
-    <section className="bg-white rounded-xl shadow p-4">
+    <section className="card-surface p-4">
       {/* Search and Filter Section */}
       <div className="mb-4 space-y-3">
         <div className="flex flex-col sm:flex-row gap-3">
@@ -86,7 +141,7 @@ function DriversList({ onEdit }) {
                 value={localSearchTerm}
                 onChange={(e) => setLocalSearchTerm(e.target.value)}
                 placeholder="Search by name, email, phone, or driver code..."
-                className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                className="bg-white text-ink placeholder:text-ink-muted/70 focus:outline-none transition-shadow min-h-11 w-full pl-10 pr-4 py-2 border border-line rounded-xl focus:ring-4 focus:ring-brand-500/20 focus:border-brand-500"
               />
               <svg
                 className="absolute left-3 top-2.5 h-5 w-5 text-gray-400"
@@ -109,7 +164,7 @@ function DriversList({ onEdit }) {
             <select
               value={localSelectedCity}
               onChange={handleCityChange}
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+              className="bg-white text-ink placeholder:text-ink-muted/70 focus:outline-none transition-shadow min-h-11 w-full px-4 py-2 border border-line rounded-xl focus:ring-4 focus:ring-brand-500/20 focus:border-brand-500"
             >
               <option value="All">All Cities</option>
               {city && city.length > 0 && city.map((c) => (
@@ -170,15 +225,37 @@ function DriversList({ onEdit }) {
         )}
       </div>
 
-      <h2 className="font-bold text-lg mb-4">Drivers</h2>
+      <div className="mb-4 flex items-center justify-between gap-3">
+        <h2 className="font-bold text-lg">Drivers</h2>
+        {selectedIds.size > 0 && (
+          <button
+            type="button"
+            onClick={() => setShowTypeModal(true)}
+            className="min-h-11 rounded-lg bg-brand px-4 py-2 text-sm font-medium text-white hover:bg-brand-900"
+          >
+            Change ({selectedIds.size})
+          </button>
+        )}
+      </div>
       
       <div className="overflow-x-auto">
         <table className="w-full border-collapse text-sm">
           <thead>
             <tr className="bg-gray-50 text-left">
-              {["Sl No", "Driver Code", "Name", "Email", "Phone", "City", "Status", "Actions"].map(
+              <th className="px-3 py-2 border-b border-line">
+                <input
+                  type="checkbox"
+                  aria-label="Select all drivers on this page"
+                  checked={allOnPage}
+                  ref={(el) => { if (el) el.indeterminate = someOnPage && !allOnPage; }}
+                  onChange={togglePage}
+                  disabled={pageIds.length === 0}
+                  className="h-4 w-4"
+                />
+              </th>
+              {["Sl No", "Driver Code", "Name", "Email", "Phone", "City", "Driver Type", "Status", "Actions"].map(
                 (head, i) => (
-                  <th key={i} className="px-3 py-2 border-b border-gray-200">
+                  <th key={i} className="px-3 py-2 border-b border-line">
                     {head}
                   </th>
                 )
@@ -187,20 +264,19 @@ function DriversList({ onEdit }) {
           </thead>
           <tbody>
             {usersLoad && drivers.length === 0 ? (
-              <tr>
-                <td colSpan="8" className="text-center py-4 text-gray-500 font-medium">
-                  <div className="flex items-center justify-center">
-                    <svg className="animate-spin h-6 w-6 mr-2 text-purple-600" viewBox="0 0 24 24">
-                      <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
-                      <path fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
-                    </svg>
-                    Loading drivers...
-                  </div>
-                </td>
-              </tr>
+              <SkeletonTableRows rows={5} cols={10} label="Loading drivers..." />
             ) : drivers.length > 0 ? (
               drivers.map((d, i) => (
                 <tr key={d.id} className={!d.enabled ? "bg-gray-50" : ""}>
+                  <td className="px-3 py-2 border-b">
+                    <input
+                      type="checkbox"
+                      aria-label={`Select ${d.name}`}
+                      checked={selectedIds.has(d.id)}
+                      onChange={() => toggleSelected(d.id)}
+                      className="h-4 w-4"
+                    />
+                  </td>
                   <td className="px-3 py-2 border-b">
                     {(currentPage - 1) * 10 + i + 1}
                   </td>
@@ -227,6 +303,11 @@ function DriversList({ onEdit }) {
                   <td className="px-3 py-2 border-b">
                     <span className={!d.enabled ? "text-gray-400" : ""}>
                       {d.job}
+                    </span>
+                  </td>
+                  <td className="px-3 py-2 border-b">
+                    <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${TYPE_BADGE[d.driver_type] ?? "bg-gray-100 text-gray-600"}`}>
+                      {driverTypeLabel(d.driver_type)}
                     </span>
                   </td>
                   <td className="px-3 py-2 border-b">
@@ -278,7 +359,7 @@ function DriversList({ onEdit }) {
                         disabled={!d.enabled}
                         className={`group relative px-4 py-1.5 text-white text-xs font-medium rounded-md transition-all duration-200 shadow-sm flex items-center gap-1.5 ${
                           d.enabled
-                            ? "bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 hover:shadow-md cursor-pointer"
+                            ? "bg-brand hover:bg-brand-900 hover:shadow-md cursor-pointer"
                             : "bg-gray-400 cursor-not-allowed opacity-50"
                         }`}
                         title={d.enabled ? "Edit driver" : "Enable driver to edit"}
@@ -294,7 +375,7 @@ function DriversList({ onEdit }) {
               ))
             ) : (
               <tr>
-                <td colSpan="8" className="text-center py-8 text-gray-500">
+                <td colSpan="10" className="text-center py-8 text-gray-500">
                   <div className="flex flex-col items-center gap-2">
                     <svg className="w-12 h-12 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
@@ -327,6 +408,15 @@ function DriversList({ onEdit }) {
             onPageChange={(pg) => setCurrentPage(pg)}
           />
         </div>
+      )}
+      {showTypeModal && (
+        <DriverTypeModal
+          count={selectedIds.size}
+          summary={typeSummary()}
+          busy={Boolean(changingType)}
+          onCancel={() => setShowTypeModal(false)}
+          onConfirm={confirmTypeChange}
+        />
       )}
     </section>
   );

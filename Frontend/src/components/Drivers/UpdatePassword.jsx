@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import { useNavigate } from "react-router-dom";
-import { toast } from "react-toastify";
+import { toast } from "../../utils/toast";
 import Header from "../../reuse/driver/Header";
 import Nav from "../../reuse/driver/Nav";
 import useTranslation from "../../hooks/useTranslation.js";
@@ -111,24 +111,21 @@ const UpdatePassword = () => {
     });
 
     // Dispatch update password action
-    const result = await dispatch(updatePassword(formData));
+    await dispatch(updatePassword(formData));
 
-    // If failed, errors will be shown via useEffect
-    if (updatePassword.rejected.match(result)) {
-      console.log("Password update failed:", result.payload);
-    }
+    // If it fails, the errors are shown via useEffect
   };
 
   const isLoading = status === "loading";
 
   return (
-    <div className="min-h-screen bg-gray-50 text-gray-900 font-poppins">
+    <div className="min-h-dvh bg-canvas text-ink">
       <Header />
 
       <main className="max-w-2xl mx-auto mt-6 mb-24 px-4 sm:px-6 pb-36">
-        <div className="bg-white border border-gray-200 rounded-lg shadow-sm overflow-hidden">
+        <div className="card-surface overflow-hidden">
           {/* Header */}
-          <div className="bg-gradient-to-r from-blue-500 to-blue-600 px-6 py-4">
+          <div className="bg-brand px-4 sm:px-6 py-4">
             <div className="flex items-center">
               <svg
                 className="w-6 h-6 text-white mr-3"
@@ -145,7 +142,7 @@ const UpdatePassword = () => {
               </svg>
               <div>
                 <h1 className="text-xl font-bold text-white">{t('updatePassword')}</h1>
-                <p className="text-blue-100 text-sm mt-1">
+                <p className="text-purple-100 text-sm mt-1">
                   {t('changePasswordSecurely')}
                 </p>
               </div>
@@ -153,7 +150,7 @@ const UpdatePassword = () => {
           </div>
 
           {/* Driver Info */}
-          <div className="bg-blue-50 px-6 py-3 border-b border-blue-100">
+          <div className="bg-purple-50 px-4 sm:px-6 py-3 border-b border-purple-100">
             <p className="text-sm text-gray-700">
               <span className="font-semibold">{t('driver')}:</span> {driver?.name || "N/A"}
             </p>
@@ -163,7 +160,7 @@ const UpdatePassword = () => {
           </div>
 
           {/* Form */}
-          <form onSubmit={handleSubmit} className="p-6 space-y-6">
+          <form onSubmit={handleSubmit} className="p-4 sm:p-6 space-y-6">
             {/* Current Password */}
             <div className="space-y-2">
               <label htmlFor="oldPassword" className="block text-sm font-semibold text-gray-700">
@@ -178,17 +175,17 @@ const UpdatePassword = () => {
                   onChange={handleChange}
                   onBlur={() => handleBlur("oldPassword")}
                   placeholder={t('enterCurrentPassword')}
-                  className={`w-full px-4 py-3 pr-12 border-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors ${
+                  className={`bg-white text-ink placeholder:text-ink-muted/70 transition-shadow min-h-11 w-full px-4 py-3 pr-12 border rounded-xl focus:outline-none focus:ring-4 focus:ring-brand-500/20 transition-colors ${
                     touched.oldPassword && errors.oldPassword
                       ? "border-red-500 focus:ring-red-500"
-                      : "border-gray-300"
+                      : "border-line"
                   }`}
                   disabled={isLoading}
                 />
                 <button
                   type="button"
                   onClick={() => togglePasswordVisibility("old")}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700"
+                  className="absolute right-1 top-1/2 -translate-y-1/2 p-2 text-gray-500 hover:text-gray-700"
                   tabIndex={-1}
                 >
                   {showPasswords.old ? (
@@ -246,17 +243,17 @@ const UpdatePassword = () => {
                   onChange={handleChange}
                   onBlur={() => handleBlur("newPassword")}
                   placeholder={t('enterNewPassword')}
-                  className={`w-full px-4 py-3 pr-12 border-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors ${
+                  className={`bg-white text-ink placeholder:text-ink-muted/70 transition-shadow min-h-11 w-full px-4 py-3 pr-12 border rounded-xl focus:outline-none focus:ring-4 focus:ring-brand-500/20 transition-colors ${
                     touched.newPassword && errors.newPassword
                       ? "border-red-500 focus:ring-red-500"
-                      : "border-gray-300"
+                      : "border-line"
                   }`}
                   disabled={isLoading}
                 />
                 <button
                   type="button"
                   onClick={() => togglePasswordVisibility("new")}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700"
+                  className="absolute right-1 top-1/2 -translate-y-1/2 p-2 text-gray-500 hover:text-gray-700"
                   tabIndex={-1}
                 >
                   {showPasswords.new ? (
@@ -315,17 +312,17 @@ const UpdatePassword = () => {
                   onChange={handleChange}
                   onBlur={() => handleBlur("confirmPassword")}
                   placeholder={t('reEnterNewPassword')}
-                  className={`w-full px-4 py-3 pr-12 border-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors ${
+                  className={`bg-white text-ink placeholder:text-ink-muted/70 transition-shadow min-h-11 w-full px-4 py-3 pr-12 border rounded-xl focus:outline-none focus:ring-4 focus:ring-brand-500/20 transition-colors ${
                     touched.confirmPassword && errors.confirmPassword
                       ? "border-red-500 focus:ring-red-500"
-                      : "border-gray-300"
+                      : "border-line"
                   }`}
                   disabled={isLoading}
                 />
                 <button
                   type="button"
                   onClick={() => togglePasswordVisibility("confirm")}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700"
+                  className="absolute right-1 top-1/2 -translate-y-1/2 p-2 text-gray-500 hover:text-gray-700"
                   tabIndex={-1}
                 >
                   {showPasswords.confirm ? (
@@ -408,10 +405,10 @@ const UpdatePassword = () => {
               </button>
               <button
                 type="submit"
-                className={`flex-1 px-6 py-3 bg-gradient-to-r from-blue-500 to-blue-600 text-white rounded-lg font-semibold focus:outline-none focus:ring-2 focus:ring-blue-400 transition-all ${
+                className={`flex-1 px-6 py-3 bg-brand text-white rounded-lg font-semibold focus:outline-none focus:ring-2 focus:ring-purple-600 focus:ring-offset-2 transition-all ${
                   isLoading
                     ? "opacity-60 cursor-not-allowed"
-                    : "hover:from-blue-600 hover:to-blue-700 hover:shadow-lg"
+                    : "hover:bg-brand-dark hover:shadow-lg"
                 }`}
                 disabled={isLoading}
               >

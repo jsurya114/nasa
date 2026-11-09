@@ -15,7 +15,6 @@ export const toggleAdminRole = createAsyncThunk("/admin/toggle-admin-role",
 export const addDriver = createAsyncThunk("/admin/create-users",
     async (formData, { rejectWithValue }) => {
         try {
-            console.log("formdata of driver ", formData);
             const res = await axios.post(`/admin/create-users`, formData);
             return res.data;
         } catch (error) {
@@ -97,7 +96,6 @@ export const toggleAvailAdmin = createAsyncThunk(`/admin/toggle-admin`, async (i
 export const addAdmin = createAsyncThunk(`/admin/create-admin`,
     async (formData, { rejectWithValue }) => {
         try {
-            console.log("Admin data ", formData);
             const res = await axios.post(`/admin/create-admin`, formData);
             return res.data;
         } catch (error) {
@@ -111,6 +109,19 @@ export const updateDriver = createAsyncThunk(
     async ({ id, formData }, { rejectWithValue }) => {
         try {
             const res = await axios.put(`/admin/update-user/${id}`, formData);
+            return res.data;
+        } catch (err) {
+            return rejectWithValue(err.response?.data?.message || err.message);
+        }
+    }
+);
+
+// Local or Desi for one or many drivers in a single request (the server changes all of them or none).
+export const changeDriverTypes = createAsyncThunk(
+    "/admin/change-driver-types",
+    async ({ driverIds, driverType }, { rejectWithValue }) => {
+        try {
+            const res = await axios.patch(`/admin/drivers/type`, { driverIds, driverType });
             return res.data;
         } catch (err) {
             return rejectWithValue(err.response?.data?.message || err.message);
@@ -143,7 +154,9 @@ const userLoadSlice = createSlice({
         city: [],
         totalPages: 0,
         searchTerm: "",
-        selectedCity: "All"
+        selectedCity: "All",
+        // Kept apart from `loading` so changing types never swaps the table for its loading skeleton.
+        changingType: false
     },
     reducers: {
         clearMessages: (state) => {
@@ -171,7 +184,6 @@ const userLoadSlice = createSlice({
                 state.success = null;
             })
             .addCase(addDriver.fulfilled, (state, action) => {
-                console.log("Driver added successfully:", action.payload);
 
                 const newDriver = action.payload.insertUser;
 
@@ -182,7 +194,6 @@ const userLoadSlice = createSlice({
                 state.error = null;
             })
             .addCase(addDriver.rejected, (state, action) => {
-                console.error("Add driver failed:", action.payload);
                 state.loading = false;
                 state.error = action.payload || "Failed to add driver";
                 state.success = null;
@@ -279,7 +290,6 @@ const userLoadSlice = createSlice({
                 state.success = null;
             })
             .addCase(addAdmin.fulfilled, (state, action) => {
-                console.log("Admin added successfully:", action.payload);
 
                 const newAdmin = action.payload.insertAdmin;
 
@@ -290,7 +300,6 @@ const userLoadSlice = createSlice({
                 state.error = null;
             })
             .addCase(addAdmin.rejected, (state, action) => {
-                console.error("Add admin failed:", action.payload);
                 state.loading = false;
                 state.error = action.payload || "Failed to add admin";
                 state.success = null;
@@ -299,7 +308,6 @@ const userLoadSlice = createSlice({
                 state.loading = true;
             })
             .addCase(getCities.fulfilled, (state, action) => {
-                console.log("From cities", action.payload.cities);
                 state.city = action.payload.cities;
                 state.loading = false;
                 state.success = true;
@@ -314,7 +322,6 @@ const userLoadSlice = createSlice({
                 state.loading = true;
             })
             .addCase(getAdminCities.fulfilled, (state, action) => {
-                console.log("From admin cities", action.payload.cities);
                 state.city = action.payload.cities;
                 state.loading = false;
                 state.success = true;
@@ -343,6 +350,19 @@ const userLoadSlice = createSlice({
                 state.loading = false;
                 state.error = action.payload || "Failed to update driver";
                 state.success = null;
+            })
+
+            .addCase(changeDriverTypes.pending, (state) => {
+                state.changingType = true;
+            })
+            .addCase(changeDriverTypes.fulfilled, (state, action) => {
+                const { driverIds, driverType } = action.payload;
+                const changed = new Set(driverIds);
+                state.drivers = state.drivers.map(d => changed.has(d.id) ? { ...d, driver_type: driverType } : d);
+                state.changingType = false;
+            })
+            .addCase(changeDriverTypes.rejected, (state) => {
+                state.changingType = false;
             })
 
             .addCase(updateAdmin.pending, (state) => {

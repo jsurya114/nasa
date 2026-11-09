@@ -1,4 +1,5 @@
 import pool from "../../config/db.js";
+import logger from '../../utils/logger.js';
 
 // Insert route with job and price validation
 export const insertRoute = async (data) => {
@@ -137,7 +138,7 @@ export const toggleRouteStatusQuery = async (id) => {
     "UPDATE routes SET enabled = NOT enabled WHERE id=$1 RETURNING *",
     [id]
   );
-  console.log("Toggled route:", result.rows[0]); // Debug log
+  logger.debug("Toggled route", { id: result.rows[0]?.id });
   return result.rows[0];
 };
 
@@ -165,7 +166,7 @@ const query = `
         total:parseInt(totalResult.rows[0].count)
       }
 } catch (error) {
-  console.error("routePagination error:", error.message);
+  logger.error("routePagination error", error);
       throw error;
 }
 }

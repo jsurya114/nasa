@@ -1,12 +1,13 @@
 import { useState, useEffect } from "react";
+import { SkeletonTableRows } from "./Skeleton.jsx";
 import { useDispatch, useSelector } from "react-redux";
-import { clearPaginateTerms, getAdmins, toggleAvailAdmin, toggleAdminRole } from "../redux/slice/admin/userLoadSlice";
+import { clearPaginateTerms, getAdmins, toggleAvailAdmin } from "../redux/slice/admin/userLoadSlice";
 import Pagination from "./Pagination";
-import { toast } from "react-toastify";
+import { toast } from "../utils/toast";
 
 function AdminsList({ onEdit }) {
   const dispatch = useDispatch();
-  const { admins, loading: adminsLoad, error: adminsError, page, totalPages } = useSelector((state) => state.users);
+  const { admins, loading: adminsLoad, totalPages } = useSelector((state) => state.users);
   const { isSuperAdmin } = useSelector((state) => state.admin);
   const [currentPage, setCurrentPage] = useState(1);
 
@@ -16,11 +17,7 @@ function AdminsList({ onEdit }) {
   }, [dispatch, currentPage]);
 
   function handleToggleChange(id) {
-    try {
-      dispatch(toggleAvailAdmin(id));
-    } catch (err) {
-      console.error("Failed to toggle status:", err);
-    }
+    dispatch(toggleAvailAdmin(id));
   }
 
   function handleEdit(admin) {
@@ -32,7 +29,7 @@ function AdminsList({ onEdit }) {
   }
 
   return (
-    <section className="bg-white rounded-xl shadow p-4">
+    <section className="card-surface p-4">
       <h2 className="font-bold text-lg mb-4">Administrators</h2>
 
       {!isSuperAdmin && (
@@ -45,11 +42,12 @@ function AdminsList({ onEdit }) {
 
       {isSuperAdmin && (
         <>
+          <div className="overflow-x-auto">
           <table className="w-full border-collapse text-sm">
             <thead>
               <tr className="bg-gray-50 text-left">
                 {["Sl No", "Name", "Email", "Role", "Cities", "Status", "Actions"].map((head, i) => (
-                  <th key={i} className="px-3 py-2 border-b border-gray-200">
+                  <th key={i} className="px-3 py-2 border-b border-line">
                     {head}
                   </th>
                 ))}
@@ -57,30 +55,7 @@ function AdminsList({ onEdit }) {
             </thead>
             <tbody>
               {adminsLoad && admins.length === 0 ? (
-                <tr>
-                  <td colSpan="7" className="text-center py-4 text-gray-500 font-medium">
-                    <div className="flex items-center justify-center">
-                      <svg
-                        className="animate-spin h-6 w-6 mr-2 text-purple-600"
-                        viewBox="0 0 24 24"
-                      >
-                        <circle
-                          cx="12"
-                          cy="12"
-                          r="10"
-                          stroke="currentColor"
-                          strokeWidth="4"
-                          fill="none"
-                        />
-                        <path
-                          fill="currentColor"
-                          d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"
-                        />
-                      </svg>
-                      Loading admins...
-                    </div>
-                  </td>
-                </tr>
+                <SkeletonTableRows rows={5} cols={7} label="Loading admins..." />
               ) : admins.length > 0 ? (
                 admins.map((a, i) => (
                   <tr key={a.id} className={!a.is_active ? "bg-gray-50" : ""}>
@@ -160,7 +135,7 @@ function AdminsList({ onEdit }) {
                           disabled={!a.is_active}
                           className={`group relative px-4 py-1.5 text-white text-xs font-medium rounded-md transition-all duration-200 shadow-sm flex items-center gap-1.5 ${
                             a.is_active
-                              ? "bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 hover:shadow-md cursor-pointer"
+                              ? "bg-brand hover:bg-brand-900 hover:shadow-md cursor-pointer"
                               : "bg-gray-400 cursor-not-allowed opacity-50"
                           }`}
                           title={a.is_active ? "Edit admin" : "Enable admin to edit"}
@@ -193,6 +168,7 @@ function AdminsList({ onEdit }) {
               )}
             </tbody>
           </table>
+          </div>
 
           {/* Pagination */}
           {totalPages > 1 && (

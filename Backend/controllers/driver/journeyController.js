@@ -4,10 +4,14 @@ import {
   getTodayJourney,
   addRangeOfSqeunceToDeliveries,
   checkSequenceConflict,
+  isRouteAvailable,
 } from "../../services/driver/journeyQueries.js";
 import { jobService } from "../../services/admin/jobQueries.js";
 import HttpStatus from "../../utils/statusCodes.js";
 import { translateError } from "../../utils/backendI18n.js";
+import logger from '../../utils/logger.js';
+import pool from "../../config/db.js";
+import { OnboardingRequiredError, refusal, withWorkGate } from "../../services/payments/everee/onboardingGate.js";
 
 // Helper to get language from request
 const getLang = (req) => {
@@ -36,10 +40,18 @@ export const saveJourney = async (req, res) => {
     if (!start_seq || start_seq <= 0) errors.start_seq = translateError(lang, 'journey.startSeqInvalid');
     if (!end_seq || end_seq < start_seq) errors.end_seq = translateError(lang, 'journey.endSeqInvalid');
 
-    const conflictSequences = await checkSequenceConflict(route_id, start_seq, end_seq, journey_date);
+    // A route archived by an admin (even after the driver opened the form) cannot start a new journey.
+    if (route_id && !(await isRouteAvailable(route_id))) {
+      errors.route_id = translateError(lang, 'journey.routeUnavailable');
+    }
 
-    if (conflictSequences.length > 0) {
-      errors.sequenceConflict = translateError(lang, 'journey.sequenceConflict');
+    // The overlap check only makes sense for a usable route.
+    if (!errors.route_id) {
+      const conflictSequences = await checkSequenceConflict(route_id, start_seq, end_seq, journey_date);
+
+      if (conflictSequences.length > 0) {
+        errors.sequenceConflict = translateError(lang, 'journey.sequenceConflict');
+      }
     }
 
     if (Object.keys(errors).length > 0) {
@@ -56,14 +68,19 @@ export const saveJourney = async (req, res) => {
       });
     }
 
-    // Insert journey
-    const journey = await insertJourney({
-      driver_id,
-      route_id,
-      packages,
-      start_seq,
-      end_seq,
-      journey_date: journey_date || new Date().toISOString().split("T")[0],
+    // A Local driver who has not finished Everee onboarding cannot start new work. The check and the writes are ONE transaction (the token's driver;
+    // requireSelf already made driver_id match it), so a concurrent unlink cannot slip between them. With the gate off this runs exactly as before.
+    const { journey, sequence } = await withWorkGate(pool, req.driver?.id ?? driver_id, async (db) => {
+      const created = await insertJourney({
+        driver_id,
+        route_id,
+        packages,
+        start_seq,
+        end_seq,
+        journey_date: journey_date || new Date().toISOString().split("T")[0],
+      }, db);
+      if (created.success === false) return { journey: created };
+      return { journey: created, sequence: await addRangeOfSqeunceToDeliveries(driver_id, route_id, start_seq, end_seq, created.id, db) };
     });
 
     if (journey.success === false) {
@@ -73,14 +90,6 @@ export const saveJourney = async (req, res) => {
         error: journey.error,
       });
     }
-
-    const sequence = await addRangeOfSqeunceToDeliveries(
-      driver_id,
-      route_id,
-      start_seq,
-      end_seq,
-      journey.id
-    );
 
     if (sequence.success === false) {
       return res.status(500).json({
@@ -92,8 +101,9 @@ export const saveJourney = async (req, res) => {
 
     return res.status(201).json({ success: true, data: journey });
   } catch (error) {
+    if (error instanceof OnboardingRequiredError) return res.status(error.status).json(refusal(getLang(req)));
     const lang = getLang(req);
-    console.error("saveJourney error:", error);
+    logger.error("saveJourney error", error);
     return res.status(500).json({
       success: false,
       message: translateError(lang, 'journey.errorInserting'),

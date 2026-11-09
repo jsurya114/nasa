@@ -1,6 +1,7 @@
 import deliveryService from "../../services/driver/deliveryQuery.js"
 import HttpStatus from "../../utils/statusCodes.js"
 import { translateError } from "../../utils/backendI18n.js";
+import logger from '../../utils/logger.js';
 
 // Helper to get language from request
 const getLang = (req) => {
@@ -46,11 +47,11 @@ const getDeliverySummary = async(req,res)=>{
 
 
         const data= await deliveryService.fetchDeliverySummary(driverId,from_date,to_date)
-        console.log(translateError(lang, 'delivery.fetchedDeliveries') + ":", data.length);
+        logger.debug('Deliveries fetched', { count: data.length });
         res.status(HttpStatus.OK).json(data)
     } catch (error) {
         const lang = getLang(req);
-        console.error(translateError(lang, 'delivery.queryFailed') + ":", error)
+        logger.error('Delivery query failed', error)
 
         res.status(HttpStatus.INTERNAL_SERVER_ERROR).json({ 
             message: translateError(lang, 'delivery.failedToFetchSummary')

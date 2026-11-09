@@ -11,6 +11,15 @@ const VALID_DAYS = [
 ];
 
 export const availabilityService = {
+  // Rows with the driver's stored timezone (none when the driver does not exist).
+  getDriverTimezone: async (driverId) => {
+    const result = await pool.query(
+      'SELECT timezone FROM drivers WHERE id = $1',
+      [driverId]
+    );
+    return result.rows;
+  },
+
   // Driver: get own availability
   getDriverAvailability: async (driverId) => {
     const result = await pool.query(
@@ -51,8 +60,9 @@ export const availabilityService = {
   },
 
   // Driver: update own availability
-  updateDriverAvailability: async (driverId, availability) => {
-    const result = await pool.query(
+  // `db` is the pool, or the client of a transaction the caller owns (the onboarding gate's).
+  updateDriverAvailability: async (driverId, availability, db = pool) => {
+    const result = await db.query(
       `
       UPDATE drivers
       SET
@@ -352,7 +362,8 @@ export const availabilityService = {
     driverId,
     availability,
     adminId,
-    adminRole
+    adminRole,
+    db = pool
   ) => {
     let accessQuery;
     let accessParams;
@@ -377,13 +388,13 @@ export const availabilityService = {
       throw new Error("Unauthorized role");
     }
 
-    const accessResult = await pool.query(accessQuery, accessParams);
+    const accessResult = await db.query(accessQuery, accessParams);
 
     if (accessResult.rows.length === 0) {
       throw new Error("Driver not found or access denied");
     }
 
-    const result = await pool.query(
+    const result = await db.query(
       `
       UPDATE drivers
       SET

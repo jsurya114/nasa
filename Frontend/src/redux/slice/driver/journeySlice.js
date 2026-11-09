@@ -23,7 +23,6 @@ export const fetchRoutes = createAsyncThunk(
       if (error.name === 'AbortError' || axios.isCancel(error)) {
         return rejectWithValue(translateError(lang, 'delivery.requestCancelled'));
       }
-      console.error("fetchRoutes error:", error);
       return rejectWithValue(error.response?.data?.message || error.message);
     }
   }
@@ -45,7 +44,6 @@ export const fetchAdminRoutes = createAsyncThunk(
       if (error.name === 'AbortError' || axios.isCancel(error)) {
         return rejectWithValue(translateError(lang, 'delivery.requestCancelled'));
       }
-      console.error("fetchAdminRoutes error:", error);
       return rejectWithValue(error.response?.data?.message || error.message);
     }
   }
@@ -71,7 +69,6 @@ export const fetchTodayJourney = createAsyncThunk(
       if (error.name === 'AbortError' || axios.isCancel(error)) {
         return rejectWithValue(translateError(lang, 'delivery.requestCancelled'));
       }
-      console.error("fetchTodayJourney error:", error);
       return rejectWithValue(error.response?.data?.message || translateError(lang, 'journey.errorFetching'));
     }
   }
@@ -85,8 +82,8 @@ export const saveJourney = createAsyncThunk(
       const res = await axios.post(`/driver/journey`, journeyData);
       return res.data.data;
     } catch (error) {
-      console.error("saveJourney error:", error);
-      return rejectWithValue(error.response?.data || { message: error.message });
+      // No HTTP answer at all (the connection dropped): the server may still have saved it, so the page checks
+      return rejectWithValue(error.response?.data || { message: error.message, uncertain: !axios.isCancel(error) });
     }
   }
 );
@@ -107,7 +104,6 @@ export const fetchAllJourneys = createAsyncThunk(
       if (error.name === 'AbortError' || axios.isCancel(error)) {
         return rejectWithValue(translateError(lang, 'delivery.requestCancelled'));
       }
-      console.error("fetchAllJourneys error:", error);
       return rejectWithValue(error.response?.data?.message || translateError(lang, 'journey.errorFetching'));
     }
   }
@@ -135,7 +131,6 @@ export const fetchPaginatedJourneys = createAsyncThunk(
       if (error.name === 'AbortError' || axios.isCancel(error)) {
         return rejectWithValue(translateError(lang, 'delivery.requestCancelled'));
       }
-      console.error("fetchPaginatedJourneys error:", error);
       return rejectWithValue(error.response?.data?.message || translateError(lang, 'journey.errorFetching'));
     }
   }
@@ -149,7 +144,6 @@ export const addJourney = createAsyncThunk(
       const res = await axios.post(`/admin/journey`, journeyData);
       return res.data.data;
     } catch (error) {
-      console.error("addJourney error:", error);
       return rejectWithValue(error.response?.data || { message: error.message });
     }
   }
@@ -163,7 +157,6 @@ export const updateJourney = createAsyncThunk(
       const res = await axios.put(`/admin/journey/${journey_id}`, data);
       return res.data.data;
     } catch (error) {
-      console.error("updateJourney error:", error);
       return rejectWithValue(error.response?.data || { message: error.message });
     }
   }
@@ -177,7 +170,6 @@ export const deleteJourney = createAsyncThunk(
       await axios.delete(`/admin/journey/${id}`);
       return id;
     } catch (error) {
-      console.error("deleteJourney error:", error);
       return rejectWithValue(error.response?.data || { message: error.message });
     }
   }
@@ -199,7 +191,6 @@ export const fetchAllDrivers = createAsyncThunk(
       if (error.name === 'AbortError' || axios.isCancel(error)) {
         return rejectWithValue(translateError(lang, 'delivery.requestCancelled'));
       }
-      console.error("fetchAllDrivers error:", error);
       return rejectWithValue(error.response?.data?.message || translateError(lang, 'common.failed'));
     }
   }
@@ -225,7 +216,6 @@ export const fetchRoutesByDriver = createAsyncThunk(
       if (error.name === 'AbortError' || axios.isCancel(error)) {
         return rejectWithValue(translateError(lang, 'delivery.requestCancelled'));
       }
-      console.error("fetchRoutesByDriver error:", error);
       return rejectWithValue(error.response?.data?.message || translateError(lang, 'common.failed'));
     }
   }
@@ -251,7 +241,6 @@ export const fetchDriverCityType = createAsyncThunk(
       if (error.name === 'AbortError' || axios.isCancel(error)) {
         return rejectWithValue(translateError(lang, 'delivery.requestCancelled'));
       }
-      console.error("fetchDriverCityType error:", error);
       return rejectWithValue(error.response?.data?.message || translateError(lang, 'common.failed'));
     }
   }
@@ -472,7 +461,7 @@ const journeySlice = createSlice({
         state.paginatedStatus = "loading";
         state.paginatedError = null;
       })
-      .addCase(addJourney.fulfilled, (state, action) => {
+      .addCase(addJourney.fulfilled, (state) => {
         state.paginatedStatus = "succeeded";
         // Don't modify paginatedJourneys here
         // Component will refetch to get accurate paginated data

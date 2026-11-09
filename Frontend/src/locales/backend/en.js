@@ -61,6 +61,7 @@ export const backendEn = {
   // Journey errors
   journey: {
     routeRequired: "Route is required",
+    routeUnavailable: "This route is no longer available. Please choose another route.",
     startSeqInvalid: "Start sequence must be greater than 0",
     endSeqInvalid: "End sequence must be >= start sequence",
     sequenceConflict: "Some packages in this sequence range are already taken by another driver",

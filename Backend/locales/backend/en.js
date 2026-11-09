@@ -11,6 +11,7 @@ export const backendEn = {
     accountDisabled: "Account has been disabled",
     unauthorized: "UNAUTHORIZED",
     authTokenMissing: "Authentication token missing",
+    tooManyAttempts: "Too many login attempts. Please try again in {minutes} minutes.",
   },
 
   // Driver errors
@@ -58,8 +59,13 @@ export const backendEn = {
   },
 
   // Journey errors
+  onboarding: {
+    required: "Your payment setup is not complete. Work is on hold until you finish it in the Payment setup page.",
+  },
+
   journey: {
     routeRequired: "Route is required",
+    routeUnavailable: "This route is no longer available. Please choose another route.",
     startSeqInvalid: "Start sequence must be greater than 0",
     endSeqInvalid: "End sequence must be >= start sequence",
     sequenceConflict: "Some packages in this sequence range are already taken by another driver",
@@ -91,6 +97,15 @@ export const backendEn = {
     updatedSuccessfully: "Password updated successfully",
     incorrectCurrent: "Current password is incorrect",
     failedToUpdate: "Failed to update password. Please try again.",
+  },
+
+  // Push notifications: text shown on the lock screen. No names, amounts, routes or cities, on purpose.
+  push: {
+    title: "NASA Logistics",
+    availabilityReset: "Time to set your availability for next week.",
+    paid: "You have a pay update.",
+    agreement: "Please review your agreement.",
+    accessCode: "A new access code was submitted.",
   },
 
   // Common errors

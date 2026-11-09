@@ -1,8 +1,13 @@
+import usePersistentState from "../../hooks/usePersistentState.js";
 import { useEffect, useMemo, useState, useCallback } from "react";
+import { SkeletonList } from "../../reuse/Skeleton.jsx";
+import { RefreshCw, Wallet, ShieldCheck, Banknote } from "lucide-react";
 import { useDispatch, useSelector } from "react-redux";
 import { fetchFilteredPaymentData, fetchTodayPaymentData } from "../../redux/slice/admin/dashSlice";
+import PenaltyRows from "./dashboard/PenaltyRows.jsx";
+import { netFor } from "./dashboard/penaltyDisplay.js";
 
-export default function PaymentDashboardTable() {
+export default function PaymentDashboardTable({ penalty }) {
   const dispatch = useDispatch();
   
   const { 
@@ -19,7 +24,8 @@ export default function PaymentDashboardTable() {
   const { isSuperAdmin } = useSelector((state) => state.admin);
 
   const [currentPage, setCurrentPage] = useState(1);
-  const [itemsPerPage, setItemsPerPage] = useState(10);
+  // Rows per page is kept for when the admin comes back to this page (the dashboard reads the same value when it asks for the table).
+  const [itemsPerPage, setItemsPerPage] = usePersistentState("admin", "dashboard", "perPage", 10);
 
   useEffect(() => {
     if (pagination && pagination.page) {
@@ -118,7 +124,7 @@ export default function PaymentDashboardTable() {
         limit: newLimit
       }));
     }
-  }, [dispatch, filters, showTodayOnly]);
+  }, [dispatch, filters, showTodayOnly, setItemsPerPage]);
 
   const getPageNumbers = () => {
     const totalPages = pagination.totalPages;
@@ -183,7 +189,7 @@ export default function PaymentDashboardTable() {
   const displayError = paymentError;
 
   return (
-    <section className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
+    <section className="card-surface overflow-hidden">
       <style>{`
         .custom-select {
           appearance: none;
@@ -195,25 +201,20 @@ export default function PaymentDashboardTable() {
         }
       `}</style>
 
-      <div className="flex items-center justify-between font-bold text-gray-900 bg-gray-50 border-b border-gray-200 px-4 py-3">
+      <div className="flex items-center justify-between font-bold text-ink bg-brand-50/60 border-b border-line px-4 py-3">
         <span>Driver Jobs</span>
         <button
           onClick={handleRefresh}
-          className="px-3 py-1 text-sm bg-blue-600 text-white rounded hover:bg-blue-500 disabled:opacity-50"
+          className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-semibold bg-brand text-white rounded-xl hover:bg-brand-900 disabled:opacity-50"
           disabled={isLoading}
         >
-          🔄 Refresh
+          <RefreshCw className={`h-4 w-4 ${isLoading ? "animate-spin" : ""}`} aria-hidden="true" />
+          Refresh
         </button>
       </div>
 
       {isLoading && (
-        <div className="p-8 flex flex-col items-center justify-center">
-          <div className="relative w-16 h-16">
-            <div className="absolute top-0 left-0 w-full h-full border-4 border-blue-100 rounded-full"></div>
-            <div className="absolute top-0 left-0 w-full h-full border-4 border-blue-500 rounded-full border-t-transparent animate-spin"></div>
-          </div>
-          <p className="mt-4 text-gray-600 font-medium">Loading payment data...</p>
-        </div>
+        <SkeletonList rows={5} label="Loading payment data..." className="p-4" />
       )}
 
       {displayError && (
@@ -243,7 +244,7 @@ export default function PaymentDashboardTable() {
           <div className="overflow-x-auto">
             <table className="w-full border-collapse text-sm">
               <thead>
-                <tr className="bg-gradient-to-r from-gray-50 to-gray-100 text-left">
+                <tr className="bg-brand-50/60 text-left">
                   {tableHeaders.map((head, i) => (
                     <th
                       key={i}
@@ -303,10 +304,12 @@ export default function PaymentDashboardTable() {
                     </td>
                     <td
                       className={`px-3 py-2 border-b border-gray-200 font-semibold whitespace-nowrap ${
-                        row.paid ? "text-green-600" : "text-red-600"
+                        row.paid ? "text-green-600" : row.payout_state === "processing" ? "text-amber-600" : "text-red-600"
                       }`}
+                      data-testid="paid-cell"
                     >
-                      {row.paid ? "Yes" : "No"}
+                      {/* "Submitted": the payment is with Everee and not confirmed yet; "Yes" only once the money is confirmed. */}
+                      {row.paid ? "Yes" : row.payout_state === "processing" ? "Submitted" : "No"}
                     </td>
                   </tr>
                 ))}
@@ -342,7 +345,10 @@ export default function PaymentDashboardTable() {
                         -
                       </td>
                       <td className="px-3 py-3 border-b border-gray-200 text-green-700 text-lg whitespace-nowrap">
-                        💰 ${totals.driverPayment.toFixed(2)}
+                        <span className="inline-flex items-center gap-1.5">
+                          <Wallet className="h-4 w-4" aria-hidden="true" />
+                          ${totals.driverPayment.toFixed(2)}
+                        </span>
                       </td>
                       <td className="px-3 py-3 border-b border-gray-200 whitespace-nowrap">
                         -
@@ -354,7 +360,8 @@ export default function PaymentDashboardTable() {
                     {totals.insuranceDeduction > 0 && (
                       <tr className="bg-red-50 font-bold">
                         <td className="px-3 py-3 border-b border-gray-200 whitespace-nowrap" colSpan="11">
-                          🛡️ Insurance Payment Deduction ({totals.insuranceDays} day{totals.insuranceDays !== 1 ? 's' : ''} × $1.92)
+                          <ShieldCheck className="inline h-4 w-4 -mt-0.5 mr-1.5" aria-hidden="true" />
+                          Insurance Payment Deduction ({totals.insuranceDays} day{totals.insuranceDays !== 1 ? 's' : ''} × $1.92)
                         </td>
                         <td className="px-3 py-3 border-b border-gray-200 text-red-600 text-lg whitespace-nowrap">
                           -${totals.insuranceDeduction.toFixed(2)}
@@ -363,18 +370,25 @@ export default function PaymentDashboardTable() {
                         </td>
                       </tr>
                     )}
-                    {totals.insuranceDeduction > 0 && (
-                      <tr className="bg-green-50 font-bold border-b-2 border-green-600">
-                        <td className="px-3 py-3 border-b border-gray-200 whitespace-nowrap" colSpan="11">
-                          💵 Net Payment
-                        </td>
-                        <td className="px-3 py-3 border-b border-gray-200 text-green-700 text-lg whitespace-nowrap">
-                          ${totals.netPayment.toFixed(2)}
-                        </td>
-                        <td className="px-3 py-3 border-b border-gray-200 whitespace-nowrap" colSpan="2">
-                        </td>
-                      </tr>
-                    )}
+                    <PenaltyRows penalty={penalty} />
+                    {(() => {
+                      // Net Payment: always shown under the table. The approved pay run's frozen net, else payment - insurance - this payday's deduction (a preview).
+                      const line = netFor(totals.netPayment, penalty);
+                      const tone = line.muted ? "bg-gray-50 text-gray-600" : line.preview ? "bg-amber-50 font-bold border-b-2 border-amber-500" : "bg-green-50 font-bold border-b-2 border-green-600";
+                      return (
+                        <tr className={tone} data-testid="net-payment-row">
+                          <td className="px-3 py-3 border-b border-gray-200 whitespace-nowrap" colSpan="11">
+                            <Banknote className="inline h-4 w-4 -mt-0.5 mr-1.5" aria-hidden="true" />
+                            {line.label}
+                          </td>
+                          <td className={`px-3 py-3 border-b border-gray-200 text-lg whitespace-nowrap ${line.muted ? "text-gray-600" : line.preview ? "text-amber-700" : "text-green-700"}`}>
+                            ${line.net.toFixed(2)}
+                          </td>
+                          <td className="px-3 py-3 border-b border-gray-200 whitespace-nowrap" colSpan="2">
+                          </td>
+                        </tr>
+                      );
+                    })()}
                   </>
                 )}
               </tbody>
@@ -382,7 +396,7 @@ export default function PaymentDashboardTable() {
           </div>
 
           {/* Pagination Controls */}
-          <div className="bg-gradient-to-r from-gray-50 to-gray-100 border-t-2 border-gray-200">
+          <div className="bg-brand-50/40 border-t border-line">
             <div className="px-6 py-4">
               <div className="flex flex-col sm:flex-row justify-between items-center gap-4 mb-4">
                 <div className="flex items-center gap-3">
@@ -390,7 +404,7 @@ export default function PaymentDashboardTable() {
                   <select
                     value={itemsPerPage}
                     onChange={handleItemsPerPageChange}
-                    className="custom-select border-2 border-gray-300 rounded-lg px-3 py-2 text-sm font-medium bg-white hover:border-blue-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 focus:outline-none transition-all cursor-pointer"
+                    className="text-ink placeholder:text-ink-muted/70 transition-shadow min-h-11 custom-select border border-line rounded-xl px-3 py-2 text-sm font-medium bg-white hover:border-blue-400 focus:border-brand-500 focus:ring-4 focus:ring-brand-500/20 focus:outline-none transition-all cursor-pointer"
                   >
                     <option value={5}>5</option>
                     <option value={10}>10</option>
@@ -413,7 +427,7 @@ export default function PaymentDashboardTable() {
                 <button
                   onClick={() => handlePageChange(1)}
                   disabled={currentPage === 1}
-                  className="p-2 rounded-lg border-2 border-gray-300 bg-white disabled:opacity-40 disabled:cursor-not-allowed hover:bg-blue-50 hover:border-blue-400 transition-all duration-200 group"
+                  className="p-2 rounded-xl border border-line bg-white disabled:opacity-40 disabled:cursor-not-allowed hover:bg-brand-50 hover:border-brand-300 transition-all duration-200 group"
                   title="First Page"
                 >
                   <svg className="w-5 h-5 text-gray-600 group-hover:text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -424,7 +438,7 @@ export default function PaymentDashboardTable() {
                 <button
                   onClick={() => handlePageChange(currentPage - 1)}
                   disabled={currentPage === 1}
-                  className="p-2 rounded-lg border-2 border-gray-300 bg-white disabled:opacity-40 disabled:cursor-not-allowed hover:bg-blue-50 hover:border-blue-400 transition-all duration-200 group"
+                  className="p-2 rounded-xl border border-line bg-white disabled:opacity-40 disabled:cursor-not-allowed hover:bg-brand-50 hover:border-brand-300 transition-all duration-200 group"
                   title="Previous Page"
                 >
                   <svg className="w-5 h-5 text-gray-600 group-hover:text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -457,7 +471,7 @@ export default function PaymentDashboardTable() {
                 <button
                   onClick={() => handlePageChange(currentPage + 1)}
                   disabled={currentPage === pagination.totalPages}
-                  className="p-2 rounded-lg border-2 border-gray-300 bg-white disabled:opacity-40 disabled:cursor-not-allowed hover:bg-blue-50 hover:border-blue-400 transition-all duration-200 group"
+                  className="p-2 rounded-xl border border-line bg-white disabled:opacity-40 disabled:cursor-not-allowed hover:bg-brand-50 hover:border-brand-300 transition-all duration-200 group"
                   title="Next Page"
                 >
                   <svg className="w-5 h-5 text-gray-600 group-hover:text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -468,7 +482,7 @@ export default function PaymentDashboardTable() {
                 <button
                   onClick={() => handlePageChange(pagination.totalPages)}
                   disabled={currentPage === pagination.totalPages}
-                  className="p-2 rounded-lg border-2 border-gray-300 bg-white disabled:opacity-40 disabled:cursor-not-allowed hover:bg-blue-50 hover:border-blue-400 transition-all duration-200 group"
+                  className="p-2 rounded-xl border border-line bg-white disabled:opacity-40 disabled:cursor-not-allowed hover:bg-brand-50 hover:border-brand-300 transition-all duration-200 group"
                   title="Last Page"
                 >
                   <svg className="w-5 h-5 text-gray-600 group-hover:text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">

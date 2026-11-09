@@ -2,10 +2,11 @@ import React, { useState } from "react";
 import logo from "../../assets/logo.png"; // adjust path according to your folder structure
 
 import { useDispatch, useSelector } from 'react-redux'
-import { adminLogin, clearError } from "../../redux/slice/admin/adminSlice.js";
+import { adminLogin } from "../../redux/slice/admin/adminSlice.js";
 import { useNavigate } from "react-router-dom";
-import { toast } from "react-toastify";
+import { toast } from "../../utils/toast";
 import { AiOutlineEye, AiOutlineEyeInvisible } from "react-icons/ai";
+import SignOutNotice from "../../native/SignOutNotice.jsx";
 
 
 const Login = () => {
@@ -19,7 +20,7 @@ const Login = () => {
   const dispatch = useDispatch();
   const navigate = useNavigate();
 
-  const { loading, error, isAuthenticated } = useSelector((state) => state.admin);
+  const { loading, error } = useSelector((state) => state.admin);
   const handleSubmit = async (e) => {
     e.preventDefault();
 
@@ -54,7 +55,6 @@ const Login = () => {
           position: "top-right",
           autoClose: 3000,
         });
-        console.log('login suc, navigate to dashboard')
 
       // ✅ Fixed
 navigate("/admin/dashboard");
@@ -118,9 +118,9 @@ navigate("/admin/dashboard");
   //     }
   //   };
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-100 font-poppins">
-      <div className="bg-white rounded-2xl shadow-lg w-full max-w-md">
-        <div className="bg-[oklch(0.36_0.13_296.97)] rounded-t-2xl py-6 flex justify-center">
+    <div className="bg-aurora min-h-dvh flex items-center justify-center px-4 py-10 pt-[calc(env(safe-area-inset-top)+2.5rem)] pb-[calc(env(safe-area-inset-bottom)+2.5rem)]">
+      <div className="bg-white rounded-3xl shadow-[var(--shadow-float)] ring-1 ring-white/20 w-full max-w-md overflow-hidden">
+        <div className="bg-[#462976] py-7 flex justify-center">
           <img
             src={logo}
             alt="Nasa Logistic Carriers Logo"
@@ -128,62 +128,67 @@ navigate("/admin/dashboard");
           />
         </div>
 
-        <div className="px-10 py-6 text-center">
-          <h2 className="text-2xl font-semibold text-blue-900 mb-6">Login</h2>
+        <div className="px-6 sm:px-10 pt-7 pb-8 text-center">
+          <SignOutNotice area="admin" />
+          <h2 className="text-2xl font-semibold tracking-tight text-ink mb-6">Login</h2>
           <form onSubmit={handleSubmit}>
             <div className="text-left mb-4">
-              <label htmlFor="email">Email Address</label>
+              <label htmlFor="email" className="block text-sm text-ink mb-1.5 font-medium">Email Address</label>
               <input
                 type="email"
                 id="email"
+                autoComplete="email"
                 value={email}
                 onChange={(e) => {
                   setEmail(e.target.value);
                   setFieldErrors((prev) => ({ ...prev, email: "" })); // clear email error
                 }}
 
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-600"
+                className="bg-white text-ink placeholder:text-ink-muted/70 min-h-11 w-full h-12 px-4 text-base border border-line rounded-xl focus:outline-none focus:ring-4 focus:ring-brand-500/20 focus:border-brand-500 transition-shadow"
               />
               {fieldErrors.email && (
-                <p className="text-red-600 text-sm">{fieldErrors.email}</p>
+                <p className="text-red-600 text-sm mt-1">{fieldErrors.email}</p>
               )}
             </div>
 
            <div className="text-left mb-4 relative">
-  <label htmlFor="password">Password</label>
+  <label htmlFor="password" className="block text-sm text-ink mb-1.5 font-medium">Password</label>
 
   <input
     type={showPassword ? "text" : "password"}
     id="password"
+    autoComplete="current-password"
     value={password}
     onChange={(e) => {
       setPassword(e.target.value);
       setFieldErrors((prev) => ({ ...prev, password: "" }));
     }}
-    className="w-full px-4 py-3 pr-12 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-600"
+    className="bg-white text-ink placeholder:text-ink-muted/70 min-h-11 w-full h-12 px-4 pr-12 text-base border border-line rounded-xl focus:outline-none focus:ring-4 focus:ring-brand-500/20 focus:border-brand-500 transition-shadow"
   />
 
-  <span
+  <button
+    type="button"
     onClick={() => setShowPassword(!showPassword)}
-    className="absolute right-4 top-10 cursor-pointer text-gray-600"
+    aria-label={showPassword ? "Hide password" : "Show password"}
+    className="absolute right-1.5 top-[1.85rem] p-2.5 cursor-pointer text-ink-muted hover:text-ink rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
   >
     {showPassword ? <AiOutlineEyeInvisible size={22} /> : <AiOutlineEye size={22} />}
-  </span>
+  </button>
 
   {fieldErrors.password && (
-    <p className="text-red-600 text-sm">{fieldErrors.password}</p>
+    <p className="text-red-600 text-sm mt-1">{fieldErrors.password}</p>
   )}
 </div>
 
 
             <button
               type="submit"
-              className="w-full bg-[oklch(0.36_0.13_296.97)] hover:bg-purple-900 text-white font-semibold py-3 rounded-lg shadow-md mt-4"
+              className="w-full bg-brand hover:bg-brand-900 text-white font-semibold h-12 rounded-xl shadow-[0_10px_24px_-12px_rgb(59_31_107/0.8)] mt-6"
             >
               {loading ? "Logging in..." : "Login"}
             </button>
 
-            {error && <p className="text-red-600 mt-2">{error}</p>}
+            {error && <p className="text-red-600 text-sm mt-3">{error}</p>}
           </form>
 
           <div className="mt-4 text-sm">

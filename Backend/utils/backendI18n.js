@@ -1,3 +1,4 @@
+import logger from './logger.js';
 // utils/backendI18n.js - Backend error message translations only
 // This works alongside your existing translation.js for UI text
 import { backendEn } from '../locales/backend/en.js';
@@ -25,7 +26,7 @@ export const translateError = (lang, key, params = {}) => {
     if (translation && typeof translation === 'object' && k in translation) {
       translation = translation[k];
     } else {
-      console.warn(`Backend translation key not found: ${key}`);
+      logger.warn(`Backend translation key not found: ${key}`);
       return key;
     }
   }

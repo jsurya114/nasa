@@ -1,4 +1,5 @@
 import pool from "../../config/db.js";
+import logger from '../../utils/logger.js';
 
 // Insert route with job and price validation
 export const insertRoute = async (data) => {
@@ -55,7 +56,7 @@ export const insertRoute = async (data) => {
 
 // Get all routes - for superadmin
 export const getAllRoutes = async () => {
-  const result = await pool.query("SELECT * FROM routes ORDER BY id ASC");
+  const result = await pool.query("SELECT * FROM routes WHERE deleted_at IS NULL ORDER BY id ASC");
   return result.rows;
 };
 
@@ -69,6 +70,7 @@ export const getRoutesForAdmin = async (adminId) => {
     INNER JOIN admin_city_ref acr ON c.id = acr.city_id
     WHERE acr.admin_id = $1
       AND c.enabled = true
+      AND r.deleted_at IS NULL
     ORDER BY r.id ASC
   `, [adminId]);
   
@@ -93,14 +95,15 @@ export const getAllRoutesOfDriver = async (id) => {
     JOIN routes r ON r.job = c.job
     WHERE d.id = $1
       AND d.enabled = true
-      AND r.enabled = true;
+      AND r.enabled = true
+      AND r.deleted_at IS NULL;
   `, [id]);
   return result.rows;
 };
 
-// Get route by ID
+// Get route by ID. An archived route counts as gone: it can no longer be read, edited or switched here.
 export const getRouteByIdQuery = async (id) => {
-  const result = await pool.query("SELECT * FROM routes WHERE id = $1", [id]);
+  const result = await pool.query("SELECT * FROM routes WHERE id = $1 AND deleted_at IS NULL", [id]);
   return result.rows[0];
 };
 
@@ -141,7 +144,7 @@ export const updateRouteQuery = async (id, data) => {
     `UPDATE routes 
      SET name=$1, job=$2, company_route_price=$3, driver_route_price=$4, 
         company_doublestop_price=$5, driver_doublestop_price=$6, enabled=$7, route_code_in_string=$8 
-     WHERE id=$9 RETURNING *`,
+     WHERE id=$9 AND deleted_at IS NULL RETURNING *`,
     [
       name,
       job,
@@ -168,17 +171,22 @@ export const toggleRouteStatusQuery = async (id) => {
     return null;
   }
   const result = await pool.query(
-    "UPDATE routes SET enabled = NOT enabled WHERE id=$1 RETURNING *",
+    "UPDATE routes SET enabled = NOT enabled WHERE id=$1 AND deleted_at IS NULL RETURNING *",
     [id]
   );
  
   return result.rows[0];
 };
 
-// Delete route
+// "Delete" a route: archive it. The row stays so journeys, deliveries and payments that point at it keep
+// their history. Lists no longer show it (deleted_at is set) and it is switched off, so code that only
+// uses enabled routes (such as the weekly import) skips it, as it did when the row was removed.
 export const deleteRouteQuery = async (id) => {
 
-  const result = await pool.query("DELETE FROM routes WHERE id=$1 RETURNING *", [id]);
+  const result = await pool.query(
+    "UPDATE routes SET deleted_at = NOW(), enabled = false WHERE id=$1 AND deleted_at IS NULL RETURNING *",
+    [id]
+  );
 
   return result.rows[0];
 };
@@ -199,43 +207,50 @@ export const routePagination = async (page, limit, search = "", cityFilter = "",
           SELECT * FROM routes
           WHERE (job ILIKE $1 OR name ILIKE $1)
             AND job = $2
+            AND deleted_at IS NULL
           ORDER BY id ASC
           LIMIT $3 OFFSET $4`;
         values = [`%${search}%`, cityFilter, limit, offset];
         countQuery = `
           SELECT COUNT(*) FROM routes
           WHERE (job ILIKE $1 OR name ILIKE $1)
-            AND job = $2`;
+            AND job = $2
+            AND deleted_at IS NULL`;
       } else if (search) {
         // Only search
         routeQuery = `
           SELECT * FROM routes
-          WHERE job ILIKE $1 OR name ILIKE $1
+          WHERE (job ILIKE $1 OR name ILIKE $1)
+            AND deleted_at IS NULL
           ORDER BY id ASC
           LIMIT $2 OFFSET $3`;
         values = [`%${search}%`, limit, offset];
         countQuery = `
           SELECT COUNT(*) FROM routes
-          WHERE job ILIKE $1 OR name ILIKE $1`;
+          WHERE (job ILIKE $1 OR name ILIKE $1)
+            AND deleted_at IS NULL`;
       } else if (cityFilter) {
         // Only city filter
         routeQuery = `
           SELECT * FROM routes
           WHERE job = $1
+            AND deleted_at IS NULL
           ORDER BY id ASC
           LIMIT $2 OFFSET $3`;
         values = [cityFilter, limit, offset];
         countQuery = `
           SELECT COUNT(*) FROM routes
-          WHERE job = $1`;
+          WHERE job = $1
+            AND deleted_at IS NULL`;
       } else {
         // No filters
         routeQuery = `
           SELECT * FROM routes
+          WHERE deleted_at IS NULL
           ORDER BY id ASC
           LIMIT $1 OFFSET $2`;
         values = [limit, offset];
-        countQuery = `SELECT COUNT(*) FROM routes`;
+        countQuery = `SELECT COUNT(*) FROM routes WHERE deleted_at IS NULL`;
       }
     } else {
       // Normal admin sees only routes for their assigned cities
@@ -251,6 +266,7 @@ export const routePagination = async (page, limit, search = "", cityFilter = "",
             AND r.job = $3
             AND r.enabled = true
             AND c.enabled = true
+            AND r.deleted_at IS NULL
           ORDER BY r.id ASC
           LIMIT $4 OFFSET $5`;
         values = [adminId, `%${search}%`, cityFilter, limit, offset];
@@ -263,7 +279,8 @@ export const routePagination = async (page, limit, search = "", cityFilter = "",
             AND (r.job ILIKE $2 OR r.name ILIKE $2)
             AND r.job = $3
             AND r.enabled = true
-            AND c.enabled = true`;
+            AND c.enabled = true
+            AND r.deleted_at IS NULL`;
       } else if (search) {
         // Only search
         routeQuery = `
@@ -275,6 +292,7 @@ export const routePagination = async (page, limit, search = "", cityFilter = "",
             AND (r.job ILIKE $2 OR r.name ILIKE $2)
             AND r.enabled = true
             AND c.enabled = true
+            AND r.deleted_at IS NULL
           ORDER BY r.id ASC
           LIMIT $3 OFFSET $4`;
         values = [adminId, `%${search}%`, limit, offset];
@@ -286,7 +304,8 @@ export const routePagination = async (page, limit, search = "", cityFilter = "",
           WHERE acr.admin_id = $1
             AND (r.job ILIKE $2 OR r.name ILIKE $2)
             AND r.enabled = true
-            AND c.enabled = true`;
+            AND c.enabled = true
+            AND r.deleted_at IS NULL`;
       } else if (cityFilter) {
         // Only city filter
         routeQuery = `
@@ -298,6 +317,7 @@ export const routePagination = async (page, limit, search = "", cityFilter = "",
             AND r.job = $2
             AND r.enabled = true
             AND c.enabled = true
+            AND r.deleted_at IS NULL
           ORDER BY r.id ASC
           LIMIT $3 OFFSET $4`;
         values = [adminId, cityFilter, limit, offset];
@@ -309,7 +329,8 @@ export const routePagination = async (page, limit, search = "", cityFilter = "",
           WHERE acr.admin_id = $1
             AND r.job = $2
             AND r.enabled = true
-            AND c.enabled = true`;
+            AND c.enabled = true
+            AND r.deleted_at IS NULL`;
       } else {
         // No filters
         routeQuery = `
@@ -320,6 +341,7 @@ export const routePagination = async (page, limit, search = "", cityFilter = "",
           WHERE acr.admin_id = $1
             AND r.enabled = true
             AND c.enabled = true
+            AND r.deleted_at IS NULL
           ORDER BY r.id ASC
           LIMIT $2 OFFSET $3`;
         values = [adminId, limit, offset];
@@ -330,7 +352,8 @@ export const routePagination = async (page, limit, search = "", cityFilter = "",
           INNER JOIN admin_city_ref acr ON c.id = acr.city_id
           WHERE acr.admin_id = $1
             AND r.enabled = true
-            AND c.enabled = true`;
+            AND c.enabled = true
+            AND r.deleted_at IS NULL`;
       }
     }
 
@@ -367,8 +390,7 @@ export const routePagination = async (page, limit, search = "", cityFilter = "",
       total: parseInt(total.rows[0].count)
     };
   } catch (error) {
-    console.error("routePagination error:", error.message);
-    console.error("Stack:", error.stack);
+    logger.error("routePagination error", error);
     throw error;
   }
 };
@@ -383,13 +405,14 @@ export const getRoutesByDriverCity = async (driverId) => {
       WHERE d.id = $1
         AND r.enabled = true
         AND c.enabled = true
+        AND r.deleted_at IS NULL
       ORDER BY r.id ASC
     `, [driverId]);
     
   
     return result.rows;
   } catch (error) {
-    console.error("getRoutesByDriverCity error:", error.message);
+    logger.error("getRoutesByDriverCity error", error);
     throw error;
   }
 };

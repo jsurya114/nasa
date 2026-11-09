@@ -11,6 +11,7 @@ export const backendEs = {
     accountDisabled: "La cuenta ha sido deshabilitada",
     unauthorized: "NO AUTORIZADO",
     authTokenMissing: "Falta el token de autenticación",
+    tooManyAttempts: "Demasiados intentos de inicio de sesión. Inténtalo de nuevo en {minutes} minutos.",
   },
 
   // Driver errors
@@ -58,8 +59,13 @@ export const backendEs = {
   },
 
   // Journey errors
+  onboarding: {
+    required: "Tu configuración de pagos no está completa. El trabajo queda en pausa hasta que la termines en la página de Configuración de pagos.",
+  },
+
   journey: {
     routeRequired: "La ruta es requerida",
+    routeUnavailable: "Esta ruta ya no está disponible. Elija otra ruta.",
     startSeqInvalid: "La secuencia inicial debe ser mayor que 0",
     endSeqInvalid: "La secuencia final debe ser >= secuencia inicial",
     sequenceConflict: "Algunos paquetes en este rango de secuencia ya están tomados por otro conductor",
@@ -91,6 +97,15 @@ export const backendEs = {
     updatedSuccessfully: "Contraseña actualizada exitosamente",
     incorrectCurrent: "La contraseña actual es incorrecta",
     failedToUpdate: "Error al actualizar contraseña. Por favor intente nuevamente.",
+  },
+
+  // Notificaciones push: texto de la pantalla de bloqueo. Sin nombres, montos, rutas ni ciudades, a propósito.
+  push: {
+    title: "NASA Logistics",
+    availabilityReset: "Es hora de indicar tu disponibilidad para la próxima semana.",
+    paid: "Tienes una novedad de pago.",
+    agreement: "Por favor revisa tu acuerdo.",
+    accessCode: "Se envió un nuevo código de acceso.",
   },
 
   // Common errors

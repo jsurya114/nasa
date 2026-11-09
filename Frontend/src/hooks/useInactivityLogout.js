@@ -35,7 +35,6 @@ const useInactivityLogout = () => {
             localStorage.setItem('lastActivity', Date.now().toString());
 
             timeoutRef.current = setTimeout(() => {
-                console.log("Session timed out due to inactivity");
                 localStorage.removeItem('lastActivity');
                 dispatch(logoutAction());
             }, timeout);
@@ -56,7 +55,6 @@ const useInactivityLogout = () => {
                 if (lastActivity) {
                     const elapsed = Date.now() - parseInt(lastActivity, 10);
                     if (elapsed >= timeout) {
-                        console.log("Session expired during tab closure");
                         localStorage.removeItem('lastActivity');
                         dispatch(logoutAction());
                         return true;
@@ -89,6 +87,9 @@ const useInactivityLogout = () => {
                 window.removeEventListener(event, handleActivity);
             });
         };
+        // The two helper functions used above are re-created on every render and read the two flags listed here, so this effect restarts when the flags change.
+        // Listing the helpers would restart it on every render and keep resetting the logout timer.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [isAdminAuthenticated, isDriverAuthenticated, dispatch]);
 
     return null;

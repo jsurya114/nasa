@@ -1,4 +1,9 @@
 import pool from "../../config/db.js";
+import logger from "../../utils/logger.js";
+import { lockUploads } from "./uploadSafety.js";
+import { matchAfterWeeklyAdd } from "../finance/gofoStatement/matchAfterWeeklyAdd.js";
+import { companyEarningsSql } from "../finance/companyRates.js";
+import { markWeeklyImportApplied } from "../finance/gofoStatement/weeklyImport.js";
 
         export const WeeklyExcelQueries={
             fetchDashboardDataByDates : async(dates)=>{
@@ -22,9 +27,8 @@ import pool from "../../config/db.js";
         return res.rows;
             },
 
-        createWeeklyTable:async(table_name)=>{
-        try {
-            await pool.query(`
+        createWeeklyTable:async(table_name, db = pool)=>{
+            await db.query(`
                         CREATE TABLE ${table_name} (
                           id SERIAL PRIMARY KEY,
                           courier_name VARCHAR(100) NOT NULL,
@@ -34,24 +38,16 @@ import pool from "../../config/db.js";
                           fs INT DEFAULT 0,
                           ds INT DEFAULT 0,
                           del_date DATE NOT NULL,
+                          carrier_statement_import_id BIGINT,
                           CONSTRAINT weeklycount_unique UNIQUE (driver_id, del_date, del_route)
                       );
                     `);
-          
-            } catch (error) {
-            console.error("❌ Error creating table:", error);
-            }
         },
 
-        deleteWeeklyTableIfExists: async (table_name) => {
-        try {
-      await pool.query(`
+        deleteWeeklyTableIfExists: async (table_name, db = pool) => {
+      await db.query(`
                 DROP TABLE IF EXISTS ${table_name}
             `);
-
-    } catch (error) {
-      console.error(error);
-    }
   },
 
 
@@ -85,7 +81,7 @@ getWeeklyData: async (id,role,limit,offset) => {
 
 
     
-    let query = `SELECT wc.* FROM weeklycount wc`;
+    let query = `SELECT wc.id, wc.courier_name, wc.driver_id, wc.del_route, wc.total_deliveries, wc.fs, wc.ds, wc.del_date FROM weeklycount wc`;
 const values = [];
 
 if (role === 'admin') {
@@ -314,14 +310,16 @@ deleteWeeklyData: async () => {
 
   
 
-createEntriesFromWeeklyCount: async () => {
-  console.log("⏳ Starting dashboard_data insertion...");
+// beforeInsert(client) runs inside the transaction, after the upload lock is taken and before anything
+// is inserted, so a check on the staged data cannot go stale. The staging table is cleared in the same
+// transaction, so nothing can be uploaded in between.
+createEntriesFromWeeklyCount: async ({ beforeInsert = null } = {}) => {
   const client = await pool.connect();
 
   try {
     await client.query('BEGIN');
-
-    
+    await lockUploads(client);
+    if (beforeInsert) await beforeInsert(client);
 
     //QUERY 1: Insert into dashboard_data (triggers the function)
     const insertQuery = `
@@ -349,8 +347,7 @@ createEntriesFromWeeklyCount: async () => {
         wc.total_deliveries AS delivered,
         ((wc.fs * r.driver_route_price) +
         (wc.ds * r.driver_doublestop_price)) AS driver_payment,
-       ((wc.fs *( r.company_route_price-r.driver_route_price)) +
-        (wc.ds * (r.company_doublestop_price-r.driver_doublestop_price))) AS company_earnings,
+       ${companyEarningsSql({ route: 'r', city: 'c', ds: 'wc.ds', fs: 'wc.fs' })} AS company_earnings,
         TRUE,
         FALSE,
         FALSE
@@ -360,6 +357,8 @@ createEntriesFromWeeklyCount: async () => {
       INNER JOIN routes r
         ON wc.del_route = r.route_code_in_string
       AND r.enabled = TRUE
+      INNER JOIN city c
+        ON c.job = r.job
       WHERE d.enabled = TRUE
       AND NOT EXISTS (
         SELECT 1
@@ -439,19 +438,30 @@ createEntriesFromWeeklyCount: async () => {
     `;
 
     const insuranceResult = await client.query(insuranceQuery, [INSURANCE_RATE_PER_DAY, insertedIds]);
-    console.log(`🛡️ Insurance deduction applied to ${insuranceResult.rowCount} driver-day(s) at $${INSURANCE_RATE_PER_DAY}/day`);
+    const revenueImportId = await markWeeklyImportApplied(client);
+    await WeeklyExcelQueries.deleteWeeklyTableIfExists('weeklycount', client);
+
+    // A carrier statement published before this work reached the Dashboard has groups it could not match yet (issue #252). They are matched now, in a savepoint that
+    // never fails the weekly add (services/finance/gofoStatement/matchAfterWeeklyAdd.js).
+    const statementGroupsMatched = await matchAfterWeeklyAdd(client, logger);
 
     await client.query('COMMIT');
+    logger.info('Weekly data added to the dashboard', {
+      inserted: insertResult.rowCount,
+      insuranceApplied: insuranceResult.rowCount,
+      statementGroupsMatched
+    });
 
     return {
       inserted: insertResult.rowCount,
       updated: updateResult.rowCount,
       insuranceApplied: insuranceResult.rowCount,
-      totalAffected: insertResult.rowCount
+      totalAffected: insertResult.rowCount,
+      statementGroupsMatched,
+      revenueImportId
     };
   } catch (err) {
     await client.query('ROLLBACK');
-    console.error("❌ Error in createEntriesFromWeeklyCount:", err);
     throw err;
   } finally {
     client.release();

@@ -1,62 +1,115 @@
 import pool from "../../config/db.js";
+import { closeOnlyRowSql, protectedPayRowSql } from "../finance/payGuards.js";
+import { companyEarningsSql } from "../finance/companyRates.js";
+
+
+// One implementation for "all dates" and "one date". $1 date (or null), $2 allowed jobs (or null).
+const recalculatePayRows = async ({ date, allowedJobs, db }) => {
+  try {
+    const guard = await protectedPayRowSql(db);
+    const scope = `pd.paid = false AND ($1::date IS NULL OR pd.journey_date = $1::date) AND ($2::text[] IS NULL OR r.job = ANY($2::text[]))`;
+    const result = await db.query(
+      `UPDATE payment_dashboard pd
+          SET no_scanned = dd.no_scanned,
+              failed_attempt = dd.failed_attempt,
+              closed = true,
+              ds = dd.ds,
+              fs = dd.first_stop,
+              delivered = dd.ds + dd.first_stop,
+              driver_payment = (dd.ds * r.driver_doublestop_price) + (dd.first_stop * r.driver_route_price),
+              company_earnings = ${companyEarningsSql({ route: 'r', city: 'rc', ds: 'dd.ds', fs: 'dd.first_stop', keep: 'pd.company_earnings' })}
+         FROM dashboard_data dd
+         JOIN routes r ON dd.route_id = r.id
+         JOIN city rc ON rc.job = r.job
+        WHERE pd.dashboard_data_id = dd.id
+          AND ${scope}
+          AND NOT ${guard}`,
+      [date, allowedJobs]
+    );
+    // A row protected only by a verified carrier statement keeps its amounts but is still closed, so open work can enter a pay run (services/finance/payGuards.js).
+    const closeOnly = await closeOnlyRowSql(db);
+    const closed = await db.query(
+      `UPDATE payment_dashboard pd
+          SET closed = true
+         FROM dashboard_data dd
+         JOIN routes r ON dd.route_id = r.id
+        WHERE pd.dashboard_data_id = dd.id
+          AND ${scope}
+          AND ${guard} AND ${closeOnly}`,
+      [date, allowedJobs]
+    );
+    const left = await db.query(
+      `SELECT count(*)::int AS n
+         FROM payment_dashboard pd
+         JOIN dashboard_data dd ON pd.dashboard_data_id = dd.id
+         JOIN routes r ON dd.route_id = r.id
+        WHERE ${scope} AND ${guard}`,
+      [date, allowedJobs]
+    );
+    return { updated: result.rowCount, protectedRows: left.rows[0].n, closedOnly: closed.rowCount };
+  } catch (error) {
+    console.error("Error in recalculatePayRows:", error);
+    throw error;
+  }
+};
+
+// Adds the shared revenue definition to a super admin's totals (issue #252). Carrier money that matched no record belongs to no driver, route or payment
+// status, so it is added only when the filters leave it in scope (a city and dates at most, and weekly data). The sums are done by the database in exact decimals.
+const withDeliveryRevenue = async (summary, filters, db) => {
+  const unallocatedInScope = !filters.driver && !filters.route && !filters.paymentStatus && (!filters.dataType || filters.dataType === "weekly");
+  const { rows } = await db.query(
+    `WITH unallocated AS (
+       SELECT CASE WHEN $4::boolean THEN COALESCE(SUM(u.revenue), 0) ELSE 0 END AS revenue
+         FROM reporting.statement_unallocated u
+        WHERE ($5::text IS NULL OR u.city_name = $5) AND ($6::date IS NULL OR u.business_date >= $6::date) AND ($7::date IS NULL OR u.business_date <= $7::date)
+     )
+     SELECT ($1::numeric + revenue)::numeric(16,2)::text AS delivery_revenue, ($2::numeric + revenue)::numeric(16,2)::text AS delivery_margin,
+            ($3::numeric)::numeric(16,2)::text AS driver_earnings, CASE WHEN $4::boolean THEN revenue::numeric(16,2)::text END AS unallocated
+       FROM unallocated`,
+    [summary.matched_delivery_revenue, summary.matched_delivery_margin, summary.total_driver_earnings_on_revenue, unallocatedInScope,
+      filters.job ?? null, filters.startDate ?? null, filters.endDate ?? null]
+  );
+  return {
+    ...summary,
+    total_delivery_revenue: rows[0].delivery_revenue,
+    total_delivery_margin: rows[0].delivery_margin,
+    total_driver_earnings: rows[0].driver_earnings,
+    total_unallocated_revenue: rows[0].unallocated,
+    revenue_is_estimated: Number(summary.records_estimated) > 0,
+  };
+};
 
 export const AdminDashboardQueries = {
-  // Update payment table for a specific date only
-  updatePaymentTableForDate: async (selectedDate) => {
-    try {
-      const queryStr = `
-        UPDATE payment_dashboard pd
-        SET 
-            no_scanned = dd.no_scanned,
-            failed_attempt = dd.failed_attempt,
-            closed = true,
-            ds = dd.ds,
-            fs = dd.first_stop,
-            delivered = dd.ds + dd.first_stop,
-            driver_payment = (dd.ds * r.driver_doublestop_price) + (dd.first_stop * r.driver_route_price),
-            company_earnings = (dd.ds * (r.company_doublestop_price - r.driver_doublestop_price))+ (dd.first_stop * (r.company_route_price - r.driver_route_price))
-        FROM dashboard_data dd
-        JOIN routes r ON dd.route_id = r.id
-        WHERE pd.dashboard_data_id = dd.id
-          AND pd.journey_date = $1::date;
-      `;
-      const result = await pool.query(queryStr, [selectedDate]);
-
-      return result;
-    } catch (error) {
-      console.error("Error in updatePaymentTableForDate:", error);
-      throw error;
-    }
+  // Recalculates open pay rows from today's route rates. Rows that are part of an approved pay run or a verified carrier statement are
+  // protected (services/finance/payGuards.js): their figures are settled or reconciled, so they are left exactly as they are and counted.
+  // Returns { updated, protectedRows, closedOnly } so the screen can say how many were left alone and how many of those were only closed.
+  updatePaymentTableForDate: async (selectedDate, allowedJobs = null, db = pool) => {
+    return recalculatePayRows({ date: selectedDate, allowedJobs, db });
   },
 
-  updatePaymentTable: async () => {
-    try {
-      const queryStr = `
-        UPDATE payment_dashboard pd
-        SET 
-            no_scanned = dd.no_scanned,
-            failed_attempt = dd.failed_attempt,
-            closed = true,
-            ds = dd.ds,
-            fs = dd.first_stop,
-            delivered = dd.ds + dd.first_stop,
-            driver_payment = (dd.ds * r.driver_doublestop_price) + (dd.first_stop * r.driver_route_price),
-            company_earnings = (dd.ds * (r.company_doublestop_price - r.driver_doublestop_price))+ (dd.first_stop * (r.company_route_price - r.driver_route_price))
-        FROM dashboard_data dd
-        JOIN routes r ON dd.route_id = r.id
-        WHERE pd.dashboard_data_id = dd.id;
-      `;
-      await pool.query(queryStr);
-    } catch (error) {
-      console.error("Error in updatePaymentTable:", error);
-      throw error;
-    }
+  updatePaymentTable: async (allowedJobs = null, db = pool) => {
+    return recalculatePayRows({ date: null, allowedJobs, db });
   },
 
   // ✅ Get summary data for all matching records (not paginated)
   // Modified: Join via route's job for historical driver data and apply city_type rules
-  getSummaryData: async (filters = {}, id, role) => {
+  // Totals for the rows the filters select. The company figures (company earnings, delivery revenue, margin) are for the super admin only: they are
+  // not even read for a city admin, so they cannot leave through this API. They use the shared revenue definition (services/reporting/revenueSql.js)
+  // through reporting.delivery_facts, joined on the very same payment_dashboard rows, so the totals here and the Insights page cannot differ.
+  getSummaryData: async (filters = {}, id, role, db = pool) => {
     try {
+      const isOwner = role === "superadmin";
+      const ownerColumns = isOwner
+        ? `,
+          COALESCE(SUM(pd.company_earnings), 0) AS total_company_earnings,
+          COALESCE(SUM(f.delivery_revenue), 0) AS matched_delivery_revenue,
+          COALESCE(SUM(f.gross_driver_earnings) FILTER (WHERE f.revenue_complete), 0) AS total_driver_earnings_on_revenue,
+          COALESCE(SUM(f.delivery_margin), 0) AS matched_delivery_margin,
+          COUNT(*) FILTER (WHERE f.revenue_basis = 'statement') AS records_statement,
+          COUNT(*) FILTER (WHERE f.revenue_basis = 'recorded') AS records_recorded,
+          COUNT(*) FILTER (WHERE f.revenue_basis = 'estimated') AS records_estimated,
+          COUNT(*) FILTER (WHERE f.delivery_revenue IS NULL) AS records_without_revenue`
+        : "";
       const baseQuery = `
         SELECT 
           COALESCE(SUM(pd.packages), 0) AS total_packages,
@@ -66,12 +119,11 @@ export const AdminDashboardQueries = {
           COALESCE(SUM(pd.ds), 0) AS total_ds,
           COALESCE(SUM(pd.delivered), 0) AS total_delivered,
           COALESCE(SUM(pd.driver_payment), 0) AS total_driver_payment,
-          COALESCE(SUM(pd.company_earnings), 0) AS total_company_earnings,
-          COALESCE(SUM(pd.insurance_deduction), 0) AS total_insurance_deduction
+          COALESCE(SUM(pd.insurance_deduction), 0) AS total_insurance_deduction${ownerColumns}
         FROM payment_dashboard pd
         JOIN drivers d ON d.id = pd.driver_id
         LEFT JOIN routes r ON pd.route_id = r.id
-        LEFT JOIN city c ON r.job = c.job
+        LEFT JOIN city c ON r.job = c.job${isOwner ? "\n        LEFT JOIN reporting.delivery_facts f ON f.fact_id = pd.id" : ""}
         WHERE 1 = 1
       `;
 
@@ -149,8 +201,9 @@ export const AdminDashboardQueries = {
         finalQuery += " AND " + whereClauses.join(" AND ");
       }
 
-      const result = await pool.query(finalQuery, queryParams);
-      return result.rows[0];
+      const result = await db.query(finalQuery, queryParams);
+      const summary = result.rows[0];
+      return isOwner ? await withDeliveryRevenue(summary, filters, db) : summary;
     } catch (error) {
       console.error("Error in getSummaryData:", error);
       throw error;
@@ -506,7 +559,7 @@ export const AdminDashboardQueries = {
   },
 
   //  UPDATED: Only pay journeys with closed = true, with optional dataType and job (city) filter
-  updateDriverPaymentStatus: async (driverName, startDate, endDate, dataType = null, job = null) => {
+  updateDriverPaymentStatus: async (driverName, startDate, endDate, dataType = null, job = null, paymentDate = null, allowedJobs = null) => {
     try {
       const whereClauses = [];
       const queryParams = [driverName];
@@ -550,11 +603,21 @@ export const AdminDashboardQueries = {
         joinConditions.push('pd.route_id = r.id', 'r.job = c.job');
       }
 
+      // An admin limited to some cities can only pay journeys on routes of those cities
+      if (allowedJobs) {
+        whereClauses.push(`pd.route_id IN (SELECT id FROM routes WHERE job = ANY($${queryParams.length + 1}::text[]))`);
+        queryParams.push(allowedJobs);
+      }
+
+      // The admin's own date when the screen sent one, otherwise the database date as before
+      queryParams.push(paymentDate);
+      const paymentDateParam = `$${queryParams.length}`;
+
       const updateQuery = `
         UPDATE payment_dashboard pd
         SET 
           paid = true,
-          payment_date = CURRENT_DATE
+          payment_date = COALESCE(${paymentDateParam}::date, CURRENT_DATE)
         FROM ${fromTables.join(', ')}
         WHERE ${joinConditions.join(' AND ')}
           AND ${whereClauses.join(' AND ')}

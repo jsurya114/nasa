@@ -1,7 +1,8 @@
 import express from 'express';
 import HttpStatus from '../../utils/statusCodes.js';
-import { dbService } from '../../services/admin/dbQueries.js';
+import { dbService, parseCityIds } from '../../services/admin/dbQueries.js';
 import { jobService } from '../../services/admin/jobQueries.js';
+import logger from '../../utils/logger.js';
 
 // Replace the createAdmins function in addAdminController.js
 
@@ -32,6 +33,13 @@ export const createAdmins = async(req, res) => {
             });
         }
 
+        // City IDs must be plain whole numbers
+        if (role === 'admin' && !parseCityIds(city)) {
+            return res.status(HttpStatus.BAD_REQUEST).json({
+                message: "Invalid city selection"
+            });
+        }
+
         // Check if admin already exists
         const existingAdmin = await dbService.getAdminByEmail(email);
         if (existingAdmin) {
@@ -39,11 +47,6 @@ export const createAdmins = async(req, res) => {
                 error: "Admin email already exists"
             });
         }
-
-        // Prevent creating multiple superadmins without proper authorization
-        // if (role === 'superadmin') {
-        //     console.log(`⚠️ Superadmin creation attempt by ${req.user.email}`);
-        // }
 
         const insertAdmin = await dbService.insertAdmin({name, email, password, role, city});    
         
@@ -54,7 +57,7 @@ export const createAdmins = async(req, res) => {
             insertAdmin
         });
     } catch(err) {
-        console.error("Error while inserting admin:", err.message);
+        logger.error("Error while inserting admin", err);
         return res.status(HttpStatus.INTERNAL_SERVER_ERROR).json({
             message: "Server error while creating admin"
         });
@@ -84,7 +87,7 @@ export const getAdmins = async(req, res) => {
             totalPages
         });
     } catch(err) {
-        console.error("Error fetching admins:", err.message);
+        logger.error("Error fetching admins", err);
         res.status(HttpStatus.INTERNAL_SERVER_ERROR).json({ 
             message: "Server error" 
         });
@@ -123,7 +126,7 @@ export const changeStatusAdmin = async(req, res) => {
             data
         });
     } catch(err) {
-        console.error("Error changing admin status:", err.message);
+        logger.error("Error changing admin status", err);
         res.status(HttpStatus.INTERNAL_SERVER_ERROR).json({ 
             message: "Server error" 
         });
@@ -162,7 +165,7 @@ export const changeRoleAdmin = async(req, res) => {
             data
         });
     } catch(err) {
-        console.error("Error changing admin role:", err.message);
+        logger.error("Error changing admin role", err);
         res.status(HttpStatus.INTERNAL_SERVER_ERROR).json({ 
             message: "Server error" 
         });
@@ -213,6 +216,13 @@ export const updateAdmin = async(req, res) => {
             });
         }
 
+        // City IDs must be plain whole numbers
+        if (role === 'admin' && !parseCityIds(city)) {
+            return res.status(HttpStatus.BAD_REQUEST).json({
+                message: "Invalid city selection"
+            });
+        }
+
         // Check if email is being changed and if it's already taken
         if (email !== existingAdmin.email) {
             const emailExists = await dbService.getAdminByEmail(email);
@@ -230,7 +240,7 @@ export const updateAdmin = async(req, res) => {
             updatedAdmin
         });
     } catch(err) {
-        console.error("Error while updating admin:", err.message);
+        logger.error("Error while updating admin", err);
         return res.status(HttpStatus.INTERNAL_SERVER_ERROR).json({
             message: "Server error while updating admin"
         });
@@ -243,7 +253,7 @@ export const getAdminCities = async(req, res) => {
     try {
         // Check if user exists (should be set by adminAuth middleware)
         if (!req.user || !req.user.id) {
-            console.error("getAdminCities: req.user is undefined");
+            logger.error("getAdminCities: req.user is undefined");
             return res.status(HttpStatus.UNAUTHORIZED).json({
                 message: "User not authenticated"
             });
@@ -263,7 +273,7 @@ export const getAdminCities = async(req, res) => {
         return res.status(HttpStatus.OK).json({ cities });
         
     } catch(err) {
-        console.error("Error fetching admin cities:", err.message);
+        logger.error("Error fetching admin cities", err);
         return res.status(HttpStatus.INTERNAL_SERVER_ERROR).json({
             message: "Server error while fetching cities"
         });

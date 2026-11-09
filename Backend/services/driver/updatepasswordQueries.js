@@ -1,6 +1,7 @@
 // services/driver/passwordQueries.js
 import pool from "../../config/db.js";
 import bcrypt from "bcrypt";
+import logger from '../../utils/logger.js';
 
 const updatepasswordQueries = {
   /**
@@ -23,7 +24,7 @@ const updatepasswordQueries = {
       
       return result.rows[0];
     } catch (error) {
-      console.error('Error in getDriverById:', error);
+      logger.error('Error in getDriverById', error);
       throw error;
     }
   },
@@ -38,7 +39,7 @@ const updatepasswordQueries = {
     try {
       return await bcrypt.compare(plainPassword, hashedPassword);
     } catch (error) {
-      console.error('Error in verifyPassword:', error);
+      logger.error('Error in verifyPassword', error);
       throw error;
     }
   },
@@ -53,7 +54,7 @@ const updatepasswordQueries = {
       const saltRounds = 10;
       return await bcrypt.hash(plainPassword, saltRounds);
     } catch (error) {
-      console.error('Error in hashPassword:', error);
+      logger.error('Error in hashPassword', error);
       throw error;
     }
   },
@@ -81,7 +82,7 @@ const updatepasswordQueries = {
       
       return result.rows[0];
     } catch (error) {
-      console.error('Error in updatePassword:', error);
+      logger.error('Error in updatePassword', error);
       throw error;
     }
   },
@@ -123,7 +124,7 @@ const updatepasswordQueries = {
         driver: updatedDriver
       };
     } catch (error) {
-      console.error('Error in changePassword:', error);
+      logger.error('Error in changePassword', error);
       throw error;
     }
   }

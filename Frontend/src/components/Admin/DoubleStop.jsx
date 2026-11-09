@@ -1,11 +1,13 @@
+import usePersistentState from "../../hooks/usePersistentState.js";
 import React, { useState, useCallback, useRef } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import {
   excelDailyFileUpload,
   excelWeeklyFileUpload,
+  selectWeeklyResult,
 } from "../../redux/slice/admin/excelSlice";
 import { fetchDashboardData, fetchWeeklyTempData } from "../../redux/slice/admin/doublestopSlice";
-import { fetchDriverPayment, updateWeeklyExcelToDashboard } from "../../redux/slice/admin/dashboardUpdateSlice";
+import { fetchDriverPayment, selectAppliedRevenue, updateWeeklyExcelToDashboard } from "../../redux/slice/admin/dashboardUpdateSlice";
 import FileUpload from "../../../src/components/Excel-InputTag";
 import UploadedData from "../../reuse/UploadedData";
 import Header from "../../reuse/Header";
@@ -14,10 +16,12 @@ import DriverPaymentSection from "./DriverPaymentUpdate";
 import TempUploadedData from "../../reuse/TempUploadedData";
 import { toast } from "react-toastify";
 import Analystic from "./Analystic";
+import UploadResultSummary from "./UploadResultSummary";
+import RevenueResult from "./RevenueResult";
 
 const DoubleStop = () => {
   const dispatch = useDispatch();
-  const [activeView, setActiveView] = useState("weekly");
+  const [activeView, setActiveView] = usePersistentState("admin", "double-stop", "view", "weekly");
   const [selectedDate, setSelectedDate] = useState(
     new Date().toLocaleDateString("en-CA")
   );
@@ -28,6 +32,8 @@ const DoubleStop = () => {
   // Get loading states from Redux
   const weeklyLoading = useSelector((state) => state.excel?.weekly?.loading);
   const dailyLoading = useSelector((state) => state.excel?.daily?.loading);
+  const weeklyResult = useSelector(selectWeeklyResult);
+  const appliedRevenue = useSelector(selectAppliedRevenue);
 
   // Daily form state
   const [dailyForm, setDailyForm] = useState({
@@ -177,7 +183,7 @@ const DoubleStop = () => {
       <main className="max-w-[1450px] mx-auto p-4 pb-40">
         {/* Weekly Form */}
         {activeView === "weekly" && (
-          <section className="bg-white border border-gray-200 rounded-xl shadow-sm mb-4 p-6">
+          <section className="card-surface mb-4 p-6">
             <h2 className="font-bold text-gray-900 bg-gray-50 border-b border-gray-200 px-4 py-3 -mx-6 -mt-6 rounded-t-xl">
               Weekly Upload
             </h2>
@@ -232,9 +238,11 @@ const DoubleStop = () => {
           </section>
         )}
 
+        {activeView === "weekly" && <UploadResultSummary result={weeklyResult} />}
+
         {/* Daily Form */}
         {activeView === "daily" && (
-          <section className="bg-white border border-gray-200 rounded-xl shadow-sm mb-4 p-6">
+          <section className="card-surface mb-4 p-6">
             <h2 className="font-bold text-gray-900 bg-gray-50 border-b border-gray-200 px-4 py-3 -mx-6 -mt-6 rounded-t-xl">
               Daily Upload
             </h2>
@@ -248,7 +256,7 @@ const DoubleStop = () => {
                   type="date"
                   value={selectedDate}
                   onChange={handleDateChange}
-                  className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-purple-600"
+                  className="bg-white text-ink placeholder:text-ink-muted/70 focus:outline-none transition-shadow border-line min-h-11 w-full px-3 py-2 border rounded-xl focus:ring-4 focus:ring-brand-500/20"
                 />
               </div>
 
@@ -304,7 +312,7 @@ const DoubleStop = () => {
 
         {/* Uploaded Data - Only show for the current view */}
         {activeView === "weekly" && (
-          <section className="bg-white border mb-3 border-gray-200 rounded-xl shadow-sm overflow-x-auto">
+          <section className="card-surface mb-3">
             <h2 className="font-bold text-gray-900 bg-gray-50 border-b border-gray-200 px-4 py-3 rounded-t-xl">
               Weekly Data
             </h2>
@@ -315,7 +323,7 @@ const DoubleStop = () => {
         )}
 
         {activeView === "daily" && (
-          <section className="bg-white border mb-3 border-gray-200 rounded-xl shadow-sm overflow-x-auto">
+          <section className="card-surface mb-3">
             <h2 className="font-bold text-gray-900 bg-gray-50 border-b border-gray-200 px-4 py-3 rounded-t-xl">
               Daily Data
             </h2>
@@ -343,6 +351,8 @@ const DoubleStop = () => {
         )}
 
         {/* Driver Payment Section - Only show for the current view */}
+        {activeView === "weekly" && <RevenueResult revenue={appliedRevenue} title="GOFO revenue after adding the weekly data" />}
+
         {activeView === "weekly" && (
           <DriverPaymentSection
             loadData={() => {

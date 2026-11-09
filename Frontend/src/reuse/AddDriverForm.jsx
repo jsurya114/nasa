@@ -1,23 +1,25 @@
 import { useState, useEffect } from "react";
-import { useSelector, useDispatch } from "react-redux";
+import { useSelector } from "react-redux";
+import { DRIVER_TYPE_LABEL } from "./driverType";
+
+const EMPTY_FORM = {
+  name: "",
+  email: "",
+  phoneNumber: "",
+  driver_code: "",
+  password: "",
+  confirmPassword: "",
+  city: "",
+  driverType: "",
+  enabled: false,
+};
 
 function AddDriverForm({ onSubmit, editData, isEdit, onCancel }) {
 
-  const dispatch = useDispatch();
+  const { isSuperAdmin } = useSelector((state) => state.admin);
+  const { city, loading } = useSelector((state) => state.users);
 
-  const { admin, isSuperAdmin } = useSelector((state) => state.admin);
-  const { city, loading, error } = useSelector((state) => state.users);
-
-  const [form, setForm] = useState({
-    name: "",
-    email: "",
-    phoneNumber: "",
-    driver_code: "",
-    password: "",
-    confirmPassword: "",
-    city: "",
-    enabled: false,
-  });
+  const [form, setForm] = useState(EMPTY_FORM);
 
   const [errors, setErrors] = useState({});
 
@@ -32,6 +34,7 @@ function AddDriverForm({ onSubmit, editData, isEdit, onCancel }) {
         password: "", // Leave empty - optional to change
         confirmPassword: "",
         city: editData.job || "",
+        driverType: editData.driver_type || "",
         enabled: !!editData.enabled,
       });
     }
@@ -88,42 +91,23 @@ function AddDriverForm({ onSubmit, editData, isEdit, onCancel }) {
       return;
     }
 
-    const { confirmPassword, ...driverData } = form;
+    const { confirmPassword: _confirmPassword, ...driverData } = form; // leaves confirmPassword out of what is sent
     
     // If editing and password is empty, don't send password field
     if (isEdit && !driverData.password.trim()) {
       delete driverData.password;
     }
+    // No type chosen: send none, so a new driver is "Not set" and an edited driver keeps the type they have.
+    if (!driverData.driverType) delete driverData.driverType;
     
+    // The form lives in a dialog that closes when the save worked, so nothing is cleared here: a failed save keeps what was typed.
     onSubmit(driverData);
-
-    if (!isEdit) {
-      setForm({
-        name: "",
-        email: "",
-        phoneNumber: "",
-        driver_code: "",
-        password: "",
-        confirmPassword: "",
-        city: "",
-        enabled: false,
-      });
-    }
 
     setErrors({});
   };
 
   const handleCancel = () => {
-    setForm({
-      name: "",
-      email: "",
-      phoneNumber: "",
-      driver_code: "",
-      password: "",
-      confirmPassword: "",
-      city: "",
-      enabled: false,
-    });
+    setForm(EMPTY_FORM);
     setErrors({});
     onCancel(); 
   };
@@ -136,7 +120,7 @@ function AddDriverForm({ onSubmit, editData, isEdit, onCancel }) {
         value={form.name}
         onChange={handleChange}
         placeholder="Driver Name"
-        className="px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
+        className="bg-white text-ink placeholder:text-ink-muted/70 transition-shadow border-line min-h-11 px-3 py-2 border rounded-xl focus:outline-none focus:ring-4 focus:ring-brand-500/20"
       />
       {errors.name && <p className="text-red-500 text-sm">{errors.name}</p>}
 
@@ -146,7 +130,7 @@ function AddDriverForm({ onSubmit, editData, isEdit, onCancel }) {
         value={form.email}
         onChange={handleChange}
         placeholder="Email"
-        className="px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
+        className="bg-white text-ink placeholder:text-ink-muted/70 transition-shadow border-line min-h-11 px-3 py-2 border rounded-xl focus:outline-none focus:ring-4 focus:ring-brand-500/20"
       />
       {errors.email && <p className="text-red-500 text-sm">{errors.email}</p>}
 
@@ -156,7 +140,7 @@ function AddDriverForm({ onSubmit, editData, isEdit, onCancel }) {
         value={form.phoneNumber}
         onChange={handleChange}
         placeholder="Phone Number (optional)"
-        className="px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
+        className="bg-white text-ink placeholder:text-ink-muted/70 transition-shadow border-line min-h-11 px-3 py-2 border rounded-xl focus:outline-none focus:ring-4 focus:ring-brand-500/20"
       />
       {errors.phoneNumber && <p className="text-red-500 text-sm">{errors.phoneNumber}</p>}
 
@@ -167,7 +151,7 @@ function AddDriverForm({ onSubmit, editData, isEdit, onCancel }) {
         onChange={handleChange}
         placeholder="Driver Code"
     
-         className="px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
+         className="bg-white text-ink placeholder:text-ink-muted/70 transition-shadow border-line min-h-11 px-3 py-2 border rounded-xl focus:outline-none focus:ring-4 focus:ring-brand-500/20"
       />
       {errors.driver_code && (
         <p className="text-red-500 text-sm">{errors.driver_code}</p>
@@ -180,7 +164,7 @@ function AddDriverForm({ onSubmit, editData, isEdit, onCancel }) {
           value={form.password}
           onChange={handleChange}
           placeholder={isEdit ? "New Password (leave blank to keep current)" : "Password"}
-          className="px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
+          className="bg-white text-ink placeholder:text-ink-muted/70 transition-shadow border-line min-h-11 px-3 py-2 border rounded-xl focus:outline-none focus:ring-4 focus:ring-brand-500/20"
         />
         {isEdit && (
           <p className="text-xs text-gray-500 flex items-center gap-1">
@@ -199,7 +183,7 @@ function AddDriverForm({ onSubmit, editData, isEdit, onCancel }) {
         value={form.confirmPassword}
         onChange={handleChange}
         placeholder="Confirm Password"
-        className="px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
+        className="bg-white text-ink placeholder:text-ink-muted/70 transition-shadow border-line min-h-11 px-3 py-2 border rounded-xl focus:outline-none focus:ring-4 focus:ring-brand-500/20"
       />
       {errors.confirmPassword && (
         <p className="text-red-500 text-sm">{errors.confirmPassword}</p>
@@ -213,7 +197,7 @@ function AddDriverForm({ onSubmit, editData, isEdit, onCancel }) {
           value={form.city}
           name="city"
           onChange={handleChange}
-          className="w-full px-3 py-2 border rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-purple-500"
+          className="text-ink placeholder:text-ink-muted/70 transition-shadow border-line min-h-11 w-full px-3 py-2 border rounded-xl bg-white focus:outline-none focus:ring-4 focus:ring-brand-500/20"
         >
           <option value="">Select City</option>
 
@@ -247,6 +231,26 @@ function AddDriverForm({ onSubmit, editData, isEdit, onCancel }) {
         )}
       </div>
 
+      <div className="flex flex-col gap-2">
+        <label htmlFor="driver-type" className="text-sm font-medium text-gray-700">
+          Driver Type
+        </label>
+        <select
+          id="driver-type"
+          value={form.driverType}
+          name="driverType"
+          onChange={handleChange}
+          className="text-ink transition-shadow border-line min-h-11 w-full px-3 py-2 border rounded-xl bg-white focus:outline-none focus:ring-4 focus:ring-brand-500/20"
+        >
+          <option value="">{isEdit && editData?.driver_type ? "Keep current type" : "Not set"}</option>
+          {Object.entries(DRIVER_TYPE_LABEL).map(([value, label]) => (
+            <option key={value} value={value}>
+              {label}
+            </option>
+          ))}
+        </select>
+      </div>
+
       <label className="flex items-center space-x-2 cursor-pointer">
         <input
           type="checkbox"
@@ -273,15 +277,14 @@ function AddDriverForm({ onSubmit, editData, isEdit, onCancel }) {
           {isEdit ? "Update Driver" : "Add Driver"}
         </button>
 
-        {isEdit && (
-          <button
-            type="button"
-            onClick={handleCancel}
-            className="px-6 py-2 bg-gray-300 text-gray-800 rounded-lg hover:bg-gray-400 transition-colors"
-          >
-            Cancel
-          </button>
-        )}
+        <button
+          type="button"
+          onClick={handleCancel}
+          disabled={loading}
+          className="px-6 py-2 bg-gray-300 text-gray-800 rounded-lg hover:bg-gray-400 transition-colors disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          Cancel
+        </button>
       </div>
     </form>
   );

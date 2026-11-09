@@ -1,0 +1,173 @@
+# CI for pull requests into develop (issue #39).
+#
+# Rules this file follows (see docs/ENGINEERING_STANDARD.md and CONTRIBUTING.md §5):
+# - Trigger is `pull_request` only. Never `pull_request_target`.
+# - Read-only token, no secrets, no deploy steps. CI never touches main or production.
+# - Node version comes from .nvmrc. npm is cached. Outdated runs are cancelled.
+#
+# There is no branch protection on this repository, so a failed check does not stop a merge.
+# The team rule is: never merge a pull request with failing CI.
+name: CI
+
+on:
+  pull_request:
+    branches: [develop]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  commit-messages:
+    name: Commit messages
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      # Runs the same hook as `git commit` (CONTRIBUTING.md §3) on every non-merge commit in the PR.
+      - name: Check every commit message
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          failed=0
+          for sha in $(git rev-list --no-merges "$BASE_SHA..$HEAD_SHA"); do
+            git log -1 --format=%B "$sha" > "$RUNNER_TEMP/commit-message.txt"
+            echo "--- $(git log -1 --format='%h %s' "$sha")"
+            if ! bash .githooks/commit-msg "$RUNNER_TEMP/commit-message.txt"; then
+              echo "::error title=Commit message rejected::$(git log -1 --format='%h %s' "$sha")"
+              failed=1
+            fi
+          done
+          exit "$failed"
+
+  frontend:
+    name: Frontend
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: Frontend
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: Frontend/package-lock.json
+
+      - name: Install
+        run: npm ci
+
+      # Non-blocking until the existing errors are cleaned up (issue #40).
+      # Then remove `continue-on-error` in its own pull request.
+      - name: Lint (non-blocking for now)
+        run: npm run lint
+        continue-on-error: true
+
+      - name: Build
+        run: npm run build
+        env:
+          # Placeholder only. No production values in CI.
+          VITE_BACKEND_LOCALHOST_ROUTE: http://localhost:5000
+
+      # Vitest with jsdom (added with the mobile session adapter, issue #22). No network, no secrets.
+      - name: Tests
+        run: npm test
+
+      # Non-blocking for now. Reports known problems in dependencies.
+      - name: Dependency audit (non-blocking)
+        run: npm audit --audit-level=high
+        continue-on-error: true
+
+  mobile:
+    name: Mobile
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: mobile
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: mobile/package-lock.json
+
+      - name: Install
+        run: npm ci
+
+      # Bridge protocol, session store and bridge host, with fakes. No phone, no network.
+      - name: Unit tests
+        run: npm test
+
+      # The build configuration must load, and must refuse non-https origins outside development.
+      # Placeholder origins only. No real values in CI.
+      - name: Check the build configuration
+        run: |
+          APP_ENV=development npx expo config --json > /dev/null
+          APP_ENV=production NASA_WEB_ORIGIN=https://app.example.com NASA_API_ORIGIN=https://api.example.com npx expo config --json > /dev/null
+          if APP_ENV=production NASA_WEB_ORIGIN=http://app.example.com NASA_API_ORIGIN=https://api.example.com npx expo config --json > /dev/null 2>&1; then
+            echo "::error::A production build accepted an http origin"
+            exit 1
+          fi
+          if APP_ENV=staging npx expo config --json > /dev/null 2>&1; then
+            echo "::error::An unknown APP_ENV was accepted"
+            exit 1
+          fi
+
+  backend:
+    name: Backend
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: Backend
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: Backend/package-lock.json
+
+      - name: Install
+        run: npm ci
+
+      # Every .js file must at least parse.
+      - name: Check syntax of every .js file
+        run: |
+          failed=0
+          while IFS= read -r -d '' file; do
+            if ! node --check "$file"; then
+              echo "::error file=Backend/${file#./}::Syntax error"
+              failed=1
+            fi
+          done < <(find . -name node_modules -prune -o -type f -name '*.js' -print0)
+          exit "$failed"
+
+      # Checks that need no database. The ones that do skip themselves unless PUSH_TEST_DB=1 is set.
+      - name: Unit tests
+        run: npm test
+
+      # Non-blocking for now. `xlsx` keeps failing until issue #25 is done.
+      - name: Dependency audit (non-blocking)
+        run: npm audit --audit-level=high
+        continue-on-error: true

@@ -14,9 +14,15 @@ const AddAccessCodePage = lazy(() => import("./components/Admin/AccessCode.jsx")
 const AdminJourney = lazy(() => import("./components/Admin/AdminJorney.jsx"));
 const AdminDriverAvailability = lazy(() => import("./components/Admin/AdminDriverAvailability.jsx"));
 const AdminDriverAgreements = lazy(() => import("./components/Admin/AdminDriverAgreements.jsx"));
+const AdminPaymentSetupOverview = lazy(() => import("./components/Admin/PaymentSetupOverview.jsx"));
+const AdminPayroll = lazy(() => import("./components/Admin/Payroll.jsx"));
+const AdminPayRuns = lazy(() => import("./components/Admin/PayRuns.jsx"));
+const AdminInsights = lazy(() => import("./components/Admin/Insights.jsx"));
+const AdminCarrierStatements = lazy(() => import("./components/Admin/CarrierStatements.jsx"));
 
 import ProtectedRoutes from "./routes/admin/ProtectedRoute.jsx";
 import AdminPublicOnlyRoute from "./routes/admin/PublicOnlyRoute.jsx";
+import SuperAdminRoute from "./routes/admin/SuperAdminRoute.jsx";
 import DriverLogin from "./components/Drivers/DriverLogin.jsx";
 
 // Lazy-loaded Driver pages
@@ -26,19 +32,24 @@ const DriverAccessCodePage = lazy(() => import("./components/Drivers/accessCode.
 const DriverAvailability = lazy(() => import("./components/Drivers/DriverAvailability.jsx"));
 const DriverAgreement = lazy(() => import("./components/Drivers/DriverAgreement.jsx"));
 const DriverViewAgreement = lazy(() => import("./components/Drivers/DriverViewAgreement.jsx"));
+const DriverPay = lazy(() => import("./components/Drivers/Pay.jsx"));
+const DriverPaymentSetup = lazy(() => import("./components/Drivers/PaymentSetup.jsx"));
+const DriverQuickbooksSetup = lazy(() => import("./components/Drivers/QuickbooksSetup.jsx"));
 
 import DPublicRoutes from "./routes/driver/DPublicRoutes.jsx";
 import DProtectRoutes from "./routes/driver/DProtectedRoutes.jsx";
-import { ToastContainer } from "react-toastify";
+import AppToaster from "./reuse/AppToaster.jsx";
 import "react-toastify/dist/ReactToastify.css";
 import UpdatePassword from "./components/Drivers/UpdatePassword.jsx";
 import useInactivityLogout from "./hooks/useInactivityLogout";
+import PushTapRouter from "./native/PushTapRouter.jsx";
 
 function App() {
   useInactivityLogout();
   return (
     <>
       <Router>
+        <PushTapRouter />
         <Suspense fallback={<Loader />}>
           <Routes>
             {/* Admin Public-only Login Route */}
@@ -57,6 +68,13 @@ function App() {
               <Route path="/admin/manage-access-codes" element={<AddAccessCodePage />} />
               <Route path="/admin/journeys" element={<AdminJourney />} />
               <Route path="/admin/driver-availability" element={<AdminDriverAvailability />} />
+              <Route element={<SuperAdminRoute />}>
+                <Route path="/admin/payment-setup" element={<AdminPaymentSetupOverview />} />
+                <Route path="/admin/payroll" element={<AdminPayroll />} />
+                <Route path="/admin/pay-runs" element={<AdminPayRuns />} />
+                <Route path="/admin/insights" element={<AdminInsights />} />
+                <Route path="/admin/carrier-statements" element={<AdminCarrierStatements />} />
+              </Route>
             </Route>
 
             {/* Driver Public Routes */}
@@ -72,6 +90,9 @@ function App() {
               <Route path="/driver/access-codes" element={<DriverAccessCodePage />} />
               <Route path="/driver/delivery" element={<Devlivery />} />
               <Route path="/driver/availability" element={<DriverAvailability />} />
+              <Route path="/driver/pay" element={<DriverPay />} />
+              <Route path="/driver/payment-setup" element={<DriverPaymentSetup />} />
+              <Route path="/driver/quickbooks-setup" element={<DriverQuickbooksSetup />} />
               <Route path="/driver/update-password" element={<UpdatePassword />} />
             </Route>
 
@@ -79,7 +100,7 @@ function App() {
             <Route path="*" element={<NotFound />} />
           </Routes>
         </Suspense>
-        <ToastContainer />
+        <AppToaster />
       </Router>
     </>
   );

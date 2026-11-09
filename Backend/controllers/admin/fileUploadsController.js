@@ -4,12 +4,28 @@ import HttpStatus from "../../utils/statusCodes.js";
 import XLSX from "xlsx";
 // import XlsxPopulate from 'xlsx-populate';
 import { ExcelFileQueries } from "../../services/admin/excelFileQueries.js";
+import {
+  CityAccessError,
+  assertJobsAllowed,
+  getAllowedJobs,
+  getDailyStagingJobs,
+  isCityLimited
+} from "../../services/admin/adminCityAccess.js";
+import logger from "../../utils/logger.js";
+import {
+  UploadFileError,
+  isIsoDate,
+  lockUploads,
+  respondToUploadError
+} from "../../services/admin/uploadSafety.js";
 
 
 import { unlink } from "fs";
 
 
 const sheetName = "result";
+// Without these the rows cannot be matched to deliveries or classified
+const REQUIRED_COLUMNS = ["Route", "Sequence", "Status"];
 
 
 
@@ -106,19 +122,46 @@ export const DailyExcelUpload = async (req, res) => {
       });
     }
 
+    if (!isIsoDate(uploadDate)) {
+      return res.status(HttpStatus.BAD_REQUEST).json({
+        success: false,
+        message: "uploadDate must be a real date written as YYYY-MM-DD"
+      });
+    }
+
 
     const fileName = req.file;
-    const workbook = XLSX.read(req.file.buffer, { type: "buffer" });
+    let workbook;
+    try {
+      workbook = XLSX.read(req.file.buffer, { type: "buffer" });
+    } catch {
+      throw new UploadFileError("The file could not be read. Upload the Excel (.xlsx) file as downloaded. Nothing was changed.");
+    }
     const sheet = workbook.Sheets[sheetName];
 
     if (!sheet) {
-      return res.status(400).json({ error: "Sheet named result not found" });
+      return res.status(400).json({
+        success: false,
+        error: "Sheet named result not found",
+        message: "Sheet named result not found. Nothing was changed."
+      });
     }
 
     const rows = XLSX.utils.sheet_to_json(sheet);
+
+    // Rows without the columns the matching needs cannot be matched or classified. Refuse the file
+    // before anything is touched. (A file with no rows at all is processed as before.)
+    const missingColumns = rows.length === 0 ? [] : REQUIRED_COLUMNS.filter(
+      (column) => !rows.some((row) => row[column] !== undefined && row[column] !== "")
+    );
+    if (missingColumns.length > 0) {
+      throw new UploadFileError(`Missing required column(s): ${missingColumns.join(", ")}. Nothing was changed.`);
+    }
+
     const tableName = `todays_excel_data`;
 
     await client.query("BEGIN");
+    await lockUploads(client);
 
     await ExcelFileQueries.deleteIfTableAlreadyExists(tableName, client);
     await ExcelFileQueries.createDailyTable(tableName, client);
@@ -129,6 +172,16 @@ export const DailyExcelUpload = async (req, res) => {
       client
     );
 
+
+    // A city admin may upload only a file whose deliveries all belong to their cities.
+    // Nothing is written to the deliveries yet, so refusing here rolls everything back.
+    if (isCityLimited(req.user.role)) {
+      assertJobsAllowed(
+        await getDailyStagingJobs(client),
+        await getAllowedJobs(req.user.id, client),
+        "This file includes deliveries for cities outside your assigned cities. Nothing was changed."
+      );
+    }
 
     await ExcelFileQueries.mergeDeliveriesAndExcelData(client);
 
@@ -160,20 +213,21 @@ export const DailyExcelUpload = async (req, res) => {
     await ExcelFileQueries.addEachDriversCount(client);
 
     await client.query("COMMIT");
-
-    // unlink(fileName.path, (e) => {
-    //   if (e) throw new Error(e);
-    // });
+    logger.info("Daily upload processed", { rows: rows.length, uploadDate });
 
     return res
       .status(statusCode.OK)
-      .json({ success: true, message: "Excel processed successfully" });
+      .json({ success: true, message: "Excel processed successfully", rowsRead: rows.length });
   } catch (error) {
-    console.error(error);
     await client.query("ROLLBACK");
+    if (error instanceof CityAccessError) {
+      return res.status(HttpStatus.FORBIDDEN).json({ success: false, message: error.message });
+    }
+    if (respondToUploadError(res, error)) return;
+    logger.error("Daily upload failed", error);
     return res.status(HttpStatus.INTERNAL_SERVER_ERROR).json({
       success: false,
-      message: "Error occurred while processing Excel",
+      message: "Error occurred while processing Excel. Nothing was changed.",
     });
   } finally {
     client.release();

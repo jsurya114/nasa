@@ -1,0 +1,177 @@
+/**
+ * The one place that says what NASA's business numbers mean (issue #220, docs/INSIGHTS_MCP.md section 6).
+ * The Insights page and the Claude connector both read this, so the words never drift apart. Data only: no database,
+ * no Express, no MCP.
+ *
+ * These definitions describe rules that already exist. They do not change how anything is calculated or paid.
+ */
+
+export const DEFINITIONS_VERSION = '2026-11-10';
+export const CURRENCY = 'USD';
+
+export const METRIC_DEFINITIONS = Object.freeze([
+  {
+    id: 'completed_deliveries',
+    label: 'Completed deliveries',
+    unit: 'count',
+    definition: 'The stored delivered count on eligible daily and weekly rows, using the same inclusion rules as the existing reports.',
+    caveats: [
+      'One database row is an aggregate, not one order. NASA does not hold order-level identifiers, so "unique orders" is never claimed.',
+      'A record counts for its city only when its sequence numbers match the city type (daily cities have them, weekly cities do not): the Dashboard\'s own rule.',
+      'Records still open (no stored amounts yet) are counted in deliveries but not in revenue or margin.',
+    ],
+  },
+  {
+    id: 'gross_driver_earnings',
+    label: 'Driver earnings',
+    unit: CURRENCY,
+    definition: 'NASA\'s stored gross driver earnings on the same records, before advances, insurance withholding, claims or debt recovery. Never the carrier\'s figure and never recalculated for a period that is already settled.',
+    caveats: ['Net driver payouts are shown apart from gross: insurance withholding is subtracted for "driver earnings after insurance". Claim recoveries and advances are settled in Payroll and are not included.'],
+  },
+  {
+    id: 'delivery_revenue',
+    label: 'Delivery revenue',
+    unit: CURRENCY,
+    definition: 'What the company earned from deliveries. Weekly GOFO: the carrier\'s billed delivery fees after offsets, from a published and reconciled carrier statement, matched to NASA\'s records by Delivery ID, signing day and route. Daily SpeedX: the stored driver earnings plus the stored company earnings. Carrier money that matched no NASA record is included as unallocated revenue of its city.',
+    caveats: [
+      'Revenue is the carrier\'s billed amount, not proof that the carrier has paid NASA.',
+      'A weekly record in a week with no verified carrier statement keeps the old price-based figure and is labelled ESTIMATED; it is not what the carrier billed.',
+      'A record with no usable amounts is disclosed in the warnings and is never treated as zero revenue.',
+      'Trends use the carrier\'s signing day. Settlement uses the billing week.',
+      'Historical rows keep the amounts stored at the time. Nothing is recalculated from today\'s route rates.',
+    ],
+  },
+  {
+    id: 'earned_delivery_revenue',
+    label: 'Earned delivery revenue',
+    unit: CURRENCY,
+    definition: 'The older name of delivery revenue. The same figure.',
+    caveats: ['See delivery revenue.'],
+  },
+  {
+    id: 'delivery_margin',
+    label: 'Delivery margin',
+    unit: CURRENCY,
+    definition: 'Delivery revenue minus driver earnings, before carrier claims and ledger adjustments, insurance and overheads.',
+    caveats: ['This is the margin left after driver earnings. It is not total revenue.', 'Gross profit before overheads. Not net profit. Carrier claims and ledger adjustments are shown with the settlement, not inside this margin.'],
+  },
+  {
+    id: 'company_margin',
+    label: 'Company margin',
+    unit: CURRENCY,
+    definition: 'The older name of delivery margin. The same figure.',
+    caveats: ['This is the margin left after driver earnings. It is not total revenue.'],
+  },
+  {
+    id: 'unallocated_revenue',
+    label: 'Unallocated carrier revenue',
+    unit: CURRENCY,
+    definition: 'Carrier-billed revenue on a verified statement that matched no NASA delivery record (no route, an unknown route or driver, or no recorded work for that driver, day and route). It is kept, attributed to the statement\'s city and the carrier\'s signing day, and never forced onto a driver.',
+    caveats: ['It has no driver earnings and no delivery count. It is included in revenue and margin, and shown apart.'],
+  },
+  {
+    id: 'gofo_settlement_payable',
+    label: 'GOFO settlement payable',
+    unit: CURRENCY,
+    definition: 'By billing week, from the carrier statement: delivery revenue plus carrier claims plus ledger adjustments. Prepayments to driver accounts and withdrawal fees are separate and not included.',
+    caveats: ['Counted in the period that holds the last day of the statement\'s billing week. Carrier debits (claims, adjustments) are kept apart from driver recoveries and insurance withholding.'],
+  },
+  {
+    id: 'gross_margin',
+    label: 'Gross profit before overheads',
+    unit: CURRENCY,
+    definition: 'Delivery margin. Overheads and operating costs are not recorded in NASA.',
+    caveats: ['Not net profit. Do not describe it as net profit.'],
+  },
+  {
+    id: 'margin_percentage',
+    label: 'Margin percentage',
+    unit: 'percent',
+    definition: 'Delivery margin divided by delivery revenue.',
+    caveats: ['Not available (N/A) when revenue is zero.'],
+  },
+  {
+    id: 'active_drivers',
+    label: 'Active drivers',
+    unit: 'count',
+    definition: 'Distinct drivers with at least one delivery in the period.',
+    caveats: [],
+  },
+  {
+    id: 'deliveries_per_active_day',
+    label: 'Deliveries per active day',
+    unit: 'count',
+    definition: 'Completed deliveries divided by the number of distinct driver-days that had deliveries.',
+    caveats: [],
+  },
+  {
+    id: 'claims',
+    label: 'Carrier claims',
+    unit: CURRENCY,
+    definition: 'Claims from the carrier, shown as chargeable, exempt and unmatched, each counted and valued separately.',
+    caveats: [
+      'Exempt includes the agreed DFWGOFO + Tracking interruption exemption.',
+      'Unmatched claims are never silently assigned to a driver or deducted.',
+      'Carrier claims are part of penalty balances, as already approved.',
+    ],
+  },
+  {
+    id: 'claim_losses',
+    label: 'Claim losses',
+    unit: CURRENCY,
+    definition: 'What the carrier charged NASA in claims that has not been taken back from a driver, plus the claims no driver can be charged for: unrecovered claims (matched, less what finalized pay runs deducted), unmatched claims and exempt claims (the agreed DFWGOFO + Tracking interruption exemption), and any driver insurance premium the carrier charged beyond what was withheld from drivers.',
+    caveats: [
+      'Every unrecovered claim counts at once. "Likely lost" marks the part whose driver is disabled or has not delivered for 30 days; "still recoverable" claims also reduce profit until they are deducted.',
+      'Claims count by their own date in the period and recovery is as of now. Insurance counts carrier statements by the last day of their billing week; only a shortfall is a loss.',
+      'A refund the carrier paid back for a claim already nets out of the claim, so it is never counted as a loss.',
+    ],
+  },
+  {
+    id: 'profit_after_claim_losses',
+    label: 'Profit after claim losses',
+    unit: CURRENCY,
+    definition: 'Delivery margin minus claim losses. Delivery margin ("gross profit before overheads") itself is not changed and is shown beside it.',
+    caveats: ['Not net profit: overheads and operating costs are not recorded.', 'Not available when there is no delivery margin for the period.'],
+  },
+  {
+    id: 'driver_ranking',
+    label: 'Driver ranking',
+    unit: 'count',
+    definition: 'Drivers ordered by completed deliveries in the period (or by deliveries per active day, among drivers with enough active days), with the city where they delivered most.',
+    caveats: ['Ties are broken by driver id. Only names and cities are shown: no contact, bank, tax or login details.'],
+  },
+  {
+    id: 'delivery_trend',
+    label: 'Delivery trend and busiest weekdays',
+    unit: 'count',
+    definition: 'Deliveries, earned revenue and margin by day, week (starting Monday) or month, and the average deliveries on each weekday over the days that have records.',
+    caveats: ['A day with no records is missing data, not a zero-delivery day. Buckets at the edge of the period are flagged when only partly inside it.'],
+  },
+  {
+    id: 'delivery_forecast',
+    label: 'Delivery forecast',
+    unit: 'count (estimated)',
+    definition: 'An estimate of deliveries for the coming days from the recent pattern of each weekday, tested on past weeks without using future data, with its historical error and a range when there are enough tests.',
+    caveats: [
+      'An estimate, not a promise: it ignores holidays, weather, new contracts and route changes.',
+      'A partly imported latest week is left out of the pattern, and the answer is insufficient_data when history cannot support a useful forecast.',
+      'There is no revenue forecast.',
+    ],
+  },
+  {
+    id: 'payment_overview',
+    label: 'Payment overview',
+    unit: CURRENCY,
+    definition: 'Approved driver pay awaiting payment, payments processing or unconfirmed, and payments returned or failed, from the frozen pay-run records and the payment status records.',
+    caveats: ['Current (as-of) figures, not period activity and not historical month-end balances.'],
+  },
+]);
+
+export const REPORTING_LIMITATIONS = Object.freeze([
+  'All money is USD and is returned as exact decimal strings.',
+  'Delivery figures count stored delivered quantities. Weekly imports may record packages as completed deliveries, so no delivery success rate is reported without a reliable denominator.',
+  'Missing data is reported as missing, never as zero.',
+  'Historical deliveries stay with the city of the route they were recorded on, even if a driver later moves city.',
+  'Balances and payment backlogs are as of the moment the answer was produced.',
+  'Driver advances, debts and penalty balances are not available through this connector yet: Payroll is the authority for what a driver owes.',
+]);

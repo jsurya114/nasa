@@ -1,25 +1,55 @@
 import express from 'express'
 import cors from 'cors'
+import compression from 'compression'
 import dotenv from 'dotenv'
 import pool from './config/db.js';
 import adminRoutes from './routes/adminRoutes.js'
 import driverRoutes from "./routes/driverRoutes.js"
+import payrollRoutes from "./routes/payrollRoutes.js"
+import insightsRoutes from "./routes/insightsRoutes.js"
+import financeRoutes from "./routes/financeRoutes.js"
+import assignmentHistoryRoutes from "./routes/assignmentHistoryRoutes.js"
+import evereeWebhookRoutes from './routes/evereeWebhookRoutes.js'
+import { mountMcp } from './services/mcp/mountMcp.js';
 import cookieParser from 'cookie-parser';
 import sanitizeMiddleware from './middlewares/sanitize.js';
 import { notFound, errorHandler } from './middlewares/errorHandler.js';
 import rateLimit from './middlewares/rateLimit.js';
+import { trustProxyHops, assertTrustProxyConfigured } from './middlewares/loginRateLimit.js';
 import { initializeAvailabilityResetCron } from './utils/availabilityCronJob.js';
+import { initializeEvereeOnboardingJob } from './utils/evereeOnboardingJob.js';
+import { initializeEvereeStatusJob } from './utils/evereeStatusJob.js';
+import { assertAuthSecrets } from './services/jwtservice.js';
+import logger from './utils/logger.js';
 
 dotenv.config()
 
+// Stop at start-up, with a clear message, if a token secret is missing or shared.
+assertAuthSecrets()
+
 const PORT = process.env.PORT;
 const app = express();
+
+// How many proxies sit in front of the app (TRUST_PROXY: 0 for none, 1 behind a single hosting proxy).
+// Login limits use the client address, which is only correct when this matches reality.
+assertTrustProxyConfigured();
+app.set('trust proxy', trustProxyHops() || false);
+
+// NASA Insights connector for Claude (issue #220). Off unless MCP_ENABLED=true. Mounted first so its own parser and limits
+// apply and the general sanitizer never rewrites an MCP message. A bad setting turns only the connector off.
+mountMcp(app, { db: pool });
 
 // CORS configuration - credentials set to false since we're using localStorage
 app.use(cors({
   origin: process.env.FRONTEND_URL,
   credentials: false
 }))
+
+// Gzip JSON responses over 1 KB. Excel downloads and other already-compressed types are skipped by default.
+app.use(compression({ threshold: 1024 }));
+
+// Everee's webhook: the body stays raw bytes (its signature covers them exactly), so it is mounted before the JSON parser below.
+app.use('/webhooks/everee', express.raw({ type: () => true, limit: '256kb' }), evereeWebhookRoutes);
 
 app.use(express.json({ limit: "50mb" }));
 app.use(express.urlencoded({ limit: "50mb", extended: true }));
@@ -33,18 +63,42 @@ app.use(sanitizeMiddleware);
 app.use(rateLimit({ windowMs: 15 * 60 * 1000, max: 1000 }));
 
 initializeAvailabilityResetCron()
+initializeEvereeStatusJob()
+initializeEvereeOnboardingJob()
+
+// Before /admin so payroll requests are handled here and checked once.
+app.use('/admin/payroll', (req, _, next) => {
+  logger.info(`${req.method} ${req.originalUrl.split('?')[0]}`)
+  next()
+}, payrollRoutes);
+
+// Insights page data: super admin only and read only. Before /admin so it is handled here and checked once.
+app.use('/admin/insights', (req, _, next) => {
+  logger.info(`${req.method} ${req.originalUrl.split('?')[0]}`)
+  next()
+}, insightsRoutes);
+
+// Carrier statements: super admin only. Before /admin so it is handled here and checked once.
+app.use('/admin/finance/gofo-statements', (req, _, next) => {
+  logger.info(`${req.method} ${req.originalUrl.split('?')[0]}`)
+  next()
+}, financeRoutes);
+
+// Before /admin so these requests are handled here and checked once.
+app.use('/admin/assignment-history', (req, _, next) => {
+  logger.info(`${req.method} ${req.originalUrl.split('?')[0]}`)
+  next()
+}, assignmentHistoryRoutes);
 
 app.use('/admin', (req, _, next) => {
-  // Updated logging to show Authorization header instead of cookie
-  const authHeader = req.headers.authorization?.slice(0, 20) || 'no-token';
-  console.log(req.originalUrl, '##', authHeader, '**', Date().toString().slice(16, 25))
+  // Log method and path only. Never the Authorization header or the query string.
+  logger.info(`${req.method} ${req.originalUrl.split('?')[0]}`)
   next()
 }, adminRoutes);
 
 app.use('/driver', (req, _, next) => {
-  // Updated logging to show Authorization header instead of cookie
-  const authHeader = req.headers.authorization?.slice(0, 20) || 'no-token';
-  console.log(req.originalUrl, '##', authHeader, '**', Date().toString().slice(16, 25))
+  // Log method and path only. Never the Authorization header or the query string.
+  logger.info(`${req.method} ${req.originalUrl.split('?')[0]}`)
   next()
 }, driverRoutes)
 
@@ -55,7 +109,7 @@ app.use(errorHandler);
 
 app.listen(PORT, async () => {
   const { rows } = await pool.query('SELECT NOW()')
-  console.log('✅ Database connected')
-  console.log('🕒 DB Time:', rows[0].now)
-  console.log(`Server running on http://localhost:${PORT}`)
+  logger.info('Database connected')
+  logger.info('Database time', { time: rows[0].now })
+  logger.info(`Server running on http://localhost:${PORT}`)
 })

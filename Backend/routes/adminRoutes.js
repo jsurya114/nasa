@@ -1,10 +1,13 @@
 import express from 'express'
+import { sanitizeRouterParams } from '../middlewares/sanitize.js';
 import { upload, uploadAccessCodeImages } from "../middlewares/multerConfig.js"
 const router = express.Router()
+sanitizeRouterParams(router)
 import adminController from '../controllers/admin/adminController.js'
 import jobController from '../controllers/admin/jobController.js';
-import { createRoute, getRouteById, updateRoute, deleteRoute, toggleRouteStatus, fetchPaginatedRoutes, getAdminRoutes, getRoutesByDriver } from "../controllers/admin/routeController.js"
+import { createRoute, getRouteById, updateRoute, resetWeeklyCompanyPrices, deleteRoute, toggleRouteStatus, fetchPaginatedRoutes, getAdminRoutes, getRoutesByDriver } from "../controllers/admin/routeController.js"
 import { changeStatusUser, createUsers, getUsers, updateUser } from '../controllers/admin/addUserController.js';
+import { changeDriverTypes } from '../controllers/admin/driverTypeController.js';
 import { createAccessCode, deleteAccessCode } from '../controllers/admin/accessCodeControllers.js';
 import { DailyExcelUpload, getUpdatedTempDashboardData } from '../controllers/admin/fileUploadsController.js';
 import { getAccessCodes, updateAccessCode, } from '../controllers/admin/accessCodeControllers.js';
@@ -17,9 +20,11 @@ import { getAllData, getFilteredDriversByCity, getFilteredRoutesByCity } from '.
 import { getWeeklyTempData, weeklyExcelUpload } from '../controllers/admin/weeklyUploadsController.js';
 import { getAnalyticsData } from '../controllers/admin/analyticsController.js';
 import adminAvailabilityController from '../controllers/admin/adminavailabilityController.js';
+import { loginRateLimit } from '../middlewares/loginRateLimit.js';
+import { adminPushTokens } from '../controllers/pushTokenController.js';
 
 
-router.post('/login', adminController.Login);
+router.post('/login', loginRateLimit('admin'), adminController.Login);
 router.post('/refresh-token', adminController.RefreshToken);
 
 router.use(adminAuth);
@@ -34,6 +39,7 @@ router.post("/routes", superAdminAuth, createRoute);
 router.get("/routes", fetchPaginatedRoutes);
 router.get("/routes-list", getAdminRoutes)
 router.get("/routes/:id", getRouteById);
+router.post("/routes/reset-company-prices", superAdminAuth, resetWeeklyCompanyPrices);
 router.put("/routes/:id", updateRoute);
 router.patch("/routes/:id/status", toggleRouteStatus);
 router.delete("/routes/:id", deleteRoute);
@@ -43,6 +49,8 @@ router.post('/create-users', createUsers);
 router.get('/get-users', getUsers);
 router.patch('/toggle-user/:id', changeStatusUser);
 router.put('/update-user/:id', updateUser);
+// Local or Desi for one or many drivers at once, all in one transaction (any admin, own cities only).
+router.patch('/drivers/type', changeDriverTypes);
 
 router.get('/get-cities', jobController.getCities);
 router.get('/get-admin-cities', getAdminCities);
@@ -104,7 +112,7 @@ router.put(
 // Manual reset all drivers availability (Superadmin only)
 router.post(
   "/drivers/availability/reset-all",
-
+  superAdminAuth,
   adminAvailabilityController.manualResetAllDriversAvailability
 );
 
@@ -114,6 +122,10 @@ import agreementController from '../controllers/admin/agreementController.js';
 router.get('/drivers/agreements', agreementController.getAllAgreements);
 router.put('/drivers/:id/agreement/toggle', agreementController.toggleAgreement);
 router.post('/logout', adminController.Logout);
+
+// Push notifications: this admin's own phones only (the id comes from the token)
+router.post('/push-token', adminPushTokens.register);
+router.post('/push-token/remove', adminPushTokens.remove);
 
 router.get('/access-admin', adminController.getUser);
 

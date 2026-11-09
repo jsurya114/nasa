@@ -1,6 +1,19 @@
 import { AdminDashboardQueries } from "../../services/admin/dashboardQueries.js";
 import { WeeklyExcelQueries } from "../../services/admin/weeklyExcelQueries.js";
 import HttpStatus from "../../utils/statusCodes.js";
+import { resolveToday } from "../../utils/businessDate.js";
+import logger from "../../utils/logger.js";
+import pool from "../../config/db.js";
+import { markProcessingRows } from "../../services/payroll/payRuns/processingRows.js";
+import { UploadBusyError } from "../../services/admin/uploadSafety.js";
+import { settleImport } from "../../services/finance/gofoStatement/weeklyImport.js";
+import {
+  CityAccessError,
+  assertJobsAllowed,
+  getAllowedJobs,
+  getWeeklyStagingJobs,
+  isCityLimited
+} from "../../services/admin/adminCityAccess.js";
 
 // ✅ Get summary data for all records matching the filter
 export const getSummaryData = async (req, res) => {
@@ -30,7 +43,7 @@ export const getSummaryData = async (req, res) => {
 
     // Handle default today filter
     if (defaultToday === "true") {
-      const today = new Date().toISOString().split('T')[0];
+      const today = resolveToday(req.query.today);
       filters.startDate = today;
       filters.endDate = today;
     }
@@ -82,7 +95,7 @@ export const getPaymentDashboardData = async (req, res) => {
 
     // Handle default today filter
     if (defaultToday === "true") {
-      const today = new Date().toISOString().split('T')[0];
+      const today = resolveToday(req.query.today);
       filters.startDate = today;
       filters.endDate = today;
     }
@@ -105,7 +118,7 @@ export const getPaymentDashboardData = async (req, res) => {
 
     return res.status(HttpStatus.OK).json({
       success: true,
-      data: result,
+      data: await markProcessingRows(pool, result),
       pagination: {
         total: totalCount,
         page: pageNum,
@@ -154,14 +167,14 @@ export const getAllPaymentDashboardData = async (req, res) => {
 
     // Handle default today filter
     if (defaultToday === "true") {
-      const today = new Date().toISOString().split('T')[0];
+      const today = resolveToday(req.query.today);
       filters.startDate = today;
       filters.endDate = today;
     }
 
     const result = await AdminDashboardQueries.PaymentDashboardTable(filters, id, role);
 
-    return res.status(HttpStatus.OK).json({ success: true, data: result });
+    return res.status(HttpStatus.OK).json({ success: true, data: await markProcessingRows(pool, result) });
   } catch (error) {
     console.error("Error in getAllPaymentDashboardData:", error);
     console.error("Error message:", error.message);
@@ -177,23 +190,33 @@ export const getAllPaymentDashboardData = async (req, res) => {
 export const updatePaymentData = async (req, res) => {
   try {
     const { date } = req.query;
+    const { id, role } = req.user;
 
-    if (date) {
-      // Calculate payment for specific date
-      await AdminDashboardQueries.updatePaymentTableForDate(date);
-      res.status(HttpStatus.OK).json({
-        success: true,
-        message: `Payment calculated for ${date}`
-      });
-    } else {
-      // Calculate payment for all dates
-      await AdminDashboardQueries.updatePaymentTable();
-      res.status(HttpStatus.OK).json({
-        success: true,
-        message: "Payment calculated for all dates"
-      });
-    }
+    // A city admin recalculates only the cities assigned to them
+    const allowedJobs = isCityLimited(role) ? await getAllowedJobs(id) : null;
+
+    const result = date
+      ? await AdminDashboardQueries.updatePaymentTableForDate(date, allowedJobs)
+      : await AdminDashboardQueries.updatePaymentTable(allowedJobs);
+    const base = date ? `Payment calculated for ${date}` : "Payment calculated for all dates";
+    // Rows in an approved pay run or a verified carrier statement are never recalculated; say so instead of skipping them silently.
+    const note = result.protectedRows > 0
+      ? `. ${result.protectedRows} row${result.protectedRows === 1 ? " was" : "s were"} left as ${result.protectedRows === 1 ? "it is" : "they are"} because ${result.protectedRows === 1 ? "it belongs" : "they belong"} to an approved pay run or a verified carrier statement`
+      : "";
+    const closedNote = result.closedOnly > 0
+      ? `. ${result.closedOnly} open row${result.closedOnly === 1 ? "" : "s"} of those kept ${result.closedOnly === 1 ? "its" : "their"} amount and ${result.closedOnly === 1 ? "was" : "were"} closed so ${result.closedOnly === 1 ? "it" : "they"} can go into a pay run`
+      : "";
+    res.status(HttpStatus.OK).json({
+      success: true,
+      message: `${base}${note}${closedNote}`,
+      updated: result.updated,
+      protectedRows: result.protectedRows,
+      closedOnly: result.closedOnly
+    });
   } catch (error) {
+    if (error instanceof CityAccessError) {
+      return res.status(HttpStatus.FORBIDDEN).json({ success: false, message: error.message });
+    }
     console.error("Error in updatePaymentData:", error);
     return res.status(HttpStatus.INTERNAL_SERVER_ERROR).json({
       success: false,
@@ -203,53 +226,11 @@ export const updatePaymentData = async (req, res) => {
 };
 
 //  UPDATED: Pay journeys with closed = true, supports separate daily/weekly payments
-export const payDriver = async (req, res) => {
-  try {
-    const { driverName, startDate, endDate, dataType, job } = req.body;
-
-    if (!driverName) {
-      return res.status(HttpStatus.BAD_REQUEST).json({
-        success: false,
-        message: "Driver name is required"
-      });
-    }
-
-    //  Update only journeys where closed = true, optionally filtered by dataType and city (job)
-    const result = await AdminDashboardQueries.updateDriverPaymentStatus(
-      driverName,
-      startDate,
-      endDate,
-      dataType || null,
-      job || null
-    );
-
-    // Generate appropriate message based on dataType
-    const paymentTypeLabel = dataType === 'daily' ? 'daily (SPEEDX)' :
-      dataType === 'weekly' ? 'weekly (GOFO)' : 'all';
-
-    //  Check if any rows were updated
-    if (result.rowCount === 0) {
-      return res.status(HttpStatus.OK).json({
-        success: true,
-        message: `No closed ${paymentTypeLabel} journeys found to mark as paid for ${driverName}`,
-        rowsUpdated: 0,
-        warning: "Only journeys with closed status 'Yes' can be marked as paid"
-      });
-    }
-
-    return res.status(HttpStatus.OK).json({
-      success: true,
-      message: `Payment marked as paid for ${result.rowCount} closed ${paymentTypeLabel} journey(s) for ${driverName}`,
-      rowsUpdated: result.rowCount
-    });
-  } catch (error) {
-    console.error("Error in payDriver:", error);
-    return res.status(HttpStatus.INTERNAL_SERVER_ERROR).json({
-      success: false,
-      message: error.message || "Failed to update payment status"
-    });
-  }
-};
+// Older clients must use the approved-run workflow so a paid flag cannot bypass its statement or audit record.
+export const payDriver = (_req, res) => res.status(HttpStatus.CONFLICT).json({
+  success: false,
+  message: "Prepare and approve a pay run, then record payment from Driver payments or the approved run.",
+});
 
 export const updateWeeklyTempDataToDashboard = async (req, res) => {
   try {
@@ -263,16 +244,45 @@ export const updateWeeklyTempDataToDashboard = async (req, res) => {
       });
     }
 
-    const rowsInserted = await WeeklyExcelQueries.createEntriesFromWeeklyCount();
-    await WeeklyExcelQueries.deleteWeeklyTableIfExists('weeklycount');
+    // A city admin may add the staged weekly data only when it holds nothing but their cities.
+    // The check runs inside the insert's own transaction, so the staged data cannot change in between.
+    const { id, role } = req.user;
+    const beforeInsert = isCityLimited(role)
+      ? async (client) => assertJobsAllowed(
+        await getWeeklyStagingJobs(client),
+        await getAllowedJobs(id, client),
+        "The uploaded weekly data includes cities outside your assigned cities. Nothing was changed."
+      )
+      : null;
+
+    // The same locked transaction applies the staged work, records which import it used and clears staging.
+    const { revenueImportId, ...rowsInserted } = await WeeklyExcelQueries.createEntriesFromWeeklyCount({ beforeInsert });
+
+    // After the weekly add committed. Never throws and never undoes it: an owner's import is published, anything else is left for the owner to review.
+    const revenue = await settleImport(pool, req.user, revenueImportId);
 
     return res.status(200).json({
       success: true,
       rowsInserted,
+      revenue,
       message: "Data inserted successfully!!"
     });
   } catch (err) {
-    console.error('Route handler error:', err);
-    return res.status(500).json({ success: false, error: err.message });
+    if (err instanceof CityAccessError) {
+      return res.status(HttpStatus.FORBIDDEN).json({ success: false, error: err.message, message: err.message });
+    }
+    if (err instanceof UploadBusyError) {
+      return res.status(HttpStatus.CONFLICT).json({ success: false, error: err.message, message: err.message });
+    }
+    if (err.code === "42P01") {
+      // The staged data was cleared by someone else after the check above
+      return res.status(404).json({
+        success: false,
+        error: "Weekly count table does not exist or is empty",
+        message: "Please upload weekly data first"
+      });
+    }
+    logger.error("Could not add the weekly data to the dashboard", err);
+    return res.status(500).json({ success: false, message: "Could not add the weekly data. Nothing was changed." });
   }
 };

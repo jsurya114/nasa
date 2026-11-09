@@ -1,6 +1,8 @@
 import HttpStatus from '../utils/statusCodes.js';
+import logger from '../utils/logger.js';
 import { verifyToken } from '../services/jwtservice.js';
 import { isTokenRevoked } from '../services/redis-jwt-service.js';
+import { requireRole, DRIVER_ROLE } from './requireRole.js';
 
 export default async function driverAuth(req, res, next) {
   try {
@@ -16,15 +18,17 @@ export default async function driverAuth(req, res, next) {
 
     const isRevoked = await isTokenRevoked(token);
     if (isRevoked) {
-      console.log('driver token is revoked')
+      logger.warn('Driver token is revoked')
       return res.status(HttpStatus.UNAUTHORIZED).json({ message: 'UNAUTHORIZED' });
     }
 
     const decoded = verifyToken(token);
     req.driver = decoded;
-    next();
+
+    // Only driver tokens may use driver routes. Admin tokens are refused.
+    return requireRole(DRIVER_ROLE)(req, res, next);
   } catch (err) {
-    console.log('driver auth middleware error', err.message)
+    logger.warn('Driver auth failed', { reason: err.message })
     return res.status(HttpStatus.UNAUTHORIZED).json({ message: 'UNAUTHORIZED' });
   }
 }
