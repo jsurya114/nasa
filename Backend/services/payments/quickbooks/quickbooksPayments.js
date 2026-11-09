@@ -58,11 +58,12 @@ export const getPaymentSettings = async (db, admin, deps = {}) => {
   requireSuperAdmin(admin);
   const env = deps.env ?? process.env;
   const config = readQuickbooksConfig(env);
-  const { rows: [saved] } = await db.query('SELECT expense_account_id, bank_account_id FROM quickbooks_settings WHERE environment = $1', [config.environment]);
+  const { rows: [conn0] } = await db.query('SELECT realm_id FROM quickbooks_connection WHERE environment = $1', [config.environment]);
+  // Saved accounts count only for the company that is connected now: another company's account IDs mean something else.
+  const { rows: [saved] } = conn0 ? await db.query('SELECT expense_account_id, bank_account_id FROM quickbooks_settings WHERE environment = $1 AND realm_id = $2', [config.environment, conn0.realm_id]) : { rows: [] };
   const out = { environment: config.environment, saved: saved ? { expenseAccountId: saved.expense_account_id, bankAccountId: saved.bank_account_id } : null, expenseAccounts: [], bankAccounts: [] };
   if (!config.configured) return out;
-  const { rows: [conn] } = await db.query('SELECT 1 FROM quickbooks_connection WHERE environment = $1', [config.environment]);
-  if (!conn) return out;
+  if (!conn0) return out;
   const client = clientFor(db, config, deps);
   try {
     const pick = (list) => list.map((a) => ({ id: String(a.Id), name: a.Name }));
@@ -79,13 +80,15 @@ export const savePaymentSettings = async (db, admin, { expenseAccountId, bankAcc
   requireSuperAdmin(admin);
   const config = readQuickbooksConfig(deps.env ?? process.env);
   if (!config.configured) throw new PayrollError(409, 'QuickBooks is not set up in the backend settings');
+  const { rows: [conn] } = await db.query('SELECT realm_id FROM quickbooks_connection WHERE environment = $1', [config.environment]);
+  if (!conn) throw new PayrollError(409, 'QuickBooks is not connected; connect it first');
   const current = await getPaymentSettings(db, admin, deps);
   if (!current.expenseAccounts.some((a) => a.id === String(expenseAccountId))) throw new PayrollError(400, 'choose an expense account from the list');
   if (!current.bankAccounts.some((a) => a.id === String(bankAccountId))) throw new PayrollError(400, 'choose a bank account from the list');
   await db.query(
-    `INSERT INTO quickbooks_settings (environment, expense_account_id, bank_account_id, updated_by) VALUES ($1, $2, $3, $4)
-     ON CONFLICT (environment) DO UPDATE SET expense_account_id = EXCLUDED.expense_account_id, bank_account_id = EXCLUDED.bank_account_id, updated_by = EXCLUDED.updated_by, updated_at = now()`,
-    [config.environment, String(expenseAccountId), String(bankAccountId), admin.id]);
+    `INSERT INTO quickbooks_settings (environment, realm_id, expense_account_id, bank_account_id, updated_by) VALUES ($1, $5, $2, $3, $4)
+     ON CONFLICT (environment) DO UPDATE SET realm_id = EXCLUDED.realm_id, expense_account_id = EXCLUDED.expense_account_id, bank_account_id = EXCLUDED.bank_account_id, updated_by = EXCLUDED.updated_by, updated_at = now()`,
+    [config.environment, String(expenseAccountId), String(bankAccountId), admin.id, conn.realm_id]);
   return { saved: { expenseAccountId: String(expenseAccountId), bankAccountId: String(bankAccountId) } };
 };
 
@@ -104,11 +107,13 @@ export const computePreview = async (db, admin, runId, { env = process.env, stat
   const review = narrowedTo(await reviewRunAsBatch(db, admin, runId), selection);
   const config = readQuickbooksConfig(env);
   const gate = quickbooksPaymentsGate(config, env);
-  const [{ rows: [conn] }, { rows: [settings] }] = config.configured
-    ? await Promise.all([db.query('SELECT realm_id FROM quickbooks_connection WHERE environment = $1', [config.environment]),
-      db.query('SELECT expense_account_id, bank_account_id FROM quickbooks_settings WHERE environment = $1', [config.environment])])
-    : [{ rows: [] }, { rows: [] }];
+  const [{ rows: [conn] }] = config.configured
+    ? await Promise.all([db.query('SELECT realm_id FROM quickbooks_connection WHERE environment = $1', [config.environment])])
+    : [{ rows: [] }];
   const realmId = conn?.realm_id ?? null;
+  // Only the accounts saved for the connected company count; another company's account IDs are never used.
+  const settingsRows = realmId ? (await db.query('SELECT expense_account_id, bank_account_id FROM quickbooks_settings WHERE environment = $1 AND realm_id = $2', [config.environment, realmId])).rows : [];
+  const settings = settingsRows[0] ?? null;
   const driverIds = review.drivers.map((d) => d.driverId);
   const statementIdList = review.drivers.map((d) => d.statementId);
   const { rows: links } = realmId
@@ -285,8 +290,9 @@ const sendItem = async (db, item, batch, accounts, deps, client) => {
 const sendBatch = async (db, batchId, itemIds, deps, client) => {
   const { rows: [batch] } = await db.query(
     `SELECT b.id, b.city_id, b.pay_run_id, to_char(b.paid_on, 'YYYY-MM-DD') AS paid_on, to_char(r.period_start, 'YYYY-MM-DD') AS period_start, to_char(r.period_end, 'YYYY-MM-DD') AS period_end,
-            b.environment FROM quickbooks_payment_batches b JOIN pay_runs r ON r.id = b.pay_run_id WHERE b.id = $1`, [batchId]);
-  const { rows: [accounts] } = await db.query('SELECT expense_account_id, bank_account_id FROM quickbooks_settings WHERE environment = $1', [batch.environment]);
+            b.environment, b.realm_id FROM quickbooks_payment_batches b JOIN pay_runs r ON r.id = b.pay_run_id WHERE b.id = $1`, [batchId]);
+  // The accounts of the company this batch was made for. If another company is connected now, nothing is sent.
+  const { rows: [accounts] } = await db.query('SELECT expense_account_id, bank_account_id FROM quickbooks_settings WHERE environment = $1 AND realm_id = $2', [batch.environment, batch.realm_id]);
   if (!accounts) throw new PayrollError(409, 'choose the QuickBooks expense and bank accounts first');
   const { rows: items } = await db.query('SELECT id, pay_statement_id, vendor_id, doc_number, amount::text AS amount FROM quickbooks_payment_items WHERE id = ANY($1::bigint[]) ORDER BY id', [itemIds]);
   const sleep = deps.sleep ?? defaultSleep;
@@ -372,7 +378,7 @@ export const retryBatch = async (db, admin, batchId, deps = {}) => {
   requireSuperAdmin(admin);
   const env = deps.env ?? process.env;
   const prepared = await inTransaction(db, async (tx) => {
-    const { rows: [batch] } = await tx.query('SELECT id, pay_run_id, city_id, environment FROM quickbooks_payment_batches WHERE id = $1', [batchId]);
+    const { rows: [batch] } = await tx.query('SELECT id, pay_run_id, city_id, environment, realm_id FROM quickbooks_payment_batches WHERE id = $1', [batchId]);
     if (!batch) throw new PayrollError(404, 'payment batch not found');
     const { rows: [run] } = await tx.query('SELECT id, city_id, status FROM pay_runs WHERE id = $1 FOR UPDATE', [batch.pay_run_id]);
     await assertCityAllowed(tx, admin, run.city_id);
@@ -382,11 +388,14 @@ export const retryBatch = async (db, admin, batchId, deps = {}) => {
     if (!gate.enabled) throw new PayrollError(409, `payments cannot be recorded in QuickBooks: ${gate.reason}`);
     if (run.status !== 'finalized') throw new PayrollError(409, 'the pay run is not finalized; only a finalized run can be paid');
     if (config.environment !== batch.environment) throw new PayrollError(409, `this batch was made in ${batch.environment}; the server is set up for ${config.environment}`);
+    // The company connected now must be the one this batch was made for: the vendor and account IDs belong to that company only.
+    const { rows: [conn] } = await tx.query('SELECT realm_id FROM quickbooks_connection WHERE environment = $1', [batch.environment]);
+    if (!conn || conn.realm_id !== batch.realm_id) throw new PayrollError(409, 'QuickBooks is connected to a different company than the one this batch was made for; reconnect the original company to retry it');
     const { rows: open } = await tx.query(
       `SELECT i.id, i.pay_statement_id, i.status, s.payout_status, d.driver_type, v.vendor_id AS live_vendor
          FROM quickbooks_payment_items i JOIN pay_statements s ON s.id = i.pay_statement_id JOIN drivers d ON d.id = i.driver_id
-         LEFT JOIN quickbooks_vendors v ON v.driver_id = i.driver_id AND v.environment = $2 AND v.unlinked_at IS NULL AND v.vendor_id = i.vendor_id
-        WHERE i.batch_id = $1 AND i.status IN ('failed', 'unconfirmed') ORDER BY i.id FOR UPDATE OF i, s FOR SHARE OF d`, [batchId, batch.environment]);
+         LEFT JOIN quickbooks_vendors v ON v.driver_id = i.driver_id AND v.environment = $2 AND v.realm_id = $3 AND v.unlinked_at IS NULL AND v.vendor_id = i.vendor_id
+        WHERE i.batch_id = $1 AND i.status IN ('failed', 'unconfirmed') ORDER BY i.id FOR UPDATE OF i, s FOR SHARE OF d`, [batchId, batch.environment, batch.realm_id]);
     const retryable = open.filter((i) => i.payout_status === i.status && i.driver_type === 'DESI' && i.live_vendor);
     if (retryable.length === 0) throw new PayrollError(409, 'nothing can be retried: the items are paid, in progress, or their vendor link changed');
     for (const item of retryable) {

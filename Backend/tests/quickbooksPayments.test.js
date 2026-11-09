@@ -64,8 +64,8 @@ test('quickbooks payments: reserve, send, settle, replay, partial failure, safe 
     await db.query("UPDATE drivers SET driver_type = 'LOCAL' WHERE id = $1", [dD]);
     await db.query(`INSERT INTO quickbooks_connection (environment, realm_id, access_token_enc, refresh_token_enc, access_expires_at, refresh_expires_at, connected_by)
       VALUES ('sandbox', '12345678', 'x', 'x', now() + interval '1 hour', now() + interval '90 days', $1) ON CONFLICT (environment) DO UPDATE SET realm_id = '12345678'`, [sup.id]);
-    await db.query(`INSERT INTO quickbooks_settings (environment, expense_account_id, bank_account_id, updated_by) VALUES ('sandbox', '61', '35', $1)
-      ON CONFLICT (environment) DO UPDATE SET expense_account_id = '61', bank_account_id = '35'`, [sup.id]);
+    await db.query(`INSERT INTO quickbooks_settings (environment, realm_id, expense_account_id, bank_account_id, updated_by) VALUES ('sandbox', '12345678', '61', '35', $1)
+      ON CONFLICT (environment) DO UPDATE SET realm_id = '12345678', expense_account_id = '61', bank_account_id = '35'`, [sup.id]);
     const link = (driver, vendor, is1099 = true) => db.query(
       `INSERT INTO quickbooks_vendors (driver_id, environment, realm_id, vendor_id, link_source, tax_id_supplied, vendor_1099, linked_by)
        VALUES ($1, 'sandbox', '12345678', $2, 'existing_vendor', true, $3, $4)`, [driver, vendor, is1099, sup.id]);
@@ -190,6 +190,18 @@ test('quickbooks payments: reserve, send, settle, replay, partial failure, safe 
       assert.deepEqual(retried.counts, { submitted: 0, paid: 1, failed: 0, unconfirmed: 0 });
       assert.equal(fake.state.bills.length, 1);
       assert.equal(fake.state.payments.length, 1);
+    });
+
+    await t.test('after reconnecting a different company, a retry is refused, and that company has no accounts or vendors of its own yet', async () => {
+      const other = await scenario('C', [[dA, '18.00']]);
+      const fake = makeQuickbooks({ 71: { payment: 'refuse' } });
+      const result = await submit(other.run, fake.client);
+      assert.equal(result.counts.failed, 1);
+      await db.query("UPDATE quickbooks_connection SET realm_id = '99999999' WHERE environment = 'sandbox'");
+      await assert.rejects(retryBatch(db, sup, result.batch.id, deps(makeQuickbooks().client)), { status: 409, message: /different company/ });
+      const preview = await previewQuickbooksBatch(db, sup, other.run.id, { env: ARMED });
+      assert.ok(preview.batchBlockers.some((b) => b.code === 'accounts_missing'), 'the old company\'s accounts are not used for the new one');
+      await db.query("UPDATE quickbooks_connection SET realm_id = '12345678' WHERE environment = 'sandbox'");
     });
 
     await t.test('a bill with this number for another vendor or amount is never trusted', async () => {

@@ -7,6 +7,7 @@
 
 CREATE TABLE IF NOT EXISTS quickbooks_settings (
   environment        text PRIMARY KEY CHECK (environment IN ('sandbox', 'production')),
+  realm_id           text NOT NULL CHECK (realm_id ~ '^[0-9]{5,20}$'),         -- the company these account IDs belong to; another company's are never used
   expense_account_id text NOT NULL CHECK (expense_account_id ~ '^[0-9]{1,20}$'),   -- where the driver pay is booked
   bank_account_id    text NOT NULL CHECK (bank_account_id ~ '^[0-9]{1,20}$'),      -- the account the payment is recorded from
   updated_by         integer NOT NULL REFERENCES admin(id),
