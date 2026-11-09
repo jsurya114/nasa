@@ -62,6 +62,54 @@ function DriverRow({ driver, cityId, onChanged }) {
   );
 }
 
+// Which QuickBooks accounts a Desi payment is booked to: the expense account the pay is charged to and the bank account it is recorded from.
+function AccountSettings() {
+  const [data, setData] = useState(undefined);
+  const [expense, setExpense] = useState("");
+  const [bank, setBank] = useState("");
+  const [note, setNote] = useState(null);
+  useEffect(() => {
+    axios.get("/admin/payroll/quickbooks/settings").then(({ data: body }) => {
+      setData(body);
+      setExpense(body.saved?.expenseAccountId ?? "");
+      setBank(body.saved?.bankAccountId ?? "");
+    }).catch((err) => { setData(null); setNote({ bad: true, text: messageOf(err, "The accounts could not be loaded.") }); });
+  }, []);
+  const save = async () => {
+    setNote(null);
+    try {
+      await axios.put("/admin/payroll/quickbooks/settings", { expenseAccountId: expense, bankAccountId: bank });
+      setNote({ text: "Saved." });
+    } catch (err) {
+      setNote({ bad: true, text: messageOf(err, "The accounts could not be saved.") });
+    }
+  };
+  if (data === undefined) return null;
+  return (
+    <div className="mt-4">
+      <h3 className="text-sm font-semibold text-ink">Accounts for Desi payments</h3>
+      {data && (
+        <div className="mt-2 grid gap-3 sm:grid-cols-2">
+          <label className="block text-sm font-medium text-gray-700">Expense account (the pay is booked here)
+            <select value={expense} onChange={(e) => setExpense(e.target.value)} className="mt-1 min-h-11 w-full rounded-xl border border-line bg-white px-3">
+              <option value="">Choose an account</option>
+              {data.expenseAccounts.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
+            </select>
+          </label>
+          <label className="block text-sm font-medium text-gray-700">Bank account (the payment is recorded from here)
+            <select value={bank} onChange={(e) => setBank(e.target.value)} className="mt-1 min-h-11 w-full rounded-xl border border-line bg-white px-3">
+              <option value="">Choose an account</option>
+              {data.bankAccounts.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
+            </select>
+          </label>
+        </div>
+      )}
+      {data && <button type="button" onClick={save} disabled={!expense || !bank} className={`mt-3 ${buttonClass}`}>Save accounts</button>}
+      {note && <p role={note.bad ? "alert" : "status"} className={`mt-2 text-sm ${note.bad ? "text-red-700" : "text-green-700"}`}>{note.text}</p>}
+    </div>
+  );
+}
+
 export default function QuickbooksPanel({ cityId = "" }) {
   const [status, setStatus] = useState(undefined); // undefined: loading, null: could not be loaded
   const [result, setResult] = useState(null);
@@ -135,6 +183,7 @@ export default function QuickbooksPanel({ cityId = "" }) {
           {result.requestId && <p className="mt-1 text-xs text-ink-muted">QuickBooks request ID (for support): {result.requestId}</p>}
         </div>
       )}
+      {connected && status.paymentsEnabled && <AccountSettings />}
       {connected && !cityId && <p className="mt-3 text-sm text-ink-muted">Choose a city below to link its Desi drivers to their QuickBooks vendors.</p>}
       {vendors && (
         <div className="mt-4">

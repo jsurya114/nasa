@@ -1,5 +1,5 @@
 import { PayrollError, isSuperAdmin } from '../../payroll/payRuns/payRunStore.js';
-import { describeQuickbooksConfig, quickbooksGate, readQuickbooksConfig } from './quickbooksConfig.js';
+import { describeQuickbooksConfig, quickbooksGate, quickbooksPaymentsGate, readQuickbooksConfig } from './quickbooksConfig.js';
 import { authorizationUrl, createQuickbooksClient, QuickbooksError } from './quickbooksClient.js';
 import { completeConnect, connectionSummary, consumeConnectState, createConnectState, getAuth } from './connectionStore.js';
 
@@ -19,7 +19,8 @@ export const getQuickbooksStatus = async (db, admin, { env = process.env, now = 
   requireSuperAdmin(admin);
   const config = readQuickbooksConfig(env);
   const gate = quickbooksGate(config, env);
-  return { ...describeQuickbooksConfig(config), enabled: gate.enabled, disabledReason: gate.reason, connection: config.configured ? await connectionSummary(db, config, now) : { connected: false } };
+  const payments = quickbooksPaymentsGate(config, env);
+  return { ...describeQuickbooksConfig(config), enabled: gate.enabled, disabledReason: gate.reason, paymentsEnabled: payments.enabled, connection: config.configured ? await connectionSummary(db, config, now) : { connected: false } };
 };
 
 // Step 1: the address to send the admin to, to sign in to QuickBooks and approve NASA.

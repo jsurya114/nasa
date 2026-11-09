@@ -17,6 +17,8 @@ const startServer = async ({ status = CONNECTED, lookup = { result: "match", mat
     if (config.url === "/admin/payroll/quickbooks/vendors") return { status: 200, data: vendorList() };
     if (config.url === "/admin/payroll/quickbooks/vendors/lookup") return { status: 200, data: lookup };
     if (config.url === "/admin/payroll/quickbooks/vendors/link") { state.linked = typeof config.data === "string" ? JSON.parse(config.data) : config.data; return { status: 200, data: { link: { vendorId: "77" } } }; }
+    if (config.url === "/admin/payroll/quickbooks/settings" && config.method === "get") return { status: 200, data: { saved: null, expenseAccounts: [{ id: "61", name: "Contract labor" }], bankAccounts: [{ id: "35", name: "Checking" }] } };
+    if (config.url === "/admin/payroll/quickbooks/settings" && config.method === "put") { state.saved = typeof config.data === "string" ? JSON.parse(config.data) : config.data; return { status: 200, data: {} }; }
     if (config.url === "/admin/payroll/quickbooks/check") return { status: 200, data: { ...status, ok: true, companyName: "Sandbox Company" } };
     return { status: 200, data: {} };
   });
@@ -58,6 +60,16 @@ describe("QuickBooks panel", () => {
     fireEvent.click(screen.getByRole("button", { name: "Link this vendor" }));
     await screen.findByText(/Found vendor/).catch(() => null);
     expect(server.linked).toEqual({ cityId: 1, driverId: 8, vendorId: "77" });
+  });
+
+  it("lets the admin choose the expense and bank accounts for Desi payments once payments are on", async () => {
+    const server = await startServer({ status: { ...CONNECTED, paymentsEnabled: true } });
+    await mount();
+    fireEvent.change(await screen.findByLabelText(/Expense account/), { target: { value: "61" } });
+    fireEvent.change(screen.getByLabelText(/Bank account/), { target: { value: "35" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save accounts" }));
+    expect(await screen.findByText("Saved.")).toBeTruthy();
+    expect(server.saved).toEqual({ expenseAccountId: "61", bankAccountId: "35" });
   });
 
   it("asks for a city before listing drivers", async () => {

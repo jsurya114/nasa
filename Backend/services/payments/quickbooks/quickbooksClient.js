@@ -112,6 +112,8 @@ export const createQuickbooksClient = (config, auth, { fetchImpl = fetch, timeou
     // A bill owed to a vendor, and the payment that settles it. The same requestId again returns the first answer instead of making a second record.
     createBill: async (body, requestId) => (await request('POST', '/bill', { body, requestId })).data?.Bill,
     createBillPayment: async (body, requestId) => (await request('POST', '/billpayment', { body, requestId })).data?.BillPayment,
+    // The bill with this document number (the idempotency key), if one exists. Read-only.
+    findBillsByDocNumber: async (docNumber) => (await query(`select Id, DocNumber, TotalAmt, Balance, VendorRef from Bill where DocNumber = ${quoteValue(docNumber)} maxresults 5`)).Bill ?? [],
     getBill: async (id) => (await request('GET', `/bill/${encodeURIComponent(id)}`)).data?.Bill ?? null,
   };
 };

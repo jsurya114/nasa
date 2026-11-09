@@ -138,3 +138,24 @@ test('the check says what went wrong instead of throwing', async () => {
   assert.match(notConnected.reason, /not connected/);
   assert.ok(QuickbooksError);
 });
+
+// ---- the accounts a payment is booked to ----
+import { getPaymentSettings, savePaymentSettings } from '../services/payments/quickbooks/quickbooksPayments.js';
+
+test('the accounts come from QuickBooks, only a listed account may be saved, and only a super admin may', async () => {
+  const written = [];
+  const db = { query: async (sql, p = []) => {
+    if (/FROM quickbooks_settings/.test(sql)) return { rows: [] };
+    if (/FROM quickbooks_connection/.test(sql)) return { rows: [{ '?column?': 1 }] };
+    if (/INSERT INTO quickbooks_settings/.test(sql)) { written.push(p); return { rows: [] }; }
+    throw new Error(`unexpected query ${sql}`);
+  } };
+  const client = { listAccounts: async (type) => (type === 'Expense' ? [{ Id: '61', Name: 'Contract labor' }] : [{ Id: '35', Name: 'Checking' }]) };
+  const settings = await getPaymentSettings(db, superAdmin, { env, client });
+  assert.deepEqual([settings.expenseAccounts, settings.bankAccounts], [[{ id: '61', name: 'Contract labor' }], [{ id: '35', name: 'Checking' }]]);
+  await assert.rejects(() => getPaymentSettings(db, plainAdmin, { env, client }), (e) => e.status === 403);
+  await assert.rejects(() => savePaymentSettings(db, superAdmin, { expenseAccountId: '99', bankAccountId: '35' }, { env, client }), (e) => e.status === 400);
+  await assert.rejects(() => savePaymentSettings(db, superAdmin, { expenseAccountId: '61', bankAccountId: '36' }, { env, client }), (e) => e.status === 400);
+  assert.deepEqual(await savePaymentSettings(db, superAdmin, { expenseAccountId: '61', bankAccountId: '35' }, { env, client }), { saved: { expenseAccountId: '61', bankAccountId: '35' } });
+  assert.deepEqual(written, [['sandbox', '61', '35', 1]]);
+});

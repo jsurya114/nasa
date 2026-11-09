@@ -42,3 +42,13 @@ export const quickbooksGate = (config, env = process.env) => {
   if (config.environment === 'production' && !flag(env.QUICKBOOKS_PRODUCTION_APPROVED)) return { enabled: false, reason: 'live QuickBooks is not approved yet (QUICKBOOKS_PRODUCTION_APPROVED is not "true")' };
   return { enabled: true, reason: null };
 };
+
+// Whether payments may be recorded in QuickBooks at all. Off unless QUICKBOOKS_PAYMENTS_ENABLED is exactly "true" (on top of the connection gate), so connecting and
+// linking never makes a payment record possible by accident. While it is on, Desi drivers are no longer recorded as Cash in Hand (see driverPaymentRules.js).
+export const quickbooksPaymentsGate = (config, env = process.env) => {
+  const gate = quickbooksGate(config, env);
+  if (!gate.enabled) return gate;
+  if (!flag(env.QUICKBOOKS_PAYMENTS_ENABLED)) return { enabled: false, reason: 'recording payments in QuickBooks is switched off (QUICKBOOKS_PAYMENTS_ENABLED is not "true")' };
+  return { enabled: true, reason: null };
+};
+export const quickbooksPaymentsOn = (env = process.env) => flag(env.QUICKBOOKS_PAYMENTS_ENABLED) && flag(env.QUICKBOOKS_ENABLED);

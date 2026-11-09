@@ -16,6 +16,7 @@ import { getBatch as getEvereeBatch, getRunBatches as getEvereeRunBatches, getSe
 import { getStatus as getEvereeStatus, postCheck as postEvereeCheck } from '../controllers/payroll/evereeController.js';
 import { getWorkers as getEvereeWorkers, postLink as postEvereeLink, postLookup as postEvereeLookup, postRefresh as postEvereeRefresh, postSandboxWorker as postEvereeSandboxWorker, postUnlink as postEvereeUnlink } from '../controllers/payroll/evereeWorkerController.js';
 import { getCallback as getQuickbooksCallback, getStatus as getQuickbooksStatus, getVendors as getQuickbooksVendors, postCheck as postQuickbooksCheck, postConnect as postQuickbooksConnect, postLink as postQuickbooksLink, postLookup as postQuickbooksLookup, postUnlink as postQuickbooksUnlink } from '../controllers/payroll/quickbooksController.js';
+import { getBatch as getQuickbooksBatch, getPreview as getQuickbooksPreview, getRunBatches as getQuickbooksRunBatches, getSettings as getQuickbooksSettings, postBatch as postQuickbooksBatch, postRetry as postQuickbooksBatchRetry, putSettings as putQuickbooksSettings } from '../controllers/payroll/quickbooksPaymentController.js';
 import { getAdminStatement, getDriverBalanceList, getDriverDashboardSummary, getDriverStatementList } from '../controllers/payroll/statementController.js';
 
 const router = express.Router();
@@ -60,6 +61,14 @@ router.get('/quickbooks/vendors', getQuickbooksVendors);
 router.post('/quickbooks/vendors/lookup', postQuickbooksLookup);
 router.post('/quickbooks/vendors/link', postQuickbooksLink);
 router.post('/quickbooks/vendors/unlink', postQuickbooksUnlink);
+// Recording a run's Desi payments in QuickBooks: the accounts used, what would be recorded (read-only, with a fingerprint), the confirm click, the batch and a safe retry.
+router.get('/quickbooks/settings', getQuickbooksSettings);
+router.put('/quickbooks/settings', putQuickbooksSettings);
+router.get('/runs/:runId/quickbooks-preview', getQuickbooksPreview);
+router.post('/runs/:runId/quickbooks-batches', postQuickbooksBatch);
+router.get('/runs/:runId/quickbooks-batches', getQuickbooksRunBatches);
+router.get('/quickbooks-batches/:batchId', getQuickbooksBatch);
+router.post('/quickbooks-batches/:batchId/retry', postQuickbooksBatchRetry);
 // Everee connection (#31): whether the backend is set up and which environment, and a read-only test call. Super admin only, checked in the service.
 router.get('/everee/onboarding-readiness', getOnboardingReadiness);
 router.get('/everee/status', getEvereeStatus);
