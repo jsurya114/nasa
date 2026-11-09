@@ -180,3 +180,27 @@ test('one refund is used once: two penalties on the same waybill are not both ca
   const rows = [HEADER, row({ waybill: 'TESTLOST', type: 'lost', charge: -10 }), row({ waybill: 'TESTLOST', type: 'Damaged Item', charge: -10 }), row({ waybill: 'TESTLOST', charge: 10, ...REFUND })];
   assert.deepEqual(parseClaimsRows(rows, { courier: 'gofo' }).claims.map((c) => [c.claimType, c.deduction]), [['Damaged Item', '10.00']]);
 });
+
+test('an identical copy of a refund row is counted once, so it cannot cancel more than was refunded (review of #268)', () => {
+  const penalty = row({ waybill: 'TESTLOST', type: 'lost', charge: -20 });
+  const refund = row({ waybill: 'TESTLOST', charge: 10, ...REFUND });
+  const { claims, problems } = parseClaimsRows([HEADER, penalty, refund, [...refund]], { courier: 'gofo' });
+  assert.deepEqual(claims.map((c) => [c.waybill, c.deduction]), [['TESTLOST', '10.00']]);
+  assert.ok(problems.some((p) => p.row === 4 && /repeats the refund in row 3; counted once/.test(p.message)));
+  // an identical copy that differs only by case or spacing of the driver name is the same refund
+  const named = parseClaimsRows([HEADER, penalty, row({ waybill: 'TESTLOST', charge: 10, courier: 'Sam Lee', ...REFUND }), row({ waybill: 'TESTLOST', charge: 10, courier: ' sam  LEE ', ...REFUND })], { courier: 'gofo' });
+  assert.deepEqual(named.claims.map((c) => c.deduction), ['10.00']);
+});
+
+test('genuinely different refunds on one waybill are each applied (another date or another amount)', () => {
+  const penalty = row({ waybill: 'TESTLOST', type: 'lost', charge: -20 });
+  const byDate = parseClaimsRows([HEADER, penalty, row({ waybill: 'TESTLOST', charge: 10, date: '10/13/2026 00:00:00', ...REFUND }), row({ waybill: 'TESTLOST', charge: 10, date: '10/14/2026 00:00:00', ...REFUND })], { courier: 'gofo' });
+  assert.deepEqual(byDate.claims, []);
+  const byAmount = parseClaimsRows([HEADER, penalty, row({ waybill: 'TESTLOST', charge: 10, ...REFUND }), row({ waybill: 'TESTLOST', charge: 4, ...REFUND })], { courier: 'gofo' });
+  assert.deepEqual(byAmount.claims.map((c) => c.deduction), ['6.00']);
+});
+
+test('the parse says how many refund rows a file holds and which penalties they cancelled, even when no claim is left', () => {
+  const { claims, refunds, refundedKeys } = parseClaimsRows([HEADER, row({ waybill: 'TESTLOST', type: 'lost', charge: -20 }), row({ waybill: 'TESTLOST', charge: 20, ...REFUND })], { courier: 'gofo' });
+  assert.deepEqual([claims.length, refunds, refundedKeys.length], [0, 1, 1]);
+});

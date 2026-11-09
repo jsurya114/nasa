@@ -115,11 +115,14 @@ export const importClaims = async (db, claims, source) => {
     // Two uploads of the same claim at the same moment wait for each other here.
     await db.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 141))', [claim.key]);
     await lockClaimSubject(db, claim.waybill, claim.claimTypeKey);
+    // The latest version, whether or not it is still current. A version retired because a refund cancelled it (retireRefundedClaims) has no
+    // current version after it: a replay of an older report that lists it again must find it here, or it would insert version 1 a second time
+    // (a duplicate key that rolls back every claim of the upload). The same facts again leave it cancelled; changed facts are a new version.
     const { rows } = await db.query(
-      `SELECT id, version, original_charge, claim_type, import_city_id, courier_name_key,
+      `SELECT id, version, original_charge, claim_type, import_city_id, courier_name_key, superseded_at IS NOT NULL AS retired,
               to_char(claim_at, 'YYYY-MM-DD HH24:MI:SS') AS claim_at,
               to_char(confirmed_at, 'YYYY-MM-DD HH24:MI:SS') AS confirmed_at
-         FROM courier_claims WHERE claim_key = $1 AND superseded_at IS NULL`,
+         FROM courier_claims WHERE claim_key = $1 ORDER BY version DESC LIMIT 1`,
       [claim.key]
     );
     const current = rows[0];
@@ -143,7 +146,7 @@ export const importClaims = async (db, claims, source) => {
       claimId = await insertVersion(db, claim, 1, source, manual);
       result.inserted.push({ claimId, sourceRow: claim.sourceRow });
     } else {
-      await db.query('UPDATE courier_claims SET superseded_at = now() WHERE id = $1', [current.id]);
+      if (!current.retired) await db.query('UPDATE courier_claims SET superseded_at = now() WHERE id = $1', [current.id]);
       claimId = await insertVersion(db, claim, current.version + 1, source, manual);
       result.amended.push({ claimId, previousId: current.id, sourceRow: claim.sourceRow });
     }

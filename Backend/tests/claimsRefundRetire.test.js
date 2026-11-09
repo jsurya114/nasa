@@ -1,4 +1,4 @@
-import test from 'node:test';
+import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -42,6 +42,54 @@ test('a refund retires the stored claims it cancels, in its own city only, and a
   } finally {
     await db.query('ROLLBACK');
     db.release();
-    await pool.end();
   }
 });
+
+// Through the weekly upload recorder, as the review of #268 asked (a file with no charge left, and a replay of an older report).
+test('upload recorder: a file of only a penalty and its refund cancels the stored penalty, and replaying an older report keeps it cancelled', { skip: !hasDb && 'set PAYROLL_TEST_DB=1 and the DB_* variables to run' }, async () => {
+  const { default: XLSX } = await import('xlsx');
+  const { recordWorkbookClaims } = await import('../services/payroll/claims/recordWorkbookClaims.js');
+  const { default: pool } = await import('../config/db.js');
+  const db = await pool.connect();
+  const COLS = ['date', 'Waybill No.', 'Courier', 'Claim Type', 'Declared value (USD)', 'Confirm date.', 'The total expenses-exclusive of taxes', 'Remarks'];
+  const book = (rows) => {
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([COLS, ...rows]), 'Claims Detail');
+    return XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+  };
+  const PEN = ['10/23/2026 05:36:13', 'TESTLOST', 'Sam Lee', 'lost', 20, null, -20, 'Claim Penalty'];
+  const KEEP = ['10/24/2026 05:36:13', 'TESTKEEP', 'Sam Lee', 'fake pod', 1, null, -5, 'Claim Penalty'];
+  const NEW = ['10/25/2026 05:36:13', 'TESTNEW', 'Sam Lee', 'fake pod', 1, null, -7, 'Claim Penalty'];
+  const REF = ['10/13/2026 00:00:00', 'TESTLOST', 'Sam Lee', 'Tracking interruption', 20, null, 20, 'Prior Period Claim Refund'];
+  try {
+    await db.query('BEGIN');
+    await db.query(readFileSync(MIGRATION, 'utf8'));
+    // a route whose city is the only one with that job
+    const { rows: [route] } = await db.query(`SELECT r.route_code_in_string AS code FROM routes r JOIN city c ON c.job = r.job GROUP BY r.route_code_in_string HAVING count(DISTINCT c.id) = 1 LIMIT 1`);
+    assert.ok(route, 'needs a route with one city in the test database');
+    const upload = (rows, name) => recordWorkbookClaims(db, { buffer: book(rows), fileName: name, user: { id: null, role: 'superadmin' }, routeCodes: [route.code] });
+    const live = async () => (await db.query("SELECT waybill FROM courier_claims WHERE superseded_at IS NULL AND waybill LIKE 'TEST%' ORDER BY waybill")).rows.map((r) => r.waybill);
+
+    const first = await upload([PEN, KEEP], 'week-1.xlsx');
+    assert.equal(first.stored, true, JSON.stringify(first));
+    assert.deepEqual(await live(), ['TESTKEEP', 'TESTLOST']);
+
+    // only the penalty and its refund: no claim is left to store, and the stored penalty is still cancelled
+    const second = await upload([PEN, REF], 'week-2.xlsx');
+    assert.equal(second.refunded, 1, JSON.stringify(second));
+    assert.deepEqual(await live(), ['TESTKEEP']);
+
+    // an older report replayed, with another claim in it: nothing rolls back, the other claim is stored, the penalty stays cancelled
+    const replay = await upload([PEN, KEEP, NEW], 'week-1-again.xlsx');
+    assert.equal(replay.stored, true, JSON.stringify(replay));
+    assert.deepEqual(await live(), ['TESTKEEP', 'TESTNEW']);
+    // and the replay of the cancelling report is still a no-op
+    const again = await upload([PEN, REF], 'week-2-again.xlsx');
+    assert.deepEqual([again.refunded, await live()], [0, ['TESTKEEP', 'TESTNEW']]);
+  } finally {
+    await db.query('ROLLBACK');
+    db.release();
+  }
+});
+
+after(async () => { if (hasDb) { const { default: pool } = await import('../config/db.js'); await pool.end(); } });

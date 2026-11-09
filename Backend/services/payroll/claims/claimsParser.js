@@ -81,6 +81,7 @@ export const parseClaimsRows = (rows, { courier }) => {
 
   const byKey = new Map();
   const refunds = [];
+  const refundsSeen = new Map();
   for (let i = headerIndex + 1; i < all.length; i += 1) {
     const row = Array.isArray(all[i]) ? all[i] : [];
     if (row.every(isBlank)) continue;
@@ -110,7 +111,17 @@ export const parseClaimsRows = (rows, { courier }) => {
     // A refund the carrier pays back for an earlier penalty (a positive amount with "Refund" in the remarks, e.g. "Prior Period Claim Refund") is
     // never a deduction. It is set against the penalty for the same waybill below, so a penalty that was refunded nets out.
     if (isRefund(amount.charge, text(cell('remarks')))) {
-      refunds.push({ excelRow, waybill, cents: toCents(amount.deduction) });
+      // The same duplicate protection as a claim: an identical copy of a refund row is read once, so a repeated row can never cancel more
+      // than the carrier refunded. Genuinely different refunds (another amount, date, type or driver name) are each applied.
+      const nameKey = isBlank(cell('courierName')) ? '' : driverNameKey(String(cell('courierName'))).slice(0, 100);
+      const refundId = [waybill, claimTypeKey(claimType), toCents(amount.deduction), claimAt, confirmedAt ?? '', nameKey].join('|');
+      const seen = refundsSeen.get(refundId);
+      if (seen) {
+        problems.push({ row: excelRow, message: `repeats the refund in row ${seen}; counted once` });
+      } else {
+        refundsSeen.set(refundId, excelRow);
+        refunds.push({ excelRow, waybill, cents: toCents(amount.deduction) });
+      }
       continue;
     }
 
@@ -156,7 +167,9 @@ export const parseClaimsRows = (rows, { courier }) => {
   const kept = claims.filter((c) => !c.conflict);
   netRefunds(kept, refunds, problems);
   // refundedKeys: penalties a refund cancelled in full. A copy stored by an earlier upload is retired by the caller (see retireRefundedClaims).
-  return { claims: kept.filter((c) => !c.refunded), problems, refundedKeys: kept.filter((c) => c.refunded).map((c) => c.key) };
+  // refunds: how many refund rows the file holds. The caller applies cancellations even when no charge is left to store (a file of only a
+  // penalty and its refund).
+  return { claims: kept.filter((c) => !c.refunded), problems, refundedKeys: kept.filter((c) => c.refunded).map((c) => c.key), refunds: refundsSeen.size };
 };
 
 // The range the sheet's cells really occupy. A workbook's saved range ("!ref") can say less than it holds (carrier
