@@ -39,3 +39,16 @@ export const companyRatesRetired = async (db, job) => {
 export const companyPricesToStore = ({ retired, sent, current = null }) => (retired
   ? { company_route_price: current ? Number(current.company_route_price) : 0, company_doublestop_price: current ? Number(current.company_doublestop_price) : 0 }
   : { company_route_price: sent.companyRoutePrice, company_doublestop_price: sent.companyDoubleStopPrice });
+
+// Sets the company route and double-stop prices of every route in a WEEKLY city back to 0 ("no company rate"), whenever the owner asks. Daily cities are refused: their revenue
+// is the stored price. Only the route prices change: records already saved keep the company figure they have (see companyEarningsSql), so nothing paid is rewritten.
+export const resetCompanyPrices = async (db, job) => {
+  const { rows } = await db.query('SELECT city_type FROM city WHERE job = $1', [job]);
+  if (rows.length === 0) return { status: 'unknown_city' };
+  if (rows[0].city_type !== 'WEEKLY') return { status: 'not_weekly' };
+  const { rowCount } = await db.query(
+    'UPDATE routes SET company_route_price = 0, company_doublestop_price = 0 WHERE job = $1 AND (company_route_price <> 0 OR company_doublestop_price <> 0)',
+    [job],
+  );
+  return { status: 'reset', routesReset: rowCount };
+};

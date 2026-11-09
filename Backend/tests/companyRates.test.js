@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { AdminDashboardQueries } from '../services/admin/dashboardQueries.js';
-import { citiesWithVerifiedStatements, companyEarningsSql, companyPricesToStore, companyRatesRetired, noCompanyRateSql } from '../services/finance/companyRates.js';
+import { citiesWithVerifiedStatements, companyEarningsSql, companyPricesToStore, companyRatesRetired, noCompanyRateSql, resetCompanyPrices } from '../services/finance/companyRates.js';
 import { publishStatement } from '../services/finance/gofoStatement/publishStatement.js';
 import { statementSheets, statementWorkbook } from './helpers/gofoStatementFixture.js';
 
@@ -22,6 +22,29 @@ test('a route save keeps the stored company prices in a retired city and uses th
   assert.deepEqual(companyPricesToStore({ retired: true, sent: { companyRoutePrice: NaN, companyDoubleStopPrice: NaN }, current: stored }), { company_route_price: 5, company_doublestop_price: 2.5 }, 'hidden fields are not needed');
   assert.deepEqual(companyPricesToStore({ retired: true, sent }), { company_route_price: 0, company_doublestop_price: 0 }, 'a new route has no company rate');
   assert.deepEqual(companyPricesToStore({ retired: false, sent, current: stored }), { company_route_price: 9, company_doublestop_price: 8 }, 'not retired: the request decides');
+});
+
+const fakeDb = (cityRows, updateCount = 3) => {
+  const calls = [];
+  return { calls, query: async (sql, params) => { calls.push({ sql, params }); return sql.startsWith('SELECT') ? { rows: cityRows } : { rowCount: updateCount, rows: [] }; } };
+};
+
+test('resetting company prices zeroes both company prices of a weekly city only', async () => {
+  const db = fakeDb([{ city_type: 'WEEKLY' }]);
+  assert.deepEqual(await resetCompanyPrices(db, 'Lafayette GOFO'), { status: 'reset', routesReset: 3 });
+  const update = db.calls.at(-1);
+  assert.match(update.sql, /SET company_route_price = 0, company_doublestop_price = 0 WHERE job = \$1/);
+  assert.doesNotMatch(update.sql, /driver_/, 'driver prices are never touched');
+  assert.deepEqual(update.params, ['Lafayette GOFO']);
+});
+
+test('resetting company prices is refused for a daily city and for an unknown city, and writes nothing', async () => {
+  const daily = fakeDb([{ city_type: 'DAILY' }]);
+  assert.deepEqual(await resetCompanyPrices(daily, 'Dallas SpeedX'), { status: 'not_weekly' });
+  assert.equal(daily.calls.length, 1, 'only the city lookup ran');
+  const unknown = fakeDb([]);
+  assert.deepEqual(await resetCompanyPrices(unknown, 'Nowhere'), { status: 'unknown_city' });
+  assert.equal(unknown.calls.length, 1);
 });
 
 // Needs a PostgreSQL copy that has the app's tables (never production). PAYROLL_TEST_DB=1 and the DB_* variables. One rolled-back transaction, made-up data.
