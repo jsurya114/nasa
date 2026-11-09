@@ -14,6 +14,14 @@ describe("ResetCompanyPrices", () => {
   afterEach(cleanup);
   beforeEach(() => { post.mockReset(); toast.success.mockReset(); toast.error.mockReset(); });
 
+  it("is visible without a city, disabled, and tells the owner what to choose", () => {
+    render(<ResetCompanyPrices />);
+    expect(screen.getByTestId("reset-company-prices").disabled).toBe(true);
+    expect(screen.getByTestId("reset-company-prices-hint").textContent).toContain("Choose a weekly city");
+    fireEvent.click(screen.getByTestId("reset-company-prices"));
+    expect(post).not.toHaveBeenCalled();
+  });
+
   it("changes nothing until the owner confirms, and Cancel goes back", () => {
     render(<ResetCompanyPrices city={CITY} />);
     fireEvent.click(screen.getByTestId("reset-company-prices"));

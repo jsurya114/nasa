@@ -13,7 +13,7 @@ Weekly GOFO routes should carry no company price, because company revenue comes 
 - **Route:** `POST /admin/routes/reset-company-prices` with `{ job }`. Owner only (`superAdminAuth`, which checks the token role and the account in the database).
 - **What it does:** sets `company_route_price` and `company_doublestop_price` to 0 on every route of that city, only where one is not 0. Only the two company columns change; driver prices, route names, codes and status are untouched.
 - **Refused:** a daily city (its revenue is the stored price) with 400, an unknown city with 404, a missing, non-text or over-long city name with 400.
-- **Screen:** on the Routes page, choose one weekly city in the city filter; an owner then sees "Reset company prices to 0", a two-step confirmation, and a message saying how many routes changed (or that they were already 0). City admins never see the button, and the server refuses them anyway.
+- **Screen:** on the Routes page an owner always sees "Reset company prices to 0" under the filter row. It is disabled, with a hint, until one weekly city is chosen in the city filter (under All Cities or a daily city it stays disabled); then it opens a two-step confirmation, and a message saying how many routes changed (or that they were already 0). City admins never see the button, and the server refuses them anyway.
 - Each reset is logged with the city, the number of routes and the admin's id.
 
 ## Database
@@ -35,7 +35,7 @@ Pay is not affected: driver pay uses driver prices. Records already saved keep t
 - Real local database, one rolled-back transaction: weekly reset, daily refused, unknown refused, driver prices unchanged.
 - `ResetCompanyPrices.test.jsx`: nothing is sent until confirmed, Cancel goes back, one request with the chosen city, the count message, the already-0 message, the server's words on a refusal.
 - Frontend: 58 files, 510 tests pass; build ok. Backend CI-style run: 260 pass, 0 fail (75 skipped, database tests).
-- Not tested: a real browser; the Routes page showing the button only to an owner with a weekly city chosen (small condition, not covered by a test); a second owner clicking at the same moment (the update is idempotent).
+- Not tested: a real browser; the Routes page showing the button only to an owner (small condition, not covered by a test); a second owner clicking at the same moment (the update is idempotent).
 
 ## Risks and follow-ups
 

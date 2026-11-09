@@ -2,13 +2,13 @@ import React, { useState } from "react";
 import axios from "../../redux/slice/axiosInstance";
 import { toast } from "../../utils/toast";
 
-// Owner only: sets the company prices of every route in the chosen weekly city back to 0 ("no company rate"). Two steps, so a stray click changes nothing. Driver prices,
+// Owner only. Always shown to the owner so it can be found; it works once one weekly city is chosen in the filter. Sets the company prices of every route in the chosen weekly city back to 0 ("no company rate"). Two steps, so a stray click changes nothing. Driver prices,
 // daily cities and records already saved are not touched. The server checks the role again.
 export const resetCompanyPricesRequest = async (job) => (await axios.post("/admin/routes/reset-company-prices", { job })).data;
 
 const messageFor = (error) => error?.response?.data?.error || "The company prices could not be reset. Check your connection and try again.";
 
-export default function ResetCompanyPrices({ city, onDone }) {
+export default function ResetCompanyPrices({ city = null, onDone }) {
   const [confirming, setConfirming] = useState(false);
   const [busy, setBusy] = useState(false);
 
@@ -26,6 +26,14 @@ export default function ResetCompanyPrices({ city, onDone }) {
     }
   };
 
+  if (!city) {
+    return (
+      <div className="flex flex-wrap items-center gap-2 text-xs text-ink-muted" data-testid="reset-company-prices-hint">
+        <button type="button" disabled className="px-3 py-1.5 rounded-md border border-line bg-white text-ink font-medium whitespace-nowrap opacity-50 cursor-not-allowed" data-testid="reset-company-prices">Reset company prices to 0</button>
+        <span>Choose a weekly city in the filter above to reset its company prices.</span>
+      </div>
+    );
+  }
   if (!confirming) {
     return (
       <button type="button" onClick={() => setConfirming(true)} className="px-3 py-1.5 text-xs rounded-md border border-line bg-white text-ink hover:bg-gray-100 font-medium whitespace-nowrap" data-testid="reset-company-prices">

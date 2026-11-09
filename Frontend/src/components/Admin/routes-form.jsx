@@ -280,7 +280,7 @@ export default function RoutesForm() {
               </div>
             </div>
             
-            {isSuperAdmin && resetCity && (
+            {isSuperAdmin && (
               <div className="mt-2">
                 <ResetCompanyPrices city={resetCity} onDone={() => dispatch(fetchRoutes({ page: page || 1, limit: ROUTES_PER_PAGE, search: searchTerm, city: cityFilter }))} />
               </div>
