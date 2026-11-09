@@ -128,3 +128,91 @@ test('every occupied row is read even when the file\'s saved range says fewer ro
     assert.equal(read.Sheets['Claims Detail']['!ref'], 'A1:L2', 'the caller\'s workbook is not changed');
   }
 });
+
+// Refunds (the carrier's "Prior Period Claim Refund"): money given back for an earlier penalty, never a charge. Made-up values.
+const REFUND = { remarks: 'Prior Period Claim Refund', type: 'Tracking interruption' };
+
+test('a refunded penalty nets out: lost -13.86, refund +13.86 and a separate -40 deduct 40 in total', () => {
+  const rows = [HEADER,
+    row({ waybill: 'TESTLOST', type: 'lost', charge: -13.86, remarks: 'Claim Penalty' }),
+    row({ waybill: 'TESTFAKE', type: 'Tracking interruption', charge: -40, remarks: 'Claim Penalty' }),
+    row({ waybill: 'TESTLOST', charge: 13.86, ...REFUND })];
+  const { claims, problems } = parseClaimsRows(rows, { courier: 'gofo' });
+  assert.deepEqual(claims.map((c) => [c.waybill, c.deduction]), [['TESTFAKE', '40.00']]);
+  assert.equal(problems.length, 1);
+  assert.equal(problems[0].row, 4);
+  assert.match(problems[0].message, /refund of 13\.86 cancels the penalty in row 2/);
+});
+
+test('a refund listed before its penalty nets the same way, and cents add up exactly', () => {
+  const rows = [HEADER, row({ waybill: 'TESTLOST', charge: 0.1, ...REFUND }), row({ waybill: 'TESTLOST', type: 'lost', charge: -0.1 }), row({ waybill: 'TESTOTHER', charge: -0.2 })];
+  assert.deepEqual(parseClaimsRows(rows, { courier: 'gofo' }).claims.map((c) => c.deduction), ['0.20']);
+});
+
+test('a part refund reduces the penalty to what is left', () => {
+  const rows = [HEADER, row({ waybill: 'TESTLOST', type: 'lost', charge: -20 }), row({ waybill: 'TESTLOST', charge: 5.25, ...REFUND })];
+  const { claims, problems } = parseClaimsRows(rows, { courier: 'gofo' });
+  assert.deepEqual(claims.map((c) => [c.deduction, c.charge]), [['14.75', '-14.75']]);
+  assert.match(problems[0].message, /refund of 5\.25 reduces the penalty in row 2 .* to 14\.75/);
+});
+
+test('a refund with no penalty for its waybill in the file deducts nothing and is reported, never charged', () => {
+  const rows = [HEADER, row({ waybill: 'TESTGONE', charge: 8, ...REFUND }), row({ waybill: 'TESTFAKE', charge: -40 })];
+  const { claims, problems } = parseClaimsRows(rows, { courier: 'gofo' });
+  assert.deepEqual(claims.map((c) => c.waybill), ['TESTFAKE']);
+  assert.match(problems[0].message, /refund of 8\.00 has no penalty for the same waybill in this file; nothing is deducted/);
+});
+
+test('a refund larger than the penalty cancels it and reports the rest; it never becomes a credit', () => {
+  const rows = [HEADER, row({ waybill: 'TESTLOST', type: 'lost', charge: -10 }), row({ waybill: 'TESTLOST', charge: 12, ...REFUND })];
+  const { claims, problems } = parseClaimsRows(rows, { courier: 'gofo' });
+  assert.deepEqual(claims, []);
+  assert.equal(problems.length, 2);
+  assert.match(problems[1].message, /2\.00 of this refund is more than the penalty/);
+});
+
+test('a positive amount without "Refund" in the remarks is still a deduction (the owner-confirmed absolute rule)', () => {
+  const { claims } = parseClaimsRows([HEADER, row({ waybill: 'TESTPLUS', charge: 40, remarks: 'Claim Penalty' })], { courier: 'gofo' });
+  assert.deepEqual(claims.map((c) => c.deduction), ['40.00']);
+});
+
+test('one refund is used once: two penalties on the same waybill are not both cancelled by it', () => {
+  const rows = [HEADER, row({ waybill: 'TESTLOST', type: 'lost', charge: -10 }), row({ waybill: 'TESTLOST', type: 'Damaged Item', charge: -10 }), row({ waybill: 'TESTLOST', charge: 10, ...REFUND })];
+  assert.deepEqual(parseClaimsRows(rows, { courier: 'gofo' }).claims.map((c) => [c.claimType, c.deduction]), [['Damaged Item', '10.00']]);
+});
+
+test('an identical copy of a refund row is counted once, so it cannot cancel more than was refunded (review of #268)', () => {
+  const penalty = row({ waybill: 'TESTLOST', type: 'lost', charge: -20 });
+  const refund = row({ waybill: 'TESTLOST', charge: 10, ...REFUND });
+  const { claims, problems } = parseClaimsRows([HEADER, penalty, refund, [...refund]], { courier: 'gofo' });
+  assert.deepEqual(claims.map((c) => [c.waybill, c.deduction]), [['TESTLOST', '10.00']]);
+  assert.ok(problems.some((p) => p.row === 4 && /repeats the refund in row 3; counted once/.test(p.message)));
+  // an identical copy that differs only by case or spacing of the driver name is the same refund
+  const named = parseClaimsRows([HEADER, penalty, row({ waybill: 'TESTLOST', charge: 10, courier: 'Sam Lee', ...REFUND }), row({ waybill: 'TESTLOST', charge: 10, courier: ' sam  LEE ', ...REFUND })], { courier: 'gofo' });
+  assert.deepEqual(named.claims.map((c) => c.deduction), ['10.00']);
+});
+
+test('genuinely different refunds on one waybill are each applied (another date or another amount)', () => {
+  const penalty = row({ waybill: 'TESTLOST', type: 'lost', charge: -20 });
+  const byDate = parseClaimsRows([HEADER, penalty, row({ waybill: 'TESTLOST', charge: 10, date: '10/13/2026 00:00:00', ...REFUND }), row({ waybill: 'TESTLOST', charge: 10, date: '10/14/2026 00:00:00', ...REFUND })], { courier: 'gofo' });
+  assert.deepEqual(byDate.claims, []);
+  const byAmount = parseClaimsRows([HEADER, penalty, row({ waybill: 'TESTLOST', charge: 10, ...REFUND }), row({ waybill: 'TESTLOST', charge: 4, ...REFUND })], { courier: 'gofo' });
+  assert.deepEqual(byAmount.claims.map((c) => c.deduction), ['6.00']);
+});
+
+test('the parse says how many refund rows a file holds and which penalties they cancelled, even when no claim is left', () => {
+  const { claims, refunds, refundedClaims } = parseClaimsRows([HEADER, row({ waybill: 'TESTLOST', type: 'lost', charge: -20 }), row({ waybill: 'TESTLOST', charge: 20, ...REFUND })], { courier: 'gofo' });
+  assert.deepEqual([claims.length, refunds, refundedClaims.length], [0, 1, 1]);
+  assert.deepEqual([refundedClaims[0].originalCharge, refundedClaims[0].claimAt], ['-20.00', '2026-09-28 10:00:00']);
+});
+
+test('every penalty a refund touched is reported with its original facts, for the caller to remember (second review of #268)', () => {
+  const rows = [HEADER, row({ waybill: 'TESTPART', type: 'lost', charge: -20 }), row({ waybill: 'TESTPART', charge: 10, ...REFUND }), row({ waybill: 'TESTFULL', type: 'lost', charge: -8 }), row({ waybill: 'TESTFULL', charge: 8, ...REFUND }), row({ waybill: 'TESTNONE', charge: -3 })];
+  const { claims, adjustments } = parseClaimsRows(rows, { courier: 'gofo' });
+  assert.deepEqual(claims.map((c) => [c.waybill, c.deduction, c.originalCharge]), [['TESTPART', '10.00', '-20.00'], ['TESTNONE', '3.00', '-3.00']]);
+  assert.deepEqual(adjustments.map((a) => [a.originalCharge, a.refunded, a.net]), [['-20.00', '10.00', '10.00'], ['-8.00', '8.00', '0.00']]);
+  assert.ok(adjustments.every((a) => /^[0-9a-f]{64}$/.test(a.factsKey) && /^[0-9a-f]{64}$/.test(a.key)));
+  // the same original penalty read alone has the same facts key, so it finds the remembered refund
+  const alone = parseClaimsRows([HEADER, row({ waybill: 'TESTPART', type: 'lost', charge: -20 })], { courier: 'gofo' });
+  assert.equal(alone.adjustments.length, 0);
+});

@@ -11,7 +11,7 @@
 import XLSX from 'xlsx';
 import logger from '../../../utils/logger.js';
 import { CLAIMS_SHEET, parseClaimsWorkbook } from './claimsParser.js';
-import { importClaims, rematchAllOpenClaims } from './claimsStore.js';
+import { adjustmentsReady, applyKnownAdjustments, importClaims, rematchAllOpenClaims, retireRefundedClaims, saveAdjustments } from './claimsStore.js';
 import { FEES_SHEET, parseFeeNames } from './courierNames.js';
 import { getAllowedJobs, isCityLimited } from '../../admin/adminCityAccess.js';
 
@@ -106,11 +106,36 @@ export const recordWorkbookClaims = async (client, { buffer, fileName, user, rou
       await client.query(`RELEASE SAVEPOINT ${SAVEPOINT}`);
       return notStored(true, parsed, empty ? emptyReason : 'Claims were not stored: the report is for a city you do not have access to.');
     }
+    // A refund in the file cancels its penalty. Copies stored by an earlier upload (the penalty, or the refund itself kept as if it were a charge)
+    // are retired. This happens whether or not any charge is left to store: a file of only a penalty and its refund still cancels the stored penalty.
+    // It runs after the city and access checks above, so a city admin cannot retire another city's claims.
+    // The refunds are also remembered against each penalty's original facts, even when the net is zero and the penalty was never stored, so an older
+    // report listing the same original penalty cannot bring the refunded amount back (review of #268).
+    const remember = await adjustmentsReady(client);
+    if (remember && (parsed.adjustments ?? []).length > 0) {
+      const adjustmentKeys = [...new Set(parsed.adjustments.map((a) => a.key))].sort();
+      for (const key of adjustmentKeys) await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 141))', [key]);
+      // A claim belongs to the city it was first imported for. This report may not remember a refund against a claim held for another city.
+      const { rows: heldElsewhere } = await client.query(
+        'SELECT DISTINCT claim_key FROM courier_claims WHERE claim_key = ANY($1::text[]) AND import_city_id IS DISTINCT FROM $2', [adjustmentKeys, city.id]);
+      const other = new Set(heldElsewhere.map((r) => r.claim_key));
+      await saveAdjustments(client, parsed.adjustments.filter((a) => !other.has(a.key)), { importCityId: city.id, sourceFile: fileName });
+    }
+    // Penalties in this file that were refunded when an EARLIER file was read get the remembered net, or stay cancelled when it is zero.
+    const known = remember ? await applyKnownAdjustments(client, parsed.claims, { importCityId: city.id }) : { claims: parsed.claims, cancelled: [] };
+    const fileClaims = known.claims;
+    const cancelled = [...(parsed.refundedClaims ?? []), ...known.cancelled];
+    const refunded = (parsed.refunds ?? 0) > 0 || cancelled.length > 0
+      ? await retireRefundedClaims(client, { cityId: city.id, cancelled })
+      : { retired: 0, left: 0 };
     if (empty) {
       const fees = parseFeeNames(readSheetWorkbook(buffer, FEES_SHEET));
       const rematched = await rematchAllOpenClaims(client, nameFinderFor(client, fees.names), { cityId: city.id, by: 'name' });
       await client.query(`RELEASE SAVEPOINT ${SAVEPOINT}`);
-      return { ...notStored(true, parsed, emptyReason), cityId: city.id, rematched, names: { sheetFound: fees.found, drivers: fees.names.size, missingColumns: fees.missingColumns } };
+      return {
+        ...notStored(true, parsed, emptyReason), cityId: city.id, rematched, refunded: refunded.retired, refundedAlreadyTaken: refunded.left,
+        names: { sheetFound: fees.found, drivers: fees.names.size, missingColumns: fees.missingColumns },
+      };
     }
 
     // A claim is stored for one city. importClaims finds the current version by courier, waybill and type alone, so a
@@ -118,14 +143,14 @@ export const recordWorkbookClaims = async (client, { buffer, fileName, user, rou
     // before it is called, and only counted: no city learns more about another city's claims than that some were left out.
     // The check and the store must not be separated by another upload of the same claim, so the per-claim locks that
     // importClaims takes are taken first (in key order, so two uploads cannot wait on each other).
-    for (const key of [...new Set(parsed.claims.map((c) => c.key))].sort()) {
+    for (const key of [...new Set(fileClaims.map((c) => c.key))].sort()) {
       await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 141))', [key]);
     }
     const { rows: elsewhere } = await client.query(
-      `SELECT claim_key FROM courier_claims WHERE claim_key = ANY($1::text[]) AND superseded_at IS NULL AND import_city_id IS DISTINCT FROM $2`,
-      [parsed.claims.map((c) => c.key), city.id]);
+      `SELECT claim_key FROM courier_claims WHERE claim_key = ANY($1::text[]) AND import_city_id IS DISTINCT FROM $2`,
+      [fileClaims.map((c) => c.key), city.id]);
     const otherCity = new Set(elsewhere.map((r) => r.claim_key));
-    const claimsHere = parsed.claims.filter((c) => !otherCity.has(c.key));
+    const claimsHere = fileClaims.filter((c) => !otherCity.has(c.key));
 
     const stored = await importClaims(client, claimsHere, {
       importCityId: city.id, sourceFile: fileName, sourceSheet: parsed.sheet, importedBy: user?.id ?? null,
@@ -153,6 +178,9 @@ export const recordWorkbookClaims = async (client, { buffer, fileName, user, rou
       duplicates: stored.duplicates.length + (limited ? otherCity.size : 0),
       amended: stored.amended.length,
       held: stored.held.length,
+      // Earlier claims a refund in this file cancelled (no longer owed), and any already taken from a driver, which are left for the ledger.
+      refunded: refunded.retired,
+      refundedAlreadyTaken: refunded.left,
       // Where this upload's new and changed claims stand now. `exempt` carries no deduction.
       matched: { chargeable: by.chargeable ?? 0, exempt: by.exempt ?? 0 },
       waiting: { unresolved: by.unresolved ?? 0, ambiguous: by.ambiguous ?? 0 },

@@ -4,7 +4,7 @@
 // with the same name in Details of Delivery Fees, whose Delivery ID is the driver code (issue #180).
 
 import XLSX from 'xlsx';
-import { claimKey, claimTypeKey, normalizeWaybill, parseCarrierDateTime, parseCharge } from './claimRules.js';
+import { claimKey, claimTypeKey, factsKey, normalizeWaybill, parseCarrierDateTime, parseCharge } from './claimRules.js';
 import { cleanDriverName, driverNameKey } from '../../admin/driverName.js';
 
 export const CLAIMS_SHEET = 'Claims Detail';
@@ -30,6 +30,39 @@ const text = (v) => (isBlank(v) ? null : String(v).trim().slice(0, MAX_TEXT));
 // Two rows name different drivers only when both give a name and the names differ (case and spacing do not count).
 const namesDiffer = (a, b) => Boolean(a.courierNameKey && b.courierNameKey && a.courierNameKey !== b.courierNameKey);
 
+const toCents = (text) => Math.round(Number(text) * 100);
+const fromCents = (c) => `${Math.floor(c / 100)}.${String(c % 100).padStart(2, '0')}`;
+const isRefund = (charge, remarks) => typeof charge === 'string' && !charge.startsWith('-') && /refund/i.test(remarks ?? '');
+
+// Sets each refund against the penalties for the same waybill (a lost parcel that was refunded later cancels out: -13.86 and +13.86 deduct nothing).
+// A penalty covered in full is dropped from the claims; a part-refunded one keeps only what is left. A refund with no penalty to cancel in this file
+// (its penalty was in an earlier period) deducts nothing and is reported, so it is never mistaken for a charge. Never invents a credit for the driver.
+const netRefunds = (claims, refunds, problems) => {
+  for (const refund of refunds) {
+    let left = refund.cents;
+    for (const claim of claims) {
+      if (left <= 0) break;
+      if (claim.refunded || claim.waybill !== refund.waybill || !claim.charge.startsWith('-')) continue;
+      const owed = toCents(claim.deduction);
+      if (owed <= 0) continue;
+      const used = Math.min(owed, left);
+      left -= used;
+      claim.refundCents = (claim.refundCents ?? 0) + used;
+      claim.adjusted = true;
+      if (used === owed) {
+        claim.refunded = true;
+        problems.push({ row: refund.excelRow, message: `refund of ${fromCents(used)} cancels the penalty in row ${claim.sourceRow} for the same waybill; nothing is deducted for it` });
+      } else {
+        claim.deduction = fromCents(owed - used);
+        claim.charge = `-${claim.deduction}`;
+        problems.push({ row: refund.excelRow, message: `refund of ${fromCents(used)} reduces the penalty in row ${claim.sourceRow} for the same waybill to ${claim.deduction}` });
+      }
+    }
+    if (left === refund.cents) problems.push({ row: refund.excelRow, message: `refund of ${fromCents(refund.cents)} has no penalty for the same waybill in this file; nothing is deducted and nothing is credited here` });
+    else if (left > 0) problems.push({ row: refund.excelRow, message: `${fromCents(left)} of this refund is more than the penalty for the same waybill; the rest is not credited here` });
+  }
+};
+
 // rows: the sheet as an array of arrays (first non-blank row is the header).
 // Returns { claims, problems }. A problem is { row, message } with the Excel row number.
 export const parseClaimsRows = (rows, { courier }) => {
@@ -49,6 +82,8 @@ export const parseClaimsRows = (rows, { courier }) => {
   }
 
   const byKey = new Map();
+  const refunds = [];
+  const refundsSeen = new Map();
   for (let i = headerIndex + 1; i < all.length; i += 1) {
     const row = Array.isArray(all[i]) ? all[i] : [];
     if (row.every(isBlank)) continue;
@@ -75,6 +110,23 @@ export const parseClaimsRows = (rows, { courier }) => {
       continue;
     }
 
+    // A refund the carrier pays back for an earlier penalty (a positive amount with "Refund" in the remarks, e.g. "Prior Period Claim Refund") is
+    // never a deduction. It is set against the penalty for the same waybill below, so a penalty that was refunded nets out.
+    if (isRefund(amount.charge, text(cell('remarks')))) {
+      // The same duplicate protection as a claim: an identical copy of a refund row is read once, so a repeated row can never cancel more
+      // than the carrier refunded. Genuinely different refunds (another amount, date, type or driver name) are each applied.
+      const nameKey = isBlank(cell('courierName')) ? '' : driverNameKey(String(cell('courierName'))).slice(0, 100);
+      const refundId = [waybill, claimTypeKey(claimType), toCents(amount.deduction), claimAt, confirmedAt ?? '', nameKey].join('|');
+      const seen = refundsSeen.get(refundId);
+      if (seen) {
+        problems.push({ row: excelRow, message: `repeats the refund in row ${seen}; counted once` });
+      } else {
+        refundsSeen.set(refundId, excelRow);
+        refunds.push({ excelRow, waybill, cents: toCents(amount.deduction) });
+      }
+      continue;
+    }
+
     const claim = {
       courier,
       key: claimKey({ courier, waybill, claimType }),
@@ -86,6 +138,8 @@ export const parseClaimsRows = (rows, { courier }) => {
       confirmedAt,
       charge: amount.charge,
       deduction: amount.deduction,
+      // What the carrier wrote, kept when a refund lowers `charge` below: the refund is remembered against these original facts.
+      originalCharge: amount.charge,
       // Kept only as evidence. Never used for the deduction.
       declaredValue: declared && !declared.error ? declared.charge : null,
       remarks: text(cell('remarks')),
@@ -114,7 +168,22 @@ export const parseClaimsRows = (rows, { courier }) => {
     }
   }
 
-  return { claims: claims.filter((c) => !c.conflict), problems };
+  const kept = claims.filter((c) => !c.conflict);
+  netRefunds(kept, refunds, problems);
+  // refundedClaims: penalties a refund cancelled in full. A copy stored by an earlier upload is retired by the caller (see retireRefundedClaims).
+  // refunds: how many refund rows the file holds. The caller applies cancellations even when no charge is left to store (a file of only a
+  // penalty and its refund).
+  // adjustments: every penalty a refund touched, in full or in part, as its original facts and what was refunded. The caller remembers them
+  // (saveAdjustments), so an older report listing the same original penalty cannot bring the refunded amount back.
+  const adjustments = kept.filter((c) => c.refundCents > 0).map((c) => ({
+    key: c.key, courier: c.courier, claimType: c.claimType, originalCharge: c.originalCharge, claimAt: c.claimAt, confirmedAt: c.confirmedAt,
+    factsKey: factsKey({ key: c.key, originalCharge: c.originalCharge, claimAt: c.claimAt, confirmedAt: c.confirmedAt }),
+    refunded: fromCents(c.refundCents), net: fromCents(Math.abs(toCents(c.originalCharge)) - c.refundCents),
+  }));
+  // refundedClaims: the original facts of each penalty a refund cancelled in full. A stored version is retired only when it has exactly these original
+  // facts, so a genuine carrier amendment (other amount or date) of the same claim is never retired by an older refund report.
+  const refundedClaims = kept.filter((c) => c.refunded).map((c) => ({ key: c.key, originalCharge: c.originalCharge, claimAt: c.claimAt, confirmedAt: c.confirmedAt }));
+  return { claims: kept.filter((c) => !c.refunded), problems, refundedClaims, refunds: refundsSeen.size, adjustments };
 };
 
 // The range the sheet's cells really occupy. A workbook's saved range ("!ref") can say less than it holds (carrier
