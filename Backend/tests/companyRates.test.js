@@ -24,15 +24,22 @@ test('a route save keeps the stored company prices in a retired city and uses th
   assert.deepEqual(companyPricesToStore({ retired: false, sent, current: stored }), { company_route_price: 9, company_doublestop_price: 8 }, 'not retired: the request decides');
 });
 
+// A pool stand-in: every statement is recorded, in order, including the transaction around the reset.
 const fakeDb = (cityRows, updateCount = 3) => {
   const calls = [];
-  return { calls, query: async (sql, params) => { calls.push({ sql, params }); return sql.startsWith('SELECT') ? { rows: cityRows } : { rowCount: updateCount, rows: [] }; } };
+  const client = {
+    query: async (sql, params) => { calls.push({ sql, params }); return /^SELECT/.test(sql) ? { rows: cityRows } : { rowCount: updateCount, rows: [] }; },
+    release: () => calls.push({ sql: 'RELEASE' }),
+  };
+  return { calls, connect: async () => client };
 };
 
-test('resetting company prices zeroes both company prices of a weekly city only', async () => {
+test('resetting company prices locks the weekly city and zeroes both company prices in one transaction', async () => {
   const db = fakeDb([{ city_type: 'WEEKLY' }]);
   assert.deepEqual(await resetCompanyPrices(db, 'Lafayette GOFO'), { status: 'reset', routesReset: 3 });
-  const update = db.calls.at(-1);
+  assert.deepEqual(db.calls.map((c) => c.sql.split(' ')[0]), ['BEGIN', 'SELECT', 'UPDATE', 'COMMIT', 'RELEASE']);
+  assert.match(db.calls[1].sql, /FROM city WHERE job = \$1 FOR SHARE/, 'the city row is locked before the write');
+  const update = db.calls[2];
   assert.match(update.sql, /SET company_route_price = 0, company_doublestop_price = 0 WHERE job = \$1/);
   assert.doesNotMatch(update.sql, /driver_/, 'driver prices are never touched');
   assert.deepEqual(update.params, ['Lafayette GOFO']);
@@ -41,10 +48,10 @@ test('resetting company prices zeroes both company prices of a weekly city only'
 test('resetting company prices is refused for a daily city and for an unknown city, and writes nothing', async () => {
   const daily = fakeDb([{ city_type: 'DAILY' }]);
   assert.deepEqual(await resetCompanyPrices(daily, 'Dallas SpeedX'), { status: 'not_weekly' });
-  assert.equal(daily.calls.length, 1, 'only the city lookup ran');
+  assert.equal(daily.calls.some((c) => c.sql.startsWith('UPDATE')), false);
   const unknown = fakeDb([]);
   assert.deepEqual(await resetCompanyPrices(unknown, 'Nowhere'), { status: 'unknown_city' });
-  assert.equal(unknown.calls.length, 1);
+  assert.equal(unknown.calls.some((c) => c.sql.startsWith('UPDATE')), false);
 });
 
 // Needs a PostgreSQL copy that has the app's tables (never production). PAYROLL_TEST_DB=1 and the DB_* variables. One rolled-back transaction, made-up data.
@@ -129,6 +136,37 @@ test('company prices are retired for a weekly city only once it has a verified s
   } finally {
     await client.query('ROLLBACK');
     client.release();
+    await pool.end();
+  }
+});
+
+// Two real connections, so this commits (a made-up city and route, removed at the end): only run it on a throwaway test copy, never on production.
+test('a city turning daily while a reset is running is refused and keeps its company prices', { skip: !hasDb && 'set PAYROLL_TEST_DB=1 and the DB_* variables to run' }, async () => {
+  const { Pool } = await import('pg'); // its own pool: the other database test closes the shared one
+  const pool = new Pool({ user: process.env.DB_USER, host: process.env.DB_HOST, database: process.env.DB_NAME, password: process.env.DB_PASSWORD, port: process.env.DB_PORT });
+  const job = `Race Test ${process.pid} GOFO`;
+  const editor = await pool.connect();
+  let editing = false;
+  try {
+    await pool.query("INSERT INTO city (job, city_code, city_type) VALUES ($1, $2, 'WEEKLY')", [job, `RT${process.pid}`]);
+    await pool.query("INSERT INTO routes (name, job, company_route_price, driver_route_price, company_doublestop_price, driver_doublestop_price, route_code_in_string) VALUES ('RT-1', $1, 2.5, 1.5, 0.5, 0.25, $2)", [job, `RT${process.pid}-1`]);
+    await editor.query('BEGIN');
+    editing = true;
+    await editor.query("UPDATE city SET city_type = 'DAILY' WHERE job = $1", [job]);
+    let finished = false;
+    const reset = resetCompanyPrices(pool, job).then((result) => { finished = true; return result; });
+    await new Promise((resolve) => setTimeout(resolve, 400));
+    assert.equal(finished, false, 'the reset waits for the city edit instead of reading the old type');
+    await editor.query('COMMIT');
+    editing = false;
+    assert.deepEqual(await reset, { status: 'not_weekly' });
+    const { rows } = await pool.query('SELECT company_route_price::float AS route, company_doublestop_price::float AS ds FROM routes WHERE job = $1', [job]);
+    assert.deepEqual(rows, [{ route: 2.5, ds: 0.5 }], 'the daily city kept its company prices');
+  } finally {
+    if (editing) await editor.query('ROLLBACK');
+    editor.release();
+    await pool.query('DELETE FROM routes WHERE job = $1', [job]);
+    await pool.query('DELETE FROM city WHERE job = $1', [job]);
     await pool.end();
   }
 });
