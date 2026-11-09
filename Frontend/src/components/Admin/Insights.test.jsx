@@ -101,6 +101,20 @@ describe("Insights: the GOFO import history link", () => {
   });
 });
 
+describe("Insights: the invoice button", () => {
+  it("has a Create invoice button that opens the form without leaving the page or asking the server for anything", async () => {
+    const server = await startServer();
+    const view = await mount();
+    const button = await screen.findByTestId("create-invoice");
+    expect(button.textContent).toContain("Create invoice");
+    const asked = server.calls.length;
+    fireEvent.click(button);
+    expect(await screen.findByRole("dialog", { name: /create invoice/i })).toBeTruthy();
+    expect(view.search()).toBe("");
+    expect(server.calls.length).toBe(asked);
+  });
+});
+
 describe("Insights: the headline figures", () => {
   it("opens on Last 30 days and All cities, asks for exactly that, and shows the figures with the comparison", async () => {
     const server = await startServer();

@@ -6,6 +6,7 @@ import InsightsFilters from "./insights/InsightsFilters.jsx";
 import KpiCards from "./insights/KpiCards.jsx";
 import CityRanking from "./insights/CityRanking.jsx";
 import DataStatus from "./insights/DataStatus.jsx";
+import InvoiceButton from "./invoice/InvoiceButton.jsx";
 import TrendSection from "./insights/TrendSection.jsx";
 import WeekdayChart from "./insights/WeekdayChart.jsx";
 import CalendarHeatmap from "./insights/CalendarHeatmap.jsx";
@@ -50,11 +51,15 @@ export default function Insights() {
     <div className="min-h-dvh bg-canvas text-ink">
       <Header />
       <main className="mx-auto max-w-6xl space-y-4 p-3 pb-28 sm:p-6 sm:pb-40">
-        <div>
-          <h1 className="text-2xl font-bold text-brand">Insights</h1>
-          <p className="text-sm text-ink-muted">A read-only overview of deliveries and revenue. Nothing here changes pay, claims or payments.</p>
-          {/* Owner only: the whole page is super admin only (the route and the server both check). The source figures behind GOFO revenue live in the import history. */}
-          <p className="mt-1 text-xs text-ink-muted"><Link to="/admin/carrier-statements" className="font-semibold text-brand underline" data-testid="gofo-import-history-link">GOFO import history</Link> shows the source figures, versions, unmatched charges, corrections and voids.</p>
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h1 className="text-2xl font-bold text-brand">Insights</h1>
+            <p className="text-sm text-ink-muted">A read-only overview of deliveries and revenue. Nothing here changes pay, claims or payments.</p>
+            {/* Owner only: the whole page is super admin only (the route and the server both check). The source figures behind GOFO revenue live in the import history. */}
+            <p className="mt-1 text-xs text-ink-muted"><Link to="/admin/carrier-statements" className="font-semibold text-brand underline" data-testid="gofo-import-history-link">GOFO import history</Link> shows the source figures, versions, unmatched charges, corrections and voids.</p>
+          </div>
+          {/* A fill-in invoice, downloaded as a PDF. It reads nothing from this page and stores nothing. */}
+          <InvoiceButton />
         </div>
 
         <InsightsFilters filters={filters} cities={cityList} citiesStatus={cities.status} onRetryCities={cities.reload} />
