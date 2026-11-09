@@ -52,3 +52,14 @@ export const quickbooksPaymentsGate = (config, env = process.env) => {
   return { enabled: true, reason: null };
 };
 export const quickbooksPaymentsOn = (env = process.env) => flag(env.QUICKBOOKS_PAYMENTS_ENABLED) && flag(env.QUICKBOOKS_ENABLED);
+
+// Whether a new Desi driver may set up QuickBooks from the driver portal. Off unless QUICKBOOKS_DRIVER_ONBOARDING_ENABLED is exactly "true" (on top of the connection gate).
+export const quickbooksDriverOnboardingGate = (config, env = process.env) => {
+  const gate = quickbooksGate(config, env);
+  if (!gate.enabled) return gate;
+  if (!flag(env.QUICKBOOKS_DRIVER_ONBOARDING_ENABLED)) return { enabled: false, reason: 'driver onboarding for QuickBooks is switched off (QUICKBOOKS_DRIVER_ONBOARDING_ENABLED is not "true")' };
+  return { enabled: true, reason: null };
+};
+// The hard hold: a Desi driver with no QuickBooks vendor cannot work or be paid. Needs the onboarding switch AND QUICKBOOKS_ONBOARDING_ENFORCED. Turn it on only after every
+// existing Desi driver has been linked to their vendor (see docs/QUICKBOOKS_DESI.md), because an unlinked driver is held until an admin links them.
+export const quickbooksOnboardingEnforced = (env = process.env) => flag(env.QUICKBOOKS_ENABLED) && flag(env.QUICKBOOKS_DRIVER_ONBOARDING_ENABLED) && flag(env.QUICKBOOKS_ONBOARDING_ENFORCED);

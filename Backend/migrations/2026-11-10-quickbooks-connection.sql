@@ -33,6 +33,7 @@ CREATE TABLE IF NOT EXISTS quickbooks_vendors (
   vendor_id           text NOT NULL CHECK (vendor_id ~ '^[0-9]{1,20}$'),   -- QuickBooks' own Vendor Id
   link_source         text NOT NULL CHECK (link_source IN ('existing_vendor', 'created_by_onboarding')),
   tax_id_supplied     boolean NOT NULL DEFAULT false,
+  w9_certified_at     timestamptz,                                          -- when the driver certified the tax ID in the portal (new drivers only)
   vendor_1099         boolean NOT NULL DEFAULT false,
   linked_by           integer REFERENCES admin(id),                         -- empty when the driver onboarded themself
   linked_at           timestamptz NOT NULL DEFAULT now(),
@@ -42,5 +43,6 @@ CREATE TABLE IF NOT EXISTS quickbooks_vendors (
   CHECK ((unlinked_at IS NULL) = (unlinked_by IS NULL)),
   CHECK (unlinked_at IS NULL OR (unlink_reason IS NOT NULL AND length(btrim(unlink_reason)) >= 3))
 );
+ALTER TABLE quickbooks_vendors ADD COLUMN IF NOT EXISTS w9_certified_at timestamptz;
 CREATE UNIQUE INDEX IF NOT EXISTS uq_quickbooks_vendors_driver ON quickbooks_vendors (driver_id, environment) WHERE unlinked_at IS NULL;
 CREATE UNIQUE INDEX IF NOT EXISTS uq_quickbooks_vendors_vendor ON quickbooks_vendors (realm_id, vendor_id, environment) WHERE unlinked_at IS NULL;

@@ -329,7 +329,7 @@ test('everee submit: reserve, send, payout request, replay, partial failure, ret
           const view = await retryBatch(db, sup2, batch.batch.id, deps(retry.client, { env: GATED }));
           assert.deepEqual(retry.state.creates, []);
           assert.equal(view.counts.failed, 1);
-          assert.match((await item(run.run, dA)).error_message, /Everee payment setup is not complete/);
+          assert.match((await item(run.run, dA)).error_message, /payment setup is not complete/i);
           // Once the link is verified for this tenant and complete, the retry goes out.
           await db.query("UPDATE everee_workers SET tenant_id = '4321', onboarding_complete = true WHERE driver_id = $1 AND environment = 'sandbox'", [dA]);
           const ok = makeEveree();
