@@ -13,6 +13,7 @@ import {
   getRoutesForAdmin,
   getRoutesByDriverCity
 } from "../../services/admin/routeQueries.js";
+import { routeStatementPrices } from "../../services/finance/routeStatementPrices.js";
 import HttpStatus from "../../utils/statusCodes.js";
 import { canAccessJob, canAccessDriverCity } from "../../services/admin/routeAccess.js";
 import logger from '../../utils/logger.js';
@@ -96,9 +97,12 @@ export const fetchPaginatedRoutes = asyncHandler(async (req, res) => {
   
   const { routes, total } = await routePagination(page, limit, search, cityFilter, isSuperAdmin, adminId);
 
+  // Only the owner sees what the carrier paid (company revenue): each weekly route carries it from the city's latest published statement.
+  const statementPrices = isSuperAdmin ? await routeStatementPrices(pool, routes.map((r) => r.id)) : new Map();
+
   res.status(HttpStatus.OK).json({
     success: true,
-    routes: routes.map(mapRoute),
+    routes: routes.map((r) => (isSuperAdmin ? { ...mapRoute(r), statementPrice: statementPrices.get(r.id) ?? null } : mapRoute(r))),
     total,
     page,
     totalPages: Math.ceil(total / limit),
