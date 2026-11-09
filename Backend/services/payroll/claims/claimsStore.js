@@ -166,7 +166,7 @@ export const saveAdjustments = async (db, adjustments, { importCityId, sourceFil
     await db.query(
       `INSERT INTO courier_claim_adjustments (courier, claim_key, facts_key, import_city_id, original_charge, claim_at, confirmed_at, refunded, net, source_file)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-       ON CONFLICT (claim_key, facts_key) DO UPDATE
+       ON CONFLICT (claim_key, facts_key, import_city_id) DO UPDATE
          SET refunded = GREATEST(courier_claim_adjustments.refunded, EXCLUDED.refunded), net = LEAST(courier_claim_adjustments.net, EXCLUDED.net), updated_at = now()`,
       [a.courier, a.key, a.factsKey, importCityId, a.originalCharge, a.claimAt, a.confirmedAt, a.refunded, a.net, sourceFile]);
   }
@@ -175,11 +175,12 @@ export const saveAdjustments = async (db, adjustments, { importCityId, sourceFil
 // Sets what is remembered against claims read from a file that did not carry the refund itself (an older report listing the original penalty).
 // A claim whose original facts match a remembered adjustment gets the net amount; a net of zero means it stays cancelled. A claim with other facts
 // (a carrier amendment) is untouched. Returns { claims, cancelledKeys } (cancelledKeys: claims left out because they are refunded in full).
-export const applyKnownAdjustments = async (db, claims) => {
+export const applyKnownAdjustments = async (db, claims, { importCityId }) => {
   const open = claims.filter((c) => !c.adjusted);
   if (open.length === 0) return { claims, cancelledKeys: [] };
   const wanted = open.map((c) => factsKey({ key: c.key, originalCharge: c.originalCharge ?? c.charge, claimAt: c.claimAt, confirmedAt: c.confirmedAt }));
-  const { rows } = await db.query('SELECT facts_key, net FROM courier_claim_adjustments WHERE facts_key = ANY($1::text[])', [wanted]);
+  // Only this city's own memory: another city's report can never cancel or lower a claim of this one.
+  const { rows } = await db.query('SELECT facts_key, net FROM courier_claim_adjustments WHERE facts_key = ANY($1::text[]) AND import_city_id = $2', [wanted, importCityId]);
   const net = new Map(rows.map((r) => [r.facts_key, Number(r.net).toFixed(2)]));
   const cancelledKeys = [];
   const out = [];

@@ -150,4 +150,55 @@ test('upload order: an older report cannot bring back a refunded amount, a carri
   }
 });
 
+// Security review of #268: one city's report must not remember a refund against, or cancel, a claim that belongs to another city.
+test('refunds are remembered per city: another city\'s report cannot cancel a claim it does not own', { skip: !hasDb && 'set PAYROLL_TEST_DB=1 and the DB_* variables to run' }, async () => {
+  const { default: XLSX } = await import('xlsx');
+  const { recordWorkbookClaims } = await import('../services/payroll/claims/recordWorkbookClaims.js');
+  const { default: pool } = await import('../config/db.js');
+  const db = await pool.connect();
+  const COLS = ['date', 'Waybill No.', 'Courier', 'Claim Type', 'Declared value (USD)', 'Confirm date.', 'The total expenses-exclusive of taxes', 'Remarks'];
+  const book = (rows) => {
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([COLS, ...rows]), 'Claims Detail');
+    return XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+  };
+  const pen = ['10/23/2026 05:36:13', 'TESTCITY', 'Sam Lee', 'lost', 20, null, -20, 'Claim Penalty'];
+  const ref = ['10/13/2026 00:00:00', 'TESTCITY', 'Sam Lee', 'Tracking interruption', 20, null, 20, 'Prior Period Claim Refund'];
+  try {
+    await db.query('BEGIN');
+    await db.query(readFileSync(MIGRATION, 'utf8'));
+    await db.query(readFileSync(fileURLToPath(new URL('../migrations/2026-11-10-courier-claim-adjustments.sql', import.meta.url)), 'utf8'));
+    const { rows: routes } = await db.query(`SELECT min(r.route_code_in_string) AS code, min(c.id) AS city FROM routes r JOIN city c ON c.job = r.job GROUP BY c.id HAVING count(DISTINCT r.route_code_in_string) >= 1 ORDER BY c.id LIMIT 2`);
+    assert.equal(routes.length, 2, 'needs two cities that each have a route in the test database');
+    const [a, b] = routes;
+    const upload = (city, rows, name) => recordWorkbookClaims(db, { buffer: book(rows), fileName: name, user: { id: null, role: 'superadmin' }, routeCodes: [city.code] });
+    const live = async () => (await db.query("SELECT import_city_id FROM courier_claims WHERE waybill = 'TESTCITY' AND superseded_at IS NULL")).rows.map((r) => Number(r.import_city_id));
+
+    // city A owns the claim
+    assert.equal((await upload(a, [pen], 'a-original.xlsx')).stored, true);
+    assert.deepEqual(await live(), [Number(a.city)]);
+    // city B sends the same penalty with a full refund: nothing of A's is cancelled or remembered against it
+    await upload(b, [pen, ref], 'b-attack.xlsx');
+    assert.deepEqual(await live(), [Number(a.city)], 'A\'s claim is still owed');
+    assert.equal(Number((await db.query("SELECT count(*) AS n FROM courier_claim_adjustments WHERE import_city_id = $1", [b.city])).rows[0].n), 0, 'nothing remembered for B against A\'s claim');
+    // A's own report read again keeps the claim, with no new version
+    await upload(a, [pen], 'a-again.xlsx');
+    assert.deepEqual(await live(), [Number(a.city)]);
+    assert.equal(Number((await db.query("SELECT count(*) AS n FROM courier_claims WHERE waybill = 'TESTCITY'")).rows[0].n), 1);
+    // a memory held for city B (its own claims) is never read for city A
+    await db.query(`INSERT INTO courier_claim_adjustments (courier, claim_key, facts_key, import_city_id, original_charge, claim_at, refunded, net, source_file)
+                    VALUES ('gofo', repeat('a', 64), repeat('b', 64), $1, -5, '2026-10-23 05:36:13', 5, 0, 'synthetic')`, [b.city]);
+    const { applyKnownAdjustments } = await import('../services/payroll/claims/claimsStore.js');
+    const { factsKey } = await import('../services/payroll/claims/claimRules.js');
+    const claim = { key: 'a'.repeat(64), originalCharge: '-5.00', charge: '-5.00', claimAt: '2026-10-23 05:36:13', confirmedAt: null };
+    // the facts key above is made up, so build the matching row from the real function instead
+    await db.query('UPDATE courier_claim_adjustments SET facts_key = $1 WHERE import_city_id = $2 AND claim_key = $3', [factsKey(claim), b.city, claim.key]);
+    assert.equal((await applyKnownAdjustments(db, [claim], { importCityId: a.city })).cancelledKeys.length, 0, 'A does not read B\'s memory');
+    assert.equal((await applyKnownAdjustments(db, [claim], { importCityId: b.city })).cancelledKeys.length, 1, 'B reads its own');
+  } finally {
+    await db.query('ROLLBACK');
+    db.release();
+  }
+});
+
 after(async () => { if (hasDb) { const { default: pool } = await import('../config/db.js'); await pool.end(); } });

@@ -113,11 +113,16 @@ export const recordWorkbookClaims = async (client, { buffer, fileName, user, rou
     // report listing the same original penalty cannot bring the refunded amount back (review of #268).
     const remember = await adjustmentsReady(client);
     if (remember && (parsed.adjustments ?? []).length > 0) {
-      for (const key of [...new Set(parsed.adjustments.map((a) => a.key))].sort()) await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 141))', [key]);
-      await saveAdjustments(client, parsed.adjustments, { importCityId: city.id, sourceFile: fileName });
+      const adjustmentKeys = [...new Set(parsed.adjustments.map((a) => a.key))].sort();
+      for (const key of adjustmentKeys) await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 141))', [key]);
+      // A claim belongs to the city it was first imported for. This report may not remember a refund against a claim held for another city.
+      const { rows: heldElsewhere } = await client.query(
+        'SELECT DISTINCT claim_key FROM courier_claims WHERE claim_key = ANY($1::text[]) AND import_city_id IS DISTINCT FROM $2', [adjustmentKeys, city.id]);
+      const other = new Set(heldElsewhere.map((r) => r.claim_key));
+      await saveAdjustments(client, parsed.adjustments.filter((a) => !other.has(a.key)), { importCityId: city.id, sourceFile: fileName });
     }
     // Penalties in this file that were refunded when an EARLIER file was read get the remembered net, or stay cancelled when it is zero.
-    const known = remember ? await applyKnownAdjustments(client, parsed.claims) : { claims: parsed.claims, cancelledKeys: [] };
+    const known = remember ? await applyKnownAdjustments(client, parsed.claims, { importCityId: city.id }) : { claims: parsed.claims, cancelledKeys: [] };
     const fileClaims = known.claims;
     const refunded = (parsed.refunds ?? 0) > 0 || known.cancelledKeys.length > 0
       ? await retireRefundedClaims(client, { cityId: city.id, keys: [...(parsed.refundedKeys ?? []), ...known.cancelledKeys] })

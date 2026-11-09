@@ -21,7 +21,8 @@ CREATE TABLE IF NOT EXISTS courier_claim_adjustments (
   source_file      text          NOT NULL,
   created_at       timestamptz   NOT NULL DEFAULT now(),
   updated_at       timestamptz   NOT NULL DEFAULT now(),
-  UNIQUE (claim_key, facts_key)
+  -- per city: a claim belongs to the city it was first imported for, so one city's report can never remember a refund against another city's claim
+  UNIQUE (claim_key, facts_key, import_city_id)
 );
 
 -- Should list the table.
