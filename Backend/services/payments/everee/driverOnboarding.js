@@ -464,6 +464,46 @@ export const refreshStatus = async (db, driverId, deps = {}) => {
   }
 };
 
+// A link made before tenants were recorded has no tenant (migration of issue #242). It is not assumed to belong to the configured company, and no admin
+// is asked either: Everee itself answers. The token is the company's own, so a worker it can read exists in THIS tenant; the worker found must also be
+// the very one this row points to (same canonical ID). Only then is the tenant filled in, once (the guard trigger allows NULL -> value and nothing else).
+// Everything else (not found, another worker, an outage) leaves the row exactly as it was, so the driver stays held and the next status read tries again.
+const ADOPT_COOLDOWN_MS = 60_000;
+const adoptTried = new Map();
+
+export const adoptLegacyLink = async (db, driverId, deps = {}) => {
+  const env = deps.env ?? process.env;
+  const config = readEvereeConfig(env);
+  if (!switchedOn(env) || !config.configured) return { adopted: false, reason: 'unavailable' };
+  const driver = await loadDriver(db, driverId);
+  if (!driver.enabled || driver.driver_type !== 'LOCAL') return { adopted: false, reason: 'not_local' };
+  const link = await findLink(db, driverId, config);
+  if (!link || link.tenant_id !== null) return { adopted: false, reason: 'nothing_to_verify' };
+  const key = `${driverId}:${config.environment}:${config.tenantId}`;
+  const now = Date.now();
+  if (!deps.client && now - (adoptTried.get(key) ?? 0) < ADOPT_COOLDOWN_MS) return { adopted: false, reason: 'tried_recently' };
+  adoptTried.set(key, now);
+  const client = deps.client ?? createEvereeClient(config);
+  try {
+    let canonical;
+    if (link.external_worker_id) {
+      const resolved = await resolveWorkerId(client, link.external_worker_id);
+      canonical = resolved.workerId;
+    } else {
+      const { data: worker } = await client.getWorker(link.everee_worker_id);
+      canonical = worker?.workerId ?? worker?.id;
+    }
+    if (canonical === undefined || canonical === null || String(canonical) !== String(link.everee_worker_id)) return { adopted: false, reason: 'not_verified' };
+    const { rowCount } = await db.query(
+      'UPDATE everee_workers SET tenant_id = $2 WHERE id = $1 AND tenant_id IS NULL AND unlinked_at IS NULL', [link.id, config.tenantId]);
+    if (rowCount === 1) await record(db, driverId, 'tenant_verified', 'checked against Everee');
+    return { adopted: rowCount === 1 };
+  } catch (error) {
+    if (!(error instanceof EvereeError)) throw error;
+    return { adopted: false, reason: 'everee_unavailable' };
+  }
+};
+
 // Background recovery only reads Everee. In particular, a missing worker NEVER causes a create: only the driver's explicit Start action can do that.
 export const recoverOnboarding = async (db, driverId, deps = {}) => {
   const { config, driver } = await requireLocalDriver(db, driverId, deps);
