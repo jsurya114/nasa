@@ -36,12 +36,19 @@ export const lockCityPayroll = (db, cityId) =>
 // the same fact. A missing name on either side is no information, not a change (a claim stored before names were read keeps matching).
 const sameName = (row, claim) => !row.courier_name_key || !claim.courierNameKey || row.courier_name_key === claim.courierNameKey;
 
-const sameFacts = (row, claim) =>
-  sameName(row, claim) &&
-  Number(row.original_charge).toFixed(2) === Number(claim.charge).toFixed(2) &&
-  row.claim_at === claim.claimAt &&
-  (row.confirmed_at ?? null) === (claim.confirmedAt ?? null) &&
-  row.claim_type === claim.claimType;
+const sameFacts = (row, claim, originFacts) => {
+  // A real amendment can have the same net amount as the old claim after a refund.
+  const storedAmount = Number(row.original_charge).toFixed(2);
+  const sameOrigin = !originFacts || (row.origin_facts_key
+    ? row.origin_facts_key === originFacts
+    : storedAmount === Number(claim.originalCharge ?? claim.charge).toFixed(2));
+  return sameOrigin &&
+    sameName(row, claim) &&
+    storedAmount === Number(claim.charge).toFixed(2) &&
+    row.claim_at === claim.claimAt &&
+    (row.confirmed_at ?? null) === (claim.confirmedAt ?? null) &&
+    row.claim_type === claim.claimType;
+};
 
 // A live hand-entered claim (#142) for the same waybill and claim type, or null. The ledger table arrives with the
 // #142 migration; before it exists there can be none.
@@ -60,20 +67,19 @@ const liveManualClaim = async (db, waybill, typeKey) => {
 
 // A new version starts unresolved, or on hold ("review") when a hand-entered claim already covers it: the carrier's
 // evidence is kept, but only one of the two can ever be recovered.
-const insertVersion = async (db, claim, version, source, manual, withOrigin = false) => {
-  const originFacts = factsKey({ key: claim.key, originalCharge: claim.originalCharge ?? claim.charge, claimAt: claim.claimAt, confirmedAt: claim.confirmedAt });
+const insertVersion = async (db, claim, version, source, manual, originFacts) => {
   const { rows } = await db.query(
     `INSERT INTO courier_claims
        (courier, claim_key, version, waybill, claim_type, claim_type_key, claim_at, confirmed_at,
         original_charge, deduction_amount, declared_value, remarks, import_city_id,
-        source_file, source_sheet, source_row, imported_by, courier_name, courier_name_key${withOrigin ? ', origin_facts_key' : ''})
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19${withOrigin ? ',$20' : ''})
+        source_file, source_sheet, source_row, imported_by, courier_name, courier_name_key${originFacts ? ', origin_facts_key' : ''})
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19${originFacts ? ',$20' : ''})
      RETURNING id`,
     [claim.courier, claim.key, version, claim.waybill, claim.claimType, claim.claimTypeKey, claim.claimAt, claim.confirmedAt,
       claim.charge, claim.deduction, claim.declaredValue, claim.remarks, source.importCityId,
       source.sourceFile, source.sourceSheet, claim.sourceRow, source.importedBy ?? null, claim.courierName ?? null, claim.courierNameKey ?? null,
       // the carrier's original facts, apart from the (possibly refund-lowered) amount stored above
-      ...(withOrigin ? [originFacts] : [])]
+      ...(originFacts ? [originFacts] : [])]
   );
   await db.query(
     `INSERT INTO courier_claim_matches (claim_id, status, reason, rule_version) VALUES ($1, $2, $3, $4)`,
@@ -122,8 +128,10 @@ export const importClaims = async (db, claims, source) => {
     // The latest version, whether or not it is still current. A version retired because a refund cancelled it (retireRefundedClaims) has no
     // current version after it: a replay of an older report that lists it again must find it here, or it would insert version 1 a second time
     // (a duplicate key that rolls back every claim of the upload). The same facts again leave it cancelled; changed facts are a new version.
+    const originFacts = withOrigin ? factsKey({ ...claim, originalCharge: claim.originalCharge ?? claim.charge }) : null;
     const { rows } = await db.query(
       `SELECT id, version, original_charge, claim_type, import_city_id, courier_name_key, superseded_at IS NOT NULL AS retired,
+              ${withOrigin ? 'origin_facts_key,' : ''}
               to_char(claim_at, 'YYYY-MM-DD HH24:MI:SS') AS claim_at,
               to_char(confirmed_at, 'YYYY-MM-DD HH24:MI:SS') AS confirmed_at
          FROM courier_claims WHERE claim_key = $1 ORDER BY version DESC LIMIT 1`,
@@ -135,7 +143,7 @@ export const importClaims = async (db, claims, source) => {
       result.otherCity.push({ sourceRow: claim.sourceRow });
       continue;
     }
-    if (current && sameFacts(current, claim)) {
+    if (current && sameFacts(current, claim, originFacts)) {
       // The same claim again. If it was stored before names were read, it learns its name now so it can be matched.
       if (!current.courier_name_key && claim.courierNameKey) {
         await db.query('UPDATE courier_claims SET courier_name = $2, courier_name_key = $3 WHERE id = $1', [current.id, claim.courierName, claim.courierNameKey]);
@@ -147,11 +155,11 @@ export const importClaims = async (db, claims, source) => {
     const manual = await liveManualClaim(db, claim.waybill, claim.claimTypeKey);
     let claimId;
     if (!current) {
-      claimId = await insertVersion(db, claim, 1, source, manual, withOrigin);
+      claimId = await insertVersion(db, claim, 1, source, manual, originFacts);
       result.inserted.push({ claimId, sourceRow: claim.sourceRow });
     } else {
       if (!current.retired) await db.query('UPDATE courier_claims SET superseded_at = now() WHERE id = $1', [current.id]);
-      claimId = await insertVersion(db, claim, current.version + 1, source, manual, withOrigin);
+      claimId = await insertVersion(db, claim, current.version + 1, source, manual, originFacts);
       result.amended.push({ claimId, previousId: current.id, sourceRow: claim.sourceRow });
     }
     if (manual) result.held.push({ claimId, sourceRow: claim.sourceRow, ledgerEntryId: manual.id });

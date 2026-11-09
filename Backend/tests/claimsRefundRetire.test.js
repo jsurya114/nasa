@@ -196,6 +196,15 @@ test('upload order: an older partial refund cannot raise the deduction, and an o
     await upload([pen('TESTD', 20), ref('TESTD', 20)], 'd-refund-20-again.xlsx');
     assert.deepEqual(await owed('TESTD'), ['25@v3']);
 
+    // A genuine amendment can equal the earlier net deduction while having a different original amount.
+    await upload([pen('TESTE', 20), ref('TESTE', 15)], 'e-partial.xlsx');
+    assert.deepEqual(await owed('TESTE'), ['5@v1']);
+    const sameNet = await upload([pen('TESTE', 5)], 'e-amended.xlsx');
+    assert.equal(sameNet.amended, 1);
+    await upload([pen('TESTE', 5)], 'e-amended-replay.xlsx');
+    await upload([pen('TESTE', 20), ref('TESTE', 20)], 'e-original-refunded.xlsx');
+    assert.deepEqual(await owed('TESTE'), ['5@v2'], 'the refund only applies to the original 20.00 version');
+
     // 2. a fully refunded 20.00 penalty, then a genuine carrier amendment to 25.00: the refund report read again must not retire the amendment
     await upload([pen('TESTB', 20), ref('TESTB', 20)], 'b-refunded.xlsx');
     assert.deepEqual(await owed('TESTB'), []);
