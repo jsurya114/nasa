@@ -204,3 +204,14 @@ test('the parse says how many refund rows a file holds and which penalties they 
   const { claims, refunds, refundedKeys } = parseClaimsRows([HEADER, row({ waybill: 'TESTLOST', type: 'lost', charge: -20 }), row({ waybill: 'TESTLOST', charge: 20, ...REFUND })], { courier: 'gofo' });
   assert.deepEqual([claims.length, refunds, refundedKeys.length], [0, 1, 1]);
 });
+
+test('every penalty a refund touched is reported with its original facts, for the caller to remember (second review of #268)', () => {
+  const rows = [HEADER, row({ waybill: 'TESTPART', type: 'lost', charge: -20 }), row({ waybill: 'TESTPART', charge: 10, ...REFUND }), row({ waybill: 'TESTFULL', type: 'lost', charge: -8 }), row({ waybill: 'TESTFULL', charge: 8, ...REFUND }), row({ waybill: 'TESTNONE', charge: -3 })];
+  const { claims, adjustments } = parseClaimsRows(rows, { courier: 'gofo' });
+  assert.deepEqual(claims.map((c) => [c.waybill, c.deduction, c.originalCharge]), [['TESTPART', '10.00', '-20.00'], ['TESTNONE', '3.00', '-3.00']]);
+  assert.deepEqual(adjustments.map((a) => [a.originalCharge, a.refunded, a.net]), [['-20.00', '10.00', '10.00'], ['-8.00', '8.00', '0.00']]);
+  assert.ok(adjustments.every((a) => /^[0-9a-f]{64}$/.test(a.factsKey) && /^[0-9a-f]{64}$/.test(a.key)));
+  // the same original penalty read alone has the same facts key, so it finds the remembered refund
+  const alone = parseClaimsRows([HEADER, row({ waybill: 'TESTPART', type: 'lost', charge: -20 })], { courier: 'gofo' });
+  assert.equal(alone.adjustments.length, 0);
+});

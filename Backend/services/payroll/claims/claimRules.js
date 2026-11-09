@@ -78,6 +78,12 @@ export const parseCarrierDateTime = (value) => {
   return `${y}-${pad(mo)}-${pad(d)} ${pad(h)}:${pad(mi)}:${pad(s)}`;
 };
 
+// A penalty's original facts as one key: its claim key, the amount the carrier wrote and its dates. A refund adjustment is remembered against it
+// (courier_claim_adjustments), so an older report that lists the same original penalty again finds the refund already set against it. A carrier
+// amendment changes the amount or a date, so it has a different key and is never mistaken for the original.
+export const factsKey = ({ key, originalCharge, claimAt, confirmedAt }) =>
+  createHash('sha256').update(`${key}|${originalCharge}|${claimAt}|${confirmedAt ?? ''}`).digest('hex');
+
 // Waybills compare without case or spaces.
 export const normalizeWaybill = (value) => (typeof value === 'string' || typeof value === 'number' ? String(value).replace(/\s+/g, '').toUpperCase() : '');
 

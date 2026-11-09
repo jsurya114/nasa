@@ -92,4 +92,62 @@ test('upload recorder: a file of only a penalty and its refund cancels the store
   }
 });
 
+// The order reports reach NASA in must not matter (second review of #268): the refund is remembered against the penalty's original facts.
+test('upload order: an older report cannot bring back a refunded amount, a carrier amendment still counts', { skip: !hasDb && 'set PAYROLL_TEST_DB=1 and the DB_* variables to run' }, async () => {
+  const { default: XLSX } = await import('xlsx');
+  const { recordWorkbookClaims } = await import('../services/payroll/claims/recordWorkbookClaims.js');
+  const { default: pool } = await import('../config/db.js');
+  const db = await pool.connect();
+  const COLS = ['date', 'Waybill No.', 'Courier', 'Claim Type', 'Declared value (USD)', 'Confirm date.', 'The total expenses-exclusive of taxes', 'Remarks'];
+  const book = (rows) => {
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([COLS, ...rows]), 'Claims Detail');
+    return XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+  };
+  const pen = (waybill, amount) => ['10/23/2026 05:36:13', waybill, 'Sam Lee', 'lost', 20, null, -amount, 'Claim Penalty'];
+  const ref = (waybill, amount) => ['10/13/2026 00:00:00', waybill, 'Sam Lee', 'Tracking interruption', 20, null, amount, 'Prior Period Claim Refund'];
+  try {
+    await db.query('BEGIN');
+    await db.query(readFileSync(MIGRATION, 'utf8'));
+    await db.query(readFileSync(fileURLToPath(new URL('../migrations/2026-11-10-courier-claim-adjustments.sql', import.meta.url)), 'utf8'));
+    const { rows: [route] } = await db.query(`SELECT r.route_code_in_string AS code FROM routes r JOIN city c ON c.job = r.job GROUP BY r.route_code_in_string HAVING count(DISTINCT c.id) = 1 LIMIT 1`);
+    assert.ok(route, 'needs a route with one city in the test database');
+    const upload = (rows, name) => recordWorkbookClaims(db, { buffer: book(rows), fileName: name, user: { id: null, role: 'superadmin' }, routeCodes: [route.code] });
+    const owed = async (waybill) => (await db.query('SELECT deduction_amount, version FROM courier_claims WHERE waybill = $1 AND superseded_at IS NULL', [waybill])).rows.map((r) => `${Number(r.deduction_amount)}@v${r.version}`);
+    const versions = async (waybill) => Number((await db.query('SELECT count(*) AS n FROM courier_claims WHERE waybill = $1', [waybill])).rows[0].n);
+
+    // 1. a 20.00 penalty is stored, then a report with the same penalty and a 10.00 refund lowers it to 10.00. The original report again must not undo that.
+    assert.equal((await upload([pen('TESTPART', 20)], 'original.xlsx')).stored, true);
+    assert.deepEqual(await owed('TESTPART'), ['20@v1']);
+    assert.equal((await upload([pen('TESTPART', 20), ref('TESTPART', 10)], 'with-refund.xlsx')).stored, true);
+    assert.deepEqual(await owed('TESTPART'), ['10@v2']);
+    const replay = await upload([pen('TESTPART', 20)], 'original-again.xlsx');
+    assert.equal(replay.stored, true, JSON.stringify(replay));
+    assert.deepEqual(await owed('TESTPART'), ['10@v2'], 'the refund survives the older report');
+    assert.equal(await versions('TESTPART'), 2, 'no new version');
+
+    // 2. a report that already holds the penalty and its full refund is the first NASA sees: nothing is stored, and the original report later adds nothing.
+    const refundedFirst = await upload([pen('TESTFULL', 20), ref('TESTFULL', 20)], 'refund-first.xlsx');
+    assert.equal(refundedFirst.stored, false);
+    assert.deepEqual(await owed('TESTFULL'), []);
+    const later = await upload([pen('TESTFULL', 20), pen('TESTOTHER', 5)], 'original-later.xlsx');
+    assert.equal(later.stored, true, JSON.stringify(later));
+    assert.deepEqual(await owed('TESTFULL'), [], 'stays cancelled');
+    assert.deepEqual(await owed('TESTOTHER'), ['5@v1'], 'the other claims of that report are stored');
+    assert.equal(await versions('TESTFULL'), 0);
+
+    // 3. a genuine carrier amendment (another amount) is a new version, refunded or not
+    await upload([pen('TESTFULL', 25)], 'amended.xlsx');
+    assert.deepEqual(await owed('TESTFULL'), ['25@v1']);
+    await upload([pen('TESTPART', 30)], 'amended-part.xlsx');
+    assert.deepEqual(await owed('TESTPART'), ['30@v3']);
+    // and the remembered refund still stands for the original facts
+    await upload([pen('TESTPART', 20)], 'original-third-time.xlsx');
+    assert.deepEqual(await owed('TESTPART'), ['10@v4'], 'the original facts read again are the refunded amount, as a new version of the amendment');
+  } finally {
+    await db.query('ROLLBACK');
+    db.release();
+  }
+});
+
 after(async () => { if (hasDb) { const { default: pool } = await import('../config/db.js'); await pool.end(); } });

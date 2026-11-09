@@ -4,7 +4,7 @@
 // with the same name in Details of Delivery Fees, whose Delivery ID is the driver code (issue #180).
 
 import XLSX from 'xlsx';
-import { claimKey, claimTypeKey, normalizeWaybill, parseCarrierDateTime, parseCharge } from './claimRules.js';
+import { claimKey, claimTypeKey, factsKey, normalizeWaybill, parseCarrierDateTime, parseCharge } from './claimRules.js';
 import { cleanDriverName, driverNameKey } from '../../admin/driverName.js';
 
 export const CLAIMS_SHEET = 'Claims Detail';
@@ -47,6 +47,8 @@ const netRefunds = (claims, refunds, problems) => {
       if (owed <= 0) continue;
       const used = Math.min(owed, left);
       left -= used;
+      claim.refundCents = (claim.refundCents ?? 0) + used;
+      claim.adjusted = true;
       if (used === owed) {
         claim.refunded = true;
         problems.push({ row: refund.excelRow, message: `refund of ${fromCents(used)} cancels the penalty in row ${claim.sourceRow} for the same waybill; nothing is deducted for it` });
@@ -136,6 +138,8 @@ export const parseClaimsRows = (rows, { courier }) => {
       confirmedAt,
       charge: amount.charge,
       deduction: amount.deduction,
+      // What the carrier wrote, kept when a refund lowers `charge` below: the refund is remembered against these original facts.
+      originalCharge: amount.charge,
       // Kept only as evidence. Never used for the deduction.
       declaredValue: declared && !declared.error ? declared.charge : null,
       remarks: text(cell('remarks')),
@@ -169,7 +173,14 @@ export const parseClaimsRows = (rows, { courier }) => {
   // refundedKeys: penalties a refund cancelled in full. A copy stored by an earlier upload is retired by the caller (see retireRefundedClaims).
   // refunds: how many refund rows the file holds. The caller applies cancellations even when no charge is left to store (a file of only a
   // penalty and its refund).
-  return { claims: kept.filter((c) => !c.refunded), problems, refundedKeys: kept.filter((c) => c.refunded).map((c) => c.key), refunds: refundsSeen.size };
+  // adjustments: every penalty a refund touched, in full or in part, as its original facts and what was refunded. The caller remembers them
+  // (saveAdjustments), so an older report listing the same original penalty cannot bring the refunded amount back.
+  const adjustments = kept.filter((c) => c.refundCents > 0).map((c) => ({
+    key: c.key, courier: c.courier, claimType: c.claimType, originalCharge: c.originalCharge, claimAt: c.claimAt, confirmedAt: c.confirmedAt,
+    factsKey: factsKey({ key: c.key, originalCharge: c.originalCharge, claimAt: c.claimAt, confirmedAt: c.confirmedAt }),
+    refunded: fromCents(c.refundCents), net: fromCents(Math.abs(toCents(c.originalCharge)) - c.refundCents),
+  }));
+  return { claims: kept.filter((c) => !c.refunded), problems, refundedKeys: kept.filter((c) => c.refunded).map((c) => c.key), refunds: refundsSeen.size, adjustments };
 };
 
 // The range the sheet's cells really occupy. A workbook's saved range ("!ref") can say less than it holds (carrier

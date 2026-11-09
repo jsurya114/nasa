@@ -2,7 +2,7 @@
 // migrations/2026-11-03-issue-141-courier-claims.sql. Nothing here deducts pay: applying a chargeable claim to a
 // pay run, exactly once, is issue #143.
 
-import { CLAIM_RULES_VERSION, claimTypeKey, resolveClaim } from './claimRules.js';
+import { CLAIM_RULES_VERSION, claimTypeKey, factsKey, resolveClaim } from './claimRules.js';
 
 const OPEN = ['unresolved', 'ambiguous'];
 
@@ -153,6 +153,43 @@ export const importClaims = async (db, claims, source) => {
     if (manual) result.held.push({ claimId, sourceRow: claim.sourceRow, ledgerEntryId: manual.id });
   }
   return result;
+};
+
+// The memory of refunds (courier_claim_adjustments, migration 2026-11-10-courier-claim-adjustments.sql). Before that migration is run there is no
+// memory: refunds are still set against penalties in the same file, but an older report can bring a refunded amount back.
+export const adjustmentsReady = async (db) => (await db.query("SELECT to_regclass('courier_claim_adjustments') IS NOT NULL AS ready")).rows[0].ready;
+
+// Remembers the refunds this file set against penalties, against each penalty's ORIGINAL facts, even when the net is zero and the penalty was never
+// stored. The same original penalty again keeps the larger refund seen, so a replay never lowers it. adjustments: from parseClaimsRows.
+export const saveAdjustments = async (db, adjustments, { importCityId, sourceFile }) => {
+  for (const a of adjustments) {
+    await db.query(
+      `INSERT INTO courier_claim_adjustments (courier, claim_key, facts_key, import_city_id, original_charge, claim_at, confirmed_at, refunded, net, source_file)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+       ON CONFLICT (claim_key, facts_key) DO UPDATE
+         SET refunded = GREATEST(courier_claim_adjustments.refunded, EXCLUDED.refunded), net = LEAST(courier_claim_adjustments.net, EXCLUDED.net), updated_at = now()`,
+      [a.courier, a.key, a.factsKey, importCityId, a.originalCharge, a.claimAt, a.confirmedAt, a.refunded, a.net, sourceFile]);
+  }
+};
+
+// Sets what is remembered against claims read from a file that did not carry the refund itself (an older report listing the original penalty).
+// A claim whose original facts match a remembered adjustment gets the net amount; a net of zero means it stays cancelled. A claim with other facts
+// (a carrier amendment) is untouched. Returns { claims, cancelledKeys } (cancelledKeys: claims left out because they are refunded in full).
+export const applyKnownAdjustments = async (db, claims) => {
+  const open = claims.filter((c) => !c.adjusted);
+  if (open.length === 0) return { claims, cancelledKeys: [] };
+  const wanted = open.map((c) => factsKey({ key: c.key, originalCharge: c.originalCharge ?? c.charge, claimAt: c.claimAt, confirmedAt: c.confirmedAt }));
+  const { rows } = await db.query('SELECT facts_key, net FROM courier_claim_adjustments WHERE facts_key = ANY($1::text[])', [wanted]);
+  const net = new Map(rows.map((r) => [r.facts_key, Number(r.net).toFixed(2)]));
+  const cancelledKeys = [];
+  const out = [];
+  for (const claim of claims) {
+    const known = claim.adjusted ? undefined : net.get(factsKey({ key: claim.key, originalCharge: claim.originalCharge ?? claim.charge, claimAt: claim.claimAt, confirmedAt: claim.confirmedAt }));
+    if (known === undefined) { out.push(claim); continue; }
+    if (Number(known) === 0) { cancelledKeys.push(claim.key); continue; }
+    out.push({ ...claim, charge: `-${known}`, deduction: known, adjusted: true });
+  }
+  return { claims: out, cancelledKeys };
 };
 
 // Retires the stored claims that a refund in the carrier's file cancels, so the driver is not charged for them. Two kinds, in this city only:
