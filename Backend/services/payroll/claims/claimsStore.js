@@ -172,46 +172,56 @@ export const saveAdjustments = async (db, adjustments, { importCityId, sourceFil
   }
 };
 
-// Sets what is remembered against claims read from a file that did not carry the refund itself (an older report listing the original penalty).
-// A claim whose original facts match a remembered adjustment gets the net amount; a net of zero means it stays cancelled. A claim with other facts
-// (a carrier amendment) is untouched. Returns { claims, cancelledKeys } (cancelledKeys: claims left out because they are refunded in full).
+// Sets what is remembered against every claim read from a file, including one that carries a refund of its own: the file may show less refunded than
+// an earlier report did (an older partial refund), and the claim must not go back up. A claim whose original facts match a remembered adjustment gets
+// the remembered net; a net of zero means it stays cancelled. A claim with other facts (a carrier amendment) is untouched.
+// Returns { claims, cancelled } (cancelled: the original facts of claims left out because they are refunded in full).
 export const applyKnownAdjustments = async (db, claims, { importCityId }) => {
-  const open = claims.filter((c) => !c.adjusted);
-  if (open.length === 0) return { claims, cancelledKeys: [] };
-  const wanted = open.map((c) => factsKey({ key: c.key, originalCharge: c.originalCharge ?? c.charge, claimAt: c.claimAt, confirmedAt: c.confirmedAt }));
+  if (claims.length === 0) return { claims, cancelled: [] };
+  const factsOf = (c) => ({ key: c.key, originalCharge: c.originalCharge ?? c.charge, claimAt: c.claimAt, confirmedAt: c.confirmedAt });
+  const wanted = claims.map((c) => factsKey(factsOf(c)));
   // Only this city's own memory: another city's report can never cancel or lower a claim of this one.
   const { rows } = await db.query('SELECT facts_key, net FROM courier_claim_adjustments WHERE facts_key = ANY($1::text[]) AND import_city_id = $2', [wanted, importCityId]);
   const net = new Map(rows.map((r) => [r.facts_key, Number(r.net).toFixed(2)]));
-  const cancelledKeys = [];
+  const cancelled = [];
   const out = [];
   for (const claim of claims) {
-    const known = claim.adjusted ? undefined : net.get(factsKey({ key: claim.key, originalCharge: claim.originalCharge ?? claim.charge, claimAt: claim.claimAt, confirmedAt: claim.confirmedAt }));
+    const known = net.get(factsKey(factsOf(claim)));
     if (known === undefined) { out.push(claim); continue; }
-    if (Number(known) === 0) { cancelledKeys.push(claim.key); continue; }
-    out.push({ ...claim, charge: `-${known}`, deduction: known, adjusted: true });
+    if (Number(known) === 0) { cancelled.push(factsOf(claim)); continue; }
+    // never above what this file itself works out, and never above what is remembered
+    const use = Math.min(Number(known), Number(claim.deduction)).toFixed(2);
+    out.push({ ...claim, charge: `-${use}`, deduction: use, adjusted: true });
   }
-  return { claims: out, cancelledKeys };
+  return { claims: out, cancelled };
 };
 
 // Retires the stored claims that a refund in the carrier's file cancels, so the driver is not charged for them. Two kinds, in this city only:
-//  - a penalty the file's refund cancels in full (`keys`, from parseClaimsRows), and
+//  - the version of a penalty a refund cancels in full: the CURRENT version with exactly the original facts in `cancelled` (key, amount, dates), so
+//    an older report can never retire a genuine carrier amendment of the same claim (another amount or date), and
 //  - a refund the older rules stored as if it were a charge (a positive amount with "refund" in the remarks).
 // A retired version is marked superseded, exactly like an amended claim, so nothing treats it as owed. A claim already taken from a driver on a
 // pay run is left alone and counted: taking money back is the ledger's refund, never done silently here. Call inside the upload's transaction.
-// Returns { retired, left }.
-export const retireRefundedClaims = async (db, { cityId, keys = [] }) => {
+// cancelled: [{ key, originalCharge, claimAt, confirmedAt }]. Returns { retired, left }.
+export const retireRefundedClaims = async (db, { cityId, cancelled = [] }) => {
   await lockCityPayroll(db, cityId);
   const { rows: ready } = await db.query("SELECT to_regclass('pay_statement_lines') IS NOT NULL AS ready");
   const applied = ready[0].ready
     ? `EXISTS (SELECT 1 FROM pay_statement_lines l JOIN courier_claims v ON v.id = l.claim_id WHERE v.claim_key = c.claim_key AND l.active AND l.line_type = 'claim')`
     : 'false';
-  const { rows } = await db.query(
+  const found = new Map();
+  const take = (rows) => { for (const r of rows) found.set(String(r.id), r); };
+  take((await db.query(
     `SELECT c.id, ${applied} AS applied FROM courier_claims c
-      WHERE c.superseded_at IS NULL AND c.import_city_id = $1
-        AND (c.claim_key = ANY($2::text[]) OR (c.original_charge > 0 AND c.remarks ~* 'refund'))
-      ORDER BY c.id FOR UPDATE OF c`,
-    [cityId, keys]
-  );
+      WHERE c.superseded_at IS NULL AND c.import_city_id = $1 AND c.original_charge > 0 AND c.remarks ~* 'refund' ORDER BY c.id FOR UPDATE OF c`, [cityId])).rows);
+  for (const f of cancelled) {
+    take((await db.query(
+      `SELECT c.id, ${applied} AS applied FROM courier_claims c
+        WHERE c.superseded_at IS NULL AND c.import_city_id = $1 AND c.claim_key = $2
+          AND c.original_charge = $3::numeric AND c.claim_at = $4::timestamp AND c.confirmed_at IS NOT DISTINCT FROM $5::timestamp
+        ORDER BY c.id FOR UPDATE OF c`, [cityId, f.key, f.originalCharge, f.claimAt, f.confirmedAt ?? null])).rows);
+  }
+  const rows = [...found.values()];
   const free = rows.filter((r) => !r.applied).map((r) => r.id);
   if (free.length) await db.query('UPDATE courier_claims SET superseded_at = now() WHERE id = ANY($1::bigint[])', [free]);
   return { retired: free.length, left: rows.length - free.length };

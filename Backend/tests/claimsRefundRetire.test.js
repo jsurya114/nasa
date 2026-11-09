@@ -32,13 +32,14 @@ test('a refund retires the stored claims it cancels, in its own city only, and a
     const live = async () => (await db.query("SELECT waybill, claim_type, original_charge FROM courier_claims WHERE superseded_at IS NULL AND waybill LIKE 'TEST%' ORDER BY id"))
       .rows.map((r) => `${r.waybill}|${r.claim_type}|${Number(r.original_charge)}`);
     assert.deepEqual(await live(), ['TESTLOST|lost|-13.86', 'TESTFAKE|Tracking interruption|-40', 'TESTLOST|Tracking interruption|13.86']);
-    const lostKey = claims.find((c) => c.claimType === 'lost').key;
+    const lost = claims.find((c) => c.claimType === 'lost');
+    const cancelled = [{ key: lost.key, originalCharge: lost.originalCharge, claimAt: lost.claimAt, confirmedAt: lost.confirmedAt }];
 
-    assert.deepEqual(await retireRefundedClaims(db, { cityId: cityB, keys: [lostKey] }), { retired: 0, left: 0 }, 'another city');
+    assert.deepEqual(await retireRefundedClaims(db, { cityId: cityB, cancelled }), { retired: 0, left: 0 }, 'another city');
     assert.equal((await live()).length, 3);
-    assert.deepEqual(await retireRefundedClaims(db, { cityId: cityA, keys: [lostKey] }), { retired: 2, left: 0 });
+    assert.deepEqual(await retireRefundedClaims(db, { cityId: cityA, cancelled }), { retired: 2, left: 0 });
     assert.deepEqual(await live(), ['TESTFAKE|Tracking interruption|-40'], 'the unrelated claim is still owed');
-    assert.deepEqual(await retireRefundedClaims(db, { cityId: cityA, keys: [lostKey] }), { retired: 0, left: 0 });
+    assert.deepEqual(await retireRefundedClaims(db, { cityId: cityA, cancelled }), { retired: 0, left: 0 });
   } finally {
     await db.query('ROLLBACK');
     db.release();
@@ -150,6 +151,58 @@ test('upload order: an older report cannot bring back a refunded amount, a carri
   }
 });
 
+// Third review of #268: an older report must neither raise a part-refunded deduction nor retire a genuine carrier amendment.
+test('upload order: an older partial refund cannot raise the deduction, and an older full refund cannot retire an amendment', { skip: !hasDb && 'set PAYROLL_TEST_DB=1 and the DB_* variables to run' }, async () => {
+  const { default: XLSX } = await import('xlsx');
+  const { recordWorkbookClaims } = await import('../services/payroll/claims/recordWorkbookClaims.js');
+  const { default: pool } = await import('../config/db.js');
+  const db = await pool.connect();
+  const COLS = ['date', 'Waybill No.', 'Courier', 'Claim Type', 'Declared value (USD)', 'Confirm date.', 'The total expenses-exclusive of taxes', 'Remarks'];
+  const book = (rows) => {
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([COLS, ...rows]), 'Claims Detail');
+    return XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+  };
+  const pen = (waybill, amount) => ['10/23/2026 05:36:13', waybill, 'Sam Lee', 'lost', 20, null, -amount, 'Claim Penalty'];
+  const ref = (waybill, amount) => ['10/13/2026 00:00:00', waybill, 'Sam Lee', 'Tracking interruption', 20, null, amount, 'Prior Period Claim Refund'];
+  try {
+    await db.query('BEGIN');
+    await db.query(readFileSync(MIGRATION, 'utf8'));
+    await db.query(readFileSync(fileURLToPath(new URL('../migrations/2026-11-10-courier-claim-adjustments.sql', import.meta.url)), 'utf8'));
+    const { rows: [route] } = await db.query(`SELECT r.route_code_in_string AS code FROM routes r JOIN city c ON c.job = r.job GROUP BY r.route_code_in_string HAVING count(DISTINCT c.id) = 1 LIMIT 1`);
+    assert.ok(route, 'needs a route with one city in the test database');
+    const upload = (rows, name) => recordWorkbookClaims(db, { buffer: book(rows), fileName: name, user: { id: null, role: 'superadmin' }, routeCodes: [route.code] });
+    const owed = async (waybill) => (await db.query('SELECT deduction_amount, version FROM courier_claims WHERE waybill = $1 AND superseded_at IS NULL', [waybill])).rows.map((r) => `${Number(r.deduction_amount)}@v${r.version}`);
+
+    // 1. a 20.00 penalty with a 15.00 refund leaves 5.00; an older report that shows only a 5.00 refund on the same penalty must not raise it to 15.00
+    await upload([pen('TESTA', 20)], 'a-original.xlsx');
+    await upload([pen('TESTA', 20), ref('TESTA', 15)], 'a-refund-15.xlsx');
+    assert.deepEqual(await owed('TESTA'), ['5@v2']);
+    const older = await upload([pen('TESTA', 20), ref('TESTA', 5)], 'a-refund-5-older.xlsx');
+    assert.equal(older.stored, true, JSON.stringify(older));
+    assert.deepEqual(await owed('TESTA'), ['5@v2'], 'an older, smaller refund does not undo a larger one');
+
+    // 2. a fully refunded 20.00 penalty, then a genuine carrier amendment to 25.00: the refund report read again must not retire the amendment
+    await upload([pen('TESTB', 20), ref('TESTB', 20)], 'b-refunded.xlsx');
+    assert.deepEqual(await owed('TESTB'), []);
+    await upload([pen('TESTB', 25)], 'b-amended.xlsx');
+    assert.deepEqual(await owed('TESTB'), ['25@v1']);
+    await upload([pen('TESTB', 20), ref('TESTB', 20)], 'b-refunded-again.xlsx');
+    assert.deepEqual(await owed('TESTB'), ['25@v1'], 'the amendment survives the older refund report');
+    // same when the 20.00 penalty had been stored first and retired by the refund, then amended
+    await upload([pen('TESTC', 20)], 'c-original.xlsx');
+    await upload([pen('TESTC', 20), ref('TESTC', 20)], 'c-refunded.xlsx');
+    assert.deepEqual(await owed('TESTC'), []);
+    await upload([pen('TESTC', 25)], 'c-amended.xlsx');
+    assert.deepEqual(await owed('TESTC'), ['25@v2']);
+    await upload([pen('TESTC', 20), ref('TESTC', 20)], 'c-refunded-again.xlsx');
+    assert.deepEqual(await owed('TESTC'), ['25@v2'], 'the amendment survives the older refund report');
+  } finally {
+    await db.query('ROLLBACK');
+    db.release();
+  }
+});
+
 // Security review of #268: one city's report must not remember a refund against, or cancel, a claim that belongs to another city.
 test('refunds are remembered per city: another city\'s report cannot cancel a claim it does not own', { skip: !hasDb && 'set PAYROLL_TEST_DB=1 and the DB_* variables to run' }, async () => {
   const { default: XLSX } = await import('xlsx');
@@ -193,8 +246,8 @@ test('refunds are remembered per city: another city\'s report cannot cancel a cl
     const claim = { key: 'a'.repeat(64), originalCharge: '-5.00', charge: '-5.00', claimAt: '2026-10-23 05:36:13', confirmedAt: null };
     // the facts key above is made up, so build the matching row from the real function instead
     await db.query('UPDATE courier_claim_adjustments SET facts_key = $1 WHERE import_city_id = $2 AND claim_key = $3', [factsKey(claim), b.city, claim.key]);
-    assert.equal((await applyKnownAdjustments(db, [claim], { importCityId: a.city })).cancelledKeys.length, 0, 'A does not read B\'s memory');
-    assert.equal((await applyKnownAdjustments(db, [claim], { importCityId: b.city })).cancelledKeys.length, 1, 'B reads its own');
+    assert.equal((await applyKnownAdjustments(db, [claim], { importCityId: a.city })).cancelled.length, 0, 'A does not read B\'s memory');
+    assert.equal((await applyKnownAdjustments(db, [claim], { importCityId: b.city })).cancelled.length, 1, 'B reads its own');
   } finally {
     await db.query('ROLLBACK');
     db.release();

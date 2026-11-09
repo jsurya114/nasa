@@ -170,7 +170,7 @@ export const parseClaimsRows = (rows, { courier }) => {
 
   const kept = claims.filter((c) => !c.conflict);
   netRefunds(kept, refunds, problems);
-  // refundedKeys: penalties a refund cancelled in full. A copy stored by an earlier upload is retired by the caller (see retireRefundedClaims).
+  // refundedClaims: penalties a refund cancelled in full. A copy stored by an earlier upload is retired by the caller (see retireRefundedClaims).
   // refunds: how many refund rows the file holds. The caller applies cancellations even when no charge is left to store (a file of only a
   // penalty and its refund).
   // adjustments: every penalty a refund touched, in full or in part, as its original facts and what was refunded. The caller remembers them
@@ -180,7 +180,10 @@ export const parseClaimsRows = (rows, { courier }) => {
     factsKey: factsKey({ key: c.key, originalCharge: c.originalCharge, claimAt: c.claimAt, confirmedAt: c.confirmedAt }),
     refunded: fromCents(c.refundCents), net: fromCents(Math.abs(toCents(c.originalCharge)) - c.refundCents),
   }));
-  return { claims: kept.filter((c) => !c.refunded), problems, refundedKeys: kept.filter((c) => c.refunded).map((c) => c.key), refunds: refundsSeen.size, adjustments };
+  // refundedClaims: the original facts of each penalty a refund cancelled in full. A stored version is retired only when it has exactly these original
+  // facts, so a genuine carrier amendment (other amount or date) of the same claim is never retired by an older refund report.
+  const refundedClaims = kept.filter((c) => c.refunded).map((c) => ({ key: c.key, originalCharge: c.originalCharge, claimAt: c.claimAt, confirmedAt: c.confirmedAt }));
+  return { claims: kept.filter((c) => !c.refunded), problems, refundedClaims, refunds: refundsSeen.size, adjustments };
 };
 
 // The range the sheet's cells really occupy. A workbook's saved range ("!ref") can say less than it holds (carrier

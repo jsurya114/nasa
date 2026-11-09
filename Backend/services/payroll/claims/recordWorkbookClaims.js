@@ -122,10 +122,11 @@ export const recordWorkbookClaims = async (client, { buffer, fileName, user, rou
       await saveAdjustments(client, parsed.adjustments.filter((a) => !other.has(a.key)), { importCityId: city.id, sourceFile: fileName });
     }
     // Penalties in this file that were refunded when an EARLIER file was read get the remembered net, or stay cancelled when it is zero.
-    const known = remember ? await applyKnownAdjustments(client, parsed.claims, { importCityId: city.id }) : { claims: parsed.claims, cancelledKeys: [] };
+    const known = remember ? await applyKnownAdjustments(client, parsed.claims, { importCityId: city.id }) : { claims: parsed.claims, cancelled: [] };
     const fileClaims = known.claims;
-    const refunded = (parsed.refunds ?? 0) > 0 || known.cancelledKeys.length > 0
-      ? await retireRefundedClaims(client, { cityId: city.id, keys: [...(parsed.refundedKeys ?? []), ...known.cancelledKeys] })
+    const cancelled = [...(parsed.refundedClaims ?? []), ...known.cancelled];
+    const refunded = (parsed.refunds ?? 0) > 0 || cancelled.length > 0
+      ? await retireRefundedClaims(client, { cityId: city.id, cancelled })
       : { retired: 0, left: 0 };
     if (empty) {
       const fees = parseFeeNames(readSheetWorkbook(buffer, FEES_SHEET));

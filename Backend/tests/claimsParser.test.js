@@ -201,8 +201,9 @@ test('genuinely different refunds on one waybill are each applied (another date 
 });
 
 test('the parse says how many refund rows a file holds and which penalties they cancelled, even when no claim is left', () => {
-  const { claims, refunds, refundedKeys } = parseClaimsRows([HEADER, row({ waybill: 'TESTLOST', type: 'lost', charge: -20 }), row({ waybill: 'TESTLOST', charge: 20, ...REFUND })], { courier: 'gofo' });
-  assert.deepEqual([claims.length, refunds, refundedKeys.length], [0, 1, 1]);
+  const { claims, refunds, refundedClaims } = parseClaimsRows([HEADER, row({ waybill: 'TESTLOST', type: 'lost', charge: -20 }), row({ waybill: 'TESTLOST', charge: 20, ...REFUND })], { courier: 'gofo' });
+  assert.deepEqual([claims.length, refunds, refundedClaims.length], [0, 1, 1]);
+  assert.deepEqual([refundedClaims[0].originalCharge, refundedClaims[0].claimAt], ['-20.00', '2026-09-28 10:00:00']);
 });
 
 test('every penalty a refund touched is reported with its original facts, for the caller to remember (second review of #268)', () => {
