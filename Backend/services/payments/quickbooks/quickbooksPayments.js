@@ -3,8 +3,8 @@ import { fromCents, toCents } from '../../payroll/payRuns/payCalculator.js';
 import { PayrollError, assertCityAllowed, isSuperAdmin } from '../../payroll/payRuns/payRunStore.js';
 import { lockCityPayroll } from '../../payroll/claims/claimsStore.js';
 import { reviewRunAsBatch } from '../../payroll/payRuns/payBatchReview.js';
-import { approvedWork, invalidWork, lockApprovedEarnings, settlePaidStatements } from '../../payroll/payRuns/paymentRecords.js';
-import { methodAllowed, QUICKBOOKS } from '../../payroll/payRuns/driverPaymentRules.js';
+import { recordRunPayment } from '../../payroll/payRuns/paymentRecords.js';
+import { CASH, methodAllowed } from '../../payroll/payRuns/driverPaymentRules.js';
 import { parseDate } from '../../payroll/ledger/ledgerRules.js';
 import { inTransaction } from '../everee/batchSubmit.js';
 import { quickbooksPaymentsGate, readQuickbooksConfig } from './quickbooksConfig.js';
@@ -14,14 +14,14 @@ import {
   QB_BLOCKERS, UnexpectedAnswerError, billBody, billPaymentBody, billRequestId, clip, classifyFailure, docNumberOf, paymentRequestId, previewHashOf,
 } from './paymentRules.js';
 
-// Paying a finalized pay run for DESI drivers by recording each driver's bill and bill payment in QuickBooks (their 1099 record). THIS IS THE STEP THAT
-// MARKS DRIVERS PAID, so it is guarded in layers, the same way the Everee batch is:
-//   1. ONE short transaction: lock the run and the city, repeat the preview and compare its hash (a change is a 409 with the new preview), check the
-//      earnings did not change, and RESERVE every statement (`payout_status = submitted`), with the batch and one item per statement written.
-//   2. Per item, outside any transaction: write the attempt row FIRST; find the bill by its number (NASA-S<statement>) or make it; record the payment
-//      only if the bill still has a balance; read the bill again and require a zero balance. No second bill or payment can be made, whatever was lost.
-//   3. Only then, in a transaction, the statement is marked paid by the one shared function (settlePaidStatements), with the QuickBooks ids as reference.
-// A timeout or a 5xx is "unconfirmed", never "failed"; a retry asks QuickBooks first, so it is always safe. The same request ID returns the same batch.
+// Desi drivers are paid CASH IN HAND, outside NASA and outside QuickBooks (the client turned payments off in QuickBooks). QuickBooks is only the record the client files
+// 1099s from. So one confirmation does two separate things, in this order:
+//   1. ONE transaction: the cash payment is recorded exactly like any Cash in Hand payment (recordRunPayment: receipt, note, confirmation, statements and earnings marked
+//      paid), and the batch with one item per statement is written. The driver is paid as soon as the admin confirms the cash was handed over.
+//   2. Per item, outside any transaction: write the attempt row FIRST; find the bill by its number (NASA-S<statement>) or make it; record the bill payment only if the bill
+//      still has a balance; read the bill again and require a zero balance. No second bill or payment can be made, whatever was lost.
+// A QuickBooks problem NEVER changes whether the driver was paid: a failed or unconfirmed item only means "not yet in QuickBooks", and Retry (always safe: the bill is found by
+// its number and balance) sends it again. The same request ID returns the same batch.
 
 const THROTTLE_MS = 250; // QuickBooks allows 500 requests a minute per company; each item makes at most four
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -202,7 +202,6 @@ export const listRunBatches = async (db, admin, runId) => {
 const finishAttempt = (tx, attemptId, f) => tx.query(
   'UPDATE quickbooks_payment_attempts SET finished_at = now(), outcome = $2, http_status = $3, intuit_tid = $4, error_message = $5 WHERE id = $1',
   [attemptId, f.outcome, f.httpStatus ?? null, f.requestId ?? null, f.message ? clip(f.message) : null]);
-const setStatement = (tx, id, to, from) => tx.query('UPDATE pay_statements SET payout_status = $2 WHERE id = $3 AND payout_status = $1', [from, to, id]);
 const cents = (value) => Math.round(Number(value) * 100);
 
 // Finds the bill by its number, or makes it. A bill that exists must be this driver's vendor and this amount, or the answer is not trusted.
@@ -240,15 +239,14 @@ const sendItem = async (db, item, batch, accounts, deps, client) => {
   const attempt = await inTransaction(db, async (tx) => {
     await tx.query('SELECT id FROM pay_runs WHERE id = $1 FOR UPDATE', [batch.pay_run_id]);
     await lockCityPayroll(tx, batch.city_id);
-    const { rows: [fresh] } = await tx.query(
-      `SELECT i.status AS item_status, s.payout_status FROM quickbooks_payment_items i JOIN pay_statements s ON s.id = i.pay_statement_id WHERE i.id = $1 FOR UPDATE OF i, s`, [item.id]);
-    if (!fresh || fresh.item_status !== 'submitted' || fresh.payout_status !== 'submitted') return null;
+    const { rows: [fresh] } = await tx.query('SELECT status FROM quickbooks_payment_items WHERE id = $1 FOR UPDATE', [item.id]);
+    if (!fresh || fresh.status !== 'submitted') return null;
     const { rows: [row] } = await tx.query('UPDATE quickbooks_payment_items SET attempts = attempts + 1, last_attempt_at = now(), updated_at = now() WHERE id = $1 RETURNING attempts', [item.id]);
     const { rows: [a] } = await tx.query('INSERT INTO quickbooks_payment_attempts (item_id, attempt_no) VALUES ($1, $2) RETURNING id', [item.id, row.attempts]);
     return a.id;
   });
   if (attempt === null) {
-    logger.warn('QuickBooks item is no longer reserved for sending, so nothing was sent', { itemId: item.id });
+    logger.warn('QuickBooks item is not waiting to be sent, so nothing was sent', { itemId: item.id });
     return 'skipped';
   }
 
@@ -261,28 +259,15 @@ const sendItem = async (db, item, batch, accounts, deps, client) => {
     result = { ...classifyFailure(error), requestId: error.requestId ?? null, message: error.message };
   }
 
+  // Only the QuickBooks record changes here. The statement was paid (in cash) when the batch was confirmed, and nothing below touches that.
   return inTransaction(db, async (tx) => {
     await finishAttempt(tx, attempt, { outcome: result.outcome, httpStatus: result.status, requestId: result.requestId, message: result.message });
     if (result.outcome === 'paid') {
-      // The earnings are re-checked and locked in the same order as manual recording; the one shared function marks the statement paid.
-      await tx.query('SELECT id FROM pay_runs WHERE id = $1 FOR UPDATE', [batch.pay_run_id]);
-      await lockCityPayroll(tx, batch.city_id);
-      const { rows: [statement] } = await tx.query(
-        `SELECT s.*, (SELECT count(*) FROM pay_statement_lines l WHERE l.statement_id = s.id AND l.active AND l.line_type = 'earning')::int AS earning_lines FROM pay_statements s WHERE s.id = $1 FOR UPDATE`, [item.pay_statement_id]);
-      const earnings = await lockApprovedEarnings(tx, [item.pay_statement_id]);
-      if (statement.payout_status !== 'submitted' || invalidWork([statement], earnings).size > 0) {
-        const message = 'recorded in QuickBooks, but the included earnings changed; review this statement before doing anything else';
-        await tx.query("UPDATE quickbooks_payment_items SET status = 'unconfirmed', bill_payment_id = $2, error_message = $3, updated_at = now() WHERE id = $1", [item.id, result.paymentId, message]);
-        await setStatement(tx, item.pay_statement_id, 'unconfirmed', 'submitted');
-        return 'unconfirmed';
-      }
-      await settlePaidStatements(tx, { statementIds: [item.pay_statement_id], earnings, paidOn: batch.paid_on, reference: `QuickBooks bill ${result.billId}` });
       await tx.query("UPDATE quickbooks_payment_items SET status = 'paid', bill_payment_id = $2, error_message = NULL, paid_at = now(), updated_at = now() WHERE id = $1", [item.id, result.paymentId]);
       return 'paid';
     }
     const status = result.definite === false ? 'unconfirmed' : 'failed';
     await tx.query('UPDATE quickbooks_payment_items SET status = $2, error_message = $3, updated_at = now() WHERE id = $1', [item.id, status, clip(result.message)]);
-    await setStatement(tx, item.pay_statement_id, status, 'submitted');
     return status;
   });
 };
@@ -306,12 +291,15 @@ const sendBatch = async (db, batchId, itemIds, deps, client) => {
 
 // ---------- confirm and record ----------
 
-export const submitBatch = async (db, admin, { runId, requestId, previewHash, paidOn, statementIds }, deps = {}) => {
+export const submitBatch = async (db, admin, { runId, requestId, previewHash, paidOn, note, confirmed, statementIds }, deps = {}) => {
   requireSuperAdmin(admin);
   if (typeof requestId !== 'string' || !UUID.test(requestId)) throw new PayrollError(400, 'requestId must be a UUID made by the confirm click');
   if (typeof previewHash !== 'string' || !/^[0-9a-f]{64}$/.test(previewHash)) throw new PayrollError(400, 'previewHash must be the hash of the preview that was confirmed');
   const paid = parseDate(paidOn);
   if (!paid) throw new PayrollError(400, 'choose the date the drivers were paid');
+  const reference = typeof note === 'string' ? note.trim() : '';
+  if (reference.length < 3 || reference.length > 200) throw new PayrollError(400, 'add a payment note (3 to 200 characters)');
+  if (confirmed !== true) throw new PayrollError(400, 'confirm that the selected drivers received their cash');
   const env = deps.env ?? process.env;
 
   const reserved = await inTransaction(db, async (tx) => {
@@ -336,18 +324,17 @@ export const submitBatch = async (db, admin, { runId, requestId, previewHash, pa
     if (result.previewHash !== previewHash) throw new PreviewChangedError(result);
 
     const ids = items.map((i) => i.statementId);
-    // Defence in depth: the drivers are read again under a share lock and only a driver whose type allows QuickBooks (a Desi driver) is ever recorded.
+    // Defence in depth: the drivers are read again under a share lock and only a Desi driver is ever recorded here.
     const { rows: typed } = await tx.query(`SELECT s.id, d.driver_type FROM pay_statements s JOIN drivers d ON d.id = s.driver_id WHERE s.id = ANY($1::bigint[]) ORDER BY s.id FOR SHARE OF d`, [ids]);
-    if (typed.length !== ids.length || typed.some((r) => !methodAllowed(r.driver_type, QUICKBOOKS) || r.driver_type !== 'DESI')) throw new PayrollError(409, 'only Desi drivers are recorded in QuickBooks; a selected driver is Local or has no driver type');
+    if (typed.length !== ids.length || typed.some((r) => !methodAllowed(r.driver_type, CASH) || r.driver_type !== 'DESI')) throw new PayrollError(409, 'only Desi drivers are recorded in QuickBooks; a selected driver is Local or has no driver type');
     const typeOf = new Map(typed.map((r) => [String(r.id), r.driver_type]));
-    const { rows: locked } = await tx.query(
-      `SELECT s.id, s.payout_status, (SELECT count(*) FROM pay_statement_lines l WHERE l.statement_id = s.id AND l.active AND l.line_type = 'earning')::int AS earning_lines FROM pay_statements s WHERE s.id = ANY($1::bigint[]) ORDER BY s.id FOR UPDATE`, [ids]);
-    if (locked.some((s) => !['not_submitted', 'failed'].includes(s.payout_status))) throw new PayrollError(409, 'a statement changed while the batch was prepared; review the preview again');
-    await tx.query(`SELECT dd.id FROM dashboard_data dd WHERE dd.id IN (SELECT pd.dashboard_data_id FROM payment_dashboard pd JOIN pay_statement_lines l ON l.payment_dashboard_id = pd.id WHERE l.statement_id = ANY($1::bigint[]) AND l.active AND l.line_type = 'earning') ORDER BY dd.id FOR UPDATE`, [ids]);
-    if (invalidWork(locked, await approvedWork(tx, ids, true)).size > 0) throw new PayrollError(409, 'some included earnings changed or are already marked paid; review the run before paying');
 
-    const { rowCount } = await tx.query("UPDATE pay_statements SET payout_status = 'submitted', payout_reference = 'nasa-qb-' || id::text WHERE id = ANY($1::bigint[]) AND payout_status IN ('not_submitted', 'failed')", [ids]);
-    if (rowCount !== ids.length) throw new PayrollError(409, 'a statement changed while the batch was prepared; review the preview again');
+    // The cash payment itself: the same function that records any Cash in Hand payment (receipt, note, statements and earnings marked paid, all the same checks and locks),
+    // in this same transaction. From here the drivers are paid; nothing about QuickBooks can undo that.
+    const recorded = await recordRunPayment(tx, admin, runId, { requestId: requestId.toLowerCase(), paidOn: paid, method: CASH, reference, statementIds: [...ids].sort((a, b) => a - b) }, { viaQuickbooks: true });
+    if (!recorded.receipt) throw new PayrollError(409, 'these drivers are already marked paid; review the run');
+    const { rows: [paidCount] } = await tx.query("SELECT count(*)::int AS n FROM pay_statements WHERE id = ANY($1::bigint[]) AND payout_status = 'paid'", [ids]);
+    if (paidCount.n !== ids.length) throw new PayrollError(409, 'a statement changed while the payment was recorded; review the run');
 
     const totalCents = items.reduce((n, i) => n + toCents(i.amount), 0);
     const { rows: [batch] } = await tx.query(
@@ -370,10 +357,10 @@ export const submitBatch = async (db, admin, { runId, requestId, previewHash, pa
   return { replay: reserved.replay, ...(await getBatchView(db, admin, reserved.batchId)) };
 };
 
-// ---------- retry what failed or is unconfirmed ----------
+// ---------- retry what is not yet in QuickBooks ----------
 
-// Failed and unconfirmed items are tried again. This is always safe: each attempt asks QuickBooks for the bill by number and for its balance first, so a
-// bill or payment that did land is found and never made twice. Paid and submitted (in flight) items are never touched.
+// Items that are not yet in QuickBooks are sent again. This is always safe: each attempt asks QuickBooks for the bill by number and for its balance first, so a
+// bill or payment that did land is found and never made twice.
 export const retryBatch = async (db, admin, batchId, deps = {}) => {
   requireSuperAdmin(admin);
   const env = deps.env ?? process.env;
@@ -391,17 +378,15 @@ export const retryBatch = async (db, admin, batchId, deps = {}) => {
     // The company connected now must be the one this batch was made for: the vendor and account IDs belong to that company only.
     const { rows: [conn] } = await tx.query('SELECT realm_id FROM quickbooks_connection WHERE environment = $1', [batch.environment]);
     if (!conn || conn.realm_id !== batch.realm_id) throw new PayrollError(409, 'QuickBooks is connected to a different company than the one this batch was made for; reconnect the original company to retry it');
+    // Everything not yet in QuickBooks. The drivers were paid when the batch was confirmed, so no statement changes here; only the QuickBooks record is sent again.
     const { rows: open } = await tx.query(
-      `SELECT i.id, i.pay_statement_id, i.status, s.payout_status, d.driver_type, v.vendor_id AS live_vendor
-         FROM quickbooks_payment_items i JOIN pay_statements s ON s.id = i.pay_statement_id JOIN drivers d ON d.id = i.driver_id
+      `SELECT i.id, d.driver_type, v.vendor_id AS live_vendor
+         FROM quickbooks_payment_items i JOIN drivers d ON d.id = i.driver_id
          LEFT JOIN quickbooks_vendors v ON v.driver_id = i.driver_id AND v.environment = $2 AND v.realm_id = $3 AND v.unlinked_at IS NULL AND v.vendor_id = i.vendor_id
-        WHERE i.batch_id = $1 AND i.status IN ('failed', 'unconfirmed') ORDER BY i.id FOR UPDATE OF i, s FOR SHARE OF d`, [batchId, batch.environment, batch.realm_id]);
-    const retryable = open.filter((i) => i.payout_status === i.status && i.driver_type === 'DESI' && i.live_vendor);
-    if (retryable.length === 0) throw new PayrollError(409, 'nothing can be retried: the items are paid, in progress, or their vendor link changed');
-    for (const item of retryable) {
-      await tx.query("UPDATE quickbooks_payment_items SET status = 'submitted', error_message = NULL, updated_at = now() WHERE id = $1", [item.id]);
-      await setStatement(tx, item.pay_statement_id, 'submitted', item.status);
-    }
+        WHERE i.batch_id = $1 AND i.status IN ('submitted', 'failed', 'unconfirmed') ORDER BY i.id FOR UPDATE OF i FOR SHARE OF d`, [batchId, batch.environment, batch.realm_id]);
+    const retryable = open.filter((i) => i.driver_type === 'DESI' && i.live_vendor);
+    if (retryable.length === 0) throw new PayrollError(409, 'nothing can be retried: everything is in QuickBooks, or the driver\'s vendor link changed');
+    await tx.query("UPDATE quickbooks_payment_items SET status = 'submitted', error_message = NULL, updated_at = now() WHERE id = ANY($1::bigint[])", [retryable.map((i) => i.id)]);
     return { config, itemIds: retryable.map((i) => i.id) };
   });
   await sendBatch(db, batchId, prepared.itemIds, deps, clientFor(db, prepared.config, deps));

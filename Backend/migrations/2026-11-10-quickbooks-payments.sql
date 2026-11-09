@@ -1,4 +1,5 @@
--- QuickBooks for Desi (1099) drivers, part 3: paying a finalized pay run by recording each driver's bill and bill payment in QuickBooks.
+-- QuickBooks for Desi (1099) drivers, part 3: recording a finalized pay run's Desi payments in QuickBooks (a bill and a bill payment per driver) for the 1099s.
+-- Desi drivers are paid cash in hand outside NASA and QuickBooks; QuickBooks is only the record, so it never pays anyone and never decides whether a driver was paid.
 -- Adds the records that let it be done safely: the expense and bank accounts to use, one batch per confirmed click, one item per pay statement
 -- (a statement can have at most ONE item, for ever), and a log of every attempt written before the request is sent. Nothing here calls QuickBooks;
 -- the service does, and only when QUICKBOOKS_PAYMENTS_ENABLED is true. Needs: part 1 (quickbooks-connection), issue-143 pay runs.
@@ -9,7 +10,7 @@ CREATE TABLE IF NOT EXISTS quickbooks_settings (
   environment        text PRIMARY KEY CHECK (environment IN ('sandbox', 'production')),
   realm_id           text NOT NULL CHECK (realm_id ~ '^[0-9]{5,20}$'),         -- the company these account IDs belong to; another company's are never used
   expense_account_id text NOT NULL CHECK (expense_account_id ~ '^[0-9]{1,20}$'),   -- where the driver pay is booked
-  bank_account_id    text NOT NULL CHECK (bank_account_id ~ '^[0-9]{1,20}$'),      -- the account the payment is recorded from
+  bank_account_id    text NOT NULL CHECK (bank_account_id ~ '^[0-9]{1,20}$'),      -- the cash / bank account the payment is recorded as coming from
   updated_by         integer NOT NULL REFERENCES admin(id),
   updated_at         timestamptz NOT NULL DEFAULT now()
 );
@@ -30,7 +31,7 @@ CREATE TABLE IF NOT EXISTS quickbooks_payment_batches (
 );
 CREATE INDEX IF NOT EXISTS idx_quickbooks_batches_run ON quickbooks_payment_batches (pay_run_id, id);
 
--- One item per pay statement, ever. doc_number is the bill's number in QuickBooks and our idempotency key: before a bill is made QuickBooks is
+-- One item per pay statement, ever. status is only about the QuickBooks record (the statement was paid in cash when the batch was confirmed). doc_number is the bill's number in QuickBooks and our idempotency key: before a bill is made QuickBooks is
 -- asked for one with this number, so a retry can never make a second bill. status mirrors pay_statements.payout_status.
 CREATE TABLE IF NOT EXISTS quickbooks_payment_items (
   id                 bigserial PRIMARY KEY,

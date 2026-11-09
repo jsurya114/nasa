@@ -66,7 +66,7 @@ describe("QuickBooks panel", () => {
     const server = await startServer({ status: { ...CONNECTED, paymentsEnabled: true } });
     await mount();
     fireEvent.change(await screen.findByLabelText(/Expense account/), { target: { value: "61" } });
-    fireEvent.change(screen.getByLabelText(/Bank account/), { target: { value: "35" } });
+    fireEvent.change(screen.getByLabelText(/Cash account/), { target: { value: "35" } });
     fireEvent.click(screen.getByRole("button", { name: "Save accounts" }));
     expect(await screen.findByText("Saved.")).toBeTruthy();
     expect(server.saved).toEqual({ expenseAccountId: "61", bankAccountId: "35" });

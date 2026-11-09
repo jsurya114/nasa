@@ -3,10 +3,10 @@ import axios from "../../../../redux/slice/axiosInstance";
 import { formatMoney } from "../../../../utils/money.js";
 import { buttonClass } from "../../payroll/formParts.jsx";
 
-const STATUS_TEXT = { paid: "Recorded in QuickBooks", submitted: "Being recorded…", unconfirmed: "Not confirmed: check, then retry", failed: "Not recorded: retry" };
+const STATUS_TEXT = { paid: "Recorded in QuickBooks", submitted: "Being recorded in QuickBooks…", unconfirmed: "Paid in cash; not confirmed in QuickBooks yet. Retry", failed: "Paid in cash; not recorded in QuickBooks yet. Retry" };
 const TONE = { paid: "text-green-700", submitted: "text-ink-muted", unconfirmed: "font-semibold text-amber-800", failed: "font-semibold text-red-700" };
 
-// The result of a QuickBooks payment batch, read back from the server. Retry is always safe: the server asks QuickBooks for the bill by its number first, so a
+// The QuickBooks record of a payment batch, read back from the server. The drivers were paid (cash) when it was confirmed; this only shows whether QuickBooks has the record. Retry is always safe: the server asks QuickBooks for the bill by its number first, so a
 // bill or payment that did land is found and never made twice.
 export default function QuickbooksResult({ batchId, onChanged }) {
   const [view, setView] = useState(null);
@@ -38,7 +38,7 @@ export default function QuickbooksResult({ batchId, onChanged }) {
   const { counts, items, batch } = view;
   return (
     <div className="space-y-3 text-sm">
-      <p>{counts.paid} of {batch.drivers} recorded in QuickBooks · {formatMoney(batch.total)} · paid on {batch.paidOn}</p>
+      <p>{counts.paid} of {batch.drivers} in QuickBooks · {formatMoney(batch.total)} · paid on {batch.paidOn}</p>
       <ul aria-label="QuickBooks results" className="divide-y divide-line rounded-xl border border-line">
         {items.map((i) => (
           <li key={i.itemId} className="p-3">
@@ -53,7 +53,7 @@ export default function QuickbooksResult({ batchId, onChanged }) {
         ))}
       </ul>
       {error && <p role="alert" className="text-red-700">{error}</p>}
-      {view.canRetry && <button type="button" onClick={retry} disabled={busy} className={buttonClass}>{busy ? "Retrying…" : "Retry what is not recorded"}</button>}
+      {view.canRetry && <button type="button" onClick={retry} disabled={busy} className={buttonClass}>{busy ? "Retrying…" : "Retry the QuickBooks record"}</button>}
     </div>
   );
 }

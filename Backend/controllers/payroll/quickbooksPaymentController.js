@@ -35,7 +35,7 @@ const need = (value, message) => {
 
 export const getPreview = run('preview', (req) => previewQuickbooksBatch(pool, req.admin, need(id(req.params.runId), 'unknown pay run'), { statementIds: statementIdList(req.query.statementIds) }));
 export const postBatch = run('submit', (req) => submitBatch(pool, req.admin, {
-  runId: need(id(req.params.runId), 'unknown pay run'), requestId: req.body?.requestId, previewHash: req.body?.previewHash, paidOn: req.body?.paidOn,
+  runId: need(id(req.params.runId), 'unknown pay run'), requestId: req.body?.requestId, previewHash: req.body?.previewHash, paidOn: req.body?.paidOn, note: req.body?.note, confirmed: req.body?.confirmed,
   statementIds: statementIdList(req.body?.statementIds),
 }));
 export const getRunBatches = run('list', (req) => listRunBatches(pool, req.admin, need(id(req.params.runId), 'unknown pay run')));

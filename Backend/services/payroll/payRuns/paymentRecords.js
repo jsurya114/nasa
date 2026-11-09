@@ -148,7 +148,8 @@ export const settlePaidStatements = async (db, { statementIds, earnings, paidOn,
   );
 };
 
-export const recordRunPayment = async (db, admin, runId, request) => {
+// `viaQuickbooks`: the QuickBooks batch (a Desi driver's cash payment, recorded in QuickBooks for the 1099) is the one caller allowed to record Desi cash while QuickBooks payments are on.
+export const recordRunPayment = async (db, admin, runId, request, { viaQuickbooks = false } = {}) => {
   const found = (
     await db.query("SELECT id,city_id FROM pay_runs WHERE id=$1", [runId])
   ).rows[0];
@@ -232,8 +233,8 @@ export const recordRunPayment = async (db, admin, runId, request) => {
   if (request.method !== CASH || targets.some((s) => !methodAllowed(s.driver_type, request.method)))
     throw new PayrollError(409, "This payment method is not allowed for a selected driver.");
   // With QuickBooks payments on, a Desi driver's payment must be recorded in QuickBooks (it is their 1099 record), never by hand as cash.
-  if (quickbooksPaymentsOn() && targets.some((s) => s.driver_type === "DESI"))
-    throw new PayrollError(409, "Desi drivers are paid through QuickBooks. Record their payment there instead of as cash.");
+  if (quickbooksPaymentsOn() && !viaQuickbooks && targets.some((s) => s.driver_type === "DESI"))
+    throw new PayrollError(409, "Desi cash payments are recorded with QuickBooks. Use Pay to drivers on the Desi tab, so the payment also reaches QuickBooks for the 1099.");
   const ids = targets.map((s) => s.id);
   // Lock source rows before derived pay rows, matching the upload's lock order.
   const earnings = await lockApprovedEarnings(db, ids);

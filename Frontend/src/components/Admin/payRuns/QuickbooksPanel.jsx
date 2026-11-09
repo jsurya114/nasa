@@ -96,7 +96,7 @@ function AccountSettings() {
               {data.expenseAccounts.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
             </select>
           </label>
-          <label className="block text-sm font-medium text-gray-700">Bank account (the payment is recorded from here)
+          <label className="block text-sm font-medium text-gray-700">Cash account (the cash payment is recorded as coming from here)
             <select value={bank} onChange={(e) => setBank(e.target.value)} className="mt-1 min-h-11 w-full rounded-xl border border-line bg-white px-3">
               <option value="">Choose an account</option>
               {data.bankAccounts.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
@@ -169,7 +169,7 @@ export default function QuickbooksPanel({ cityId = "" }) {
         <>
           <p className="mt-1 text-sm text-ink-muted">
             {connected ? `Connected to company ${status.connection.realmId}.${status.connection.needsReconnect ? " The connection expires soon; reconnect it." : ""}` : "Not connected yet."}
-            {" "}The test only reads the company name; no money moves.
+            {" "}The test only reads the company name. QuickBooks never pays anyone here: it is only the record for 1099s.
           </p>
           <div className="mt-3 flex flex-wrap gap-2">
             <button type="button" onClick={connect} disabled={busy} className={buttonClass}>{connected ? "Reconnect QuickBooks" : "Connect QuickBooks"}</button>

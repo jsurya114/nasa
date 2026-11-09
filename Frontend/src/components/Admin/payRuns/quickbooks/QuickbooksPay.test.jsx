@@ -42,16 +42,16 @@ beforeEach(async () => { removeShell(); await resetBrowser(); });
 afterEach(cleanup);
 
 describe("Pay to drivers: Desi drivers through QuickBooks", () => {
-  it("with QuickBooks payments on, Desi drivers show a fixed QuickBooks method, a preview and a payment date, and no cash note or confirmation", async () => {
+  it("with QuickBooks payments on, Desi drivers show Cash in Hand recorded in QuickBooks, a preview, a payment date, a cash note and the cash confirmation", async () => {
     const server = await startServer();
     await mount();
     await toPayment();
-    expect(await screen.findByText("Recorded in QuickBooks (Desi drivers)")).toBeTruthy();
+    expect(await screen.findByText("Cash in Hand, recorded in QuickBooks (Desi drivers)")).toBeTruthy();
     expect(await screen.findByText("2 of 2 selected drivers can be recorded now, $230.00 in total.")).toBeTruthy();
     expect(server.previews).toEqual([{ statementIds: "1,2" }]);
     expect(screen.getByLabelText("Paid on")).toBeTruthy();
-    expect(screen.queryByLabelText("Payment note")).toBeNull();
-    expect(screen.queryByText(/I confirm the selected drivers/)).toBeNull();
+    expect(screen.getByLabelText("Payment note")).toBeTruthy();
+    expect(screen.getByText(/I confirm the selected drivers/)).toBeTruthy();
     expect(server.posts).toEqual([]);
   });
 
@@ -62,9 +62,17 @@ describe("Pay to drivers: Desi drivers through QuickBooks", () => {
     await screen.findByText("2 of 2 selected drivers can be recorded now, $230.00 in total.");
     fireEvent.change(screen.getByLabelText("Paid on"), { target: { value: "2026-11-08" } });
     fireEvent.click(screen.getByRole("button", { name: "Pay" }));
+    expect(await screen.findByText("Add a payment note (at least 3 characters).")).toBeTruthy();
+    expect(server.posts).toEqual([]);
+    fireEvent.change(screen.getByLabelText("Payment note"), { target: { value: "Cash handed over, receipt 12" } });
+    fireEvent.click(screen.getByRole("button", { name: "Pay" }));
+    expect(await screen.findByText("Confirm receipt before recording payment.")).toBeTruthy();
+    expect(server.posts).toEqual([]);
+    fireEvent.click(screen.getByText(/I confirm the selected drivers/));
+    fireEvent.click(screen.getByRole("button", { name: "Pay" }));
     expect(await screen.findByRole("list", { name: "QuickBooks results" })).toBeTruthy();
     expect(server.posts).toHaveLength(1);
-    expect(server.posts[0]).toMatchObject({ previewHash: "b".repeat(64), paidOn: "2026-11-08", statementIds: [1, 2] });
+    expect(server.posts[0]).toMatchObject({ previewHash: "b".repeat(64), paidOn: "2026-11-08", note: "Cash handed over, receipt 12", confirmed: true, statementIds: [1, 2] });
     expect(server.cashRecords).toBe(0);
     expect(screen.queryByRole("button", { name: /Retry/ })).toBeNull();
   });
@@ -77,13 +85,16 @@ describe("Pay to drivers: Desi drivers through QuickBooks", () => {
     expect(screen.getByRole("button", { name: "Pay" }).disabled).toBe(true);
   });
 
-  it("an item that is not recorded offers a safe retry, which reads the result again", async () => {
+  it("an item that is not in QuickBooks yet says the cash payment stands, and offers a safe retry", async () => {
     const server = await startServer({ batchView: batch(["paid", "failed"]) });
     await mount();
     await toPayment();
     await screen.findByText("2 of 2 selected drivers can be recorded now, $230.00 in total.");
+    fireEvent.change(screen.getByLabelText("Payment note"), { target: { value: "Cash handed over, receipt 12" } });
+    fireEvent.click(screen.getByText(/I confirm the selected drivers/));
     fireEvent.click(screen.getByRole("button", { name: "Pay" }));
-    fireEvent.click(await screen.findByRole("button", { name: "Retry what is not recorded" }));
+    expect(await screen.findByText("Paid in cash; not recorded in QuickBooks yet. Retry")).toBeTruthy();
+    fireEvent.click(await screen.findByRole("button", { name: "Retry the QuickBooks record" }));
     await waitFor(() => expect(server.retries).toBe(1));
     await waitFor(() => expect(screen.queryByRole("button", { name: /Retry/ })).toBeNull());
   });

@@ -20,19 +20,22 @@ Desi drivers are 1099 contractors recorded in QuickBooks Online. Status: parts 1
 
 ## Testing
 
-Use a QuickBooks sandbox company first. Check: connect, Test connection shows the company name, look up a driver with a matching vendor, link, unlink with a reason, and a driver with no email is blocked.
+Check: connect, Test connection shows the company name, look up a driver with a matching vendor, link, unlink with a reason, and a driver with no email is blocked.
 
 ## Paying Desi drivers (part 3)
 
+**Desi drivers are paid cash in hand, outside NASA and outside QuickBooks. QuickBooks never pays anyone** (payments are turned off there); it is only the record the 1099s are filed from.
+
 1. Apply `Backend/migrations/2026-11-10-quickbooks-payments.sql` on a copy first (rollback file included).
-2. In the QuickBooks panel choose the expense account (the pay is booked there) and the bank account (the payment is recorded from there).
-3. Pay to drivers → Desi drivers. The method is fixed to QuickBooks. The preview shows who can be recorded and what blocks anyone: not Desi, no linked vendor, a vendor not marked for 1099, $0 statements, or a statement already in a batch. Pick the payment date and press Pay.
-4. For each driver NASA first asks QuickBooks for a bill with the number `NASA-S<statement id>`. If none exists it creates the bill (one line, the statement's net amount, booked to the expense account), then records a bill payment from the bank account as a check (not a credit card, which QuickBooks leaves out of 1099 totals). It then reads the bill again and requires a zero balance. Only then is the statement marked paid, with the reference `QuickBooks bill <id>`.
-5. A refused request is "Not recorded"; a timeout or server error is "Not confirmed". **Retry is always safe**: the bill is found by its number and its balance, so a bill or payment that did land is never made twice. A bill with that number for another vendor or amount is never trusted and needs a person in QuickBooks.
+2. In the QuickBooks panel choose the expense account (the pay is booked there) and the cash account (the payment is recorded as coming from there, for example your Cash on hand account).
+3. Pay to drivers → Desi drivers. The preview shows who can be recorded and what blocks anyone: not Desi, no linked vendor, a vendor not marked for 1099, $0 statements, or a statement already in a batch. Pick the payment date, add a note (for example the receipt book number), tick the cash confirmation and press Pay.
+4. **One confirmation does two separate things.** First it records the cash payment exactly like any Cash in Hand payment (receipt, note, statements marked paid). From that moment the drivers are paid. Then, for each driver, NASA asks QuickBooks for a bill numbered `NASA-S<statement id>`; if none exists it creates the bill (one line, the statement's net amount, booked to the expense account), records a bill payment from the cash account as a check (not a credit card, which QuickBooks leaves out of 1099 totals), reads the bill again and requires a zero balance.
+5. **A QuickBooks problem never changes whether a driver was paid.** If a driver's record is not in QuickBooks yet the screen says "Paid in cash; not recorded in QuickBooks yet" and Retry sends only the QuickBooks record. Retry is always safe: the bill is found by its number and balance, so one that did land is never made twice, and no second cash payment is ever made. A bill with that number for another vendor or amount is never trusted and needs a person in QuickBooks.
+6. While `QUICKBOOKS_PAYMENTS_ENABLED` is on, Desi cash cannot be recorded by the plain Cash in Hand route (the server refuses it), so every Desi payment reaches QuickBooks.
 
-NASA records the payment in QuickBooks; it does not move money. Pay the driver through your bank or QuickBooks as usual. The 1099-NEC itself is filed from QuickBooks.
+The 1099-NEC is filed from QuickBooks. NASA moves no money.
 
-Sandbox checks: two drivers recorded and shown as Recorded in QuickBooks; a refused payment retried to success with one bill; the same confirmation twice records once; Local drivers and non-1099 vendors are blocked; Desi cash is refused while payments are on.
+First live run: no QuickBooks sandbox check was done, so start with one driver or one small run and check the bill and bill payment in QuickBooks (a mistaken bill can be voided there) before paying a whole city.
 
 ## New Desi drivers (part 4)
 
@@ -43,4 +46,4 @@ Existing Desi drivers are already in QuickBooks, so they are linked by an admin 
 3. Otherwise NASA creates the vendor with the 1099 flag on and the tax ID, then links it (`created_by_onboarding`). **The tax ID is sent once and is never stored, logged or returned by NASA.** Only the facts that it was supplied and when the driver certified it are kept.
 4. With the hold on, the driver sees only that page (no menu) until the link exists. Server side, a held Desi driver cannot save a journey or turn availability on and is refused in every payment path, the same as a Local driver without Everee.
 
-Sandbox checks: a new Desi driver completes the form and a 1099 vendor appears in the sandbox company with the right address and tax ID; a driver whose email already exists in QuickBooks is sent to their admin and gets no second vendor; the driver is locked until done and unlocked after; an existing, already-linked Desi driver is never asked.
+First live checks: a new Desi driver completes the form and a 1099 vendor appears in QuickBooks with the right address and tax ID; a driver whose email already exists in QuickBooks is sent to their admin and gets no second vendor; the driver is locked until done and unlocked after; an existing, already-linked Desi driver is never asked.

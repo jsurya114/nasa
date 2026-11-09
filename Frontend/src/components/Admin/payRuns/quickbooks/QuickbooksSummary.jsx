@@ -14,8 +14,8 @@ export default function QuickbooksSummary({ preview, loading, error }) {
     <div className="space-y-2 text-sm">
       <p>
         {environment === "production"
-          ? "Live: this records a bill and a bill payment in your real QuickBooks company, which feeds the 1099 reports."
-          : "Sandbox: QuickBooks' test company. Nothing reaches your real books."}
+          ? "Live: this also records a bill and a bill payment in your real QuickBooks company, which feeds the 1099 reports. QuickBooks does not pay anyone."
+          : "Test company: this goes to QuickBooks' sandbox, not your real books."}
       </p>
       {batchBlockers.map((b) => <p key={b.code} role="alert" className="rounded-xl bg-red-50 p-3 text-red-700">{b.message}</p>)}
       <p>{summary.eligible} of {summary.drivers} selected {summary.drivers === 1 ? "driver" : "drivers"} can be recorded now, {formatMoney(summary.total)} in total.</p>
