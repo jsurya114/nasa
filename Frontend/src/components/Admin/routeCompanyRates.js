@@ -9,6 +9,12 @@ export const companyRatesRetired = (city) => city?.city_type === "WEEKLY" && cit
 // The price inputs the form shows for the chosen city.
 export const visiblePriceFields = (fields, city) => (companyRatesRetired(city) ? fields.filter(({ field }) => !field.startsWith("company")) : fields);
 
-// What the route table shows in the company price column: always the stored price. A weekly GOFO route keeps 0.00 there, because its revenue comes from the
-// carrier statement, not from a route price.
-export const companyPriceCell = (route) => route.companyRoutePrice;
+// What the route table shows in the company price column. A weekly route whose city has a published carrier statement shows what the carrier paid per delivery in the
+// latest statement (the owner gets it from the server; it follows each weekly upload). Display only: any stored price is kept and shown beside it when it is not 0.
+// Every other route shows its stored price.
+export const companyPriceCell = (route) => {
+  const statement = route.statementPrice;
+  if (!statement) return route.companyRoutePrice;
+  const stored = route.companyRoutePrice > 0 ? ` (stored price ${route.companyRoutePrice})` : "";
+  return `${CARRIER_STATEMENT_LABEL}: $${statement.perDelivery} per delivery · ${statement.week}${stored}`;
+};

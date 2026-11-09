@@ -24,8 +24,14 @@ describe("company price fields of a route", () => {
     expect(visiblePriceFields(FIELDS, undefined)).toHaveLength(4);
   });
 
-  it("show the stored company price in the route table, 0 for a weekly GOFO route", () => {
+  it("show the stored company price in the route table, 0 for a weekly GOFO route with no statement", () => {
     expect(companyPriceCell({ companyRoutePrice: 0 })).toBe(0);
-    expect(companyPriceCell({ companyRoutePrice: 2.5 })).toBe(2.5);
+    expect(companyPriceCell({ companyRoutePrice: 2.5, statementPrice: null })).toBe(2.5);
+  });
+
+  it("show what the latest statement paid per delivery for a weekly route that has one", () => {
+    const statementPrice = { perDelivery: "1.63", deliveries: 6453, week: "Week 43-2026" };
+    expect(companyPriceCell({ companyRoutePrice: 0, statementPrice })).toBe("Carrier statement: $1.63 per delivery · Week 43-2026");
+    expect(companyPriceCell({ companyRoutePrice: 2.5, statementPrice })).toBe("Carrier statement: $1.63 per delivery · Week 43-2026 (stored price 2.5)");
   });
 });
