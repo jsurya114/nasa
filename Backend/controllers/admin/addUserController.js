@@ -4,6 +4,7 @@ import { canAccessJob, canAccessDriver } from '../../services/admin/cityAccess.j
 import logger from '../../utils/logger.js';
 import { findDriverByName, isNameConflict, NAME_TAKEN, parseDriverName } from '../../services/admin/driverName.js';
 import { parseOptionalDriverType } from '../../services/admin/driverType.js';
+import { driverUpdateFailure, parseDriverFields } from '../../services/admin/driverUpdateRules.js';
 import pool from '../../config/db.js';
 
 const CITY_FORBIDDEN = { message: "You can only manage drivers in your assigned cities" };
@@ -41,7 +42,9 @@ export const createUsers = async (req, res) => {
     } catch (err) {
         // Two admins saving the same name at the same moment: the database index lets only one through.
         if (isNameConflict(err)) return res.status(HttpStatus.CONFLICT).json({ message: NAME_TAKEN });
-        logger.error("Error while inserting driver", err)
+        const refused = driverUpdateFailure(err);
+        if (refused) return res.status(refused.status).json({ message: refused.message });
+        logger.error("Error while inserting driver", { code: err?.code, constraint: err?.constraint, message: err?.message })
         return res.status(HttpStatus.INTERNAL_SERVER_ERROR).json({ message: "Server error" })
     }
 }
@@ -102,7 +105,12 @@ export const changeStatusUser = async (req, res) => {
 export const updateUser = async (req, res) => {
     try {
         const id = req.params.id;
-        const { email, city, enabled, phoneNumber, password, driver_code } = req.body;
+        const { city, enabled, password } = req.body;
+        // Email, phone and driver code go into limited columns: refuse a bad one here, with a message, instead of letting the database fail.
+        const fields = parseDriverFields(req.body);
+        if (fields.error) return res.status(HttpStatus.BAD_REQUEST).json({ message: fields.error });
+        const { email, phoneNumber } = fields;
+        let driver_code = fields.driverCode;
         const parsedName = parseDriverName(req.body.name);
         if (parsedName.error) return res.status(HttpStatus.BAD_REQUEST).json({ message: parsedName.error });
         const name = parsedName.name;
@@ -112,9 +120,16 @@ export const updateUser = async (req, res) => {
         const existing = await dbService.getDriverById(id);
         if (!existing)
             return res.status(HttpStatus.NOT_FOUND).json({ message: "User does not exists" });
+        if (driver_code === null) driver_code = existing.driver_code; // the code cannot be empty: a request without one keeps the current code
         // The driver must be in one of the admin's cities now, and so must the city they move to.
         if (!(await canAccessDriver(req.user, id)) || !(await canAccessJob(req.user, city)))
             return res.status(HttpStatus.FORBIDDEN).json(CITY_FORBIDDEN);
+
+        // The email must stay unique (the create form checks this too). A clash used to reach the database and come back as "Server error".
+        const sameEmail = await dbService.getDriverByEmail(email);
+        if (sameEmail && sameEmail.id !== parseInt(id)) {
+            return res.status(HttpStatus.CONFLICT).json({ message: "Another driver already uses this email" });
+        }
 
         // Check if driver_code is being changed and if it already exists for another driver
         if (driver_code) {
@@ -135,7 +150,7 @@ export const updateUser = async (req, res) => {
             name,
             email,
             city,
-            enabled,
+            enabled: typeof enabled === 'boolean' ? enabled : existing.enabled, // a form that leaves it out keeps the current value (the column cannot be empty)
             phoneNumber,
             driver_code,
             driverType: parsedType.driverType // null = keep the driver's current type
@@ -154,7 +169,11 @@ export const updateUser = async (req, res) => {
         });
     } catch (err) {
         if (isNameConflict(err)) return res.status(HttpStatus.CONFLICT).json({ message: NAME_TAKEN });
-        logger.error("Update user error", err);
+        // A refusal we know (email or code already used, a value too long, a city that is disabled) says what to change.
+        const refused = driverUpdateFailure(err);
+        if (refused) return res.status(refused.status).json({ message: refused.message });
+        // The code and constraint are logged so the cause of a real server error can be read from the log.
+        logger.error("Update user error", { code: err?.code, constraint: err?.constraint, message: err?.message });
         res.status(500).json({ message: "Server error" });
     }
 };
