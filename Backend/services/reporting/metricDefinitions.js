@@ -6,7 +6,7 @@
  * These definitions describe rules that already exist. They do not change how anything is calculated or paid.
  */
 
-export const DEFINITIONS_VERSION = '2026-11-10';
+export const DEFINITIONS_VERSION = '2026-11-11';
 export const CURRENCY = 'USD';
 
 export const METRIC_DEFINITIONS = Object.freeze([
@@ -132,6 +132,17 @@ export const METRIC_DEFINITIONS = Object.freeze([
     unit: CURRENCY,
     definition: 'Delivery margin minus claim losses. Delivery margin ("gross profit before overheads") itself is not changed and is shown beside it.',
     caveats: ['Not net profit: overheads and operating costs are not recorded.', 'Not available when there is no delivery margin for the period.'],
+  },
+  {
+    id: 'invoice_payments_received',
+    label: 'Invoice payments received',
+    unit: CURRENCY,
+    definition: 'The saved totals of invoices marked Payment received, counted once per invoice by the date the payment was received. Pending invoices count as zero.',
+    caveats: [
+      'Shown apart from delivery revenue: the same work may already be in delivery revenue through carrier statements or stored delivery figures, so the two are never added together.',
+      'Company-wide: city and delivery-source filters do not apply, and no city is inferred from a vendor\'s address.',
+      'It records money that arrived outside NASA. It does not change delivery margin or driver earnings.',
+    ],
   },
   {
     id: 'driver_ranking',

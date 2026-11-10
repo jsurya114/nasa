@@ -7,6 +7,7 @@ import adminRoutes from './routes/adminRoutes.js'
 import driverRoutes from "./routes/driverRoutes.js"
 import payrollRoutes from "./routes/payrollRoutes.js"
 import insightsRoutes from "./routes/insightsRoutes.js"
+import invoiceRoutes from "./routes/invoiceRoutes.js"
 import financeRoutes from "./routes/financeRoutes.js"
 import assignmentHistoryRoutes from "./routes/assignmentHistoryRoutes.js"
 import evereeWebhookRoutes from './routes/evereeWebhookRoutes.js'
@@ -77,6 +78,12 @@ app.use('/admin/insights', (req, _, next) => {
   logger.info(`${req.method} ${req.originalUrl.split('?')[0]}`)
   next()
 }, insightsRoutes);
+
+// Invoices: super admin only. Before /admin so it is handled here and checked once.
+app.use('/admin/invoices', (req, _, next) => {
+  logger.info(`${req.method} ${req.originalUrl.split('?')[0]}`)
+  next()
+}, invoiceRoutes);
 
 // Carrier statements: super admin only. Before /admin so it is handled here and checked once.
 app.use('/admin/finance/gofo-statements', (req, _, next) => {

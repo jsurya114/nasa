@@ -15,6 +15,7 @@
  */
 import { InputError, addDays, centsToText, percentChange, toCents } from './inputs.js';
 import { REVENUE_AGGREGATES, basisCounts, basisOf, settlementFor, unallocatedFor } from './revenueSql.js';
+import { invoicePaymentsFor } from './invoiceReports.js';
 
 const MONEY = 'numeric(16,2)';
 const FACTS = 'reporting.delivery_facts f';
@@ -201,6 +202,9 @@ export async function businessSummary(db, { period, cityIds, comparePrevious = f
   const data = summaryData(period, cityIds, agg);
   const warnings = warningsFor(period, agg, coverage);
   data.settlement = await settlementFor(db, period, cityIds);
+  // Company-wide and by receipt date, apart from delivery revenue (the same work may already be in it). City and source filters do not apply to it.
+  data.invoicePaymentsReceived = await invoicePaymentsFor(db, period);
+  if (data.invoicePaymentsReceived) data.invoicePaymentsReceived.filtersApply = !(cityIds || source);
 
   if (comparePrevious) {
     const previousEnd = addDays(period.startDate, -1);
