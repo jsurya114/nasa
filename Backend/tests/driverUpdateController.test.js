@@ -35,9 +35,11 @@ test('editing a driver: every ordinary mistake gets a message that says what to 
     assert.deepEqual([sameEmail.code, sameEmail.body.message], [409, 'Another driver already uses this email']);
     const sameCode = await edit({ driver_code: String(b.driver_code) });
     assert.deepEqual([sameCode.code, sameCode.body.message], [409, 'Driver code already exists']);
-    const longPhone = await edit({ phoneNumber: '1'.repeat(21) });
-    assert.equal(longPhone.code, 400);
-    assert.match(longPhone.body.message, /Phone number can be at most 20/);
+    for (const phoneNumber of ['1'.repeat(21), '', '  ', '12345', undefined]) {
+      const refused = await edit({ phoneNumber });
+      assert.equal(refused.code, 400, JSON.stringify(phoneNumber));
+      assert.match(refused.body.message, /Phone number is required/);
+    }
     const badCode = await edit({ driver_code: '12ab' });
     assert.equal(badCode.code, 400);
     assert.match(badCode.body.message, /Driver code must be a whole number/);
@@ -52,6 +54,20 @@ test('editing a driver: every ordinary mistake gets a message that says what to 
     assert.equal(partial.code, 200, JSON.stringify(partial.body));
     const row = (await pool.query('SELECT enabled, driver_code FROM drivers WHERE id = $1', [a.id])).rows[0];
     assert.deepEqual([row.enabled, row.driver_code], [true, a.driver_code]);
+    // adding a driver without a phone is refused before anything is written
+    const { createUsers } = await import('../controllers/admin/addUserController.js');
+    const before = Number((await pool.query('SELECT count(*) AS n FROM drivers')).rows[0].n);
+    const add = (phoneNumber) => call(createUsers, { user: { id: 1, role: 'superadmin' },
+      body: { name: `Upd new ${tag}`, email: `upd-new-${tag}@example.test`, password: 'secret1', driver_code: 810000000 + Math.floor(Math.random() * 1000000), city: city.job, enabled: true, phoneNumber } });
+    for (const phoneNumber of [undefined, '', '12345']) {
+      const refused = await add(phoneNumber);
+      assert.equal(refused.code, 400, JSON.stringify(phoneNumber));
+      assert.match(refused.body.message, /Phone number is required/);
+    }
+    assert.equal(Number((await pool.query('SELECT count(*) AS n FROM drivers')).rows[0].n), before, 'no driver was added');
+    const added = await add('(903) 405 8843');
+    assert.equal(added.code, 200, JSON.stringify(added.body));
+    await pool.query('DELETE FROM drivers WHERE email = $1', [`upd-new-${tag}@example.test`]);
     // the failed attempts changed nothing
     assert.equal((await pool.query('SELECT email FROM drivers WHERE id = $1', [a.id])).rows[0].email, a.email);
   } finally {

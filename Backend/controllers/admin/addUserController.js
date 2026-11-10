@@ -4,7 +4,7 @@ import { canAccessJob, canAccessDriver } from '../../services/admin/cityAccess.j
 import logger from '../../utils/logger.js';
 import { findDriverByName, isNameConflict, NAME_TAKEN, parseDriverName } from '../../services/admin/driverName.js';
 import { parseOptionalDriverType } from '../../services/admin/driverType.js';
-import { driverUpdateFailure, parseDriverFields } from '../../services/admin/driverUpdateRules.js';
+import { driverUpdateFailure, parseDriverFields, parsePhone } from '../../services/admin/driverUpdateRules.js';
 import pool from '../../config/db.js';
 
 const CITY_FORBIDDEN = { message: "You can only manage drivers in your assigned cities" };
@@ -23,6 +23,10 @@ export const createUsers = async (req, res) => {
         const parsedType = parseOptionalDriverType(req.body.driverType);
         if (parsedType.error) return res.status(HttpStatus.BAD_REQUEST).json({ message: parsedType.error });
 
+        // The phone number is required (Everee cannot onboard a driver without one).
+        const parsedPhone = parsePhone(phoneNumber);
+        if (parsedPhone.error) return res.status(HttpStatus.BAD_REQUEST).json({ message: parsedPhone.error });
+
         if (!(await canAccessJob(req.user, city)))
             return res.status(HttpStatus.FORBIDDEN).json(CITY_FORBIDDEN);
 
@@ -36,7 +40,7 @@ export const createUsers = async (req, res) => {
 
         if (await findDriverByName(pool, name)) return res.status(HttpStatus.CONFLICT).json({ message: NAME_TAKEN });
 
-        const insertUser = await dbService.insertUser({ name, email, driver_code, password, city, enabled, phoneNumber, driverType: parsedType.driverType });
+        const insertUser = await dbService.insertUser({ name, email, driver_code, password, city, enabled, phoneNumber: parsedPhone.phone, driverType: parsedType.driverType });
 
         return res.status(HttpStatus.OK).json({ message: "User Added Successfully!!", insertUser });
     } catch (err) {
