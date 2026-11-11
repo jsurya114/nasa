@@ -34,7 +34,7 @@ const viaEveree = async (call) => {
 };
 
 const loadDriver = async (db, cityId, driverId) => {
-  const { rows } = await db.query('SELECT id, name, email, phone_number, city_id FROM drivers WHERE id = $1 AND city_id = $2', [driverId, cityId]);
+  const { rows } = await db.query('SELECT id, name, email, phone_number, city_id, contact_changed_at FROM drivers WHERE id = $1 AND city_id = $2', [driverId, cityId]);
   if (rows.length === 0) throw new PayrollError(404, 'driver not found in this city');
   return rows[0];
 };
@@ -105,6 +105,8 @@ export const lookupDriver = async (db, admin, { cityId, driverId }, deps = {}) =
 
   const issues = driverIssues(driver);
   if (issues.length > 0) return { result: 'blocked', reason: 'driver_data', issues, matches: [] };
+  // The driver changed their own email or phone and nobody has confirmed the new details yet: they are not used to find or link a worker.
+  if (driver.contact_changed_at) return { result: 'blocked', reason: 'contact_changed', issues: [], matches: [] };
 
   const client = deps.client ?? createEvereeClient(config);
   const email = normalizeEmail(driver.email);

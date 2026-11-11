@@ -5,7 +5,6 @@ import Header from "../../reuse/driver/Header";
 import Nav from "../../reuse/driver/Nav";
 import useTranslation from "../../hooks/useTranslation.js";
 import { toast } from "../../utils/toast";
-import { setDriver } from "../../redux/slice/driver/driverSlice.js";
 import { clearSaveErrors, loadProfile, saveProfile } from "../../redux/slice/driver/profileSlice.js";
 
 // Same limits as the server (drivers.name 100, email 150, phone 20): they only stop typing past the end, the server does the checking.
@@ -22,10 +21,9 @@ const inputClass = (invalid) =>
 function Profile() {
   const { t } = useTranslation();
   const dispatch = useDispatch();
-  const { driver } = useSelector((state) => state.driver);
   const { profile, loadStatus, loadError, saveStatus, saveError, fieldErrors } = useSelector((state) => state.driverProfile);
   const [editing, setEditing] = useState(false);
-  const [form, setForm] = useState({ name: "", email: "", phoneNumber: "" });
+  const [form, setForm] = useState({ name: "", email: "", phoneNumber: "", currentPassword: "" });
   const firstField = useRef(null);
   const saving = saveStatus === "saving";
 
@@ -40,7 +38,7 @@ function Profile() {
 
   const startEditing = () => {
     dispatch(clearSaveErrors());
-    setForm({ name: profile.name, email: profile.email, phoneNumber: profile.phoneNumber });
+    setForm({ name: profile.name, email: profile.email, phoneNumber: profile.phoneNumber, currentPassword: "" });
     setEditing(true);
   };
   const cancel = () => {
@@ -56,17 +54,22 @@ function Profile() {
   const submit = async (e) => {
     e.preventDefault();
     if (saving) return;
-    const result = await dispatch(saveProfile(form));
+    // The password is sent only with a new email. The header's name is brought up to date by the save itself.
+    const { currentPassword, ...details } = form;
+    const result = await dispatch(saveProfile(emailChanges ? { ...details, currentPassword } : details));
+    setForm((prev) => ({ ...prev, currentPassword: "" })); // never kept in the page longer than the request
     if (!saveProfile.fulfilled.match(result)) return; // the page shows what was wrong, next to the field
     const saved = result.payload.profile;
-    // The header shows the driver's name: bring it up to date without another request.
-    dispatch(setDriver({ ...driver, name: saved.name, email: saved.email }));
     const emailChanged = saved.email !== profile.email;
-    toast.success(emailChanged ? `${result.payload.message}. ${t("profEmailChanged")}` : result.payload.message);
+    const contactChanged = emailChanged || saved.phoneNumber !== profile.phoneNumber;
+    const notes = [emailChanged && t("profEmailChanged"), contactChanged && t("profContactReview")].filter(Boolean);
+    toast.success(notes.length > 0 ? `${result.payload.message}. ${notes.join(" ")}` : result.payload.message);
     setEditing(false);
   };
 
   const changed = profile && FIELDS.some(({ key }) => form[key] !== profile[key]);
+  const emailChanges = Boolean(profile) && form.email.trim() !== profile.email;
+  const contactChanges = emailChanges || (Boolean(profile) && form.phoneNumber.trim() !== profile.phoneNumber);
 
   return (
     <div className="min-h-dvh bg-canvas text-ink">
@@ -140,13 +143,37 @@ function Profile() {
                 );
               })}
 
+              {emailChanges && (
+                <div className="space-y-2">
+                  <label htmlFor="profile-currentPassword" className="block text-sm font-semibold text-gray-700">
+                    {t("profCurrentPassword")} <span className="text-red-500" aria-hidden="true">*</span>
+                  </label>
+                  <input
+                    id="profile-currentPassword"
+                    name="currentPassword"
+                    type="password"
+                    autoComplete="current-password"
+                    value={form.currentPassword}
+                    onChange={change}
+                    disabled={saving}
+                    required
+                    aria-invalid={fieldErrors.currentPassword ? "true" : undefined}
+                    aria-describedby={[fieldErrors.currentPassword && "currentPassword-error", "currentPassword-hint"].filter(Boolean).join(" ")}
+                    className={inputClass(Boolean(fieldErrors.currentPassword))}
+                  />
+                  {fieldErrors.currentPassword && <p id="currentPassword-error" role="alert" className="text-red-600 text-sm">{fieldErrors.currentPassword}</p>}
+                  <p id="currentPassword-hint" className="text-xs text-gray-500">{t("profPasswordHint")}</p>
+                </div>
+              )}
+              {contactChanges && <p className="text-xs text-amber-700">{t("profContactReview")}</p>}
+
               {saveError && Object.keys(fieldErrors).length === 0 && <p role="alert" className="text-red-600 text-sm">{saveError}</p>}
 
               <div className="flex flex-col-reverse sm:flex-row sm:justify-end gap-3">
                 <button type="button" onClick={cancel} disabled={saving} className="min-h-11 px-5 rounded-xl border border-line bg-white font-semibold hover:bg-gray-50 disabled:opacity-60">
                   {t("cancel")}
                 </button>
-                <button type="submit" disabled={saving || !changed} className="min-h-11 px-5 rounded-xl bg-brand text-white font-semibold hover:bg-brand-700 disabled:opacity-60 focus:outline-none focus:ring-4 focus:ring-brand-500/30">
+                <button type="submit" disabled={saving || !changed || (emailChanges && !form.currentPassword)} className="min-h-11 px-5 rounded-xl bg-brand text-white font-semibold hover:bg-brand-700 disabled:opacity-60 focus:outline-none focus:ring-4 focus:ring-brand-500/30">
                   {saving ? t("saving") : t("save")}
                 </button>
               </div>

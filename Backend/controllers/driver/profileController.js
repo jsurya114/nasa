@@ -22,7 +22,7 @@ const profileController = {
     }
   },
 
-  /** PUT /driver/profile  (driver only). Body: { name, email, phoneNumber } */
+  /** PUT /driver/profile  (driver only). Body: { name, email, phoneNumber, currentPassword } (the password only when the email changes) */
   updateProfile: async (req, res) => {
     const lang = getLang(req);
     try {
@@ -32,7 +32,7 @@ const profileController = {
         return res.status(HttpStatus.BAD_REQUEST).json({ success: false, message: translateError(lang, 'profile.validationFailed'), errors });
       }
 
-      const { profile, changed } = await saveOwnProfile(pool, req.driver.id, parsed.values);
+      const { profile, changed } = await saveOwnProfile(pool, req.driver.id, parsed.values, req.body?.currentPassword);
       // Field names only: a name, email or phone number never goes into the log.
       if (changed.length > 0) logger.info('Driver profile updated', { driverId: req.driver.id, fields: changed });
       return res.status(HttpStatus.OK).json({ success: true, message: translateError(lang, 'profile.updatedSuccessfully'), profile });

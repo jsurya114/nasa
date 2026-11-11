@@ -109,6 +109,8 @@ export const backendEs = {
     phoneInvalid: "Ingrese un número de teléfono de EE. UU. de 10 dígitos, como 903-405-8843",
     nameTaken: "Otro conductor ya usa este nombre",
     emailTaken: "Otro conductor ya usa este correo electrónico",
+    passwordRequired: "Ingrese su contraseña actual para cambiar su correo electrónico.",
+    passwordWrong: "Su contraseña actual no es correcta.",
     validationFailed: "Corrija los campos marcados",
     updatedSuccessfully: "Perfil actualizado",
     accountDisabled: "Su cuenta está deshabilitada, por lo que no se puede cambiar el perfil",

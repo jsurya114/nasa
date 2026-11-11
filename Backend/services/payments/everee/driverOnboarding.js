@@ -62,7 +62,7 @@ const switchedOn = (env) => String(env.EVEREE_DRIVER_ONBOARDING_ENABLED ?? '').t
 
 const loadDriver = async (db, driverId) => {
   const { rows } = await db.query(
-    `SELECT id, name, email, phone_number, driver_type, enabled, agreement_signed, to_char(agreement_joining_date, 'YYYY-MM-DD') AS joining_date
+    `SELECT id, name, email, phone_number, driver_type, enabled, agreement_signed, contact_changed_at, to_char(agreement_joining_date, 'YYYY-MM-DD') AS joining_date
        FROM drivers WHERE id = $1`, [driverId]);
   if (rows.length === 0) throw new OnboardingError(404, 'driver_not_found', 'driver not found');
   return rows[0];
@@ -128,6 +128,8 @@ export const stateOf = ({ driver, on, configured, link, row, tenantId, unlinked 
     return { ...mine, state: STATES.IN_PROGRESS, canStart: false };
   }
   if (unlinked) return { ...mine, state: STATES.NEEDS_REVIEW, reason: 'previously_unlinked' };
+  // The driver changed their own email or phone: a super admin confirms the new details before they are used to find or create a worker.
+  if (driver.contact_changed_at) return { ...mine, state: STATES.NEEDS_REVIEW, reason: 'contact_changed' };
   if (row?.state === 'needs_review') return { ...mine, state: STATES.NEEDS_REVIEW, reason: row.review_reason ?? 'needs_review' };
   if (row?.state === 'creating') return { ...mine, state: STATES.CREATING };
   if (row?.state === 'verifying') return { ...mine, state: STATES.VERIFYING };
@@ -298,6 +300,8 @@ export const startOnboarding = async (db, driverId, input = {}, deps = {}) => {
     await record(db, driverId, 'needs_review', 'previously unlinked by an admin');
     return { ...(await getStatus(db, driverId, deps)), started: false };
   }
+  // Nothing is written or sent to Everee while the driver's new email or phone waits for a super admin (the status says so).
+  if (driver.contact_changed_at) return { ...(await getStatus(db, driverId, deps)), started: false };
 
   // The details are checked first, with no side effect: a missing field is answered before anything is written or asked of Everee.
   const profile = buildProfile(driver, input);

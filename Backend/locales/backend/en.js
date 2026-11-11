@@ -109,6 +109,8 @@ export const backendEn = {
     phoneInvalid: "Enter a 10-digit US phone number, like 903-405-8843",
     nameTaken: "Another driver already uses this name",
     emailTaken: "Another driver already uses this email",
+    passwordRequired: "Enter your current password to change your email.",
+    passwordWrong: "Your current password is not correct.",
     validationFailed: "Please fix the highlighted fields",
     updatedSuccessfully: "Profile updated",
     accountDisabled: "Your account is disabled, so the profile cannot be changed",

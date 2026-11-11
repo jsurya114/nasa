@@ -6,21 +6,24 @@ import { installServer, removeShell, resetBrowser } from "../../test/fakeShell";
 
 const PROFILE = { name: "Dee Test", email: "dee@example.com", phoneNumber: "903-405-8843" };
 
-const startServer = async ({ onSave, loadFails = false, language = "en" } = {}) => {
+const startServer = async ({ onSave, loadFails = false, language = "en", hold = null } = {}) => { // hold: a promise the server waits for before answering the profile requests
   const state = { profile: { ...PROFILE }, puts: [], gets: 0 };
   await installServer(async (config) => {
     if (config.url === "/driver/access-driver") return { status: 200, data: { driver: { id: 1, name: state.profile.name, email: state.profile.email, agreement_signed: true } } };
     if (config.url.startsWith("/driver/language/")) return { status: 200, data: { preferredLanguage: language } };
     if (config.url === "/driver/profile" && config.method === "get") {
       state.gets += 1;
+      if (hold) await hold;
       return loadFails ? { status: 500, data: { message: "Server error" } } : { status: 200, data: { success: true, profile: state.profile } };
     }
     if (config.url === "/driver/profile" && config.method === "put") {
       const body = JSON.parse(config.data);
       state.puts.push(body);
+      if (hold) await hold;
       if (onSave) return onSave(state, body);
-      state.profile = body;
-      return { status: 200, data: { success: true, message: "Profile updated", profile: body } };
+      const { currentPassword, ...saved } = body; // eslint-disable-line no-unused-vars
+      state.profile = saved;
+      return { status: 200, data: { success: true, message: "Profile updated", profile: saved } };
     }
     return { status: 200, data: {} };
   });
@@ -64,18 +67,21 @@ describe("the profile page", () => {
     fireEvent.change(screen.getByLabelText(/Full name/), { target: { value: "Dee  Better" } });
     fireEvent.change(screen.getByLabelText(/Email/), { target: { value: "new@example.com" } });
     fireEvent.change(screen.getByLabelText(/Phone/), { target: { value: "903-405-0000" } });
+    // the email is the sign-in: changing it asks for the current password, and Save waits for it
+    expect(save.disabled).toBe(true);
+    fireEvent.change(screen.getByLabelText(/Current password/), { target: { value: "my-pass-1" } });
     expect(save.disabled).toBe(false);
     fireEvent.click(save);
     fireEvent.click(save); // a double click saves once
 
     await screen.findByText("new@example.com");
-    expect(server.puts).toEqual([{ name: "Dee  Better", email: "new@example.com", phoneNumber: "903-405-0000" }]);
+    expect(server.puts).toEqual([{ name: "Dee  Better", email: "new@example.com", phoneNumber: "903-405-0000", currentPassword: "my-pass-1" }]);
     expect(screen.queryByRole("button", { name: "Save" })).toBeNull(); // back to the read-only view
     // the name in the header is the new one without another request
     expect(store.getState().driver.driver).toMatchObject({ id: 1, name: "Dee  Better", email: "new@example.com" });
   });
 
-  it("sends only the three fields: no id of any kind", async () => {
+  it("sends only the three fields and no password when the email stays the same: no id of any kind", async () => {
     const server = await startServer();
     await mount();
     fireEvent.click(await screen.findByRole("button", { name: /Edit/ }));
@@ -83,6 +89,77 @@ describe("the profile page", () => {
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() => expect(server.puts).toHaveLength(1));
     expect(Object.keys(server.puts[0]).sort()).toEqual(["email", "name", "phoneNumber"]);
+    expect(screen.queryByLabelText(/Current password/)).toBeNull();
+  });
+
+  it("asks for the password only while the email is being changed, shows a wrong password next to its field and never keeps it", async () => {
+    const server = await startServer({ onSave: () => ({ status: 403, data: { success: false, message: "Your current password is not correct.", errors: { currentPassword: "Your current password is not correct." } } }) });
+    await mount();
+    fireEvent.click(await screen.findByRole("button", { name: /Edit/ }));
+    expect(screen.queryByLabelText(/Current password/)).toBeNull();
+    fireEvent.change(screen.getByLabelText(/Email/), { target: { value: "new@example.com" } });
+    const password = screen.getByLabelText(/Current password/);
+    expect(password.type).toBe("password");
+    expect(password.getAttribute("autocomplete")).toBe("current-password");
+    fireEvent.change(password, { target: { value: "wrong-pass" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    const alert = await screen.findByRole("alert");
+    expect(alert.textContent).toBe("Your current password is not correct.");
+    expect(screen.getByLabelText(/Current password/).getAttribute("aria-invalid")).toBe("true");
+    expect(screen.getByLabelText(/Current password/).value).toBe(""); // cleared as soon as the request was made
+    expect(screen.getByLabelText(/Email/).value).toBe("new@example.com"); // what else was typed stays
+    fireEvent.change(screen.getByLabelText(/Email/), { target: { value: "dee@example.com" } }); // back to the stored email
+    expect(screen.queryByLabelText(/Current password/)).toBeNull();
+    expect(server.puts).toHaveLength(1);
+  });
+
+  it("tells the driver that an admin checks a new email or phone before payment setup continues", async () => {
+    await startServer();
+    await mount();
+    fireEvent.click(await screen.findByRole("button", { name: /Edit/ }));
+    fireEvent.change(screen.getByLabelText(/Full name/), { target: { value: "Dee Renamed" } });
+    expect(screen.queryByText(/Your admin will check your new email or phone/)).toBeNull(); // a name change needs no check
+    fireEvent.change(screen.getByLabelText(/Phone/), { target: { value: "903-405-2222" } });
+    expect(screen.getByText(/Your admin will check your new email or phone/)).toBeTruthy();
+  });
+
+  it("ignores a profile that arrives after the driver signed out", async () => {
+    let release;
+    const hold = new Promise((resolve) => { release = resolve; });
+    await startServer({ hold });
+    const store = await mount();
+    const { driverLogout } = await import("../../redux/slice/driver/driverSlice.js");
+    store.dispatch({ type: driverLogout.pending.type });
+    store.dispatch({ type: driverLogout.fulfilled.type });
+    release();
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(store.getState().driverProfile.profile).toBeNull();
+    expect(store.getState().driverProfile.loadStatus).toBe("idle");
+  });
+
+  it("ignores a save that finishes after the driver signed out: no profile and no header name come back", async () => {
+    let release;
+    const hold = new Promise((resolve) => { release = resolve; });
+    const server = await startServer();
+    const store = await mount();
+    fireEvent.click(await screen.findByRole("button", { name: /Edit/ }));
+    fireEvent.change(screen.getByLabelText(/Phone/), { target: { value: "903-405-3333" } });
+    // the server now holds its answer, as if the network were slow
+    await installServer(async (config) => {
+      if (config.url === "/driver/profile" && config.method === "put") { await hold; return { status: 200, data: { success: true, message: "Profile updated", profile: { ...PROFILE, name: "Late Name" } } }; }
+      return { status: 200, data: {} };
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    const { driverLogout } = await import("../../redux/slice/driver/driverSlice.js");
+    await waitFor(() => expect(store.getState().driverProfile.saveStatus).toBe("saving"));
+    store.dispatch({ type: driverLogout.pending.type });
+    store.dispatch({ type: driverLogout.fulfilled.type });
+    release();
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(store.getState().driverProfile.profile).toBeNull();
+    expect(store.getState().driverProfile.saveStatus).toBe("idle");
+    expect(store.getState().driver.driver).toBeNull();
+    expect(server.puts).toHaveLength(0); // the second server took the request
   });
 
   it("shows a refusal next to its field, keeps what the driver typed, and lets them cancel", async () => {
@@ -90,6 +167,7 @@ describe("the profile page", () => {
     await mount();
     fireEvent.click(await screen.findByRole("button", { name: /Edit/ }));
     fireEvent.change(screen.getByLabelText(/Email/), { target: { value: "taken@example.com" } });
+    fireEvent.change(screen.getByLabelText(/Current password/), { target: { value: "my-pass-1" } });
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
     const alert = await screen.findByRole("alert");
     expect(alert.textContent).toBe("Another driver already uses this email");

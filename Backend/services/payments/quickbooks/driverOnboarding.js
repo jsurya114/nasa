@@ -28,7 +28,7 @@ export class OnboardingError extends Error {
 }
 
 const loadDriver = async (db, driverId) => {
-  const { rows } = await db.query('SELECT id, name, email, phone_number, driver_type, agreement_signed FROM drivers WHERE id = $1', [driverId]);
+  const { rows } = await db.query('SELECT id, name, email, phone_number, driver_type, agreement_signed, contact_changed_at FROM drivers WHERE id = $1', [driverId]);
   return rows[0] ?? null;
 };
 
@@ -48,6 +48,8 @@ export const getStatus = async (db, driverId, { env = process.env } = {}) => {
   const base = { driverType: driver.driver_type, agreementSigned: driver.agreement_signed === true, enforced: quickbooksOnboardingEnforced(env) };
   if (driver.driver_type !== 'DESI' || !gate.enabled) return { ...base, state: STATES.NOT_REQUIRED, required: false, canStart: false, blockedBy: null, needsFromDriver: [] };
   if (await liveLink(db, driverId, config)) return { ...base, state: STATES.COMPLETE, required: false, canStart: false, blockedBy: null, needsFromDriver: [] };
+  // The driver changed their own email or phone: a super admin confirms the new details before they are used to look for or create a vendor.
+  if (driver.contact_changed_at) return { ...base, state: STATES.NEEDS_REVIEW, required: true, canStart: false, blockedBy: 'contact_changed', needsFromDriver: [] };
   const blockedBy = !base.agreementSigned ? 'agreement' : !normalizeEmail(driver.email) ? 'email' : null;
   return { ...base, state: STATES.NOT_STARTED, required: true, canStart: blockedBy === null, blockedBy, needsFromDriver: ['legalName', 'address', 'taxId', 'certified'] };
 };
@@ -60,6 +62,7 @@ export const startOnboarding = async (db, driverId, body, deps = {}) => {
   const status = await getStatus(db, driverId, { env });
   if (status.state === STATES.COMPLETE) throw new OnboardingError(409, 'already_complete', 'your QuickBooks setup is already complete');
   if (!status.required) throw new OnboardingError(409, 'not_required', 'QuickBooks setup is not needed for this driver');
+  if (status.blockedBy === 'contact_changed') throw new OnboardingError(409, 'needs_review', 'your admin needs to confirm your new contact details before you can continue', { review: 'contact_changed' });
   if (status.blockedBy === 'agreement') throw new OnboardingError(409, 'agreement_required', 'sign the NASA agreement first');
   if (status.blockedBy === 'email') throw new OnboardingError(409, 'email_required', 'your account has no valid email address; ask your admin to add it');
 

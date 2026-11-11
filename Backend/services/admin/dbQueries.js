@@ -51,7 +51,8 @@ export const dbService = {
     },
     
     getDriverByEmail: async (email) => {
-        let result = await pool.query("SELECT * FROM drivers WHERE email = $1", [email]);
+        // Ignoring letter case, like the driver's own Profile page: an exact match comes first, so a driver is never reported as clashing with themselves.
+        let result = await pool.query("SELECT * FROM drivers WHERE lower(email) = lower($1) ORDER BY (email = $1) DESC, id LIMIT 1", [email]);
         return result.rows[0];
     },
 
