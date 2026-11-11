@@ -6,7 +6,7 @@ import axios from "../../../redux/slice/axiosInstance";
 
 const buttonClass = "min-h-11 rounded-xl border border-line bg-white px-4 text-sm font-semibold text-brand disabled:opacity-50";
 const badgeClass = (environment) => `rounded-full px-2 py-0.5 text-xs font-semibold ${environment === "production" ? "bg-red-100 text-red-700" : "bg-amber-100 text-amber-800"}`;
-const ISSUES = { no_email: "has no email address", contact_changed: "changed their own email or phone: check the new details in Users, then confirm them before linking" };
+const ISSUES = { no_email: "has no email address", contact_changed: "changed their own email or phone: check the new details below, then confirm them before linking" };
 const LOOKUP_TEXT = {
   no_match: "No QuickBooks vendor has this driver's email.",
   ambiguous: "More than one QuickBooks vendor has this driver's email; fix it in QuickBooks first.",
@@ -59,6 +59,7 @@ function DriverRow({ driver, cityId, onChanged }) {
           <p className="text-ink-muted">
             {driver.link ? `Linked to vendor ${driver.link.vendorId}${driver.link.vendor1099 ? "" : " (not marked for 1099 in QuickBooks)"}` : driver.issues.length ? driver.issues.map((i) => ISSUES[i] ?? i).join(", ") : "Not linked"}
           </p>
+          {driver.contact && <p className="mt-1 rounded-xl bg-amber-50 p-2 text-amber-900">New email: <span className="break-all font-semibold">{driver.contact.email || "none"}</span> · New phone: <span className="font-semibold">{driver.contact.phone || "none"}</span></p>}
         </div>
         {driver.link && <button type="button" onClick={unlink} disabled={busy} className={buttonClass}>Unlink</button>}
         {!driver.link && driver.issues.includes("contact_changed") && driver.contactChangedAt && <button type="button" onClick={confirmContact} disabled={busy} className={buttonClass}>Confirm contact details</button>}

@@ -12,11 +12,12 @@ const plainAdmin = { id: 2, role: 'admin' };
 const vendor = (over = {}) => ({ Id: '58', DisplayName: 'Desi One', Active: true, Vendor1099: true, PrimaryEmailAddr: { Address: 'desi@example.com' }, ...over });
 
 // An in-memory stand-in for the queries the store makes.
-const fakeDb = ({ driver = { id: 7, name: 'Desi One', email: 'Desi@Example.com', city_id: 1 }, taken = [], insertError = null } = {}) => {
+const fakeDb = ({ driver = { id: 7, name: 'Desi One', email: 'Desi@Example.com', city_id: 1 }, taken = [], insertError = null, atLink = {} } = {}) => { // atLink: how the driver's row looks when the link is saved
   const log = [];
   return { log, query: async (sql, p = []) => {
     log.push({ sql, p });
     if (/FROM drivers WHERE id = \$1 AND city_id = \$2 AND driver_type = 'DESI'/.test(sql)) return { rows: driver && p[0] === driver.id && p[1] === driver.city_id ? [driver] : [] };
+    if (/SELECT email, phone_number, contact_changed_at FROM drivers WHERE id = \$1 FOR SHARE/.test(sql)) return { rows: [{ email: driver.email, phone_number: driver.phone_number ?? null, contact_changed_at: null, ...atLink }] };
     if (/SELECT driver_id FROM quickbooks_vendors/.test(sql)) return { rows: taken };
     if (/SELECT realm_id FROM quickbooks_connection/.test(sql)) return { rows: [{ realm_id: '12345678' }] };
     if (/SAVEPOINT|pg_advisory_xact_lock/.test(sql)) return { rows: [] };
@@ -37,6 +38,14 @@ test('only a super admin may look up, link, unlink or list', async () => {
   for (const call of [() => lookupVendor(fakeDb(), plainAdmin, where, deps([])), () => linkVendor(fakeDb(), plainAdmin, { ...where, vendorId: '58' }, deps([])),
     () => unlinkVendor(fakeDb(), plainAdmin, { ...where, reason: 'left' }, deps([])), () => listCityVendors(fakeDb(), plainAdmin, 1, { env })]) {
     await assert.rejects(call, (e) => e.status === 403);
+  }
+});
+
+test('a link is refused, and nothing is written, when the driver\'s email or phone changed or is held by the time it is saved', async () => {
+  for (const atLink of [{ email: 'new@example.com' }, { phone_number: '5551110000' }, { contact_changed_at: new Date() }]) {
+    const db = fakeDb({ atLink });
+    await assert.rejects(linkVendor(db, superAdmin, { ...where, vendorId: '58' }, deps([vendor()])), (e) => e.status === 409 && /changed while linking/.test(e.message));
+    assert.ok(!db.log.some((entry) => /INSERT INTO quickbooks_vendors/.test(entry.sql)));
   }
 });
 

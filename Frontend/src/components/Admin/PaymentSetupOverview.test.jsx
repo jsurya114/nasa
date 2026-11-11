@@ -45,7 +45,7 @@ it("retries failed loading and explains the active cash restriction", async () =
   expect(await screen.findByText(/Restrictions are on/)).toBeTruthy();
   expect(screen.getByText(/including cash/)).toBeTruthy();
 });
-const heldDriver = { driverId: 41, name: "Held Driver", driverType: "LOCAL", agreementSigned: true, lastCheckedAt: null, state: "needs-review", reason: "contact_changed", contactChangedAt: "2026-11-11T10:00:00.123Z", openWork: false, outstandingPayment: false, paymentReady: false };
+const heldDriver = { contactEmail: "new.held@example.com", contactPhone: "5125550199", driverId: 41, name: "Held Driver", driverType: "LOCAL", agreementSigned: true, lastCheckedAt: null, state: "needs-review", reason: "contact_changed", contactChangedAt: "2026-11-11T10:00:00.123Z", openWork: false, outstandingPayment: false, paymentReady: false };
 it("lets a super admin confirm a driver's changed email or phone, sending the time they were shown", async () => {
   const posts = [];
   await mount(async c => {
@@ -53,6 +53,9 @@ it("lets a super admin confirm a driver's changed email or phone, sending the ti
     return {status: 200, data: result({drivers: [heldDriver], total: 1})};
   });
   expect(await screen.findByText(/changed their email or phone/)).toBeTruthy();
+  // the admin sees the details that will be confirmed, next to the button that sends their time
+  expect(screen.getByText("new.held@example.com")).toBeTruthy();
+  expect(screen.getByText("5125550199")).toBeTruthy();
   fireEvent.click(screen.getByRole("button", {name: "Confirm contact details"}));
   await waitFor(() => expect(posts).toHaveLength(1));
   expect(posts[0].url).toBe("/admin/payroll/drivers/confirm-contact");

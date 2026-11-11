@@ -1,4 +1,5 @@
 import crypto from 'node:crypto';
+import { contactSnapshot, contactStillVerified } from '../contactSnapshot.js';
 import logger from '../../../utils/logger.js';
 import { readEvereeConfig, driverOnboardingGate } from './evereeConfig.js';
 import { createEvereeClient, EvereeError } from './evereeClient.js';
@@ -263,7 +264,7 @@ const resolveWorkerId = async (client, external) => {
 //  - ineligible: the driver is no longer an enabled Local driver who signed the agreement -> review;
 //  - revoked: an admin unlinked this driver in the meantime -> review (the admin's decision stands);
 //  - already linked (an admin linked them meanwhile, or the worker belongs to someone else) -> nothing is written.
-const saveLink = (db, driverId, config, row, worker, workerId) => inTransaction(db, async (tx) => {
+const saveLink = (db, driverId, config, row, worker, workerId, loaded) => inTransaction(db, async (tx) => {
   await lockDriver(tx, driverId);
   const { rows: [driver] } = await tx.query('SELECT id, driver_type, enabled, agreement_signed FROM drivers WHERE id = $1 FOR SHARE', [driverId]);
   const { rows: [mine] } = await tx.query('SELECT id, state, attempts FROM everee_onboarding WHERE id = $1 FOR UPDATE', [row.id]);
@@ -277,6 +278,12 @@ const saveLink = (db, driverId, config, row, worker, workerId) => inTransaction(
   if (links.some((l) => !l.unlinked_at)) {
     await tx.query("UPDATE everee_onboarding SET lease_until = NULL, post_uncertain_at = NULL, updated_at = now() WHERE id = $1", [row.id]);
     return 'already_linked';
+  }
+  // The details the worker was found or created with must still be the driver's, and not held for review: otherwise nothing is linked, the lease is let go,
+  // and the next Start (after a super admin confirms the new details) finds the worker again by our ID and links it.
+  if (!(await contactStillVerified(tx, driverId, contactSnapshot(loaded)))) {
+    await tx.query("UPDATE everee_onboarding SET lease_until = NULL, post_uncertain_at = NULL, updated_at = now() WHERE id = $1", [row.id]);
+    return 'contact_changed';
   }
   const state = stateOfWorker(worker);
   const { rowCount } = await tx.query(
@@ -334,7 +341,7 @@ export const startOnboarding = async (db, driverId, input = {}, deps = {}) => {
     if (worker?.id) {
       const resolved = await resolveWorkerId(client, external);
       if (!resolved.workerId) return await unresolved(resolved);
-      const outcome = await saveLink(db, driverId, config, row, worker, resolved.workerId);
+      const outcome = await saveLink(db, driverId, config, row, worker, resolved.workerId, driver);
       if (outcome === 'linked') await record(db, driverId, 'worker_found', 'existing worker with our ID linked');
       return { ...(await getStatus(db, driverId, deps)), started: outcome === 'linked' };
     }
@@ -381,7 +388,7 @@ export const startOnboarding = async (db, driverId, input = {}, deps = {}) => {
     // The create worked. The canonical Everee worker ID comes from the search result for our exact external ID, never from the create answer's `id`.
     const resolved = await resolveWorkerId(client, external);
     if (!resolved.workerId) return await unresolved(resolved);
-    const outcome = await saveLink(db, driverId, config, row, created, resolved.workerId);
+    const outcome = await saveLink(db, driverId, config, row, created, resolved.workerId, driver);
     if (outcome === 'linked') {
       await record(db, driverId, 'worker_created', null);
       logger.info('Everee onboarding worker created', { driverId, environment: config.environment });
@@ -541,7 +548,7 @@ export const recoverOnboarding = async (db, driverId, deps = {}) => {
       await release(db, row, resolved.ambiguous ? { state: 'needs_review', reason: 'ambiguous_worker_identity' } : {});
       return { outcome: resolved.ambiguous ? 'needs_review' : 'verifying' };
     }
-    const outcome = await saveLink(db, driverId, config, row, worker, resolved.workerId);
+    const outcome = await saveLink(db, driverId, config, row, worker, resolved.workerId, driver);
     await record(db, driverId, 'reconciled', outcome);
     return { outcome };
   } catch (error) {

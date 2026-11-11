@@ -1,3 +1,4 @@
+import { CONTACT_CHANGED_WHILE_LINKING, contactSnapshot, contactStillVerified } from '../contactSnapshot.js';
 import { PayrollError, assertCityAllowed, isSuperAdmin } from '../../payroll/payRuns/payRunStore.js';
 import logger from '../../../utils/logger.js';
 import { readEvereeConfig } from './evereeConfig.js';
@@ -101,7 +102,7 @@ export const lookupDriver = async (db, admin, { cityId, driverId }, deps = {}) =
   requireSuperAdmin(admin);
   await assertCityAllowed(db, admin, cityId);
   const config = requireConfigured(deps.env ?? process.env);
-  const driver = await loadDriver(db, cityId, driverId);
+  const driver = deps.driver ?? await loadDriver(db, cityId, driverId); // a caller that will write a link passes the driver it loaded, so lookup and link use one snapshot
 
   const issues = driverIssues(driver);
   if (issues.length > 0) return { result: 'blocked', reason: 'driver_data', issues, matches: [] };
@@ -144,7 +145,10 @@ const NOT_LINKABLE = {
 };
 
 export const linkDriver = async (db, admin, { cityId, driverId, workerId }, deps = {}) => {
-  const lookup = await lookupDriver(db, admin, { cityId, driverId }, deps);
+  requireSuperAdmin(admin);
+  await assertCityAllowed(db, admin, cityId);
+  const driver = await loadDriver(db, cityId, driverId); // one snapshot of the contact details: the lookup uses it and the link is saved only if it still holds
+  const lookup = await lookupDriver(db, admin, { cityId, driverId }, { ...deps, driver });
   if (lookup.result !== 'match') throw new PayrollError(409, NOT_LINKABLE[lookup.result] ?? 'nothing was linked');
   const [match] = lookup.matches;
   if (String(workerId) !== match.workerId) throw new PayrollError(409, 'that is not the worker found for this driver; look the driver up again');
@@ -156,11 +160,14 @@ export const linkDriver = async (db, admin, { cityId, driverId, workerId }, deps
   const state = stateOfWorker(worker);
   try {
     // The write holds the driver's lock (driverLock.js), so it cannot interleave with the driver's own onboarding save or with an unlink.
-    const { rows } = await withDriverLock(db, driverId, (tx) => tx.query(
-      `INSERT INTO everee_workers (driver_id, environment, tenant_id, everee_worker_id, external_worker_id, link_source, onboarding_complete, tin_status, terminated, last_checked_at, linked_by)
-       VALUES ($1, $2, $10, $3, $4, $5, $6, $7, $8, now(), $9) RETURNING ${LINK_COLUMNS}`,
-      [driverId, config.environment, match.workerId, match.externalWorkerId, linkSourceOf(match.matchedOn), state.onboardingComplete, state.tinStatus, state.terminated, admin.id, config.tenantId]
-    ));
+    const { rows } = await withDriverLock(db, driverId, async (tx) => {
+      if (!(await contactStillVerified(tx, driverId, contactSnapshot(driver)))) throw new PayrollError(409, CONTACT_CHANGED_WHILE_LINKING);
+      return tx.query(
+        `INSERT INTO everee_workers (driver_id, environment, tenant_id, everee_worker_id, external_worker_id, link_source, onboarding_complete, tin_status, terminated, last_checked_at, linked_by)
+         VALUES ($1, $2, $10, $3, $4, $5, $6, $7, $8, now(), $9) RETURNING ${LINK_COLUMNS}`,
+        [driverId, config.environment, match.workerId, match.externalWorkerId, linkSourceOf(match.matchedOn), state.onboardingComplete, state.tinStatus, state.terminated, admin.id, config.tenantId]
+      );
+    });
     logger.info('Driver linked to an Everee worker', { driverId, source: rows[0].link_source, environment: config.environment });
     return { link: viewOfLink(rows[0]) };
   } catch (error) {
@@ -255,7 +262,7 @@ export const createSandboxWorker = async (db, admin, { cityId, driverId }, deps 
 
   // Look before creating. If the driver's own email or phone already finds a worker, that one is linked instead (by a person, with Look up).
   if (driverIssues(driver).length === 0) {
-    const lookup = await lookupDriver(db, admin, { cityId, driverId }, deps);
+    const lookup = await lookupDriver(db, admin, { cityId, driverId }, { ...deps, driver });
     // Only a clean "no match" allows a new worker, so any result added later is refused by default.
     if (lookup.result !== 'no_match') {
       throw new PayrollError(409, 'an Everee worker may already exist for this driver (or the lookup is blocked); resolve that instead of creating a test worker');
@@ -281,11 +288,14 @@ export const createSandboxWorker = async (db, admin, { cityId, driverId }, deps 
   const { data: worker } = created ? { data: created } : await viaEveree(() => client.getWorker(external));
   const state = stateOfWorker(worker);
   try {
-    const { rows } = await withDriverLock(db, driverId, (tx) => tx.query(
-      `INSERT INTO everee_workers (driver_id, environment, tenant_id, everee_worker_id, external_worker_id, link_source, onboarding_complete, tin_status, terminated, last_checked_at, linked_by)
-       VALUES ($1, 'sandbox', $8, $2, $3, 'created_sandbox', $4, $5, $6, now(), $7) RETURNING ${LINK_COLUMNS}`,
-      [driverId, String(found.workerId), external, state.onboardingComplete, state.tinStatus, state.terminated, admin.id, config.tenantId]
-    ));
+    const { rows } = await withDriverLock(db, driverId, async (tx) => {
+      if (!(await contactStillVerified(tx, driverId, contactSnapshot(driver)))) throw new PayrollError(409, CONTACT_CHANGED_WHILE_LINKING);
+      return tx.query(
+        `INSERT INTO everee_workers (driver_id, environment, tenant_id, everee_worker_id, external_worker_id, link_source, onboarding_complete, tin_status, terminated, last_checked_at, linked_by)
+         VALUES ($1, 'sandbox', $8, $2, $3, 'created_sandbox', $4, $5, $6, now(), $7) RETURNING ${LINK_COLUMNS}`,
+        [driverId, String(found.workerId), external, state.onboardingComplete, state.tinStatus, state.terminated, admin.id, config.tenantId]
+      );
+    });
     logger.info('Sandbox test worker linked', { driverId, reused: !created });
     return { link: viewOfLink(rows[0]), reused: !created };
   } catch (error) {

@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { randomBytes } from 'node:crypto';
 import bcrypt from 'bcrypt';
+import sanitizeMiddleware, { legacyCredentialClean } from '../middlewares/sanitize.js';
 
 // Needs a PostgreSQL copy (never production). Run with PAYROLL_TEST_DB=1 and the DB_* variables. Two made-up drivers are created and removed again at the end.
 const hasDb = process.env.PAYROLL_TEST_DB === '1';
@@ -23,7 +24,7 @@ test('a driver edits only their own name, email and phone, and stays signed in a
     "INSERT INTO drivers (password, name, email, driver_code, enabled, phone_number) VALUES ($5, $1, $2, $3, $4, '903-405-8843') RETURNING id, name, email, driver_code",
     [`Prof ${label} ${tag}`, `prof-${label}-${tag}@example.test`, code, enabled, bcrypt.hashSync(PASSWORD, 4)])).rows[0];
   const row = async (id) => (await pool.query('SELECT name, email, phone_number, driver_code, enabled, contact_changed_at FROM drivers WHERE id = $1', [id])).rows[0];
-  let a; let b; let off; let c; let d; let e;
+  let a; let b; let off; let c; let d; let e; let f;
   try {
     a = await make('a', 720000000 + Math.floor(Math.random() * 9000000));
     b = await make('b', 730000000 + Math.floor(Math.random() * 9000000));
@@ -108,6 +109,16 @@ test('a driver edits only their own name, email and phone, and stays signed in a
     const ghost = await call(profileController.getProfile, { driver: { id: 2147483000, role: 'driver' } });
     assert.equal(ghost.code, 404);
 
+    // the current password is cleaned exactly like the sign-in password before it is compared (stored hashes stand for the cleaned text), through the real middleware
+    const typed = 'we<!-- note -->ll onclick=x ok-1';
+    f = await make('f', 790000000 + Math.floor(Math.random() * 9000000));
+    await pool.query('UPDATE drivers SET password = $2 WHERE id = $1', [f.id, bcrypt.hashSync(legacyCredentialClean(typed), 4)]);
+    assert.notEqual(legacyCredentialClean(typed), typed, 'the sample really is changed by the old cleaning');
+    const request = { headers: {}, query: {}, driver: { id: f.id, role: 'driver' }, body: { name: f.name, email: `moved-${f.email}`, phoneNumber: '903-405-8843', currentPassword: typed } };
+    await new Promise((resolve, reject) => sanitizeMiddleware(request, {}, (error) => (error ? reject(error) : resolve())));
+    const cleaned = await call(profileController.updateProfile, request);
+    assert.equal(cleaned.code, 200, JSON.stringify(cleaned.body));
+
     // password guesses are limited per driver: 5 checks, then even the right password is not compared; another driver is not affected
     e = await make('e', 770000000 + Math.floor(Math.random() * 9000000));
     const asE = (over) => call(profileController.updateProfile, { driver: { id: e.id, role: 'driver' }, body: { name: e.name, email: e.email, phoneNumber: '903-405-8843', ...over } });
@@ -143,7 +154,7 @@ test('a driver edits only their own name, email and phone, and stays signed in a
       holder.release();
     }
   } finally {
-    for (const x of [a, b, off, c, d, e]) if (x) await pool.query('DELETE FROM drivers WHERE id = $1', [x.id]);
+    for (const x of [a, b, off, c, d, e, f]) if (x) await pool.query('DELETE FROM drivers WHERE id = $1', [x.id]);
     await pool.end();
     (await import('../config/redis.js')).default.quit().catch(() => {}); // the controller module opens a Redis connection that would keep the test process alive
   }

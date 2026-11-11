@@ -33,10 +33,12 @@ afterEach(() => { cleanup(); extraDrivers = []; });
 
 describe("QuickBooks panel", () => {
   it("holds a driver whose email changed until a super admin confirms it, and sends the time they were shown", async () => {
-    extraDrivers = [{ driverId: 9, name: "Desi Held", issues: ["contact_changed"], contactChangedAt: "2026-11-11T10:00:00.123Z", link: null }];
+    extraDrivers = [{ driverId: 9, name: "Desi Held", issues: ["contact_changed"], contactChangedAt: "2026-11-11T10:00:00.123Z", contact: { email: "new.desi@example.com", phone: "5125550123" }, link: null }];
     const server = await startServer();
     await mount();
     expect(await screen.findByText(/changed their own email or phone/)).toBeTruthy();
+    expect(screen.getByText("new.desi@example.com")).toBeTruthy(); // the details being confirmed are shown
+    expect(screen.getByText("5125550123")).toBeTruthy();
     expect(screen.getAllByRole("button", { name: "Look up" })).toHaveLength(1); // only Desi Two; the held driver cannot be looked up yet
     fireEvent.click(screen.getByRole("button", { name: "Confirm contact details" }));
     await waitFor(() => expect(server.confirmed).toEqual({ cityId: 1, driverId: 9, contactChangedAt: "2026-11-11T10:00:00.123Z" }));

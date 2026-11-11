@@ -1,6 +1,7 @@
 import logger from '../../../utils/logger.js';
 import { normalizeEmail, normalizePhone } from '../everee/workerRules.js';
 import { withDriverLock } from '../everee/driverLock.js';
+import { contactSnapshot, contactStillVerified } from '../contactSnapshot.js';
 import { quickbooksDriverOnboardingGate, quickbooksOnboardingEnforced, readQuickbooksConfig } from './quickbooksConfig.js';
 import { createQuickbooksClient, QuickbooksError } from './quickbooksClient.js';
 import { getAuth } from './connectionStore.js';
@@ -40,8 +41,8 @@ const liveLink = async (db, driverId, config) => {
 };
 
 // What the portal needs to know. Makes no call to QuickBooks.
-export const getStatus = async (db, driverId, { env = process.env } = {}) => {
-  const driver = await loadDriver(db, driverId);
+export const getStatus = async (db, driverId, { env = process.env, driver: loaded = null } = {}) => {
+  const driver = loaded ?? await loadDriver(db, driverId); // startOnboarding passes the driver it loaded, so the status describes the details it sends
   if (!driver) throw new OnboardingError(404, 'driver_not_found', 'driver not found');
   const config = readQuickbooksConfig(env);
   const gate = quickbooksDriverOnboardingGate(config, env);
@@ -59,7 +60,10 @@ const unavailable = () => new OnboardingError(503, 'service_unavailable', 'Quick
 // Creates the driver's vendor and links it. Throws OnboardingError for everything the driver can act on.
 export const startOnboarding = async (db, driverId, body, deps = {}) => {
   const env = deps.env ?? process.env;
-  const status = await getStatus(db, driverId, { env });
+  // One snapshot of the driver: the status, the provider calls and the final check before the link all use these email and phone details.
+  const driver = await loadDriver(db, driverId);
+  if (!driver) throw new OnboardingError(404, 'driver_not_found', 'driver not found');
+  const status = await getStatus(db, driverId, { env, driver });
   if (status.state === STATES.COMPLETE) throw new OnboardingError(409, 'already_complete', 'your QuickBooks setup is already complete');
   if (!status.required) throw new OnboardingError(409, 'not_required', 'QuickBooks setup is not needed for this driver');
   if (status.blockedBy === 'contact_changed') throw new OnboardingError(409, 'needs_review', 'your admin needs to confirm your new contact details before you can continue', { review: 'contact_changed' });
@@ -70,7 +74,6 @@ export const startOnboarding = async (db, driverId, body, deps = {}) => {
   if (missing.length > 0) throw new OnboardingError(400, 'missing_fields', 'some details are missing or not valid', { missing });
 
   const config = readQuickbooksConfig(env);
-  const driver = await loadDriver(db, driverId);
   const email = normalizeEmail(driver.email);
   const phone = normalizePhone(driver.phone_number);
   const { rows: [conn] } = await db.query('SELECT realm_id FROM quickbooks_connection WHERE environment = $1', [config.environment]);
@@ -99,11 +102,19 @@ export const startOnboarding = async (db, driverId, body, deps = {}) => {
 
   try {
     // Under the driver's lock (the same one the Everee and admin links use): the link cannot interleave with an admin's unlink.
-    await withDriverLock(db, driverId, (tx) => tx.query(
-      `INSERT INTO quickbooks_vendors (driver_id, environment, realm_id, vendor_id, link_source, tax_id_supplied, vendor_1099, w9_certified_at, linked_by)
-       VALUES ($1, $2, $3, $4, 'created_by_onboarding', true, true, now(), NULL)`,
-      [driverId, config.environment, conn.realm_id, String(vendor.Id)]));
+    await withDriverLock(db, driverId, async (tx) => {
+      // The driver may have changed their email or phone while QuickBooks was working: then nothing is linked (a super admin confirms the new details first).
+      if (!(await contactStillVerified(tx, driverId, contactSnapshot(driver)))) throw new OnboardingError(409, 'needs_review', 'your admin needs to confirm your new contact details before you can continue', { review: 'contact_changed' });
+      return tx.query(
+        `INSERT INTO quickbooks_vendors (driver_id, environment, realm_id, vendor_id, link_source, tax_id_supplied, vendor_1099, w9_certified_at, linked_by)
+         VALUES ($1, $2, $3, $4, 'created_by_onboarding', true, true, now(), NULL)`,
+        [driverId, config.environment, conn.realm_id, String(vendor.Id)]);
+    });
   } catch (error) {
+    if (error instanceof OnboardingError) {
+      logger.warn('QuickBooks vendor created but not linked because the contact details changed', { driverId, vendorId: String(vendor.Id) });
+      throw error;
+    }
     if (error.code !== '23505') throw error; // already linked (a second tab): the answer below says complete
   }
   logger.info('Desi driver set up in QuickBooks', { driverId, environment: config.environment });
