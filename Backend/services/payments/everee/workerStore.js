@@ -129,7 +129,7 @@ export const lookupDriver = async (db, admin, { cityId, driverId }, deps = {}) =
   // A worker already linked to a driver is never offered to another one. The admin is told which driver holds it (a disabled record still holds its link),
   // and whether that driver has payments that are not settled, so the link is moved on purpose, not by accident.
   const { rows: links } = await db.query(
-    `SELECT w.driver_id, w.everee_worker_id, d.name, d.driver_code, d.enabled, d.city_id, ${OUTSTANDING_SQL('d.id', '$1')} AS outstanding
+    `SELECT w.id AS link_id, w.driver_id, w.everee_worker_id, d.name, d.driver_code, d.enabled, d.city_id, ${OUTSTANDING_SQL('d.id', '$1')} AS outstanding
        FROM everee_workers w JOIN drivers d ON d.id = w.driver_id
       WHERE w.environment = $1 AND w.everee_worker_id = ANY($2::text[]) AND w.unlinked_at IS NULL`,
     [config.environment, matches.map((m) => m.workerId)]
@@ -143,7 +143,13 @@ export const lookupDriver = async (db, admin, { cityId, driverId }, deps = {}) =
       linkedDriver: other ? { driverId: other.driver_id, name: other.name, driverCode: other.driver_code, enabled: other.enabled, cityId: other.city_id, outstandingPayments: other.outstanding } : null,
     };
   });
-  if (annotated.some((m) => m.linkedTo === 'another_driver')) return { result: 'blocked', reason: 'worker_linked_to_another_driver', issues: [], matches: annotated };
+  // Only ONE clean match that another driver holds is "blocked by that driver", and only then is the holder's link (`linkId`) offered for removal. An ambiguous,
+  // truncated or conflicting result stays exactly what it is and read-only: the admin sees who holds a candidate, but nothing is offered that could take a link
+  // away from a driver on a guess.
+  if (result === 'match' && annotated[0].linkedTo === 'another_driver') {
+    const [held] = annotated;
+    return { result: 'blocked', reason: 'worker_linked_to_another_driver', issues: [], matches: [{ ...held, linkedDriver: { ...held.linkedDriver, linkId: Number(links.find((l) => l.everee_worker_id === held.workerId).link_id) } }] };
+  }
   return { result, reason: null, issues: [], matches: annotated, truncated };
 };
 
@@ -223,11 +229,14 @@ export const refreshWorker = async (db, admin, { cityId, driverId }, deps = {}) 
 
 // ---------- unlink (kept as history, with a reason) ----------
 
-export const unlinkDriver = async (db, admin, { cityId, driverId, reason, acknowledgeOutstanding = false }, deps = {}) => {
+// `linkId` is the link the admin reviewed (from Look up). The link is removed only if that exact link is still the active one, checked under the driver's
+// lock; if someone changed it since, the admin must look up again.
+export const unlinkDriver = async (db, admin, { cityId, driverId, linkId, reason, acknowledgeOutstanding = false }, deps = {}) => {
   requireSuperAdmin(admin);
   await assertCityAllowed(db, admin, cityId);
   const config = requireConfigured(deps.env ?? process.env);
   await loadDriver(db, cityId, driverId);
+  if (!Number.isInteger(linkId) || linkId <= 0) throw new PayrollError(400, 'linkId must be the link that was looked up');
   const why = typeof reason === 'string' ? reason.trim().replace(/\s+/g, ' ').slice(0, 300) : '';
   if (why.length < MIN_UNLINK_REASON) throw new PayrollError(400, 'give a reason for unlinking');
   // Moving a link while this driver still has unsettled Everee payments is allowed only when the admin has been shown that and confirms it.
@@ -236,12 +245,18 @@ export const unlinkDriver = async (db, admin, { cityId, driverId, reason, acknow
     if (pending.outstanding) throw new PayrollError(409, 'this driver has Everee payments that are not settled yet; check them first, then confirm to unlink anyway');
   }
   // Under the driver's lock (driverLock.js): an onboarding save that was waiting sees the revocation when it gets its turn.
-  const { rowCount } = await withDriverLock(db, driverId, (tx) => tx.query(
-    `UPDATE everee_workers SET unlinked_by = $3, unlinked_at = now(), unlink_reason = $4
-      WHERE driver_id = $1 AND environment = $2 AND unlinked_at IS NULL`,
-    [driverId, config.environment, admin.id, why]
-  ));
-  if (rowCount === 0) throw new PayrollError(404, 'this driver is not linked to an Everee worker');
+  const outcome = await withDriverLock(db, driverId, async (tx) => {
+    const { rowCount } = await tx.query(
+      `UPDATE everee_workers SET unlinked_by = $3, unlinked_at = now(), unlink_reason = $4
+        WHERE id = $5 AND driver_id = $1 AND environment = $2 AND unlinked_at IS NULL`,
+      [driverId, config.environment, admin.id, why, linkId]
+    );
+    if (rowCount > 0) return 'unlinked';
+    const { rowCount: active } = await tx.query('SELECT 1 FROM everee_workers WHERE driver_id = $1 AND environment = $2 AND unlinked_at IS NULL', [driverId, config.environment]);
+    return active > 0 ? 'changed' : 'none';
+  });
+  if (outcome === 'changed') throw new PayrollError(409, 'this driver\'s Everee link changed since you looked it up; nothing was removed. Look up again');
+  if (outcome === 'none') throw new PayrollError(404, 'this driver is not linked to an Everee worker');
   logger.info('Driver unlinked from an Everee worker', { driverId, environment: config.environment });
   return { unlinked: true };
 };

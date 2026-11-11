@@ -9,7 +9,7 @@ afterEach(cleanup);
 
 const DRIVER = { driverId: 41, name: "Active Driver", state: "needs-review" };
 const worker = { workerId: "W-1", firstName: "Sam", lastName: "Lee", maskedEmail: "s***@example.com", maskedPhone: "***0001", matchedOn: ["email", "phone"], conflicts: [] };
-const heldBy = (extra = {}) => ({ driverId: 7, name: "Sam Lee (old)", driverCode: 391331, enabled: false, cityId: 3, outstandingPayments: false, ...extra });
+const heldBy = (extra = {}) => ({ driverId: 7, name: "Sam Lee (old)", driverCode: 391331, enabled: false, cityId: 3, outstandingPayments: false, linkId: 55, ...extra });
 const mount = async (handler) => {
   const posts = [];
   await installServer(async (config) => {
@@ -43,7 +43,7 @@ it("moves a link from an old disabled record: shows who holds it, needs a reason
   fireEvent.click(unlink);
   const link = await screen.findByRole("button", { name: "Link this worker" });
   const unlinkCall = view.posts.find((p) => p.url.endsWith("/unlink"));
-  expect(unlinkCall.body).toEqual({ cityId: 3, driverId: 7, reason: "same person, moved to the active record", acknowledgeOutstanding: false }); // the OTHER record, in its own city
+  expect(unlinkCall.body).toEqual({ cityId: 3, driverId: 7, linkId: 55, reason: "same person, moved to the active record", acknowledgeOutstanding: false }); // the OTHER record, in its own city, and the exact link that was reviewed
   fireEvent.click(link);
   expect(await screen.findByText(/Linked\./)).toBeTruthy();
   expect(view.posts.at(-1).body).toEqual({ cityId: 3, driverId: 41, workerId: "W-1" });
@@ -79,4 +79,53 @@ it("explains no match, a conflict and an incomplete driver without offering to l
   expect(await screen.findByText(/no valid 10-digit phone number/)).toBeTruthy();
   fireEvent.click(lookupButton());
   await waitFor(() => expect(screen.getByRole("alert").textContent).toMatch(/already linked/));
+});
+
+const withHolder = (result, extra = {}) => ({ result, reason: null, issues: [], matches: [{ ...worker, linkedTo: "another_driver", linkedDriver: { ...heldBy(), linkId: undefined }, ...extra }] });
+
+it("keeps an ambiguous, incomplete or conflicting result read-only: the holder is shown, nothing can be removed or linked", async () => {
+  const answers = [
+    withHolder("ambiguous"),
+    withHolder("conflict", { matchedOn: ["phone"], conflicts: ["email"] }),
+    { ...withHolder("ambiguous"), matches: [withHolder("ambiguous").matches[0], { ...worker, workerId: "W-2", linkedTo: null, linkedDriver: null }] },
+  ];
+  let n = 0;
+  await mount(async () => ({ status: 200, data: answers[n++] }));
+  for (let i = 0; i < answers.length; i += 1) {
+    fireEvent.click(screen.getByRole("button", { name: /Look up in Everee|Looking up/ }));
+    await waitFor(() => expect(n).toBe(i + 1));
+    expect((await screen.findAllByText(/not a single clean match/)).length).toBeGreaterThan(0);
+    expect(screen.getByText(/driver code 391331 \(disabled\)/)).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Remove link from that record" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Link this worker" })).toBeNull();
+  }
+});
+
+it("drops the result when the unlink is refused (the link changed) or the follow-up look-up fails, so no stale remove action is left", async () => {
+  let unlinkAnswer = { status: 409, data: { message: "this driver's Everee link changed since you looked it up; nothing was removed. Look up again" } };
+  let lookups = 0;
+  await mount(async (c) => {
+    if (c.url.endsWith("/lookup")) { lookups += 1; return lookups === 1 || lookups === 3 ? { status: 200, data: { result: "blocked", reason: "worker_linked_to_another_driver", issues: [], matches: [{ ...worker, linkedTo: "another_driver", linkedDriver: heldBy() }] } } : { status: 500, data: {} }; }
+    if (c.url.endsWith("/unlink")) return unlinkAnswer;
+    return { status: 404, data: {} };
+  });
+  const remove = () => screen.queryByRole("button", { name: "Remove link from that record" });
+  const reason = () => screen.getByLabelText("Why is the link being moved?");
+  fireEvent.click(screen.getByRole("button", { name: "Look up in Everee" }));
+  await screen.findByRole("button", { name: "Remove link from that record" });
+  fireEvent.change(reason(), { target: { value: "moved to the active record" } });
+  fireEvent.click(remove());
+  expect(await screen.findByText(/Look up again/)).toBeTruthy(); // refused: the server says to look up again
+  expect(remove()).toBeNull(); // and nothing stale is left to press
+
+  unlinkAnswer = { status: 200, data: { unlinked: true } };
+  fireEvent.click(screen.getByRole("button", { name: "Look up in Everee" })); // lookups === 2 fails: nothing is shown
+  await waitFor(() => expect(lookups).toBe(2));
+  expect(remove()).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Look up in Everee" })); // lookups === 3 works again
+  await screen.findByRole("button", { name: "Remove link from that record" });
+  fireEvent.change(reason(), { target: { value: "moved to the active record" } });
+  fireEvent.click(remove()); // the unlink works, the follow-up look-up (4th) fails
+  await waitFor(() => expect(lookups).toBe(4));
+  await waitFor(() => expect(remove()).toBeNull());
 });

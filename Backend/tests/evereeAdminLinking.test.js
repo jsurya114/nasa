@@ -45,17 +45,47 @@ test('an old disabled record holds the link: Look up names it, Unlink needs a re
     assert.deepEqual([blocked.result, blocked.reason], ['blocked', 'worker_linked_to_another_driver']);
     const [candidate] = blocked.matches;
     assert.deepEqual([candidate.firstName, candidate.lastName, candidate.maskedEmail, candidate.maskedPhone], ['Same', 'Person', 'w***@example.com', '***0001'], 'the candidate is shown masked');
-    assert.deepEqual(candidate.linkedDriver, { driverId: oldId, name: `Same Person old ${tag}`, driverCode: 391331000 + (oldId % 1000), enabled: false, cityId, outstandingPayments: false });
+    const oldLinkId = Number((await one('SELECT id FROM everee_workers WHERE driver_id = $1 AND unlinked_at IS NULL', [oldId])).id);
+    assert.deepEqual(candidate.linkedDriver, { driverId: oldId, name: `Same Person old ${tag}`, driverCode: 391331000 + (oldId % 1000), enabled: false, cityId, outstandingPayments: false, linkId: oldLinkId }, 'the exact link reviewed is returned');
     await assert.rejects(linkDriver(db, sup, { ...where, workerId: 'W-SAME' }, deps), (e) => e.status === 409, 'it cannot be linked while the old record holds it');
 
+    // Anything but ONE clean match stays read-only: the holder is shown, but no link is offered for removal (no linkId) and the result is not rewritten to "blocked"
+    const viaWorkers = (items) => ({ ...everee, searchWorkers: async () => ({ data: { items, totalItems: items.length } }) });
+    const filler = Array.from({ length: 9 }, (_, i) => ({ workerId: `W-FILL-${i}`, firstName: 'Fill', lastName: `${i}`, email: `fill${i}-${tag}@example.com`, phoneNumber: `555000000${i}` }));
+    const readOnly = {
+      conflict: [{ ...worker, email: `other-${tag}@example.com` }], // the phone matches, the email differs
+      ambiguous: [worker, { ...worker, workerId: 'W-TWO', email: `two-${tag}@example.com` }], // two workers match
+      truncated: [worker, ...filler], // Everee's search returned the most it gives, so the list may be incomplete
+    };
+    const expected = { conflict: 'conflict', ambiguous: 'ambiguous', truncated: 'ambiguous' };
+    for (const [name, items] of Object.entries(readOnly)) {
+      const result = await lookupDriver(db, sup, where, { env: EVEREE, client: viaWorkers(items) });
+      assert.deepEqual([result.result, result.reason], [expected[name], null], `${name}: the result is not rewritten`);
+      const held = result.matches.find((m) => m.workerId === 'W-SAME');
+      assert.equal(held.linkedTo, 'another_driver', `${name}: the holder is still shown`);
+      assert.ok(!('linkId' in held.linkedDriver), `${name}: no link is offered for removal`);
+      await assert.rejects(linkDriver(db, sup, { ...where, workerId: 'W-SAME' }, { env: EVEREE, client: viaWorkers(items) }), (e) => e.status === 409, `${name}: cannot be linked`);
+    }
+    assert.equal((await one('SELECT count(*)::int AS n FROM everee_workers WHERE driver_id = $1 AND unlinked_at IS NULL', [oldId])).n, 1, 'the old record is still linked');
+
     // Unlink: super admin only, with a reason; unsettled payments need a confirmation
-    await assert.rejects(unlinkDriver(db, plain, { cityId, driverId: oldId, reason: 'moved' }, deps), (e) => e.status === 403);
-    await assert.rejects(unlinkDriver(db, sup, { cityId, driverId: oldId, reason: ' ' }, deps), (e) => e.status === 400);
-    await assert.rejects(unlinkDriver(db, sup, { cityId, driverId: oldId, reason: '' }, deps), (e) => e.status === 400);
+    await assert.rejects(unlinkDriver(db, plain, { cityId, driverId: oldId, linkId: oldLinkId, reason: 'moved' }, deps), (e) => e.status === 403);
+    await assert.rejects(unlinkDriver(db, sup, { cityId, driverId: oldId, linkId: oldLinkId, reason: ' ' }, deps), (e) => e.status === 400);
+    await assert.rejects(unlinkDriver(db, sup, { cityId, driverId: oldId, linkId: oldLinkId, reason: '' }, deps), (e) => e.status === 400);
     const withPending = { query: (sql, params) => (/AS outstanding/.test(sql) ? { rows: [{ outstanding: true }] } : db.query(sql, params)), connect: undefined };
-    await assert.rejects(unlinkDriver(withPending, sup, { cityId, driverId: oldId, reason: 'moved to the active record' }, deps), (e) => e.status === 409 && /not settled/.test(e.message));
+    await assert.rejects(unlinkDriver(withPending, sup, { cityId, driverId: oldId, linkId: oldLinkId, reason: 'moved to the active record' }, deps), (e) => e.status === 409 && /not settled/.test(e.message));
     assert.equal((await one('SELECT count(*)::int AS n FROM everee_workers WHERE driver_id = $1 AND unlinked_at IS NULL', [oldId])).n, 1, 'still linked after the refusals');
-    assert.deepEqual(await unlinkDriver(db, sup, { cityId, driverId: oldId, reason: 'moved to the active record 475406', acknowledgeOutstanding: false }, deps), { unlinked: true });
+
+    // a stale selection: someone replaced the old record's link after the lookup, so the link that was reviewed is no longer the active one and nothing is removed
+    await db.query('SAVEPOINT stale');
+    await db.query('UPDATE everee_workers SET unlinked_at = now(), unlinked_by = $2, unlink_reason = $3 WHERE id = $1', [oldLinkId, sup.id, 'replaced by another admin']);
+    await db.query("INSERT INTO everee_workers (driver_id, environment, tenant_id, everee_worker_id, link_source, linked_by, onboarding_complete) VALUES ($1, 'sandbox', '4321', 'W-REPLACEMENT', 'matched_email', $2, true)", [oldId, sup.id]);
+    await assert.rejects(unlinkDriver(db, sup, { cityId, driverId: oldId, linkId: oldLinkId, reason: 'moved to the active record' }, deps), (e) => e.status === 409 && /Look up again/.test(e.message));
+    assert.equal((await one("SELECT everee_worker_id FROM everee_workers WHERE driver_id = $1 AND unlinked_at IS NULL", [oldId])).everee_worker_id, 'W-REPLACEMENT', 'the replacement link was not removed');
+    await assert.rejects(unlinkDriver(db, sup, { cityId, driverId: oldId, reason: 'no link given' }, deps), (e) => e.status === 400);
+    await db.query('ROLLBACK TO SAVEPOINT stale');
+
+    assert.deepEqual(await unlinkDriver(db, sup, { cityId, driverId: oldId, linkId: oldLinkId, reason: 'moved to the active record 475406', acknowledgeOutstanding: false }, deps), { unlinked: true });
     const history = await one('SELECT unlink_reason, unlinked_by, unlinked_at FROM everee_workers WHERE driver_id = $1', [oldId]);
     assert.deepEqual([history.unlink_reason, history.unlinked_by, history.unlinked_at !== null], ['moved to the active record 475406', sup.id, true], 'the old link is kept as history with who, when and why');
 

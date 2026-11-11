@@ -57,7 +57,10 @@ export default function EvereeLinkPanel({ driver, cityId, onChanged }) {
     if (result) setLookup(result);
   };
   const match = lookup?.matches?.[0] ?? null;
-  const holder = match?.linkedDriver ?? null;
+  // Removal is offered only for ONE clean match that another record holds (the server sends the link to remove only then). An ambiguous, incomplete or
+  // conflicting result is read-only: the admin sees who holds a candidate, nothing more.
+  const holder = lookup?.reason === "worker_linked_to_another_driver" && lookup.matches.length === 1 && match.linkedDriver?.linkId ? match.linkedDriver : null;
+  const readOnlyHolders = lookup && !holder ? lookup.matches.filter((m) => m.linkedDriver) : [];
 
   const link = async () => {
     const result = await call("link", { cityId: Number(cityId), driverId: driver.driverId, workerId: match.workerId });
@@ -65,8 +68,10 @@ export default function EvereeLinkPanel({ driver, cityId, onChanged }) {
   };
   // Removes the link of the OTHER record. The driver is looked up again straight away, so the admin sees the clean match before linking.
   const unlink = async () => {
-    const result = await call("unlink", { cityId: holder.cityId, driverId: holder.driverId, reason: reason.trim(), acknowledgeOutstanding: checked });
-    if (!result) return;
+    // The link that was reviewed goes with the request: if someone changed it since, the server refuses and a fresh look-up is needed.
+    const result = await call("unlink", { cityId: holder.cityId, driverId: holder.driverId, linkId: holder.linkId, reason: reason.trim(), acknowledgeOutstanding: checked });
+    if (!result) { setLookup(null); return; } // refused (for example the link changed): the old result is dropped so no stale remove action is left
+    setLookup(null); // dropped at once; a failed follow-up look-up leaves nothing to press
     setReason(""); setChecked(false);
     const again = await call("lookup", { cityId: Number(cityId), driverId: driver.driverId });
     if (again) setLookup(again);
@@ -86,7 +91,13 @@ export default function EvereeLinkPanel({ driver, cityId, onChanged }) {
               <button type="button" className={BUTTON} onClick={link} disabled={busy}>Link this worker</button>
             </>
           )}
-          {lookup.reason === "worker_linked_to_another_driver" && holder && (
+          {readOnlyHolders.length > 0 && (
+            <p role="status" className="rounded-xl bg-amber-50 p-3 text-amber-900">
+              {readOnlyHolders.map((m) => `${m.firstName ?? "A worker"} ${m.lastName ?? ""} is linked to driver code ${m.linkedDriver.driverCode} (${m.linkedDriver.enabled ? "enabled" : "disabled"})`).join("; ")}.
+              {" "}This look-up is not a single clean match, so nothing can be removed or linked from here.
+            </p>
+          )}
+          {holder && (
             <div className="space-y-2">
               <p role="alert" className="rounded-xl bg-amber-50 p-3 text-amber-900">
                 That worker is still linked to another driver record: <span className="font-semibold">{holder.name}</span> (driver code {holder.driverCode}, {holder.enabled ? "enabled" : "disabled"}).
@@ -99,7 +110,6 @@ export default function EvereeLinkPanel({ driver, cityId, onChanged }) {
               <button type="button" className={BUTTON} onClick={unlink} disabled={busy || reason.trim().length < MIN_REASON || (holder.outstandingPayments && !checked)}>Remove link from that record</button>
             </div>
           )}
-          {lookup.reason === "worker_linked_to_another_driver" && !holder && <p>That worker is linked to another driver. Nothing can be linked.</p>}
           {NOTHING[lookup.result] && <p>{NOTHING[lookup.result]}</p>}
           {lookup.result === "blocked" && lookup.reason !== "worker_linked_to_another_driver" && <p>{BLOCKED[lookup.reason] ?? "This driver cannot be linked."}{lookup.issues?.length ? ` ${lookup.issues.map((i) => i.message).join("; ")}.` : ""}</p>}
         </div>
