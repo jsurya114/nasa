@@ -17,6 +17,7 @@ import { loginRateLimit } from '../middlewares/loginRateLimit.js';
 import driverAvailabilityController from "../controllers/driver/driveravailabilityController.js";
 import passwordController from "../controllers/driver/updatepasswordController.js";
 import languageController from "../controllers/driver/languageController.js";
+import profileController from "../controllers/driver/profileController.js";
 import { driverPushTokens } from "../controllers/pushTokenController.js";
 import { getOwnBalances, getOwnStatement, getOwnStatements } from "../controllers/payroll/statementController.js";
 
@@ -57,6 +58,10 @@ router.post("/journey", requireSelf('driver_id', 'body'), validateCityType, save
 // ✅ Use attachCityType for read operations (doesn't block, just attaches info)
 router.get("/journey/:driver_id", requireSelf('driver_id'), attachCityType, fetchTodayJourney)
 router.post("/update-password", passwordController.updatePassword)
+
+// The driver's own profile (full name, email, phone). Self only: the driver comes from the token.
+router.get("/profile", profileController.getProfile)
+router.put("/profile", profileController.updateProfile)
 
 // Routes list - attach city type info for filtering if needed
 router.get("/routes-list", attachCityType, getDriverRoutes)

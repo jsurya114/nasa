@@ -95,6 +95,12 @@ export const backendEn = {
     failedToUpdate: "Failed to update password. Please try again.",
   },
 
+  // Driver profile (own name, email, phone): only the messages the profile slice shows itself
+  profile: {
+    failedToUpdate: "Could not save your profile. Please try again.",
+    failedToLoad: "Could not load your profile. Please try again.",
+  },
+
   // Common errors
   common: {
     serverError: "Server error",

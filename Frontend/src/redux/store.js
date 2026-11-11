@@ -17,6 +17,7 @@ import dashboardReducer from "../redux/slice/admin/dashSlice.js"
 import analyticsReducer from './slice/admin/analyticsSlice';
 import availabilityReducer from '../redux/slice/driver/availabilitySlice.js';
 import passwordReducer from "../redux/slice/driver/passwordSlice.js"
+import driverProfileReducer from "../redux/slice/driver/profileSlice.js"
 import languageReducer from "../redux/slice/languageSlice.js"
 
 export const store = configureStore({
@@ -37,6 +38,7 @@ export const store = configureStore({
        analytics:analyticsReducer,
        availability: availabilityReducer,
        password:passwordReducer,
+       driverProfile:driverProfileReducer,
       language:languageReducer,
       excel:excelReducer
     

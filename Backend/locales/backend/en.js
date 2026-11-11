@@ -99,6 +99,24 @@ export const backendEn = {
     failedToUpdate: "Failed to update password. Please try again.",
   },
 
+  // Driver profile (own name, email, phone)
+  profile: {
+    nameRequired: "Full name is required",
+    nameTooLong: "Full name must be at most 100 characters",
+    emailRequired: "Email is required",
+    emailTooLong: "Email must be at most 150 characters",
+    emailInvalid: "Enter a valid email address, like name@example.com",
+    phoneInvalid: "Enter a 10-digit US phone number, like 903-405-8843",
+    nameTaken: "Another driver already uses this name",
+    emailTaken: "Another driver already uses this email",
+    validationFailed: "Please fix the highlighted fields",
+    updatedSuccessfully: "Profile updated",
+    accountDisabled: "Your account is disabled, so the profile cannot be changed",
+    failedToUpdate: "Could not save your profile. Please try again.",
+    failedToLoad: "Could not load your profile. Please try again.",
+  },
+
+
   // Push notifications: text shown on the lock screen. No names, amounts, routes or cities, on purpose.
   push: {
     title: "NASA Logistics",

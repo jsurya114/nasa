@@ -99,6 +99,24 @@ export const backendEs = {
     failedToUpdate: "Error al actualizar contraseña. Por favor intente nuevamente.",
   },
 
+  // Perfil del conductor (nombre, correo y teléfono propios)
+  profile: {
+    nameRequired: "El nombre completo es obligatorio",
+    nameTooLong: "El nombre completo debe tener como máximo 100 caracteres",
+    emailRequired: "El correo electrónico es obligatorio",
+    emailTooLong: "El correo electrónico debe tener como máximo 150 caracteres",
+    emailInvalid: "Ingrese un correo electrónico válido, como nombre@ejemplo.com",
+    phoneInvalid: "Ingrese un número de teléfono de EE. UU. de 10 dígitos, como 903-405-8843",
+    nameTaken: "Otro conductor ya usa este nombre",
+    emailTaken: "Otro conductor ya usa este correo electrónico",
+    validationFailed: "Corrija los campos marcados",
+    updatedSuccessfully: "Perfil actualizado",
+    accountDisabled: "Su cuenta está deshabilitada, por lo que no se puede cambiar el perfil",
+    failedToUpdate: "No se pudo guardar su perfil. Por favor intente nuevamente.",
+    failedToLoad: "No se pudo cargar su perfil. Por favor intente nuevamente.",
+  },
+
+
   // Notificaciones push: texto de la pantalla de bloqueo. Sin nombres, montos, rutas ni ciudades, a propósito.
   push: {
     title: "NASA Logistics",
