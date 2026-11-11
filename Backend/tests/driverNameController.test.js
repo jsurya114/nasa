@@ -10,7 +10,7 @@ const call = async (handler, req) => {
   return out;
 };
 
-const base = { email: 'a@example.com', password: 'secret1', driver_code: 123456, city: 'Test City', enabled: true };
+const base = { email: 'a@example.com', password: 'secret1', driver_code: 123456, city: 'Test City', enabled: true, phoneNumber: '903-405-8843' };
 
 test('creating a driver without a usable name is a 400 that says so, before anything else is checked', async () => {
   const { createUsers } = await import('../controllers/admin/addUserController.js');

@@ -50,7 +50,7 @@ test('the Add and Edit driver forms may leave the type out; a wrong one is refus
 
 test('creating or editing a driver with a wrong type is a 400, before anything else is checked', async () => {
   const { createUsers, updateUser } = await import('../controllers/admin/addUserController.js');
-  const body = { name: 'Test Driver', email: 'a@example.com', password: 'secret1', driver_code: 123456, city: 'Test City', enabled: true, driverType: 'local' };
+  const body = { name: 'Test Driver', email: 'a@example.com', password: 'secret1', driver_code: 123456, city: 'Test City', enabled: true, phoneNumber: '903-405-8843', driverType: 'local' };
   const created = await call(createUsers, { body, user: { id: 1, role: 'superadmin' } });
   assert.equal(created.code, 400);
   assert.match(created.body.message, /LOCAL, DESI/);

@@ -2,6 +2,13 @@ import { useState, useEffect } from "react";
 import { useSelector } from "react-redux";
 import { DRIVER_TYPE_LABEL } from "./driverType";
 
+// A US phone as Everee needs it: 10 digits, a leading country code 1 allowed. The server checks the same rule.
+const PHONE_HELP = "Enter a 10-digit US phone number, like 903-405-8843";
+const isUsPhone = (value) => {
+  const digits = String(value ?? "").replace(/\D/g, "");
+  return /^\d{10}$/.test(digits.length === 11 && digits.startsWith("1") ? digits.slice(1) : digits);
+};
+
 const EMPTY_FORM = {
   name: "",
   email: "",
@@ -56,10 +63,9 @@ function AddDriverForm({ onSubmit, editData, isEdit, onCancel }) {
     if (!form.name.trim()) newErrors.name = "Name is required";
     if (!form.email.trim()) newErrors.email = "Email is required";
     
-    // Validate phone number (basic validation - adjust regex as needed)
-    if (form.phoneNumber && !/^\+?[\d\s\-()]+$/.test(form.phoneNumber)) {
-      newErrors.phoneNumber = "Invalid phone number format";
-    }
+    // The phone number is required: Everee cannot onboard a driver without a valid US number (10 digits, a leading 1 is allowed).
+    if (!form.phoneNumber.trim()) newErrors.phoneNumber = "Phone number is required";
+    else if (!/^\+?[\d\s\-()]+$/.test(form.phoneNumber) || !isUsPhone(form.phoneNumber)) newErrors.phoneNumber = PHONE_HELP;
     
     if (!form.driver_code || !form.driver_code.toString().trim()) newErrors.driver_code = "Driver Code is required";
     if (!form.city.trim()) newErrors.city = "City is required";
@@ -139,7 +145,10 @@ function AddDriverForm({ onSubmit, editData, isEdit, onCancel }) {
         name="phoneNumber"
         value={form.phoneNumber}
         onChange={handleChange}
-        placeholder="Phone Number (optional)"
+        placeholder="Phone Number (required, 10 digits)"
+        aria-required="true"
+        aria-invalid={errors.phoneNumber ? "true" : undefined}
+        autoComplete="tel"
         className="bg-white text-ink placeholder:text-ink-muted/70 transition-shadow border-line min-h-11 px-3 py-2 border rounded-xl focus:outline-none focus:ring-4 focus:ring-brand-500/20"
       />
       {errors.phoneNumber && <p className="text-red-500 text-sm">{errors.phoneNumber}</p>}
