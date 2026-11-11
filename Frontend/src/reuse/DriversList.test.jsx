@@ -57,7 +57,7 @@ describe("Drivers table: driver type and bulk change", () => {
   it("shows a Driver Type column: Local, Desi, and Not set for a driver nobody has classified", async () => {
     await startServer();
     await mount();
-    expect([...document.querySelectorAll("thead th")].map((th) => th.textContent)).toContain("Driver Type");
+    expect(screen.getByRole("button", { name: "Driver Type" })).toBeTruthy();
     expect(within(rowOf("Dee Test")).getByText("Local")).toBeTruthy();
     expect(within(rowOf("Eli Test")).getByText("Desi")).toBeTruthy();
     expect(within(rowOf("Fay Test")).getByText("Not set")).toBeTruthy();

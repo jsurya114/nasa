@@ -4,6 +4,7 @@ import { canAccessJob, canAccessDriver } from '../../services/admin/cityAccess.j
 import logger from '../../utils/logger.js';
 import { findDriverByName, isNameConflict, NAME_TAKEN, parseDriverName } from '../../services/admin/driverName.js';
 import { parseOptionalDriverType } from '../../services/admin/driverType.js';
+import { ListInputError, listDrivers, parseListQuery } from '../../services/admin/driverList.js';
 import { driverUpdateFailure, parseDriverFields, parsePhone } from '../../services/admin/driverUpdateRules.js';
 import pool from '../../config/db.js';
 
@@ -55,35 +56,13 @@ export const createUsers = async (req, res) => {
 
 export const getUsers = async (req, res) => {
     try {
-       
-
-        const adminId = req.user.id;
-        const adminRole = req.user.role;
-        const page = parseInt(req.query.page) || 1;
-        const limit = 10;
-        const offset = (page - 1) * limit;
-        const search = req.query.search || "";
-        const city = req.query.city || "";
-
-        let drivers;
-        let totalDrivers;
-
-        if (adminRole === 'superadmin') {
-            drivers = await dbService.getAllDrivers(limit, offset, search, city);
-            totalDrivers = await dbService.getCountOfDrivers(search, city);
-        } else {
-            drivers = await dbService.getDriversByAdminCities(adminId, limit, offset, search, city);
-            totalDrivers = await dbService.getCountOfDriversByAdminCities(adminId, search, city);
-        }
-
-        const totalPages = Math.ceil(totalDrivers / limit);
-
-        return res.status(HttpStatus.OK).json({
-            drivers,
-            page,
-            totalPages
-        });
+        // Search, filters, sort and each driver's Everee status come from one query. Every choice is checked against fixed lists first.
+        const filters = parseListQuery(req.query);
+        const scope = req.user.role === 'superadmin' ? { all: true } : { adminId: req.user.id };
+        const list = await listDrivers(pool, scope, filters);
+        return res.status(HttpStatus.OK).json(list);
     } catch (err) {
+        if (err instanceof ListInputError) return res.status(HttpStatus.BAD_REQUEST).json({ message: err.message });
         logger.error("Get users error", err);
         res.status(HttpStatus.INTERNAL_SERVER_ERROR).json({ message: "Server error" });
     }
