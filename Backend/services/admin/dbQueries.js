@@ -358,16 +358,19 @@ updateParams = [
     },
 
     updateAdmin: async (id, data) => {
+        // A new password is hashed the same way as when the admin is created (the typed text, untrimmed, so sign-in compares the same text).
+        // null keeps the current password. Hashed before the transaction so the connection is not held while bcrypt runs.
+        const newHash = data.password ? await dbService.hashedPassword(data.password) : null;
         const client = await pool.connect();
         try {
             await client.query('BEGIN');
 
             const result = await client.query(
-                `UPDATE admin 
-                 SET name = $1, email = $2, role = $3
-                 WHERE id = $4 
+                `UPDATE admin
+                 SET name = $1, email = $2, role = $3, password = COALESCE($5, password)
+                 WHERE id = $4
                  RETURNING id, name, email, role, is_active`,
-                [data.name, data.email, data.role, id]
+                [data.name, data.email, data.role, id, newHash]
             );
             
             const admin = result.rows[0];
