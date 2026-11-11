@@ -340,6 +340,34 @@ test('everee submit: reserve, send, payout request, replay, partial failure, ret
       });
     });
 
+    await t.test('an unlink that commits after the preview but before the reservation resumes stops the batch: nothing is reserved for a worker the driver no longer has', async () => {
+      for (const replacement of [null, 'EW-E-OTHER']) {
+        await savepoint(async () => {
+          const run = (await scenario('UL', [[dE, '10.00']])).run;
+          const hash = await hashOf(run);
+          let unlinked = false;
+          // The reservation reads the driver rows under a share lock. Just before that read, the unlink (and maybe a new link) lands, as if it had committed first.
+          const racing = new Proxy(db, { get: (target, prop) => (prop === 'query'
+            ? async (sql, params) => {
+              if (!unlinked && /FOR SHARE OF d/.test(sql)) {
+                unlinked = true;
+                await target.query("UPDATE everee_workers SET unlinked_by = $2, unlinked_at = now(), unlink_reason = 'Test unlink first' WHERE driver_id = $1 AND unlinked_at IS NULL AND environment = 'sandbox'", [dE, sup1.id]);
+                if (replacement) await target.query("INSERT INTO everee_workers (driver_id, environment, everee_worker_id, link_source, onboarding_complete, tin_status, linked_by) VALUES ($1, 'sandbox', $2, 'created_sandbox', true, 'VERIFIED', $3)", [dE, replacement, sup1.id]);
+              }
+              return target.query(sql, params);
+            }
+            : (typeof target[prop] === 'function' ? target[prop].bind(target) : target[prop])) });
+          const before = await counts();
+          const fake = makeEveree();
+          await assert.rejects(submitBatch(racing, sup2, { runId: run.id, requestId: randomUUID(), previewHash: hash }, deps(fake.client)), { status: 409, message: /Everee worker changed/ }, `replacement: ${replacement}`);
+          assert.ok(unlinked, 'the unlink really happened in the gap');
+          assert.deepEqual(fake.state.creates, [], 'nothing was sent');
+          assert.deepEqual(await counts(), before, 'nothing was reserved');
+          assert.equal((await statement(run, dE)).payout_status, 'not_submitted');
+        });
+      }
+    });
+
     await t.test('a retry goes only to the worker saved on the payment: a driver linked to another worker since is not sent to', async () => {
       const run = await scenario('N', [[dA, '10.00']]);
       const batch = await submit(run.run, makeEveree({ 'EW-A': 'refuse' }).client);
