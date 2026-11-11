@@ -129,3 +129,22 @@ it("drops the result when the unlink is refused (the link changed) or the follow
   await waitFor(() => expect(lookups).toBe(4));
   await waitFor(() => expect(remove()).toBeNull());
 });
+
+it("starts every new look-up with an empty reason and an unticked confirmation, even if the holder and its unsettled payments differ", async () => {
+  const answers = [
+    { result: "blocked", reason: "worker_linked_to_another_driver", issues: [], matches: [{ ...worker, linkedTo: "another_driver", linkedDriver: heldBy({ outstandingPayments: true }) }] },
+    { result: "blocked", reason: "worker_linked_to_another_driver", issues: [], matches: [{ ...worker, workerId: "W-2", linkedTo: "another_driver", linkedDriver: heldBy({ driverId: 8, driverCode: 400400, linkId: 66, outstandingPayments: true }) }] },
+  ];
+  let n = 0;
+  await mount(async () => ({ status: 200, data: answers[n++] }));
+  fireEvent.click(screen.getByRole("button", { name: "Look up in Everee" }));
+  fireEvent.change(await screen.findByLabelText("Why is the link being moved?"), { target: { value: "reviewed the first record" } });
+  fireEvent.click(screen.getByLabelText(/I checked the unsettled payments/));
+  expect(screen.getByLabelText(/I checked the unsettled payments/).checked).toBe(true);
+
+  fireEvent.click(screen.getByRole("button", { name: "Look up in Everee" })); // a manual look-up shows a different holder
+  await screen.findByText(/driver code 400400/);
+  expect(screen.getByLabelText("Why is the link being moved?").value).toBe("");
+  expect(screen.getByLabelText(/I checked the unsettled payments/).checked).toBe(false);
+  expect(screen.getByRole("button", { name: "Remove link from that record" }).disabled).toBe(true);
+});

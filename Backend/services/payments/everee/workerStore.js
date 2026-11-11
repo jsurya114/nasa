@@ -239,13 +239,16 @@ export const unlinkDriver = async (db, admin, { cityId, driverId, linkId, reason
   if (!Number.isInteger(linkId) || linkId <= 0) throw new PayrollError(400, 'linkId must be the link that was looked up');
   const why = typeof reason === 'string' ? reason.trim().replace(/\s+/g, ' ').slice(0, 300) : '';
   if (why.length < MIN_UNLINK_REASON) throw new PayrollError(400, 'give a reason for unlinking');
-  // Moving a link while this driver still has unsettled Everee payments is allowed only when the admin has been shown that and confirms it.
-  if (!acknowledgeOutstanding) {
-    const { rows: [pending] } = await db.query(`SELECT ${OUTSTANDING_SQL('$1::int', '$2')} AS outstanding`, [driverId, config.environment]);
-    if (pending.outstanding) throw new PayrollError(409, 'this driver has Everee payments that are not settled yet; check them first, then confirm to unlink anyway');
-  }
-  // Under the driver's lock (driverLock.js): an onboarding save that was waiting sees the revocation when it gets its turn.
+  // One transaction under the driver's lock (driverLock.js; an onboarding save that was waiting sees the revocation when it gets its turn). It first takes the
+  // driver row in a mode that conflicts with the SHARE lock a payment batch holds on that row while it reserves the driver's payments, so a batch that is
+  // still being written finishes first and the check below sees its payment. Moving a link while the driver has unsettled Everee payments is allowed only
+  // when the admin was shown that and confirmed it.
   const outcome = await withDriverLock(db, driverId, async (tx) => {
+    await tx.query('SELECT id FROM drivers WHERE id = $1 FOR NO KEY UPDATE', [driverId]);
+    if (!acknowledgeOutstanding) {
+      const { rows: [pending] } = await tx.query(`SELECT ${OUTSTANDING_SQL('$1::int', '$2')} AS outstanding`, [driverId, config.environment]);
+      if (pending.outstanding) return 'outstanding';
+    }
     const { rowCount } = await tx.query(
       `UPDATE everee_workers SET unlinked_by = $3, unlinked_at = now(), unlink_reason = $4
         WHERE id = $5 AND driver_id = $1 AND environment = $2 AND unlinked_at IS NULL`,
@@ -255,6 +258,7 @@ export const unlinkDriver = async (db, admin, { cityId, driverId, linkId, reason
     const { rowCount: active } = await tx.query('SELECT 1 FROM everee_workers WHERE driver_id = $1 AND environment = $2 AND unlinked_at IS NULL', [driverId, config.environment]);
     return active > 0 ? 'changed' : 'none';
   });
+  if (outcome === 'outstanding') throw new PayrollError(409, 'this driver has Everee payments that are not settled yet; check them first, then confirm to unlink anyway');
   if (outcome === 'changed') throw new PayrollError(409, 'this driver\'s Everee link changed since you looked it up; nothing was removed. Look up again');
   if (outcome === 'none') throw new PayrollError(404, 'this driver is not linked to an Everee worker');
   logger.info('Driver unlinked from an Everee worker', { driverId, environment: config.environment });

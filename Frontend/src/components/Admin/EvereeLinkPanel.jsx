@@ -40,6 +40,10 @@ export default function EvereeLinkPanel({ driver, cityId, onChanged }) {
   const [reason, setReason] = useState("");
   const [checked, setChecked] = useState(false);
 
+  // The reason and the unsettled-payments tick belong to the result that was reviewed: whenever a result is shown, replaced or dropped they start empty again,
+  // so a later look-up (maybe a different holder) never inherits what was typed or ticked for the earlier one.
+  const showLookup = (result) => { setReason(""); setChecked(false); setLookup(result); };
+
   const call = async (path, body) => {
     setBusy(true); setError(null);
     try {
@@ -52,9 +56,9 @@ export default function EvereeLinkPanel({ driver, cityId, onChanged }) {
     }
   };
   const look = async () => {
-    setOpen(true); setDone(null);
+    setOpen(true); setDone(null); showLookup(null);
     const result = await call("lookup", { cityId: Number(cityId), driverId: driver.driverId });
-    if (result) setLookup(result);
+    if (result) showLookup(result);
   };
   const match = lookup?.matches?.[0] ?? null;
   // Removal is offered only for ONE clean match that another record holds (the server sends the link to remove only then). An ambiguous, incomplete or
@@ -64,17 +68,16 @@ export default function EvereeLinkPanel({ driver, cityId, onChanged }) {
 
   const link = async () => {
     const result = await call("link", { cityId: Number(cityId), driverId: driver.driverId, workerId: match.workerId });
-    if (result) { setLookup(null); setDone("Linked. Ask the driver to reopen the app. The status updates once Everee confirms onboarding."); onChanged(); }
+    if (result) { showLookup(null); setDone("Linked. Ask the driver to reopen the app. The status updates once Everee confirms onboarding."); onChanged(); }
   };
   // Removes the link of the OTHER record. The driver is looked up again straight away, so the admin sees the clean match before linking.
   const unlink = async () => {
     // The link that was reviewed goes with the request: if someone changed it since, the server refuses and a fresh look-up is needed.
     const result = await call("unlink", { cityId: holder.cityId, driverId: holder.driverId, linkId: holder.linkId, reason: reason.trim(), acknowledgeOutstanding: checked });
-    if (!result) { setLookup(null); return; } // refused (for example the link changed): the old result is dropped so no stale remove action is left
-    setLookup(null); // dropped at once; a failed follow-up look-up leaves nothing to press
-    setReason(""); setChecked(false);
+    showLookup(null); // dropped at once, refused or not: a failed follow-up look-up leaves nothing to press, and nothing typed or ticked is kept
+    if (!result) return;
     const again = await call("lookup", { cityId: Number(cityId), driverId: driver.driverId });
-    if (again) setLookup(again);
+    if (again) showLookup(again);
   };
 
   return (
