@@ -24,13 +24,20 @@ export const addDriver = createAsyncThunk("/admin/create-users",
 )
 
 export const getUsers = createAsyncThunk('/admin/get-users',
-    async ({ page = 1, search = "", city = "" }, { rejectWithValue }) => {
+    async ({ page = 1, search = "", city = "", type = "", enabled = "", status = "", issue = "", sort = "name", dir = "asc" }, { rejectWithValue }) => {
         try {
+            // Only what is chosen is sent; the server applies the same defaults.
             const res = await axios.get(`/admin/get-users`, {
                 params: {
                     page,
                     search,
-                    city: city === "All" ? undefined : city
+                    city: city === "All" ? undefined : city,
+                    type: type || undefined,
+                    enabled: enabled || undefined,
+                    status: status || undefined,
+                    issue: issue || undefined,
+                    sort: sort === "name" ? undefined : sort,
+                    dir: dir === "asc" ? undefined : dir
                 }
             });
             return res.data;
@@ -155,6 +162,12 @@ const userLoadSlice = createSlice({
         totalPages: 0,
         searchTerm: "",
         selectedCity: "All",
+        // The other filters and the sort of the drivers table. "" means "all"; the server sorts by name, A to Z, unless told otherwise.
+        driverFilters: { type: "", enabled: "", status: "", issue: "", sort: "name", dir: "asc" },
+        // From the last list: how many drivers have each Everee status (for the chips), the total, and whether Everee onboarding is on.
+        counts: null,
+        total: 0,
+        everee: null,
         // Kept apart from `loading` so changing types never swaps the table for its loading skeleton.
         changingType: false
     },
@@ -173,6 +186,16 @@ const userLoadSlice = createSlice({
         },
         setSelectedCity: (state, action) => {
             state.selectedCity = action.payload;
+            state.page = 1;
+        },
+        // One filter or the sort: { key, value }. Any change starts again from the first page.
+        setDriverFilter: (state, action) => {
+            const { key, value } = action.payload;
+            if (key in state.driverFilters) state.driverFilters[key] = value;
+            state.page = 1;
+        },
+        clearDriverFilters: (state) => {
+            state.driverFilters = { type: "", enabled: "", status: "", issue: "", sort: "name", dir: "asc" };
             state.page = 1;
         }
     },
@@ -208,6 +231,9 @@ const userLoadSlice = createSlice({
                 }
                 state.page = action.payload.page;
                 state.totalPages = action.payload.totalPages;
+                state.counts = action.payload.counts ?? null;
+                state.total = action.payload.total ?? action.payload.drivers.length;
+                state.everee = action.payload.everee ?? null;
                 state.loading = false;
                 state.success = null;
             })
@@ -387,5 +413,5 @@ const userLoadSlice = createSlice({
     }
 })
 
-export const { clearMessages, clearPaginateTerms, setSearchTerm, setSelectedCity } = userLoadSlice.actions
+export const { clearMessages, clearPaginateTerms, setSearchTerm, setSelectedCity, setDriverFilter, clearDriverFilters } = userLoadSlice.actions
 export default userLoadSlice.reducer;

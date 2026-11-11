@@ -19,6 +19,7 @@ const AdminPayroll = lazy(() => import("./components/Admin/Payroll.jsx"));
 const AdminPayRuns = lazy(() => import("./components/Admin/PayRuns.jsx"));
 const AdminInsights = lazy(() => import("./components/Admin/Insights.jsx"));
 const AdminCarrierStatements = lazy(() => import("./components/Admin/CarrierStatements.jsx"));
+const AdminInvoices = lazy(() => import("./components/Admin/Invoices.jsx"));
 
 import ProtectedRoutes from "./routes/admin/ProtectedRoute.jsx";
 import AdminPublicOnlyRoute from "./routes/admin/PublicOnlyRoute.jsx";
@@ -73,6 +74,7 @@ function App() {
                 <Route path="/admin/payroll" element={<AdminPayroll />} />
                 <Route path="/admin/pay-runs" element={<AdminPayRuns />} />
                 <Route path="/admin/insights" element={<AdminInsights />} />
+                <Route path="/admin/invoices" element={<AdminInvoices />} />
                 <Route path="/admin/carrier-statements" element={<AdminCarrierStatements />} />
               </Route>
             </Route>

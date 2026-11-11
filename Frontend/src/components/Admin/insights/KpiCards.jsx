@@ -47,6 +47,22 @@ const tipOf = (definitions, id) => {
   return d ? [d.definition, ...(d.caveats ?? [])].join(" ") : undefined;
 };
 
+// Invoice payments received: the saved total of every invoice marked Payment received, once each, by the date it was received. Kept apart from
+// delivery revenue (it is not added to it, nor to the margin). Company-wide: invoices have no city or source, so those filters do not narrow it.
+function InvoicePayments({ figure, tip }) {
+  if (!figure) return null;
+  return (
+    <Card id="invoice-payments" label="Invoice payments received" value={formatUsd(figure.amount)} tip={tip}>
+      <p className="mt-1 text-sm text-ink-muted" data-testid="invoice-payments-basis">
+        {figure.invoices} {figure.invoices === 1 ? "invoice" : "invoices"} paid in this period, by payment received date. Not part of delivery revenue.
+      </p>
+      <p className="mt-1 text-xs text-ink-muted" data-testid="invoice-payments-scope">
+        {figure.filtersApply === false ? "Company-wide: the city and source filters do not apply to this figure." : "Company-wide."}
+      </p>
+    </Card>
+  );
+}
+
 export default function KpiCards({ status, report, message, onRetry, range, definitions }) {
   if (status === "loading" || status === "idle") {
     return (
@@ -70,6 +86,9 @@ export default function KpiCards({ status, report, message, onRetry, range, defi
       <div className="card-surface p-6 text-center" data-testid="insights-empty">
         <p className="text-lg font-semibold text-ink">No delivery records in this period</p>
         <p className="mt-1 text-sm text-ink-muted">Nothing is shown as zero because of a measurement: there is simply no data for these filters. Try another period, city or source.</p>
+        {Number(d.invoicePaymentsReceived?.amount) > 0 && (
+          <p className="mt-2 text-sm text-ink" data-testid="invoice-payments-empty">Invoice payments received in this period (company-wide): {formatUsd(d.invoicePaymentsReceived.amount)}.</p>
+        )}
       </div>
     );
   }
@@ -107,6 +126,7 @@ export default function KpiCards({ status, report, message, onRetry, range, defi
           <p className="mt-1 text-xs text-ink-muted">By billing week, {d.settlement.statements} statement{d.settlement.statements === 1 ? "" : "s"}. Prepayments and withdrawal fees are not included.</p>
         </Card>
       )}
+      <InvoicePayments figure={d.invoicePaymentsReceived} tip={tipOf(definitions, "invoice_payments_received")} />
       <Card id="drivers" label="Active drivers" value={formatCount(d.activeDrivers)} tip={tipOf(definitions, "active_drivers")} />
       <Card id="per-day" label="Deliveries per active driver-day" value={formatDecimal(d.deliveriesPerActiveDriverDay)} tip={tipOf(definitions, "deliveries_per_active_day")} />
       <Card id="per-delivery" label="Revenue and margin per delivery" value={`${formatUsd(d.revenuePerDelivery)} · ${formatUsd(d.marginPerDelivery)}`}>

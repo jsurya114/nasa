@@ -119,17 +119,29 @@ describe("Insights: the GOFO import history link", () => {
   });
 });
 
-describe("Insights: the invoice button", () => {
-  it("has a Create invoice button that opens the form without leaving the page or asking the server for anything", async () => {
-    const server = await startServer();
-    const view = await mount();
-    const button = await screen.findByTestId("create-invoice");
-    expect(button.textContent).toContain("Create invoice");
-    const asked = server.calls.length;
-    fireEvent.click(button);
-    expect(await screen.findByRole("dialog", { name: /create invoice/i })).toBeTruthy();
-    expect(view.search()).toBe("");
-    expect(server.calls.length).toBe(asked);
+describe("Insights: invoice payments received", () => {
+  it("has no invoice button any more (invoices have their own page)", async () => {
+    await startServer();
+    await mount();
+    await screen.findByTestId("kpi-revenue");
+    expect(screen.queryByTestId("create-invoice")).toBeNull();
+  });
+
+  it("shows paid invoices apart from delivery revenue, company-wide, and says so when a city or source filter is on", async () => {
+    await startServer({ overview: () => ({ status: 200, data: overview({ invoicePaymentsReceived: { amount: "1465.97", invoices: 2, scope: "company-wide", filtersApply: false } }) }) });
+    await mount();
+    const card = await screen.findByTestId("kpi-invoice-payments");
+    expect(card.textContent).toContain("$1,465.97");
+    expect(card.textContent).toContain("2 invoices paid in this period, by payment received date");
+    expect(screen.getByTestId("invoice-payments-scope").textContent).toBe("Company-wide: the city and source filters do not apply to this figure.");
+    expect(screen.getByTestId("kpi-revenue").textContent).toContain("$6,000.00");
+  });
+
+  it("is left out when the server has no invoice figure", async () => {
+    await startServer();
+    await mount();
+    await screen.findByTestId("kpi-revenue");
+    expect(screen.queryByTestId("kpi-invoice-payments")).toBeNull();
   });
 });
 
