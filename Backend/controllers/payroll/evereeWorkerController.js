@@ -49,7 +49,7 @@ export const postRefresh = run('refresh', (req) => refreshWorker(pool, req.admin
 
 export const postUnlink = run('unlink', (req) => {
   const { cityId, driverId } = need(scope(req.body ?? {}), ['cityId', 'driverId']);
-  return unlinkDriver(pool, req.admin, { cityId, driverId, reason: req.body?.reason });
+  return unlinkDriver(pool, req.admin, { cityId, driverId, reason: req.body?.reason, acknowledgeOutstanding: req.body?.acknowledgeOutstanding === true });
 });
 
 export const postSandboxWorker = run('sandbox worker', (req) => createSandboxWorker(pool, req.admin, need(scope(req.body ?? {}), ['cityId', 'driverId'])));

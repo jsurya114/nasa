@@ -14,6 +14,10 @@ import { driverIssues, linkSourceOf, matchWorkers, MAX_SEARCH_RESULTS, normalize
 const SANDBOX_EXTERNAL_PREFIX = 'nasa-sandbox-driver-';
 const MIN_UNLINK_REASON = 3;
 
+// Everee payments of a driver that are not settled: sent and not confirmed, or not sent, or a deposit that came back. The same rule the readiness page uses.
+export const OUTSTANDING_SQL = (driverColumn, environmentParam) => `EXISTS (SELECT 1 FROM everee_payment_items i JOIN everee_payment_batches b ON b.id = i.batch_id
+  WHERE i.driver_id = ${driverColumn} AND b.environment = ${environmentParam} AND (i.status IN ('submitted', 'unconfirmed', 'not_submitted') OR i.deposit_returned))`;
+
 const requireSuperAdmin = (admin) => {
   if (!isSuperAdmin(admin)) throw new PayrollError(403, 'only a super admin can link drivers to Everee');
 };
@@ -122,14 +126,22 @@ export const lookupDriver = async (db, admin, { cityId, driverId }, deps = {}) =
   }
   const { result, matches } = matchWorkers({ email, phone }, found, { truncated });
 
-  // A worker already linked to a driver is never offered to another one.
+  // A worker already linked to a driver is never offered to another one. The admin is told which driver holds it (a disabled record still holds its link),
+  // and whether that driver has payments that are not settled, so the link is moved on purpose, not by accident.
   const { rows: links } = await db.query(
-    'SELECT driver_id, everee_worker_id FROM everee_workers WHERE environment = $1 AND everee_worker_id = ANY($2::text[]) AND unlinked_at IS NULL',
+    `SELECT w.driver_id, w.everee_worker_id, d.name, d.driver_code, d.enabled, d.city_id, ${OUTSTANDING_SQL('d.id', '$1')} AS outstanding
+       FROM everee_workers w JOIN drivers d ON d.id = w.driver_id
+      WHERE w.environment = $1 AND w.everee_worker_id = ANY($2::text[]) AND w.unlinked_at IS NULL`,
     [config.environment, matches.map((m) => m.workerId)]
   );
   const annotated = matches.map((m) => {
     const link = links.find((l) => l.everee_worker_id === m.workerId);
-    return { ...m, linkedTo: link ? (link.driver_id === driver.id ? 'this_driver' : 'another_driver') : null };
+    const other = link && link.driver_id !== driver.id ? link : null;
+    return {
+      ...m,
+      linkedTo: link ? (other ? 'another_driver' : 'this_driver') : null,
+      linkedDriver: other ? { driverId: other.driver_id, name: other.name, driverCode: other.driver_code, enabled: other.enabled, cityId: other.city_id, outstandingPayments: other.outstanding } : null,
+    };
   });
   if (annotated.some((m) => m.linkedTo === 'another_driver')) return { result: 'blocked', reason: 'worker_linked_to_another_driver', issues: [], matches: annotated };
   return { result, reason: null, issues: [], matches: annotated, truncated };
@@ -211,13 +223,18 @@ export const refreshWorker = async (db, admin, { cityId, driverId }, deps = {}) 
 
 // ---------- unlink (kept as history, with a reason) ----------
 
-export const unlinkDriver = async (db, admin, { cityId, driverId, reason }, deps = {}) => {
+export const unlinkDriver = async (db, admin, { cityId, driverId, reason, acknowledgeOutstanding = false }, deps = {}) => {
   requireSuperAdmin(admin);
   await assertCityAllowed(db, admin, cityId);
   const config = requireConfigured(deps.env ?? process.env);
   await loadDriver(db, cityId, driverId);
   const why = typeof reason === 'string' ? reason.trim().replace(/\s+/g, ' ').slice(0, 300) : '';
   if (why.length < MIN_UNLINK_REASON) throw new PayrollError(400, 'give a reason for unlinking');
+  // Moving a link while this driver still has unsettled Everee payments is allowed only when the admin has been shown that and confirms it.
+  if (!acknowledgeOutstanding) {
+    const { rows: [pending] } = await db.query(`SELECT ${OUTSTANDING_SQL('$1::int', '$2')} AS outstanding`, [driverId, config.environment]);
+    if (pending.outstanding) throw new PayrollError(409, 'this driver has Everee payments that are not settled yet; check them first, then confirm to unlink anyway');
+  }
   // Under the driver's lock (driverLock.js): an onboarding save that was waiting sees the revocation when it gets its turn.
   const { rowCount } = await withDriverLock(db, driverId, (tx) => tx.query(
     `UPDATE everee_workers SET unlinked_by = $3, unlinked_at = now(), unlink_reason = $4

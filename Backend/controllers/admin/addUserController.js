@@ -2,7 +2,7 @@ import HttpStatus from '../../utils/statusCodes.js';
 import { dbService } from '../../services/admin/dbQueries.js';
 import { canAccessJob, canAccessDriver } from '../../services/admin/cityAccess.js';
 import logger from '../../utils/logger.js';
-import { findDriverByName, isNameConflict, NAME_TAKEN, parseDriverName } from '../../services/admin/driverName.js';
+import { findDriverByName, findSimilarDrivers, isNameConflict, NAME_TAKEN, parseDriverName } from '../../services/admin/driverName.js';
 import { parseOptionalDriverType } from '../../services/admin/driverType.js';
 import { ListInputError, listDrivers, parseListQuery } from '../../services/admin/driverList.js';
 import { driverUpdateFailure, parseDriverFields, parsePhone } from '../../services/admin/driverUpdateRules.js';
@@ -39,7 +39,29 @@ export const createUsers = async (req, res) => {
         if (driverCodeExists)
             return res.status(HttpStatus.CONFLICT).json({ message: "Driver Code already used" });
 
-        if (await findDriverByName(pool, name)) return res.status(HttpStatus.CONFLICT).json({ message: NAME_TAKEN });
+        // The same person registered twice is how a driver ends up with two Everee setups, so the admin is told which record to review instead.
+        // Only records in cities this admin manages are named.
+        const visible = async (rows) => {
+            const out = [];
+            for (const row of rows) if (await canAccessDriver(req.user, row.id)) out.push({ driverCode: row.driver_code, enabled: row.enabled });
+            return out;
+        };
+        const clash = await findDriverByName(pool, name);
+        if (clash) {
+            const [seen] = await visible([clash]);
+            const detail = seen ? ` (driver code ${seen.driverCode}, ${seen.enabled ? 'enabled' : 'disabled'}). Review that record instead of creating another` : '';
+            return res.status(HttpStatus.CONFLICT).json({ message: `${NAME_TAKEN}${detail}` });
+        }
+        if (req.body.confirmSimilar !== true) {
+            const similar = await visible(await findSimilarDrivers(pool, name));
+            if (similar.length > 0) {
+                return res.status(HttpStatus.CONFLICT).json({
+                    code: 'similar_driver',
+                    message: 'A driver with a very similar name already exists. Review that record before creating another',
+                    similar,
+                });
+            }
+        }
 
         const insertUser = await dbService.insertUser({ name, email, driver_code, password, city, enabled, phoneNumber: parsedPhone.phone, driverType: parsedType.driverType });
 

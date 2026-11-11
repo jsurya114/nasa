@@ -4,6 +4,7 @@ import Header from "../../reuse/Header";
 import Nav from "../../reuse/Nav";
 import axios from "../../redux/slice/axiosInstance";
 import { SkeletonList } from "../../reuse/Skeleton.jsx";
+import EvereeLinkPanel from "./EvereeLinkPanel.jsx";
 
 const LABELS = { "not-started": "Not started", creating: "Finding worker", "in-progress": "In progress", verifying: "Verifying", complete: "Complete", "needs-review": "Needs admin review", "classification-required": "Set driver type", "not-required": "Not required (Desi)", "service-unavailable": "Connection unavailable" };
 const NEXT = { "not-started": "Ask the driver to start payment setup in their portal.", creating: "NASA is checking whether Everee created this worker. Do not create another.", "in-progress": "Ask the driver to continue payment setup in their portal.", verifying: "NASA is waiting for verified completion.", complete: "Onboarding is complete.", "needs-review": "Review this driver's Everee identity and link before continuing.", "classification-required": "Set Local or Desi in Users.", "not-required": "Everee onboarding is not required for Desi drivers.", "service-unavailable": "Check the Everee connection in Pay runs." };
@@ -91,6 +92,7 @@ export default function PaymentSetupOverview() {
             {driver.state === "complete" && !driver.paymentReady && <p className="mt-1 text-sm text-amber-900">Onboarding is complete, but Everee payment readiness needs review.</p>}
             {driver.reason === "contact_changed" && driver.contactChangedAt && <dl className="mt-2 rounded-xl bg-amber-50 p-3 text-sm" aria-label="New contact details"><div className="flex flex-wrap gap-x-2"><dt className="font-semibold">New email:</dt><dd className="break-all">{driver.contactEmail || "none"}</dd></div><div className="flex flex-wrap gap-x-2"><dt className="font-semibold">New phone:</dt><dd>{driver.contactPhone || "none"}</dd></div></dl>}
             {driver.reason === "contact_changed" && driver.contactChangedAt && <button className={BUTTON + " mt-3"} disabled={confirming === driver.driverId} onClick={() => confirmContact(driver)}>{confirming === driver.driverId ? "Confirming…" : "Confirm contact details"}</button>}
+            {driver.state === "needs-review" && <EvereeLinkPanel driver={driver} cityId={cityId} onChanged={refresh} />}
             {confirmError?.driverId === driver.driverId && <p role="alert" className="mt-2 text-sm text-red-700">{confirmError.message}</p>}
             <p className="mt-2 text-xs text-ink-muted">Last checked: {time(driver.lastCheckedAt)}{driver.openWork ? " · Has open work" : ""}{driver.outstandingPayment ? " · Has an outstanding Everee payment" : ""}</p>
           </article>)}
