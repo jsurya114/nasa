@@ -43,7 +43,7 @@ const asProfileError = (error) => {
 // Changing the email or phone also sets contact_changed_at: Everee and QuickBooks match people by exact email or phone, so a super admin must
 // confirm the new details before this driver can be linked to a payroll record (see contactReview.js).
 // Returns { profile, changed } where `changed` lists the field names that were saved (names only, never the values).
-export const saveOwnProfile = async (pool, driverId, values, currentPassword = '') => {
+export const saveOwnProfile = async (pool, driverId, values, currentPassword = '', attempts = null) => {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
@@ -58,8 +58,11 @@ export const saveOwnProfile = async (pool, driverId, values, currentPassword = '
 
     if (changed.includes('email')) {
       if (typeof currentPassword !== 'string' || !currentPassword) throw new ProfileError(400, 'passwordRequired', 'currentPassword');
+      // Guesses are limited per driver; past the limit the password is not even compared (so a right guess cannot get through either).
+      if (attempts && !(await attempts.allow())) throw new ProfileError(429, 'tooManyAttempts', 'currentPassword');
       // A refusal is a 403, not a 401: a 401 would make the app try to refresh the session.
       if (!current.password || !(await bcrypt.compare(currentPassword, current.password))) throw new ProfileError(403, 'passwordWrong', 'currentPassword');
+      if (attempts) await attempts.passed();
       await lockEmail(client, values.email);
     }
 

@@ -111,6 +111,7 @@ export const backendEs = {
     emailTaken: "Otro conductor ya usa este correo electrónico",
     passwordRequired: "Ingrese su contraseña actual para cambiar su correo electrónico.",
     passwordWrong: "Su contraseña actual no es correcta.",
+    tooManyAttempts: "Demasiados intentos de contraseña. Espere 15 minutos e inténtelo de nuevo.",
     validationFailed: "Corrija los campos marcados",
     updatedSuccessfully: "Perfil actualizado",
     accountDisabled: "Su cuenta está deshabilitada, por lo que no se puede cambiar el perfil",

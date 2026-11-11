@@ -23,7 +23,7 @@ test('a driver edits only their own name, email and phone, and stays signed in a
     "INSERT INTO drivers (password, name, email, driver_code, enabled, phone_number) VALUES ($5, $1, $2, $3, $4, '903-405-8843') RETURNING id, name, email, driver_code",
     [`Prof ${label} ${tag}`, `prof-${label}-${tag}@example.test`, code, enabled, bcrypt.hashSync(PASSWORD, 4)])).rows[0];
   const row = async (id) => (await pool.query('SELECT name, email, phone_number, driver_code, enabled, contact_changed_at FROM drivers WHERE id = $1', [id])).rows[0];
-  let a; let b; let off; let c; let d;
+  let a; let b; let off; let c; let d; let e;
   try {
     a = await make('a', 720000000 + Math.floor(Math.random() * 9000000));
     b = await make('b', 730000000 + Math.floor(Math.random() * 9000000));
@@ -108,6 +108,16 @@ test('a driver edits only their own name, email and phone, and stays signed in a
     const ghost = await call(profileController.getProfile, { driver: { id: 2147483000, role: 'driver' } });
     assert.equal(ghost.code, 404);
 
+    // password guesses are limited per driver: 5 checks, then even the right password is not compared; another driver is not affected
+    e = await make('e', 770000000 + Math.floor(Math.random() * 9000000));
+    const asE = (over) => call(profileController.updateProfile, { driver: { id: e.id, role: 'driver' }, body: { name: e.name, email: e.email, phoneNumber: '903-405-8843', ...over } });
+    for (let i = 0; i < 5; i++) assert.equal((await asE({ email: `new-${e.email}`, currentPassword: `guess-${i}` })).code, 403);
+    const locked = await asE({ email: `new-${e.email}`, currentPassword: PASSWORD });
+    assert.deepEqual([locked.code, Object.keys(locked.body.errors)], [429, ['currentPassword']]);
+    assert.equal((await row(e.id)).email, e.email, 'nothing changed while locked');
+    assert.equal((await asE({ phoneNumber: '903-405-4444' })).code, 200, 'a name or phone change needs no password, so it is not limited');
+    assert.equal((await save({ email: `again-${a.email}`, currentPassword: PASSWORD })).code, 200, 'another driver is not locked');
+
     // two drivers saving the same email (in different letter case) at the same moment: one gets it, the other is told it is taken
     c = await make('c', 750000000 + Math.floor(Math.random() * 9000000));
     d = await make('d', 760000000 + Math.floor(Math.random() * 9000000));
@@ -133,7 +143,7 @@ test('a driver edits only their own name, email and phone, and stays signed in a
       holder.release();
     }
   } finally {
-    for (const x of [a, b, off, c, d]) if (x) await pool.query('DELETE FROM drivers WHERE id = $1', [x.id]);
+    for (const x of [a, b, off, c, d, e]) if (x) await pool.query('DELETE FROM drivers WHERE id = $1', [x.id]);
     await pool.end();
     (await import('../config/redis.js')).default.quit().catch(() => {}); // the controller module opens a Redis connection that would keep the test process alive
   }
