@@ -220,6 +220,63 @@ test('quickbooks payments: reserve, send, settle, replay, partial failure, safe 
       assert.match((await item(bad.run, dB)).error_message, /another vendor or amount/);
       assert.equal((await statement(bad.run, dB)).payout_status, 'paid', 'the cash payment stands');
     });
+
+    // The server stopped after the cash was recorded (or after the bill was made) and before the answer was written: the item stays "submitted" with an attempt that never finished.
+    // The test clock is the transaction start, so "aging" a batch moves its rows back in time.
+    const interrupt = async (run, driver, { minutesAgo = 0 } = {}) => {
+      const row = await item(run, driver);
+      await db.query("UPDATE quickbooks_payment_items SET status = 'submitted', bill_payment_id = NULL, paid_at = NULL, error_message = NULL, updated_at = now() - ($2::int * interval '1 minute') WHERE id = $1", [row.id, minutesAgo]);
+      await db.query('UPDATE quickbooks_payment_attempts SET finished_at = NULL, outcome = NULL, http_status = NULL, intuit_tid = NULL, error_message = NULL WHERE item_id = $1 AND attempt_no = (SELECT max(attempt_no) FROM quickbooks_payment_attempts WHERE item_id = $1)', [row.id]);
+      return row;
+    };
+
+    await t.test('an interrupted send is offered for retry only once nothing in its batch has moved for ten minutes, and the retry posts each QuickBooks entry once', async () => {
+      const cut = await scenario('I', [[dA, '25.00']]);
+      let refuse = true;
+      const fake = makeQuickbooks({ 71: { payment: () => (refuse ? 'refuse' : 'ok') } });
+      const result = await submit(cut.run, fake.client);
+      assert.equal(result.counts.failed, 1);
+      assert.equal(fake.state.bills.length, 1, 'the bill landed in QuickBooks before the server stopped');
+      const receiptsBefore = (await one('SELECT count(*)::int n FROM pay_run_payment_records WHERE pay_run_id = $1', [cut.run.id])).n;
+
+      await interrupt(cut.run, dA);
+      let view = await getBatchView(db, sup, result.batch.id);
+      assert.deepEqual([view.counts.submitted, view.items[0].interrupted, view.canRetry], [1, false, false], 'a send that may still be running is left alone');
+      await assert.rejects(retryBatch(db, sup, result.batch.id, deps(fake.client)), { status: 409, message: /still being sent/ });
+      assert.equal(fake.state.payments.length, 0, 'nothing was sent while the first send could still be running');
+
+      await interrupt(cut.run, dA, { minutesAgo: 11 });
+      view = await getBatchView(db, sup, result.batch.id);
+      assert.deepEqual([view.counts.submitted, view.items[0].interrupted, view.canRetry], [1, true, true], 'ten minutes of silence: interrupted, and Retry is offered');
+
+      refuse = false;
+      const retried = await retryBatch(db, sup, result.batch.id, deps(fake.client));
+      assert.deepEqual(retried.counts, { submitted: 0, paid: 1, failed: 0, unconfirmed: 0 });
+      assert.deepEqual([fake.state.bills.length, fake.state.payments.length], [1, 1], 'the bill was found by its number; one bill and one payment');
+      assert.equal((await one('SELECT count(*)::int n FROM pay_run_payment_records WHERE pay_run_id = $1', [cut.run.id])).n, receiptsBefore, 'the original cash receipt is untouched and no second one is made');
+      assert.equal((await statement(cut.run, dA)).payout_status, 'paid');
+      const open = await one('SELECT count(*)::int n FROM quickbooks_payment_attempts a JOIN quickbooks_payment_items i ON i.id = a.item_id WHERE a.finished_at IS NULL AND i.pay_statement_id = $1', [(await statement(cut.run, dA)).id]);
+      assert.equal(open.n, 0, 'the cut-off attempt is closed as unknown, never left open');
+      assert.match((await one("SELECT a.error_message FROM quickbooks_payment_attempts a JOIN quickbooks_payment_items i ON i.id = a.item_id WHERE i.pay_statement_id = $1 AND a.outcome = 'timeout'", [(await statement(cut.run, dA)).id])).error_message, /interrupted/);
+      await assert.rejects(retryBatch(db, sup, result.batch.id, deps(fake.client)), { status: 409, message: /nothing can be retried/ });
+    });
+
+    await t.test('a retry takes the failed item and leaves a send that may still be running alone; a second Retry while the first sends is refused', async () => {
+      const mix = await scenario('S', [[dA, '20.00'], [dB, '10.00']]);
+      let refuse = true;
+      const fake = makeQuickbooks({ 71: { payment: () => (refuse ? 'refuse' : 'ok') } });
+      const result = await submit(mix.run, fake.client);
+      assert.deepEqual(result.counts, { submitted: 0, paid: 1, failed: 1, unconfirmed: 0 });
+      const other = await item(mix.run, dB);
+      await db.query("UPDATE quickbooks_payment_items SET status = 'submitted', updated_at = now() WHERE id = $1", [other.id]); // still on its way
+      refuse = false;
+      const retried = await retryBatch(db, sup, result.batch.id, deps(fake.client));
+      assert.deepEqual(retried.counts, { submitted: 1, paid: 1, failed: 0, unconfirmed: 0 });
+      assert.equal((await item(mix.run, dB)).status, 'submitted');
+      assert.equal((await item(mix.run, dB)).attempts, other.attempts, 'the item that may still be sending was not sent a second time');
+      assert.equal(fake.state.payments.length, 2, 'dB\'s payment from the first send, dA\'s from the retry; nothing doubled');
+      await assert.rejects(retryBatch(db, sup, result.batch.id, deps(fake.client)), { status: 409, message: /still being sent/ });
+    });
   } finally {
     await db.query('ROLLBACK').catch(() => {});
     db.release();

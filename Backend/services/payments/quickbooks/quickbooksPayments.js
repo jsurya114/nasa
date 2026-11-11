@@ -11,7 +11,7 @@ import { quickbooksPaymentsGate, readQuickbooksConfig } from './quickbooksConfig
 import { createQuickbooksClient, QuickbooksError } from './quickbooksClient.js';
 import { getAuth } from './connectionStore.js';
 import {
-  QB_BLOCKERS, UnexpectedAnswerError, billBody, billPaymentBody, billRequestId, clip, classifyFailure, docNumberOf, paymentRequestId, previewHashOf,
+  QB_BLOCKERS, STALE_AFTER_MINUTES, UnexpectedAnswerError, billBody, billPaymentBody, billRequestId, clip, classifyFailure, docNumberOf, paymentRequestId, previewHashOf,
 } from './paymentRules.js';
 
 // Desi drivers are paid CASH IN HAND, outside NASA and outside QuickBooks (the client turned payments off in QuickBooks). QuickBooks is only the record the client files
@@ -165,7 +165,8 @@ export const previewQuickbooksBatch = async (db, admin, runId, deps = {}) => (aw
 
 // ---------- views ----------
 
-const itemView = (row) => ({ itemId: row.id, statementId: row.pay_statement_id, driverId: row.driver_id, driverName: row.driver_name, amount: row.amount, status: row.status,
+const itemView = (row, idle = false) => ({ itemId: row.id, statementId: row.pay_statement_id, driverId: row.driver_id, driverName: row.driver_name, amount: row.amount, status: row.status,
+  interrupted: row.status === 'submitted' && idle,
   quickbooks: { vendorId: row.vendor_id, billId: row.bill_id, billPaymentId: row.bill_payment_id, docNumber: row.doc_number }, attempts: row.attempts, error: row.error_message, lastAttemptAt: row.last_attempt_at, paidAt: row.paid_at });
 
 export const getBatchView = async (db, admin, batchId) => {
@@ -178,13 +179,18 @@ export const getBatchView = async (db, admin, batchId) => {
     `SELECT i.id, i.pay_statement_id, i.driver_id, d.name AS driver_name, i.amount::text AS amount, i.status, i.vendor_id, i.doc_number, i.bill_id, i.bill_payment_id,
             i.attempts, i.error_message, i.last_attempt_at, i.paid_at
        FROM quickbooks_payment_items i JOIN drivers d ON d.id = i.driver_id WHERE i.batch_id = $1 ORDER BY d.name, i.id`, [batchId]);
-  const items = rows.map(itemView);
+  // Nothing in the batch has changed for a while but items are still "submitted": the server stopped before it finished, and nothing is sending them now.
+  const { rows: [activity] } = await db.query(
+    'SELECT (max(updated_at) < now() - ($2::int * interval \'1 minute\')) AS idle FROM quickbooks_payment_items WHERE batch_id = $1', [batchId, STALE_AFTER_MINUTES]);
+  const items = rows.map((row) => itemView(row, Boolean(activity?.idle)));
   const count = (status) => items.filter((i) => i.status === status).length;
+  const interrupted = items.filter((i) => i.interrupted).length;
   return {
     batch: { id: batch.id, runId: batch.pay_run_id, cityId: batch.city_id, environment: batch.environment, realmId: batch.realm_id, paidOn: batch.paid_on, drivers: batch.driver_count, total: batch.total, createdAt: batch.created_at, requestId: batch.request_id },
     counts: { submitted: count('submitted'), paid: count('paid'), failed: count('failed'), unconfirmed: count('unconfirmed') },
     items,
-    canRetry: count('failed') + count('unconfirmed') > 0,
+    // A "submitted" item is retryable only once interrupted; while a send is running its items are left alone.
+    canRetry: count('failed') + count('unconfirmed') + interrupted > 0,
   };
 };
 
@@ -379,15 +385,29 @@ export const retryBatch = async (db, admin, batchId, deps = {}) => {
     const { rows: [conn] } = await tx.query('SELECT realm_id FROM quickbooks_connection WHERE environment = $1', [batch.environment]);
     if (!conn || conn.realm_id !== batch.realm_id) throw new PayrollError(409, 'QuickBooks is connected to a different company than the one this batch was made for; reconnect the original company to retry it');
     // Everything not yet in QuickBooks. The drivers were paid when the batch was confirmed, so no statement changes here; only the QuickBooks record is sent again.
+    // A failed or unconfirmed item has finished, so it can be sent again at once. A "submitted" item may be on its way right now (this run holds the lock, but the send
+    // itself runs outside it): it is taken only when nothing in the batch has changed for STALE_AFTER_MINUTES, i.e. the server stopped before it finished. This also
+    // refuses a second Retry click while the first one is still sending.
+    const { rows: [activity] } = await tx.query(
+      'SELECT (max(updated_at) < now() - ($2::int * interval \'1 minute\')) AS idle FROM quickbooks_payment_items WHERE batch_id = $1', [batchId, STALE_AFTER_MINUTES]);
     const { rows: open } = await tx.query(
-      `SELECT i.id, d.driver_type, v.vendor_id AS live_vendor
+      `SELECT i.id, i.status, d.driver_type, v.vendor_id AS live_vendor
          FROM quickbooks_payment_items i JOIN drivers d ON d.id = i.driver_id
          LEFT JOIN quickbooks_vendors v ON v.driver_id = i.driver_id AND v.environment = $2 AND v.realm_id = $3 AND v.unlinked_at IS NULL AND v.vendor_id = i.vendor_id
         WHERE i.batch_id = $1 AND i.status IN ('submitted', 'failed', 'unconfirmed') ORDER BY i.id FOR UPDATE OF i FOR SHARE OF d`, [batchId, batch.environment, batch.realm_id]);
-    const retryable = open.filter((i) => i.driver_type === 'DESI' && i.live_vendor);
-    if (retryable.length === 0) throw new PayrollError(409, 'nothing can be retried: everything is in QuickBooks, or the driver\'s vendor link changed');
-    await tx.query("UPDATE quickbooks_payment_items SET status = 'submitted', error_message = NULL, updated_at = now() WHERE id = ANY($1::bigint[])", [retryable.map((i) => i.id)]);
-    return { config, itemIds: retryable.map((i) => i.id) };
+    const takeable = open.filter((i) => i.status !== 'submitted' || activity.idle);
+    const retryable = takeable.filter((i) => i.driver_type === 'DESI' && i.live_vendor);
+    if (retryable.length === 0) {
+      if (open.length > takeable.length) throw new PayrollError(409, `some records are still being sent to QuickBooks; if they do not finish, Retry is offered after ${STALE_AFTER_MINUTES} minutes`);
+      throw new PayrollError(409, 'nothing can be retried: everything is in QuickBooks, or the driver\'s vendor link changed');
+    }
+    const ids = retryable.map((i) => i.id);
+    // A send that was cut off left its attempt without an answer. It stays in the log as unknown (never guessed); the new attempt asks QuickBooks for the bill by its number.
+    await tx.query(
+      `UPDATE quickbooks_payment_attempts SET finished_at = now(), outcome = 'timeout', error_message = 'interrupted: the server stopped before an answer was recorded; the next attempt asks QuickBooks'
+        WHERE item_id = ANY($1::bigint[]) AND finished_at IS NULL`, [ids]);
+    await tx.query("UPDATE quickbooks_payment_items SET status = 'submitted', error_message = NULL, updated_at = now() WHERE id = ANY($1::bigint[])", [ids]);
+    return { config, itemIds: ids };
   });
   await sendBatch(db, batchId, prepared.itemIds, deps, clientFor(db, prepared.config, deps));
   return getBatchView(db, admin, batchId);

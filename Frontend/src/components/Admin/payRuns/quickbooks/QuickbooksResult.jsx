@@ -3,8 +3,9 @@ import axios from "../../../../redux/slice/axiosInstance";
 import { formatMoney } from "../../../../utils/money.js";
 import { buttonClass } from "../../payroll/formParts.jsx";
 
+const INTERRUPTED_TEXT = "Paid in cash; sending to QuickBooks was interrupted. Retry";
 const STATUS_TEXT = { paid: "Recorded in QuickBooks", submitted: "Being recorded in QuickBooks…", unconfirmed: "Paid in cash; not confirmed in QuickBooks yet. Retry", failed: "Paid in cash; not recorded in QuickBooks yet. Retry" };
-const TONE = { paid: "text-green-700", submitted: "text-ink-muted", unconfirmed: "font-semibold text-amber-800", failed: "font-semibold text-red-700" };
+const TONE = { paid: "text-green-700", submitted: "text-ink-muted", interrupted: "font-semibold text-amber-800", unconfirmed: "font-semibold text-amber-800", failed: "font-semibold text-red-700" };
 
 // The QuickBooks record of a payment batch, read back from the server. The drivers were paid (cash) when it was confirmed; this only shows whether QuickBooks has the record. Retry is always safe: the server asks QuickBooks for the bill by its number first, so a
 // bill or payment that did land is found and never made twice.
@@ -46,7 +47,7 @@ export default function QuickbooksResult({ batchId, onChanged }) {
               <span className="font-semibold">{i.driverName}</span>
               <span className="font-bold tabular-nums">{formatMoney(i.amount)}</span>
             </div>
-            <p className={TONE[i.status]}>{STATUS_TEXT[i.status]}</p>
+            <p className={TONE[i.interrupted ? "interrupted" : i.status]}>{i.interrupted ? INTERRUPTED_TEXT : STATUS_TEXT[i.status]}</p>
             {i.quickbooks.billId && <p className="text-xs text-ink-muted">QuickBooks bill {i.quickbooks.billId} · number {i.quickbooks.docNumber}</p>}
             {i.error && <p className="text-xs text-amber-800">{i.error}</p>}
           </li>
