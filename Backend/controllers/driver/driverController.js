@@ -15,6 +15,10 @@ const driverTokenPayload = (driver) => ({
   role: DRIVER_ROLE
 });
 
+// The driver a token belongs to. Looked up by id, because the email in the token goes stale when the driver edits their profile; only a token
+// without an id falls back to the email.
+const driverOfToken = (decoded) => (decoded.id ? loginService.getDriverById(decoded.id) : loginService.getDriverByEmail(decoded.email));
+
 // Helper to get language from request
 const getLang = (req) => {
   return req.headers['x-language'] || req.query?.lang || 'en';
@@ -108,7 +112,7 @@ const driverController = {
       const decoded = verifyToken(token);
 
       // Fetch driver from database to check current status
-      const driver = await loginService.getDriverByEmail(decoded.email);
+      const driver = await driverOfToken(decoded);
 
       if (!driver) {
         blackListToken(token);
@@ -129,6 +133,9 @@ const driverController = {
       return res.status(HttpStatus.OK).json({ 
         driver: {
           ...decoded,
+          // The current name and email, not the ones the token was issued with (the driver may have edited them since).
+          name: driver.name,
+          email: driver.email,
           agreement_signed: driver.agreement_signed
         }
       });
@@ -191,7 +198,7 @@ const driverController = {
         });
       }
 
-      const driver = await loginService.getDriverByEmail(decoded.email);
+      const driver = await driverOfToken(decoded);
 
       if (!driver || !driver.enabled) {
         return res.status(HttpStatus.UNAUTHORIZED).json({

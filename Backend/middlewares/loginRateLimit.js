@@ -92,7 +92,7 @@ async function withRedis(job) {
 }
 
 // Adds one to the counter and returns { count, ttl }. The window starts at the first attempt.
-async function bump(key, windowSeconds) {
+export async function bump(key, windowSeconds) {
   try {
     return await withRedis(async () => {
       const count = await client.incr(key);
@@ -109,7 +109,7 @@ async function bump(key, windowSeconds) {
   }
 }
 
-async function clear(key) {
+export async function clear(key) {
   memory.delete(key);
   try { await withRedis(() => client.del(key)); } catch { /* counter expires by itself */ }
 }

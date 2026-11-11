@@ -118,6 +118,13 @@ describe("a new Desi driver's QuickBooks setup", () => {
     expect(await screen.findByText("Driver dashboard")).toBeTruthy();
   });
 
+  it("a driver whose new email or phone waits for an admin sees that, not the form", async () => {
+    await serve({ qb: qbStatus({ state: "needs-review", canStart: false, blockedBy: "contact_changed", needsFromDriver: [] }) });
+    await mount("/driver/pay");
+    expect(await screen.findByText(/Your admin will check your new email or phone/)).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Save my details" })).toBeNull();
+  });
+
   it("a driver who has not signed the agreement is not locked here", async () => {
     await serve({ qb: qbStatus({ blockedBy: "agreement", canStart: false, agreementSigned: false }) });
     await mount("/driver/pay");

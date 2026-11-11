@@ -7,6 +7,11 @@ export const loginService = {
     return result.rows[0];
   },
 
+  getDriverById: async (id) => {
+    let result = await pool.query("SELECT * FROM drivers WHERE id = $1", [id]);
+    return result.rows[0];
+  },
+
   // Saves the timezone the driver signed in from.
   updateTimezone: async (driverId, timezone) => {
     await pool.query(

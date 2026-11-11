@@ -25,7 +25,7 @@ export const onboardingReadiness = async (db, admin, input, { env = process.env 
   if (!(await db.query('SELECT 1 FROM city WHERE id = $1', [cityId])).rowCount) throw new PayrollError(404, 'city not found');
   const config = readEvereeConfig(env);
   const { rows: [result] } = await db.query(`WITH base AS (
-    SELECT d.id AS "driverId", d.name, d.driver_type AS "driverType", d.agreement_signed AS "agreementSigned",
+    SELECT d.id AS "driverId", d.name, d.driver_type AS "driverType", d.agreement_signed AS "agreementSigned", d.contact_changed_at, d.email AS driver_email, d.phone_number AS driver_phone,
       w.onboarding_complete, w.tin_status, w.terminated, w.last_checked_at AS "lastCheckedAt",
       w.tenant_id AS link_tenant, w.id AS link_id, o.state AS intent_state, o.review_reason,
       EXISTS (SELECT 1 FROM everee_workers old WHERE old.driver_id = d.id AND old.environment = $2 AND old.unlinked_at IS NOT NULL) AS unlinked,
@@ -44,14 +44,15 @@ export const onboardingReadiness = async (db, admin, input, { env = process.env 
       WHEN link_id IS NOT NULL AND link_tenant IS DISTINCT FROM $3 THEN 'needs-review'
       WHEN link_id IS NOT NULL AND onboarding_complete THEN 'complete'
       WHEN link_id IS NOT NULL THEN 'in-progress'
-      WHEN unlinked OR intent_state = 'needs_review' THEN 'needs-review'
+      WHEN unlinked OR contact_changed_at IS NOT NULL OR intent_state = 'needs_review' THEN 'needs-review'
       WHEN intent_state = 'creating' THEN 'creating'
       WHEN intent_state = 'verifying' THEN 'verifying'
       ELSE 'not-started' END AS state
     FROM base
   ), visible AS (
-    SELECT "driverId", name, "driverType", "agreementSigned", "lastCheckedAt", state, "openWork", "outstandingPayment",
-      CASE WHEN state = 'needs-review' THEN CASE WHEN link_id IS NOT NULL THEN 'link_not_verified_for_tenant' WHEN unlinked THEN 'previously_unlinked' ELSE review_reason END
+    SELECT "driverId", name, "driverType", "agreementSigned", "lastCheckedAt", state, CASE WHEN contact_changed_at IS NOT NULL AND link_id IS NULL THEN contact_changed_at END AS "contactChangedAt",
+      CASE WHEN contact_changed_at IS NOT NULL AND link_id IS NULL THEN driver_email END AS "contactEmail", CASE WHEN contact_changed_at IS NOT NULL AND link_id IS NULL THEN driver_phone END AS "contactPhone", "openWork", "outstandingPayment",
+      CASE WHEN state = 'needs-review' THEN CASE WHEN link_id IS NOT NULL THEN 'link_not_verified_for_tenant' WHEN unlinked THEN 'previously_unlinked' WHEN contact_changed_at IS NOT NULL THEN 'contact_changed' ELSE review_reason END
            WHEN NOT "agreementSigned" AND "driverType" = 'LOCAL' THEN 'agreement_required' ELSE NULL END AS reason,
       (state = 'complete' AND NOT COALESCE(terminated, false) AND COALESCE(tin_status, '') <> 'VERIFICATION_FAILED') AS "paymentReady"
     FROM classified WHERE $5 = '' OR state = $5 ORDER BY lower(name), "driverId" LIMIT 50 OFFSET $6

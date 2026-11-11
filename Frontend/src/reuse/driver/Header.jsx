@@ -114,14 +114,19 @@ function Header() {
         </div>
 
         {/* User Profile */}
-        <div className="flex flex-col items-center">
+        <button
+          type="button"
+          onClick={() => navigate("/driver/profile")}
+          aria-label={`${t('profile')}: ${driver?.name ?? ''}`}
+          className="flex flex-col items-center px-2 py-1 rounded-md hover:bg-white/10 transition-colors"
+        >
           <div className="w-7 h-7 md:w-8 md:h-8 rounded-full bg-yellow-400 text-black font-bold grid place-items-center">
             <User className="w-4 h-4 md:w-5 md:h-5" aria-hidden="true" />
           </div>
           <div className="font-semibold truncate max-w-[120px] md:max-w-[150px]">
             {driver?.name}
           </div>
-        </div>
+        </button>
 
         {/* Logout Button */}
         <button
@@ -182,11 +187,18 @@ function Header() {
               </li>
               
               {/* User Info */}
-              <li className="px-4 py-2 flex items-center gap-2 border-b border-black/5">
-                <span className="w-6 h-6 rounded-full bg-yellow-400 text-black text-xs grid place-items-center">
-                  <User className="w-4 h-4" aria-hidden="true" />
-                </span>
-                <span className="truncate">{driver?.name}</span>
+              <li className="border-b border-black/5">
+                <button
+                  type="button"
+                  onClick={() => { setMenuOpen(false); navigate("/driver/profile"); }}
+                  aria-label={`${t('profile')}: ${driver?.name ?? ''}`}
+                  className="w-full px-4 py-2 flex items-center gap-2 text-left hover:bg-brand-50 transition-colors"
+                >
+                  <span className="w-6 h-6 rounded-full bg-yellow-400 text-black text-xs grid place-items-center">
+                    <User className="w-4 h-4" aria-hidden="true" />
+                  </span>
+                  <span className="truncate">{driver?.name}</span>
+                </button>
               </li>
               
               {/* Logout */}

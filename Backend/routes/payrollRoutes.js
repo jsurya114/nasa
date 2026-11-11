@@ -1,6 +1,7 @@
 // Payroll routes (issues #138 to #145). Mounted at /admin/payroll in app.js. Super admin only, except the one
 // Dashboard summary below; each action also checks the admin's cities in its service.
 import express from 'express';
+import { postConfirmContact } from '../controllers/payroll/contactReviewController.js';
 import { getOnboardingReadiness } from '../controllers/payroll/evereeReadinessController.js';
 import { sanitizeRouterParams } from '../middlewares/sanitize.js';
 import adminAuth from '../middlewares/adminAuth.js';
@@ -74,6 +75,8 @@ router.get('/quickbooks-batches/:batchId', getQuickbooksBatch);
 router.post('/quickbooks-batches/:batchId/retry', postQuickbooksBatchRetry);
 // Everee connection (#31): whether the backend is set up and which environment, and a read-only test call. Super admin only, checked in the service.
 router.get('/everee/onboarding-readiness', getOnboardingReadiness);
+// A driver's own email or phone change is held until a super admin confirms it (used by both Everee and QuickBooks linking).
+router.post('/drivers/confirm-contact', postConfirmContact);
 router.get('/everee/status', getEvereeStatus);
 router.post('/everee/check', postEvereeCheck);
 // Linking drivers to existing Everee workers (#31): the city's drivers and their link state, a read-only lookup by email or phone, and a link
