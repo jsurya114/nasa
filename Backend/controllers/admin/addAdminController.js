@@ -184,15 +184,23 @@ export const updateAdmin = async(req, res) => {
         }
 
         const id = req.params.id;
-        const { email, name, role, cities } = req.body;
+        const { email, name, role, cities, password } = req.body;
         const city = Array.isArray(cities) ? cities : [];
-        
+
         // Validate required fields
         if (!email || !name) {
             return res.status(HttpStatus.BAD_REQUEST).json({
                 message: "Email and Name are required"
             });
         }
+
+        // The password is optional on edit: left out or blank keeps the current one. Anything else must be text.
+        if (password !== undefined && password !== null && typeof password !== 'string') {
+            return res.status(HttpStatus.BAD_REQUEST).json({
+                message: "Password must be text"
+            });
+        }
+        const newPassword = typeof password === 'string' && password.trim() ? password : null;
 
         // Prevent superadmin from editing themselves
         if (parseInt(id) === req.user.id) {
@@ -233,7 +241,7 @@ export const updateAdmin = async(req, res) => {
             }
         }
 
-        const updatedAdmin = await dbService.updateAdmin(id, { name, email, role, city });    
+        const updatedAdmin = await dbService.updateAdmin(id, { name, email, role, city, password: newPassword });
 
         return res.status(HttpStatus.OK).json({
             message: "Admin Updated Successfully!",
