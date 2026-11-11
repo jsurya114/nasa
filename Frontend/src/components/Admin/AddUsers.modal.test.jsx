@@ -48,6 +48,7 @@ const mount = async ({ isSuperAdmin = true } = {}) => {
 const fillDriver = () => {
   fireEvent.change(screen.getByPlaceholderText("Driver Name"), { target: { value: "New Driver" } });
   fireEvent.change(screen.getByPlaceholderText("Email"), { target: { value: "new@example.com" } });
+  fireEvent.change(screen.getByPlaceholderText("Phone Number (required, 10 digits)"), { target: { value: "903-405-8843" } });
   fireEvent.change(screen.getByPlaceholderText("Driver Code"), { target: { value: "555" } });
   fireEvent.change(screen.getByPlaceholderText("Password"), { target: { value: "secret1" } });
   fireEvent.change(screen.getByPlaceholderText("Confirm Password"), { target: { value: "secret1" } });
@@ -73,7 +74,7 @@ describe("Drivers page: Add Driver in a dialog", () => {
     fireEvent.click(screen.getByRole("button", { name: "+ Add Driver" }));
     const dialog = screen.getByRole("dialog");
     expect(within(dialog).getByRole("heading", { name: "Add Driver" })).toBeTruthy();
-    for (const placeholder of ["Driver Name", "Email", "Phone Number (optional)", "Driver Code", "Password", "Confirm Password"]) expect(within(dialog).getByPlaceholderText(placeholder)).toBeTruthy();
+    for (const placeholder of ["Driver Name", "Email", "Phone Number (required, 10 digits)", "Driver Code", "Password", "Confirm Password"]) expect(within(dialog).getByPlaceholderText(placeholder)).toBeTruthy();
     expect(within(dialog).getByRole("button", { name: "Add Driver" })).toBeTruthy();
 
     fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));

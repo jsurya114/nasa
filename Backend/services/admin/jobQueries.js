@@ -10,7 +10,7 @@ export const jobService = {
     );
 
     if (result.rows.length === 0) {
-      throw new Error(`City with job "${job}" not found or is disabled`);
+      throw Object.assign(new Error(`City with job "${job}" not found or is disabled`), { code: 'CITY_NOT_AVAILABLE' });
     }
 
     return result.rows[0].id;
