@@ -43,7 +43,7 @@ test('the client sends the bearer token, minor version and request id, and never
   const calls = [];
   const client = createQuickbooksClient(config, async () => ({ accessToken: 'AT', realmId: '12345678' }), {
     fetchImpl: async (url, init) => { calls.push({ url, init }); return reply(200, { QueryResponse: { Vendor: [{ Id: '9' }] } }); } });
-  assert.deepEqual(await client.findVendorsByEmail("a'b@x.com"), [{ Id: '9' }]);
+  assert.deepEqual(await client.findVendorsByEmail("a'b@x.com"), []);
   assert.match(calls[0].url, /sandbox-quickbooks\.api\.intuit\.com\/v3\/company\/12345678\/query\?/);
   assert.equal(calls[0].init.headers.Authorization, 'Bearer AT');
   assert.match(calls[0].url, /minorversion=75/);
@@ -51,6 +51,27 @@ test('the client sends the bearer token, minor version and request id, and never
   const c2 = createQuickbooksClient(config, async () => ({ accessToken: 'AT', realmId: '12345678' }), { fetchImpl: async (url, init) => { posts.push(url); return reply(200, { Bill: { Id: '5' } }); } });
   assert.equal((await c2.createBill({ x: 1 }, 'nasa-stmt-7')).Id, '5');
   assert.match(posts[0], /requestid=nasa-stmt-7/);
+});
+
+test('the vendor search never filters by email at QuickBooks, reads every page, and matches the email here', async () => {
+  const urls = [];
+  const vendor = (i, email) => ({ Id: String(i), Active: true, PrimaryEmailAddr: email ? { Address: email } : undefined });
+  const page1 = Array.from({ length: 1000 }, (_, i) => vendor(i + 1, `other${i}@x.com`));
+  const page2 = [vendor(1001, ' Driver@Example.com '), vendor(1002, 'else@x.com'), vendor(1003)];
+  const client = createQuickbooksClient(config, async () => ({ accessToken: 'AT', realmId: '12345678' }), {
+    fetchImpl: async (url) => { urls.push(decodeURIComponent(url.replace(/\+/g, ' '))); return reply(200, { QueryResponse: { Vendor: urls.length === 1 ? page1 : page2 } }); } });
+  const found = await client.findVendorsByEmail('driver@example.com');
+  assert.deepEqual(found.map((v) => v.Id), ['1001']);
+  assert.equal(urls.length, 2);
+  assert.ok(urls.every((u) => !/where[^&]*PrimaryEmailAddr/i.test(u)), 'QuickBooks cannot filter vendors by email');
+  assert.match(urls[0], /startposition 1 maxresults 1000/);
+  assert.match(urls[1], /startposition 1001 maxresults 1000/);
+});
+
+test('a company with too many vendors to search fails instead of saying no vendor was found', async () => {
+  const full = Array.from({ length: 1000 }, (_, i) => ({ Id: String(i), Active: true }));
+  const client = createQuickbooksClient(config, async () => ({ accessToken: 'AT', realmId: '12345678' }), { fetchImpl: async () => reply(200, { QueryResponse: { Vendor: full } }) });
+  await assert.rejects(() => client.findVendorsByEmail('a@x.com'), (e) => e instanceof QuickbooksError && /too many vendors/.test(e.message));
 });
 
 test('client errors keep the status and Intuit transaction id, and a lost connection has no status', async () => {

@@ -6,6 +6,8 @@ import { AUTH_URL, MINOR_VERSION, SCOPE, TOKEN_URL } from './quickbooksConfig.js
 // access token is kept fresh is decided by `auth` (connectionStore.js), not here.
 
 const REQUEST_TIMEOUT_MS = 20_000;
+const VENDOR_PAGE_SIZE = 1000; // the most QuickBooks returns for one query
+const VENDOR_PAGE_LIMIT = 20; // up to 20,000 vendors are searched
 
 export class QuickbooksError extends Error {
   constructor(message, { status = null, code = null, requestId = null, retryAfterSeconds = null } = {}) {
@@ -103,7 +105,19 @@ export const createQuickbooksClient = (config, auth, { fetchImpl = fetch, timeou
     // The company's name: a read-only call that proves the connection works.
     getCompanyInfo: async () => (await request('GET', `/companyinfo/${encodeURIComponent((await auth()).realmId)}`)).data?.CompanyInfo ?? null,
     // Vendors with exactly this email (read-only). A match is only ever used with the driver's own verified email, never the name.
-    findVendorsByEmail: async (email) => (await query(`select Id, DisplayName, Active, Vendor1099, PrimaryEmailAddr from Vendor where PrimaryEmailAddr = ${quoteValue(email)} maxresults 10`)).Vendor ?? [],
+    // QuickBooks cannot filter vendors by email ("PrimaryEmailAddr is not queryable"), so the active vendors are read page by page and compared here.
+    // If the company has more vendors than the limit the search is incomplete, so it fails instead of answering "none found": a wrong "none" would let
+    // a second vendor be made and split the driver's 1099 total.
+    findVendorsByEmail: async (email) => {
+      const wanted = String(email).trim().toLowerCase();
+      const found = [];
+      for (let page = 0; page < VENDOR_PAGE_LIMIT; page += 1) {
+        const rows = (await query(`select Id, DisplayName, Active, Vendor1099, PrimaryEmailAddr from Vendor where Active = true orderby Id startposition ${page * VENDOR_PAGE_SIZE + 1} maxresults ${VENDOR_PAGE_SIZE}`)).Vendor ?? [];
+        found.push(...rows.filter((v) => String(v.PrimaryEmailAddr?.Address ?? '').trim().toLowerCase() === wanted));
+        if (rows.length < VENDOR_PAGE_SIZE) return found;
+      }
+      throw new QuickbooksError('QuickBooks has too many vendors to search by email; link the vendor by hand or ask support');
+    },
     getVendor: async (id) => (await request('GET', `/vendor/${encodeURIComponent(id)}`)).data?.Vendor ?? null,
     // A 1099 contractor vendor. TaxIdentifier is write-only at QuickBooks and is never kept or logged by NASA. `requestId` makes a retry safe.
     createVendor: async (body, requestId) => (await request('POST', '/vendor', { body, requestId })).data?.Vendor,
