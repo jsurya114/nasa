@@ -152,6 +152,29 @@ describe("Drivers page: Add Driver in a dialog", () => {
     expect(document.querySelector("select[name=city]").value).toBe("Test City");
   });
 
+  it("a very similar name asks before a second record is created; Go back keeps the form, Create anyway confirms", async () => {
+    const server = await startServer({ createDriver: (body) => {
+      if (!body.confirmSimilar) { return { status: 409, data: { code: "similar_driver", message: "A driver with a very similar name already exists. Review that record before creating another", similar: [{ driverCode: 391331, enabled: false }] } }; }
+      return { status: 200, data: { message: "User Added Successfully!!", insertUser: { id: 2, driver_code: body.driver_code, name: body.name, email: body.email, phone_number: null, job: body.city, enabled: true, driver_type: null } } };
+    } });
+    await mount();
+    fireEvent.click(screen.getByRole("button", { name: "+ Add Driver" }));
+    fillDriver();
+    fireEvent.click(within(screen.getAllByRole("dialog")[0]).getByRole("button", { name: "Add Driver" }));
+    const warning = await screen.findByRole("alert");
+    expect(warning.textContent).toMatch(/Driver code 391331, disabled/);
+    expect(toast.error).not.toHaveBeenCalled(); // a question, not an error
+    fireEvent.click(screen.getByRole("button", { name: "Go back" }));
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(screen.getByPlaceholderText("Driver Name").value).toBe("New Driver"); // the form is still there, as typed
+    expect(server.posts.at(-1)[1].confirmSimilar).toBeUndefined();
+    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Add Driver" }));
+    await screen.findByRole("alert"); // asked again, because the name is still very similar
+    fireEvent.click(await screen.findByRole("button", { name: /create anyway/ }));
+    await waitFor(() => expect(server.posts.at(-1)[1].confirmSimilar).toBe(true));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  });
+
   it("cannot be dismissed while the save is running", async () => {
     let release;
     await startServer({ createDriver: (body) => new Promise((resolve) => { release = () => resolve({ status: 200, data: { message: "ok", insertUser: { id: 3, name: body.name, email: body.email, driver_code: 1, job: "Test City", enabled: true } } }); }) });

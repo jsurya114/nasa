@@ -85,7 +85,8 @@ test('the work gate: the check and the write are one transaction', { skip: !enab
     const finish = deferred();
     const work = withWorkGate(pool, d, async (db) => { const journey = await write(d)(db); midWrite.resolve(); await finish.promise; return journey; }, { env: GATED });
     await midWrite.promise;
-    const unlink = unlinkDriver(pool, admin, { cityId: city, driverId: d, reason: 'two connection test' }, { env: GATED });
+    const linkId = Number((await one('SELECT id FROM everee_workers WHERE driver_id = $1 AND unlinked_at IS NULL', [d])).id);
+    const unlink = unlinkDriver(pool, admin, { cityId: city, driverId: d, linkId, reason: 'two connection test' }, { env: GATED });
     assert.equal(await state(unlink), 'pending', 'the unlink waits for the work’s transaction');
     assert.equal((await one('SELECT count(*)::int AS n FROM everee_workers WHERE driver_id = $1 AND unlinked_at IS NULL', [d])).n, 1);
     finish.resolve();

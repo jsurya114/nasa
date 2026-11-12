@@ -343,6 +343,15 @@ export const submitBatch = async (db, admin, { runId, requestId, previewHash, st
     if (typed.length !== ids.length || typed.some((r) => !methodAllowed(r.driver_type, EVEREE))) {
       throw new PayrollError(409, 'only Local drivers can be paid through Everee; a selected driver is Desi or has no driver type');
     }
+    // The preview captured each driver's Everee worker BEFORE the share lock above. An unlink (or a replacement link) that committed in between would leave the
+    // payment addressed to a worker the driver no longer has, and the gate below only checks that SOME ready link exists. Now that the driver rows are locked
+    // (an unlink cannot commit until this transaction ends), the active worker of every driver is read again and must be the one the admin approved.
+    const { rows: active } = await tx.query(
+      'SELECT driver_id, everee_worker_id FROM everee_workers WHERE driver_id = ANY($1::int[]) AND environment = $2 AND unlinked_at IS NULL', [typed.map((r) => r.driver_id), config.environment]);
+    const workerNow = new Map(active.map((r) => [Number(r.driver_id), String(r.everee_worker_id)]));
+    if (items.some((i) => workerNow.get(Number(i.driverId)) !== String(i.workerId))) {
+      throw new PayrollError(409, "a driver's Everee worker changed while the batch was prepared; review the preview again");
+    }
     // A Local driver who has not finished Everee onboarding is never sent: the whole batch is refused, with the stable reason.
     const held = await blockedDriverIds(tx, typed.map((r) => r.driver_id), { env, lock: true });
     if (held.size > 0) throw Object.assign(new PayrollError(409, ONBOARDING_REQUIRED.message), { code: ONBOARDING_REQUIRED.code });

@@ -53,7 +53,8 @@ test('the per-driver lock is shared by the admin writers and the driver’s onbo
     const d = await driver();
     await pool.query("INSERT INTO everee_workers (driver_id, environment, tenant_id, everee_worker_id, link_source, linked_by) VALUES ($1, 'sandbox', '4321', $2, 'matched_email', $3)", [d, `W${d}`, admin.id]);
     const lock = await holdLock(d);
-    const pending = unlinkDriver(pool, admin, { cityId: city, driverId: d, reason: 'two connection test' }, { env: ENV });
+    const linkId = Number((await one('SELECT id FROM everee_workers WHERE driver_id = $1 AND unlinked_at IS NULL', [d])).id);
+    const pending = unlinkDriver(pool, admin, { cityId: city, driverId: d, linkId, reason: 'two connection test' }, { env: ENV });
     assert.equal(await state(pending), 'pending', 'the unlink must wait while another transaction holds the driver’s lock');
     assert.equal(await liveLinks(d), 1);
     await lock.release();
