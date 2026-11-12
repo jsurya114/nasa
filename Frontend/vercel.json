@@ -6,6 +6,8 @@
     }
   },
   "rewrites": [
+    { "source": "/privacy-policy", "destination": "/privacy-policy.html" },
+    { "source": "/enduser-license/agreements", "destination": "/enduser-license/agreements.html" },
     { "source": "/(.*)", "destination": "/index.html" }
   ]
 }
