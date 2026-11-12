@@ -1,0 +1,108 @@
+:root {
+  color-scheme: light;
+  font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+  color: #28213b;
+  background: #f7f5fa;
+  --brand: #462976;
+  --line: #e3dcec;
+}
+
+body {
+  margin: 0;
+  line-height: 1.65;
+}
+
+.wrap {
+  width: min(54rem, calc(100% - 2rem));
+  margin-inline: auto;
+}
+
+.site-header {
+  background: var(--brand);
+  color: white;
+}
+
+.site-header .wrap {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem 1.5rem;
+  padding-block: 0.75rem;
+}
+
+.site-header img {
+  display: block;
+  width: 8.5rem;
+  height: auto;
+}
+
+nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 1.25rem;
+}
+
+nav a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  color: inherit;
+  font-size: 0.875rem;
+}
+
+a {
+  color: var(--brand);
+  text-underline-offset: 0.2em;
+  overflow-wrap: anywhere;
+}
+
+a[aria-current="page"] {
+  font-weight: 700;
+  text-decoration-thickness: 2px;
+}
+
+a:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 3px;
+}
+
+article {
+  margin-block: clamp(1rem, 5vw, 3rem);
+  padding: clamp(1.25rem, 5vw, 3.5rem);
+  border: 1px solid var(--line);
+  border-radius: 1.25rem;
+  background: white;
+}
+
+.document-header {
+  padding-bottom: 1.25rem;
+  border-bottom: 1px solid var(--line);
+}
+
+h1 {
+  margin: 0;
+  font-size: clamp(1.9rem, 5vw, 3rem);
+  line-height: 1.12;
+  letter-spacing: -0.03em;
+}
+
+h2 {
+  margin: 0;
+  color: var(--brand);
+  font-size: 1.2rem;
+  line-height: 1.35;
+}
+
+p {
+  margin: 0.65rem 0 0;
+}
+
+.updated {
+  color: #5d526e;
+  font-size: 0.875rem;
+}
+
+section {
+  margin-top: 1.5rem;
+}
