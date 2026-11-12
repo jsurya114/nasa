@@ -61,7 +61,7 @@ export const ownPayableIsPaidInPayment = (environment, data, { paymentId, amount
   return own.paymentStatus === 'PAID' && own.paymentId !== null && own.paymentId === String(paymentId) && amountCents(data?.amount) === toCents(amount);
 };
 
-// Sandbox only: Everee's sandbox sends no money and its bank payouts may never settle, so a payment whose own status is PAID counts as the bank
-// transfer complete there. In production only the payouts decide, and a returned payout is never covered by this.
-export const countsAsLanded = (environment, payout) => payout.state === 'landed'
-  || (environment === 'sandbox' && payout.state === 'pending' && payout.paymentPaid === true);
+// The payment counts as landed when every payout is PAID, or when Everee says the payment itself is PAID while a bank payout is still PENDING (Everee
+// shows the payment as Paid and the driver already has the money, but the payout record can stay pending for days). A returned (FAILED) payout is never
+// covered by this, and the caller still checks the amount and the worker. A deposit returned later is flagged for a person by the payment event.
+export const countsAsLanded = (payout) => payout.state === 'landed' || (payout.state === 'pending' && payout.paymentPaid === true);

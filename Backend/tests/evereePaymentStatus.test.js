@@ -409,6 +409,30 @@ test('everee payment status: only a payment that landed marks a statement paid',
       assert.equal(await reconcileItem(db, itU.id, prod(), fakeU.client), 'paid');
     });
 
+    await t.test('in production a PAID payment with a payout still PENDING is paid; a PENDING payment, a returned payout or another amount is not', async () => {
+      const scP = await scenario('UP', [[dB, '12.00']]);
+      await db.query("INSERT INTO everee_city_settings (city_id, time_zone, work_location_id, updated_by) VALUES ($1, 'America/Chicago', 1, $2)", [scP.city, sup1.id]);
+      await db.query(`INSERT INTO everee_workers (driver_id, environment, everee_worker_id, link_source, onboarding_complete, tin_status, linked_by)
+        VALUES ($1, 'production', 'EW-PB', 'matched_email', true, 'VERIFIED', $2)`, [dB, sup1.id]);
+      const fakeP = makeEveree();
+      const prod = () => ({ ...deps(fakeP.client), env: PRODUCTION });
+      const hash = (await previewEvereeBatch(db, sup2, scP.run.id, { env: PRODUCTION })).previewHash;
+      await submitBatch(db, sup2, { runId: scP.run.id, requestId: randomUUID(), previewHash: hash }, prod());
+      const itP = await item(scP, dB);
+      fakeP.state.payables[itP.external_id] = { externalId: itP.external_id, paymentStatus: 'PENDING_PAYMENT', paymentId: 'pay-UP' };
+      const answer = (status, payoutStatus, amount = '12.00') => ({ status, payDate: PAY_DATE, netPayouts: [{ id: 'po1', status: payoutStatus, netAmount: { amount, currency: 'USD' } }] });
+      fakeP.state.payments['pay-UP'] = answer('PENDING', 'PENDING');
+      assert.equal(await reconcileItem(db, itP.id, prod(), fakeP.client), 'pending');
+      fakeP.state.payments['pay-UP'] = answer('PAID', 'FAILED');
+      assert.equal(await reconcileItem(db, itP.id, prod(), fakeP.client), 'returned');
+      fakeP.state.payments['pay-UP'] = answer('PAID', 'PENDING', '13.00');
+      assert.equal(await reconcileItem(db, itP.id, prod(), fakeP.client), 'amount_differs');
+      assert.equal((await stmt(scP, dB)).payout_status, 'submitted');
+      fakeP.state.payments['pay-UP'] = answer('PAID', 'PENDING');
+      assert.equal(await reconcileItem(db, itP.id, prod(), fakeP.client), 'paid');
+      assert.deepEqual([(await item(scP, dB)).status, (await stmt(scP, dB)).payout_status], ['paid', 'paid']);
+    });
+
     await t.test('a queued retry stays reserved for its sender: reconciliation does not release it, and a statement paid by hand meanwhile is never sent', async () => {
       const scW = await scenario('W', [[dA, '30.00'], [dB, '20.00'], [dC, '10.00']]);
       const refused = makeEveree();

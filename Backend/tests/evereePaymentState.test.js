@@ -40,19 +40,17 @@ test('the payment ID in Everee\'s payable answer is a number (the real answer): 
   }
 });
 
-test('the sandbox counts a payment whose own status is PAID as landed; production and returned payouts never do', () => {
+test('a payment whose own status is PAID counts as landed even while a payout is pending; a returned payout never does', () => {
   const read = (status, payoutStatus) => readPayoutState({ status, netPayouts: [{ id: 'a', status: payoutStatus }] });
   assert.equal(read('PAID', 'PENDING').paymentPaid, true);
   assert.equal(read('paid', 'PENDING').paymentPaid, true, 'case does not matter');
   assert.equal(read('PENDING', 'PENDING').paymentPaid, false);
   assert.equal(readPayoutState({ netPayouts: [{ id: 'a', status: 'PENDING' }] }).paymentPaid, false, 'no payment status: not paid');
-  assert.equal(countsAsLanded('sandbox', read('PAID', 'PENDING')), true);
-  assert.equal(countsAsLanded('sandbox', read('PAID', 'PAID')), true);
-  assert.equal(countsAsLanded('sandbox', read('PENDING', 'PENDING')), false, 'the payment is not PAID yet');
-  assert.equal(countsAsLanded('sandbox', read('PAID', 'FAILED')), false, 'a returned payout is never covered');
-  assert.equal(countsAsLanded('sandbox', readPayoutState({ status: 'PAID' })), false, 'an answer not understood is never paid');
-  assert.equal(countsAsLanded('production', read('PAID', 'PENDING')), false, 'production waits for the payouts');
-  assert.equal(countsAsLanded('production', read('PAID', 'PAID')), true);
+  assert.equal(countsAsLanded(read('PAID', 'PENDING')), true);
+  assert.equal(countsAsLanded(read('PAID', 'PAID')), true);
+  assert.equal(countsAsLanded(read('PENDING', 'PENDING')), false, 'the payment is not PAID yet');
+  assert.equal(countsAsLanded(read('PAID', 'FAILED')), false, 'a returned payout is never covered');
+  assert.equal(countsAsLanded(readPayoutState({ status: 'PAID' })), false, 'an answer not understood is never paid');
 });
 
 test('the sandbox trusts its own payable inside a larger payment; production and any mismatch never do', () => {
