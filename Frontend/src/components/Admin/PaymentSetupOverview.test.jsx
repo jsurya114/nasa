@@ -45,3 +45,28 @@ it("retries failed loading and explains the active cash restriction", async () =
   expect(await screen.findByText(/Restrictions are on/)).toBeTruthy();
   expect(screen.getByText(/including cash/)).toBeTruthy();
 });
+const heldDriver = { contactEmail: "new.held@example.com", contactPhone: "5125550199", driverId: 41, name: "Held Driver", driverType: "LOCAL", agreementSigned: true, lastCheckedAt: null, state: "needs-review", reason: "contact_changed", contactChangedAt: "2026-11-11T10:00:00.123Z", openWork: false, outstandingPayment: false, paymentReady: false };
+it("lets a super admin confirm a driver's changed email or phone, sending the time they were shown", async () => {
+  const posts = [];
+  await mount(async c => {
+    if (c.method === "post") { posts.push(c); return {status: 200, data: {confirmed: true}}; }
+    return {status: 200, data: result({drivers: [heldDriver], total: 1})};
+  });
+  expect(await screen.findByText(/changed their email or phone/)).toBeTruthy();
+  // the admin sees the details that will be confirmed, next to the button that sends their time
+  expect(screen.getByText("new.held@example.com")).toBeTruthy();
+  expect(screen.getByText("5125550199")).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", {name: "Confirm contact details"}));
+  await waitFor(() => expect(posts).toHaveLength(1));
+  expect(posts[0].url).toBe("/admin/payroll/drivers/confirm-contact");
+  expect(JSON.parse(posts[0].data)).toEqual({cityId: 7, driverId: 41, contactChangedAt: "2026-11-11T10:00:00.123Z"});
+});
+it("shows the server's refusal when the details changed again, and offers no button for other reasons", async () => {
+  await mount(async c => {
+    if (c.method === "post") return {status: 409, data: {message: "this driver's contact details changed or were already confirmed; reload and check them again"}};
+    return {status: 200, data: result({drivers: [heldDriver, {...heldDriver, driverId: 42, name: "Other Driver", reason: "previously_unlinked", contactChangedAt: undefined}], total: 2})};
+  });
+  fireEvent.click(await screen.findByRole("button", {name: "Confirm contact details"}));
+  expect((await screen.findByRole("alert")).textContent).toMatch(/changed or were already confirmed/);
+  expect(screen.getAllByRole("button", {name: "Confirm contact details"})).toHaveLength(1);
+});

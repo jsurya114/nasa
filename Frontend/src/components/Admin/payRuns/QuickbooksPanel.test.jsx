@@ -1,13 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { installServer, removeShell, resetBrowser } from "../../../test/fakeShell";
 
 // The QuickBooks panel with made-up answers. Nothing leaves this machine.
 const base = { configured: true, enabled: true, environment: "sandbox", problems: [], disabledReason: null };
 const CONNECTED = { ...base, connection: { connected: true, realmId: "12345678", needsReconnect: false } };
+let extraDrivers = []; // drivers added to the list by a single test
 const vendorList = () => ({ environment: "sandbox", summary: { drivers: 2, linked: 1, unlinked: 1, blocked: 0 }, drivers: [
   { driverId: 7, name: "Desi One", issues: [], link: { vendorId: "58", vendor1099: true } },
-  { driverId: 8, name: "Desi Two", issues: [], link: null }] });
+  { driverId: 8, name: "Desi Two", issues: [], link: null }, ...extraDrivers] });
 
 const startServer = async ({ status = CONNECTED, lookup = { result: "match", matches: [{ vendorId: "77", displayName: "Desi Two LLC", vendor1099: false, linkedTo: null }], warnings: ["vendor_not_1099"] } } = {}) => {
   const state = { calls: [] };
@@ -15,6 +16,7 @@ const startServer = async ({ status = CONNECTED, lookup = { result: "match", mat
     state.calls.push(`${config.method} ${config.url}`);
     if (config.url === "/admin/payroll/quickbooks/status") return { status: 200, data: status };
     if (config.url === "/admin/payroll/quickbooks/vendors") return { status: 200, data: vendorList() };
+    if (config.url === "/admin/payroll/drivers/confirm-contact") { state.confirmed = typeof config.data === "string" ? JSON.parse(config.data) : config.data; return { status: 200, data: { confirmed: true } }; }
     if (config.url === "/admin/payroll/quickbooks/vendors/lookup") return { status: 200, data: lookup };
     if (config.url === "/admin/payroll/quickbooks/vendors/link") { state.linked = typeof config.data === "string" ? JSON.parse(config.data) : config.data; return { status: 200, data: { link: { vendorId: "77" } } }; }
     if (config.url === "/admin/payroll/quickbooks/settings" && config.method === "get") return { status: 200, data: { saved: null, expenseAccounts: [{ id: "61", name: "Contract labor" }], bankAccounts: [{ id: "35", name: "Checking" }] } };
@@ -27,9 +29,21 @@ const startServer = async ({ status = CONNECTED, lookup = { result: "match", mat
 const mount = async (props = { cityId: "1" }) => { const { default: QuickbooksPanel } = await import("./QuickbooksPanel.jsx"); return render(<QuickbooksPanel {...props} />); };
 
 beforeEach(async () => { removeShell(); await resetBrowser(); });
-afterEach(cleanup);
+afterEach(() => { cleanup(); extraDrivers = []; });
 
 describe("QuickBooks panel", () => {
+  it("holds a driver whose email changed until a super admin confirms it, and sends the time they were shown", async () => {
+    extraDrivers = [{ driverId: 9, name: "Desi Held", issues: ["contact_changed"], contactChangedAt: "2026-11-11T10:00:00.123Z", contact: { email: "new.desi@example.com", phone: "5125550123" }, link: null }];
+    const server = await startServer();
+    await mount();
+    expect(await screen.findByText(/changed their own email or phone/)).toBeTruthy();
+    expect(screen.getByText("new.desi@example.com")).toBeTruthy(); // the details being confirmed are shown
+    expect(screen.getByText("5125550123")).toBeTruthy();
+    expect(screen.getAllByRole("button", { name: "Look up" })).toHaveLength(1); // only Desi Two; the held driver cannot be looked up yet
+    fireEvent.click(screen.getByRole("button", { name: "Confirm contact details" }));
+    await waitFor(() => expect(server.confirmed).toEqual({ cityId: 1, driverId: 9, contactChangedAt: "2026-11-11T10:00:00.123Z" }));
+  });
+
   it("says what is missing and offers no connect button when the backend is not set up", async () => {
     await startServer({ status: { ...base, configured: false, enabled: false, problems: ["QUICKBOOKS_CLIENT_ID is not set"], connection: { connected: false } } });
     await mount();

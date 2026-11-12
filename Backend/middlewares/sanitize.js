@@ -51,12 +51,12 @@ function sanitizeString(str) {
 // the rules below before it was hashed or compared, so some stored hashes stand for the cleaned text
 // (for example a password that contained "onclick=x" was stored without it, and one with an HTML comment
 // in it was stored without the comment, however long the comment). Cleaning passwords differently now
-// would lock those people out. These four fields therefore give the same result as the old rules for
+// would lock those people out. These fields (currentPassword is the Profile page's check of the sign-in password) therefore give the same result as the old rules for
 // every possible input, of any length. The old rules were regular expressions that a crafted input could
 // make very slow (seconds for a few hundred KB, before login), so they are re-implemented below as
 // passes that read the text once; a differential test against the original expressions checks that the
 // two agree. Do not "improve" this without a migration (verify the old way, then re-hash).
-const LEGACY_CREDENTIAL_KEYS = new Set(["password", "oldPassword", "newPassword", "confirmPassword"]);
+const LEGACY_CREDENTIAL_KEYS = new Set(["password", "oldPassword", "newPassword", "confirmPassword", "currentPassword"]);
 // Tokens are never shown as HTML and cannot contain the old rules' patterns; they are only trimmed.
 const TOKEN_KEYS = new Set(["refreshToken", "previousRefreshToken"]);
 

@@ -18,7 +18,9 @@ export const addDriver = createAsyncThunk("/admin/create-users",
             const res = await axios.post(`/admin/create-users`, formData);
             return res.data;
         } catch (error) {
-            return rejectWithValue(error.response?.data?.message || error.message)
+            // A very similar name is a question for the admin, not a failure: the list travels with the answer so the screen can ask.
+            const data = error.response?.data;
+            return rejectWithValue(data?.message || error.message, data?.code === "similar_driver" ? { similar: data.similar } : undefined)
         }
     }
 )
@@ -218,6 +220,7 @@ const userLoadSlice = createSlice({
             })
             .addCase(addDriver.rejected, (state, action) => {
                 state.loading = false;
+                if (action.meta.similar) return; // the screen asks the admin; no error message
                 state.error = action.payload || "Failed to add driver";
                 state.success = null;
             })

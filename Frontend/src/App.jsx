@@ -42,6 +42,7 @@ import DProtectRoutes from "./routes/driver/DProtectedRoutes.jsx";
 import AppToaster from "./reuse/AppToaster.jsx";
 import "react-toastify/dist/ReactToastify.css";
 import UpdatePassword from "./components/Drivers/UpdatePassword.jsx";
+import DriverProfile from "./components/Drivers/Profile.jsx";
 import useInactivityLogout from "./hooks/useInactivityLogout";
 import PushTapRouter from "./native/PushTapRouter.jsx";
 
@@ -96,6 +97,7 @@ function App() {
               <Route path="/driver/payment-setup" element={<DriverPaymentSetup />} />
               <Route path="/driver/quickbooks-setup" element={<DriverQuickbooksSetup />} />
               <Route path="/driver/update-password" element={<UpdatePassword />} />
+              <Route path="/driver/profile" element={<DriverProfile />} />
             </Route>
 
             {/* Catch-all 404 route */}

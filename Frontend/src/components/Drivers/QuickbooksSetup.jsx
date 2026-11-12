@@ -70,6 +70,8 @@ export default function QuickbooksSetup() {
     body = <Link to="/driver/agreement" className="inline-flex min-h-11 items-center rounded-xl bg-brand px-4 font-semibold text-white">{t("psetSignAgreement")}</Link>;
   } else if (data.blockedBy === "email") {
     body = <p role="alert" className="rounded-xl bg-amber-50 p-3 text-sm text-amber-900">{t("qbsetErrEmail")}</p>;
+  } else if (data.blockedBy === "contact_changed") {
+    body = <p role="status" className="rounded-xl bg-amber-50 p-3 text-sm text-amber-900">{t("profContactReview")}</p>;
   } else {
     body = (
       <form onSubmit={submit} noValidate autoComplete="off" className="space-y-3">

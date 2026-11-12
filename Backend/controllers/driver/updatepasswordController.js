@@ -3,6 +3,7 @@ import updatepasswordQueries from "../../services/driver/updatepasswordQueries.j
 import HttpStatus from "../../utils/statusCodes.js";
 import { translateError } from "../../utils/backendI18n.js";
 import logger from '../../utils/logger.js';
+import { passwordAttemptsOf } from '../../services/driver/passwordAttempts.js';
 
 // Helper to get language from request
 const getLang = (req) => {
@@ -56,6 +57,13 @@ const passwordController = {
         });
       }
 
+      // The current password is checked here too, so guesses are limited like on the Profile page (same per-driver counter: 5 in 15 minutes).
+      const attempts = passwordAttemptsOf(driverId);
+      if (!(await attempts.allow())) {
+        const message = translateError(lang, 'profile.tooManyAttempts');
+        return res.status(HttpStatus.TOO_MANY_REQUESTS).json({ success: false, message, errors: { oldPassword: message } });
+      }
+
       // Attempt to change password
       const result = await updatepasswordQueries.changePassword(
         driverId,
@@ -63,6 +71,7 @@ const passwordController = {
         newPassword.trim()
       );
 
+      await attempts.passed();
       return res.status(HttpStatus.OK).json({
         success: true,
         message: translateError(lang, 'password.updatedSuccessfully'),

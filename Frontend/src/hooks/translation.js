@@ -184,6 +184,21 @@ const translations = {
     // Update Password Page
     updatePassword: 'Update Password',
     changePasswordSecurely: 'Change your account password securely',
+
+    // Driver profile
+    profTitle: 'My profile',
+    profSubtitle: 'Your full name, email and phone number',
+    profFullName: 'Full name',
+    profNotSet: 'Not set',
+    profEmailHint: 'This is the email you sign in with.',
+    profPhoneHint: 'A 10-digit US number, like 903-405-8843.',
+    profNameNotice: 'Weekly delivery reports find you by this name. If you change it, tell your admin so none of your deliveries or pay are missed.',
+    profEmailChanged: 'Next time you sign in, use your new email.',
+    profCurrentPassword: 'Current password',
+    profPasswordHint: 'Needed because your email is how you sign in.',
+    profContactReview: 'Your admin will check your new email or phone before your payment setup can continue.',
+    profLoadFailed: 'Could not load your profile.',
+    profTryAgain: 'Try again',
     currentPassword: 'Current Password',
     newPassword: 'New Password',
     confirmNewPassword: 'Confirm New Password',
@@ -668,6 +683,21 @@ const translations = {
     // Update Password Page
     updatePassword: 'Actualizar Contraseña',
     changePasswordSecurely: 'Cambia tu contraseña de forma segura',
+
+    // Perfil del conductor
+    profTitle: 'Mi perfil',
+    profSubtitle: 'Su nombre completo, correo electrónico y teléfono',
+    profFullName: 'Nombre completo',
+    profNotSet: 'Sin definir',
+    profEmailHint: 'Es el correo electrónico con el que inicia sesión.',
+    profPhoneHint: 'Un número de EE. UU. de 10 dígitos, como 903-405-8843.',
+    profNameNotice: 'Los reportes semanales de entregas lo encuentran por este nombre. Si lo cambia, avise a su administrador para que no se pierda ninguna entrega ni pago.',
+    profEmailChanged: 'La próxima vez que inicie sesión, use su nuevo correo electrónico.',
+    profCurrentPassword: 'Contraseña actual',
+    profPasswordHint: 'Es necesaria porque su correo electrónico es con el que inicia sesión.',
+    profContactReview: 'Su administrador revisará su nuevo correo o teléfono antes de que su configuración de pagos pueda continuar.',
+    profLoadFailed: 'No se pudo cargar su perfil.',
+    profTryAgain: 'Intentar de nuevo',
     currentPassword: 'Contraseña Actual',
     newPassword: 'Nueva Contraseña',
     confirmNewPassword: 'Confirmar Nueva Contraseña',

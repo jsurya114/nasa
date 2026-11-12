@@ -1,3 +1,4 @@
+import { CONTACT_CHANGED_WHILE_LINKING, contactSnapshot, contactStillVerified } from '../contactSnapshot.js';
 import { PayrollError, assertCityAllowed, isSuperAdmin } from '../../payroll/payRuns/payRunStore.js';
 import logger from '../../../utils/logger.js';
 import { normalizeEmail } from '../everee/workerRules.js';
@@ -35,7 +36,7 @@ const viaQuickbooks = async (call) => {
 const clientFor = (db, config, deps) => deps.client ?? createQuickbooksClient(config, () => getAuth(db, config, { fetchImpl: deps.fetchImpl }), deps.fetchImpl ? { fetchImpl: deps.fetchImpl } : {});
 
 const loadDesiDriver = async (db, cityId, driverId) => {
-  const { rows } = await db.query(`SELECT id, name, email, city_id FROM drivers WHERE id = $1 AND city_id = $2 AND driver_type = 'DESI'`, [driverId, cityId]);
+  const { rows } = await db.query(`SELECT id, name, email, city_id, contact_changed_at FROM drivers WHERE id = $1 AND city_id = $2 AND driver_type = 'DESI'`, [driverId, cityId]);
   if (rows.length === 0) throw new PayrollError(404, 'Desi driver not found in this city');
   return rows[0];
 };
@@ -51,7 +52,7 @@ export const listCityVendors = async (db, admin, cityId, { env = process.env } =
   await assertCityAllowed(db, admin, cityId);
   const config = readQuickbooksConfig(env);
   const { rows } = await db.query(
-    `SELECT d.id, d.name, d.email, v.vendor_id, v.link_source, v.tax_id_supplied, v.vendor_1099, v.linked_at
+    `SELECT d.id, d.name, d.email, d.phone_number, d.contact_changed_at, v.vendor_id, v.link_source, v.tax_id_supplied, v.vendor_1099, v.linked_at
        FROM drivers d
        LEFT JOIN quickbooks_connection c ON c.environment = $2
        LEFT JOIN quickbooks_vendors v ON v.driver_id = d.id AND v.environment = $2 AND v.realm_id = c.realm_id AND v.unlinked_at IS NULL
@@ -60,8 +61,8 @@ export const listCityVendors = async (db, admin, cityId, { env = process.env } =
       LIMIT 1000`, [cityId, config.environment]);
   const drivers = rows.map((d) => {
     const link = viewOfLink(d.vendor_id ? d : null);
-    const issues = normalizeEmail(d.email) ? [] : ['no_email'];
-    return { driverId: d.id, name: d.name, issues, link, status: link ? 'linked' : issues.length ? 'blocked' : 'unlinked' };
+    const issues = [...(normalizeEmail(d.email) ? [] : ['no_email']), ...(d.contact_changed_at && !link ? ['contact_changed'] : [])];
+    return { driverId: d.id, name: d.name, issues, contactChangedAt: d.contact_changed_at, contact: d.contact_changed_at && !link ? { email: d.email, phone: d.phone_number } : null, link, status: link ? 'linked' : issues.length ? 'blocked' : 'unlinked' };
   });
   const count = (status) => drivers.filter((d) => d.status === status).length;
   return { environment: config.environment, configured: config.configured, problems: config.problems, cityId,
@@ -73,9 +74,11 @@ export const lookupVendor = async (db, admin, { cityId, driverId }, deps = {}) =
   requireSuperAdmin(admin);
   await assertCityAllowed(db, admin, cityId);
   const config = requireConfigured(deps.env ?? process.env);
-  const driver = await loadDesiDriver(db, cityId, driverId);
+  const driver = deps.driver ?? await loadDesiDriver(db, cityId, driverId); // a caller that will write a link passes the driver it loaded (one snapshot)
   const email = normalizeEmail(driver.email);
   if (!email) return { result: 'blocked', reason: 'driver_data', issues: ['no_email'], matches: [] };
+  // The driver changed their own email and nobody has confirmed it yet: it is not used to find or link a vendor.
+  if (driver.contact_changed_at) return { result: 'blocked', reason: 'contact_changed', issues: [], matches: [] };
 
   const client = clientFor(db, config, deps);
   const vendors = (await viaQuickbooks(() => client.findVendorsByEmail(email))).filter((v) => v.Active !== false && normalizeEmail(v.PrimaryEmailAddr?.Address) === email);
@@ -99,7 +102,10 @@ const NOT_LINKABLE = {
 };
 
 export const linkVendor = async (db, admin, { cityId, driverId, vendorId }, deps = {}) => {
-  const lookup = await lookupVendor(db, admin, { cityId, driverId }, deps);
+  requireSuperAdmin(admin);
+  await assertCityAllowed(db, admin, cityId);
+  const driver = await loadDesiDriver(db, cityId, driverId); // one snapshot of the contact details: the lookup uses it and the link is saved only if it still holds
+  const lookup = await lookupVendor(db, admin, { cityId, driverId }, { ...deps, driver });
   if (lookup.result !== 'match') throw new PayrollError(409, NOT_LINKABLE[lookup.result] ?? 'nothing was linked');
   const [match] = lookup.matches;
   if (String(vendorId) !== match.vendorId) throw new PayrollError(409, 'that is not the vendor found for this driver; look the driver up again');
@@ -110,10 +116,13 @@ export const linkVendor = async (db, admin, { cityId, driverId, vendorId }, deps
   if (!conn) throw new PayrollError(409, 'QuickBooks is not connected; connect it first');
   try {
     // Under the driver's lock (the same one the Everee links use), so a link and an unlink never interleave.
-    const { rows } = await withDriverLock(db, driverId, (tx) => tx.query(
-      `INSERT INTO quickbooks_vendors (driver_id, environment, realm_id, vendor_id, link_source, tax_id_supplied, vendor_1099, linked_by)
-       VALUES ($1, $2, $3, $4, 'existing_vendor', true, $5, $6) RETURNING ${LINK_COLUMNS}`,
-      [driverId, config.environment, conn.realm_id, match.vendorId, match.vendor1099, admin.id]));
+    const { rows } = await withDriverLock(db, driverId, async (tx) => {
+      if (!(await contactStillVerified(tx, driverId, contactSnapshot(driver)))) throw new PayrollError(409, CONTACT_CHANGED_WHILE_LINKING);
+      return tx.query(
+        `INSERT INTO quickbooks_vendors (driver_id, environment, realm_id, vendor_id, link_source, tax_id_supplied, vendor_1099, linked_by)
+         VALUES ($1, $2, $3, $4, 'existing_vendor', true, $5, $6) RETURNING ${LINK_COLUMNS}`,
+        [driverId, config.environment, conn.realm_id, match.vendorId, match.vendor1099, admin.id]);
+    });
     logger.info('Driver linked to a QuickBooks vendor', { driverId, environment: config.environment });
     return { link: viewOfLink(rows[0]), warnings: lookup.warnings ?? [] };
   } catch (error) {

@@ -153,8 +153,10 @@ test('everee workers: lookup by email or phone only, link only from one exact ma
 
     await t.test('a worker already linked to one driver is never offered to another, and another city is refused', async () => {
       const result = await ask(superAdmin, sharesPhone);
-      assert.equal(result.result, 'blocked');
-      assert.equal(result.reason, 'worker_linked_to_another_driver');
+      // The same phone with another email is a conflict. It stays a conflict (not rewritten to "blocked"): the holder is shown, but no link is offered for removal.
+      assert.equal(result.result, 'conflict');
+      assert.equal(result.matches[0].linkedTo, 'another_driver');
+      assert.ok(!('linkId' in result.matches[0].linkedDriver));
       await assert.rejects(linkDriver(db, superAdmin, { cityId: city, driverId: sharesPhone, workerId: 'W-ALICE' }, deps()), { status: 409 });
       await assert.rejects(lookupDriver(db, superAdmin, { cityId: city, driverId: elsewhere }, deps()), { status: 404 }); // not a driver of this city
     });
@@ -176,11 +178,16 @@ test('everee workers: lookup by email or phone only, link only from one exact ma
     });
 
     await t.test('a link can be undone with a reason, is kept as history, and the same driver can be linked again', async () => {
-      await assert.rejects(unlinkDriver(db, superAdmin, { cityId: city, driverId: match, reason: ' ' }, deps()), { status: 400 });
-      await assert.rejects(unlinkDriver(db, cityAdmin, { cityId: city, driverId: match, reason: 'Wrong person' }, deps()), { status: 403 });
-      await unlinkDriver(db, superAdmin, { cityId: city, driverId: match, reason: 'Wrong person' }, deps());
+      const linkOf = async (id) => { const row = await one('SELECT id FROM everee_workers WHERE driver_id = $1 AND unlinked_at IS NULL', [id]); return row ? Number(row.id) : undefined; };
+      const matchLink = await linkOf(match);
+      await assert.rejects(unlinkDriver(db, superAdmin, { cityId: city, driverId: match, linkId: matchLink, reason: ' ' }, deps()), { status: 400 });
+      await assert.rejects(unlinkDriver(db, superAdmin, { cityId: city, driverId: match, reason: 'No link given' }, deps()), { status: 400 }, 'the link that was looked up is required');
+      await assert.rejects(unlinkDriver(db, cityAdmin, { cityId: city, driverId: match, linkId: matchLink, reason: 'Wrong person' }, deps()), { status: 403 });
+      await assert.rejects(unlinkDriver(db, superAdmin, { cityId: city, driverId: match, linkId: matchLink + 100000, reason: 'Stale selection' }, deps()), { status: 409 }, 'a link that is not the active one is refused');
+      assert.equal(await linkOf(match), matchLink, 'nothing was removed by the refusals');
+      await unlinkDriver(db, superAdmin, { cityId: city, driverId: match, linkId: matchLink, reason: 'Wrong person' }, deps());
       assert.equal((await listCityWorkers(db, superAdmin, city, { env: SANDBOX })).drivers.find((d) => d.driverId === match).status, 'unlinked');
-      await assert.rejects(unlinkDriver(db, superAdmin, { cityId: city, driverId: match, reason: 'Again' }, deps()), { status: 404 });
+      await assert.rejects(unlinkDriver(db, superAdmin, { cityId: city, driverId: match, linkId: matchLink, reason: 'Again' }, deps()), { status: 404 });
       await linkDriver(db, superAdmin, { cityId: city, driverId: match, workerId: 'W-ALICE' }, deps());
       assert.equal((await db.query('SELECT count(*)::int n FROM everee_workers WHERE driver_id = $1', [match])).rows[0].n, 2, 'the undone link is still there as history');
     });
@@ -221,7 +228,7 @@ test('everee workers: lookup by email or phone only, link only from one exact ma
       assert.notEqual(everee.state.created[0].w9FormResponse.socialSecurityNumber, `12345${String(match).padStart(4, '0').slice(-4)}`, 'and is different for each driver');
       assert.equal(everee.state.created[0].externalWorkerId, `nasa-sandbox-driver-${nameOnly}`);
 
-      await unlinkDriver(db, superAdmin, { cityId: city, driverId: nameOnly, reason: 'Test redo' }, deps());
+      await unlinkDriver(db, superAdmin, { cityId: city, driverId: nameOnly, linkId: Number((await one('SELECT id FROM everee_workers WHERE driver_id = $1 AND unlinked_at IS NULL', [nameOnly])).id), reason: 'Test redo' }, deps());
       const again = await createSandboxWorker(db, superAdmin, { cityId: city, driverId: nameOnly }, deps());
       assert.equal(again.reused, true, 'the worker made before is linked again');
       assert.equal(everee.state.created.length, 1, 'no second worker was created in Everee');

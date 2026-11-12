@@ -11,9 +11,10 @@ const previewOf = (over = {}) => ({
   environment: "sandbox", run: RUN,
   drivers: [{ statementId: 1, driverName: "Dee Test", amount: "100.00", eligible: true, blockers: [] }, { statementId: 2, driverName: "Eli Test", amount: "130.00", eligible: true, blockers: [] }],
   summary: { drivers: 2, eligible: 2, blocked: 0, total: "230.00", pendingClaims: { total: 0 } }, batchBlockers: [], canSubmit: true, previewHash: "b".repeat(64), ...over });
+// A status of "interrupted" is a "submitted" item the server says nothing is sending any more; a plain "submitted" one may still be on its way.
 const batch = (statuses) => ({ batch: { id: 9, drivers: 2, total: "230.00", paidOn: "2026-11-08" },
-  counts: { paid: statuses.filter((x) => x === "paid").length }, canRetry: statuses.some((x) => x !== "paid"),
-  items: statuses.map((status, n) => ({ itemId: n + 1, driverName: ["Dee Test", "Eli Test"][n], amount: "100.00", status, quickbooks: { billId: "100", docNumber: `NASA-S${n + 1}` }, error: null })) });
+  counts: { paid: statuses.filter((x) => x === "paid").length }, canRetry: statuses.some((x) => !["paid", "submitted"].includes(x)),
+  items: statuses.map((state, n) => ({ itemId: n + 1, driverName: ["Dee Test", "Eli Test"][n], amount: "100.00", status: state === "interrupted" ? "submitted" : state, interrupted: state === "interrupted", quickbooks: { billId: "100", docNumber: `NASA-S${n + 1}` }, error: null })) });
 
 const startServer = async ({ paymentsEnabled = true, preview = previewOf(), batchView = batch(["paid", "paid"]) } = {}) => {
   const state = { posts: [], retries: 0, cashRecords: 0, previews: [] };
@@ -97,6 +98,29 @@ describe("Pay to drivers: Desi drivers through QuickBooks", () => {
     fireEvent.click(await screen.findByRole("button", { name: "Retry the QuickBooks record" }));
     await waitFor(() => expect(server.retries).toBe(1));
     await waitFor(() => expect(screen.queryByRole("button", { name: /Retry/ })).toBeNull());
+  });
+
+  it("an item the server stopped sending says so and offers Retry; one that may still be sending does not", async () => {
+    const server = await startServer({ batchView: batch(["paid", "interrupted"]) });
+    await mount();
+    await toPayment();
+    await screen.findByText("2 of 2 selected drivers can be recorded now, $230.00 in total.");
+    fireEvent.change(screen.getByLabelText("Payment note"), { target: { value: "Cash handed over, receipt 12" } });
+    fireEvent.click(screen.getByText(/I confirm the selected drivers/));
+    fireEvent.click(screen.getByRole("button", { name: "Pay" }));
+    expect(await screen.findByText("Paid in cash; sending to QuickBooks was interrupted. Retry")).toBeTruthy();
+    fireEvent.click(await screen.findByRole("button", { name: "Retry the QuickBooks record" }));
+    await waitFor(() => expect(server.retries).toBe(1));
+    cleanup();
+    await startServer({ batchView: batch(["paid", "submitted"]) });
+    await mount();
+    await toPayment();
+    await screen.findByText("2 of 2 selected drivers can be recorded now, $230.00 in total.");
+    fireEvent.change(screen.getByLabelText("Payment note"), { target: { value: "Cash handed over, receipt 12" } });
+    fireEvent.click(screen.getByText(/I confirm the selected drivers/));
+    fireEvent.click(screen.getByRole("button", { name: "Pay" }));
+    expect(await screen.findByText("Being recorded in QuickBooks…")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /Retry/ })).toBeNull();
   });
 
   it("with QuickBooks payments off, Desi drivers are recorded as cash exactly as before", async () => {

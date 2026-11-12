@@ -31,6 +31,7 @@ const AddUsers = () => {
   const [driverFormOpen, setDriverFormOpen] = useState(false);
   const [adminFormOpen, setAdminFormOpen] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [similar, setSimilar] = useState(null); // { form, list }: drivers with a very similar name, shown before a second record is created
 
   // Fetch cities on mount - use getAdminCities which handles both superadmin and regular admin
   useEffect(() => {
@@ -86,13 +87,25 @@ const AddUsers = () => {
     setSaving(true);
     try {
       if (editDriver) await dispatch(updateDriver({ id: editDriver.id, formData: form })).unwrap();
-      else await dispatch(addDriver(form)).unwrap();
+      else {
+        const result = await dispatch(addDriver(form));
+        if (addDriver.rejected.match(result)) {
+          // A very similar name (often the same person registered twice): ask before creating another record. Other refusals are shown by the slice.
+          if (result.meta.similar) setSimilar({ form, list: result.meta.similar });
+          return;
+        }
+      }
       closeDriverForm();
     } catch {
       // The users slice keeps the error and the screen shows it.
     } finally {
       setSaving(false);
     }
+  };
+  const createAnyway = async () => {
+    const { form } = similar;
+    setSimilar(null);
+    await handleDriverSubmit({ ...form, confirmSimilar: true });
   };
 
   // Handle admin form submission (same rule as the driver form)
@@ -241,6 +254,20 @@ const AddUsers = () => {
             onSubmit={handleDriverSubmit}
             onCancel={cancelDriverForm}
           />
+        </Modal>
+      )}
+      {similar && (
+        <Modal title="A similar driver already exists" onClose={() => setSimilar(null)}>
+          <div role="alert" className="space-y-3 text-sm">
+            <p>The name you typed is almost the same as another driver. A second record for the same person means a second payment setup, so please review that record first (search Users for the name).</p>
+            <ul className="list-disc pl-5">
+              {similar.list.map((d) => <li key={d.driverCode}>Driver code {d.driverCode}, {d.enabled ? "enabled" : "disabled"}</li>)}
+            </ul>
+            <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+              <button type="button" onClick={createAnyway} className="min-h-11 rounded-xl border border-line bg-white px-4 font-semibold">This is a different person: create anyway</button>
+              <button type="button" onClick={() => setSimilar(null)} className="min-h-11 rounded-xl bg-brand px-4 font-semibold text-white">Go back</button>
+            </div>
+          </div>
         </Modal>
       )}
       {adminFormOpen && activeTab === "admins" && isSuperAdmin && (

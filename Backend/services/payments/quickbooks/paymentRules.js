@@ -6,6 +6,9 @@ import { QuickbooksError } from './quickbooksClient.js';
 export const docNumberOf = (statementId) => `NASA-S${statementId}`; // also QuickBooks' bill number, our idempotency key (max 21 characters)
 export const billRequestId = (statementId) => `nasa-bill-${statementId}`;
 export const paymentRequestId = (statementId) => `nasa-bpay-${statementId}`;
+// A batch that has not changed for this long while items are still "submitted" was interrupted (the server stopped mid-send). The longest one item can take is
+// about 80 seconds (four requests, each cut off at 20), so ten minutes never mistakes a send that is still running for a dead one.
+export const STALE_AFTER_MINUTES = 10;
 const MAX_MESSAGE = 480;
 export const clip = (text) => String(text ?? '').slice(0, MAX_MESSAGE);
 

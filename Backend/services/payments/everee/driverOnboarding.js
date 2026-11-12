@@ -1,4 +1,5 @@
 import crypto from 'node:crypto';
+import { contactSnapshot, contactStillVerified } from '../contactSnapshot.js';
 import logger from '../../../utils/logger.js';
 import { readEvereeConfig, driverOnboardingGate } from './evereeConfig.js';
 import { createEvereeClient, EvereeError } from './evereeClient.js';
@@ -62,7 +63,7 @@ const switchedOn = (env) => String(env.EVEREE_DRIVER_ONBOARDING_ENABLED ?? '').t
 
 const loadDriver = async (db, driverId) => {
   const { rows } = await db.query(
-    `SELECT id, name, email, phone_number, driver_type, enabled, agreement_signed, to_char(agreement_joining_date, 'YYYY-MM-DD') AS joining_date
+    `SELECT id, name, email, phone_number, driver_type, enabled, agreement_signed, contact_changed_at, to_char(agreement_joining_date, 'YYYY-MM-DD') AS joining_date
        FROM drivers WHERE id = $1`, [driverId]);
   if (rows.length === 0) throw new OnboardingError(404, 'driver_not_found', 'driver not found');
   return rows[0];
@@ -128,6 +129,8 @@ export const stateOf = ({ driver, on, configured, link, row, tenantId, unlinked 
     return { ...mine, state: STATES.IN_PROGRESS, canStart: false };
   }
   if (unlinked) return { ...mine, state: STATES.NEEDS_REVIEW, reason: 'previously_unlinked' };
+  // The driver changed their own email or phone: a super admin confirms the new details before they are used to find or create a worker.
+  if (driver.contact_changed_at) return { ...mine, state: STATES.NEEDS_REVIEW, reason: 'contact_changed' };
   if (row?.state === 'needs_review') return { ...mine, state: STATES.NEEDS_REVIEW, reason: row.review_reason ?? 'needs_review' };
   if (row?.state === 'creating') return { ...mine, state: STATES.CREATING };
   if (row?.state === 'verifying') return { ...mine, state: STATES.VERIFYING };
@@ -261,7 +264,7 @@ const resolveWorkerId = async (client, external) => {
 //  - ineligible: the driver is no longer an enabled Local driver who signed the agreement -> review;
 //  - revoked: an admin unlinked this driver in the meantime -> review (the admin's decision stands);
 //  - already linked (an admin linked them meanwhile, or the worker belongs to someone else) -> nothing is written.
-const saveLink = (db, driverId, config, row, worker, workerId) => inTransaction(db, async (tx) => {
+const saveLink = (db, driverId, config, row, worker, workerId, loaded) => inTransaction(db, async (tx) => {
   await lockDriver(tx, driverId);
   const { rows: [driver] } = await tx.query('SELECT id, driver_type, enabled, agreement_signed FROM drivers WHERE id = $1 FOR SHARE', [driverId]);
   const { rows: [mine] } = await tx.query('SELECT id, state, attempts FROM everee_onboarding WHERE id = $1 FOR UPDATE', [row.id]);
@@ -275,6 +278,12 @@ const saveLink = (db, driverId, config, row, worker, workerId) => inTransaction(
   if (links.some((l) => !l.unlinked_at)) {
     await tx.query("UPDATE everee_onboarding SET lease_until = NULL, post_uncertain_at = NULL, updated_at = now() WHERE id = $1", [row.id]);
     return 'already_linked';
+  }
+  // The details the worker was found or created with must still be the driver's, and not held for review: otherwise nothing is linked, the lease is let go,
+  // and the next Start (after a super admin confirms the new details) finds the worker again by our ID and links it.
+  if (!(await contactStillVerified(tx, driverId, contactSnapshot(loaded)))) {
+    await tx.query("UPDATE everee_onboarding SET lease_until = NULL, post_uncertain_at = NULL, updated_at = now() WHERE id = $1", [row.id]);
+    return 'contact_changed';
   }
   const state = stateOfWorker(worker);
   const { rowCount } = await tx.query(
@@ -298,6 +307,8 @@ export const startOnboarding = async (db, driverId, input = {}, deps = {}) => {
     await record(db, driverId, 'needs_review', 'previously unlinked by an admin');
     return { ...(await getStatus(db, driverId, deps)), started: false };
   }
+  // Nothing is written or sent to Everee while the driver's new email or phone waits for a super admin (the status says so).
+  if (driver.contact_changed_at) return { ...(await getStatus(db, driverId, deps)), started: false };
 
   // The details are checked first, with no side effect: a missing field is answered before anything is written or asked of Everee.
   const profile = buildProfile(driver, input);
@@ -330,7 +341,7 @@ export const startOnboarding = async (db, driverId, input = {}, deps = {}) => {
     if (worker?.id) {
       const resolved = await resolveWorkerId(client, external);
       if (!resolved.workerId) return await unresolved(resolved);
-      const outcome = await saveLink(db, driverId, config, row, worker, resolved.workerId);
+      const outcome = await saveLink(db, driverId, config, row, worker, resolved.workerId, driver);
       if (outcome === 'linked') await record(db, driverId, 'worker_found', 'existing worker with our ID linked');
       return { ...(await getStatus(db, driverId, deps)), started: outcome === 'linked' };
     }
@@ -377,7 +388,7 @@ export const startOnboarding = async (db, driverId, input = {}, deps = {}) => {
     // The create worked. The canonical Everee worker ID comes from the search result for our exact external ID, never from the create answer's `id`.
     const resolved = await resolveWorkerId(client, external);
     if (!resolved.workerId) return await unresolved(resolved);
-    const outcome = await saveLink(db, driverId, config, row, created, resolved.workerId);
+    const outcome = await saveLink(db, driverId, config, row, created, resolved.workerId, driver);
     if (outcome === 'linked') {
       await record(db, driverId, 'worker_created', null);
       logger.info('Everee onboarding worker created', { driverId, environment: config.environment });
@@ -537,7 +548,7 @@ export const recoverOnboarding = async (db, driverId, deps = {}) => {
       await release(db, row, resolved.ambiguous ? { state: 'needs_review', reason: 'ambiguous_worker_identity' } : {});
       return { outcome: resolved.ambiguous ? 'needs_review' : 'verifying' };
     }
-    const outcome = await saveLink(db, driverId, config, row, worker, resolved.workerId);
+    const outcome = await saveLink(db, driverId, config, row, worker, resolved.workerId, driver);
     await record(db, driverId, 'reconciled', outcome);
     return { outcome };
   } catch (error) {

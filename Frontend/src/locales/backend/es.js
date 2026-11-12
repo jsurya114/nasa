@@ -95,6 +95,12 @@ delivery: {
     failedToUpdate: "Error al actualizar contraseña. Por favor intente nuevamente.",
   },
 
+  // Driver profile (own name, email, phone): only the messages the profile slice shows itself
+  profile: {
+    failedToUpdate: "No se pudo guardar su perfil. Por favor intente nuevamente.",
+    failedToLoad: "No se pudo cargar su perfil. Por favor intente nuevamente.",
+  },
+
   // Common errors
   common: {
     serverError: "Error del servidor",

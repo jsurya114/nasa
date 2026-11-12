@@ -37,10 +37,23 @@ export const parseDriverName = (value) => {
 // so a driver can be saved with the name they already have.
 export const findDriverByName = async (db, name, excludeId = null) => {
   const { rows } = await db.query(
-    `SELECT id, name, city_id FROM drivers WHERE ${NAME_KEY_SQL('name')} = ${NAME_KEY_SQL('$1::text')} AND ($2::int IS NULL OR id <> $2) LIMIT 1`,
+    `SELECT id, name, city_id, driver_code, enabled FROM drivers WHERE ${NAME_KEY_SQL('name')} = ${NAME_KEY_SQL('$1::text')} AND ($2::int IS NULL OR id <> $2) LIMIT 1`,
     [name, excludeId]
   );
   return rows[0];
+};
+
+// Drivers whose name differs from `name` only by punctuation or spacing ("Sam Lee" and "Sam Lee.."): almost always the same person registered twice.
+// Letters and digits are compared, nothing else. An exact match is findDriverByName's business, not this one's.
+const LOOSE_KEY_SQL = (column) => `regexp_replace(${NAME_KEY_SQL(column)}, '[^[:alnum:]]+', '', 'g')`;
+export const findSimilarDrivers = async (db, name) => {
+  const { rows } = await db.query(
+    `SELECT id, name, city_id, driver_code, enabled FROM drivers
+      WHERE ${LOOSE_KEY_SQL('name')} = ${LOOSE_KEY_SQL('$1::text')} AND ${NAME_KEY_SQL('name')} <> ${NAME_KEY_SQL('$1::text')}
+      ORDER BY enabled DESC, id LIMIT 5`,
+    [name]
+  );
+  return rows;
 };
 
 export const NAME_TAKEN = 'A driver with this name already exists';
