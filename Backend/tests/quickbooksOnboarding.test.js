@@ -50,9 +50,10 @@ test('desi onboarding and the hold, against a database copy', { skip: !hasDb && 
       VALUES ('sandbox', '12345678', 'x', 'x', now() + interval '1 hour', now() + interval '90 days', $1) ON CONFLICT (environment) DO UPDATE SET realm_id = '12345678'`, [sup.id]);
 
     const made = [];
+    const asked = [];
     const fake = ({ existing = [], createError = null, answer = null } = {}) => ({
-      findVendorsByEmail: async () => existing,
-      createVendor: async (body, requestId) => { made.push({ body, requestId }); if (createError) throw createError; return answer ?? { Id: '501', Vendor1099: true }; },
+      findVendorsByEmail: async (email, opts) => { asked.push(opts); return existing; },
+      createVendor: async (body, requestId, opts) => { made.push({ body, requestId, opts }); if (createError) throw createError; return answer ?? { Id: '501', Vendor1099: true }; },
     });
     const start = (driver, client, body = good, env = ON) => startOnboarding(db, driver, body, { env, client });
     const code = (promise) => promise.then(() => null, (e) => (e instanceof OnboardingError ? e.code : `other:${e.message}`));
@@ -93,6 +94,7 @@ test('desi onboarding and the hold, against a database copy', { skip: !hasDb && 
       assert.deepEqual([status.state, status.required], ['complete', false]);
       assert.equal(made.length, 1);
       assert.equal(made[0].requestId, `nasa-vendor-${dNew}`);
+      assert.equal(made[0].opts.realm, '12345678', 'the vendor is made in the company the search was pinned to');
       assert.deepEqual([made[0].body.Vendor1099, made[0].body.TaxIdentifier, made[0].body.PrimaryEmailAddr.Address], [true, '123456789', 'dee@example.com']);
       const link = await one('SELECT * FROM quickbooks_vendors WHERE driver_id = $1', [dNew]);
       assert.deepEqual([link.vendor_id, link.link_source, link.tax_id_supplied, link.vendor_1099, link.linked_by, link.realm_id], ['501', 'created_by_onboarding', true, true, null, '12345678']);

@@ -69,31 +69,41 @@ export const listCityVendors = async (db, admin, cityId, { env = process.env } =
     summary: { drivers: drivers.length, linked: count('linked'), unlinked: count('unlinked'), blocked: count('blocked') }, drivers };
 };
 
-// Read-only: nothing is saved. result is match | no_match | ambiguous | blocked.
-export const lookupVendor = async (db, admin, { cityId, driverId }, deps = {}) => {
+// Answers { lookup, realmId }: the lookup, and the QuickBooks company it was read from (null when it was blocked before asking).
+const lookupInCompany = async (db, admin, { cityId, driverId }, deps = {}) => {
   requireSuperAdmin(admin);
   await assertCityAllowed(db, admin, cityId);
   const config = requireConfigured(deps.env ?? process.env);
   const driver = deps.driver ?? await loadDesiDriver(db, cityId, driverId); // a caller that will write a link passes the driver it loaded (one snapshot)
   const email = normalizeEmail(driver.email);
-  if (!email) return { result: 'blocked', reason: 'driver_data', issues: ['no_email'], matches: [] };
+  if (!email) return { lookup: { result: 'blocked', reason: 'driver_data', issues: ['no_email'], matches: [] }, realmId: null };
   // The driver changed their own email and nobody has confirmed it yet: it is not used to find or link a vendor.
-  if (driver.contact_changed_at) return { result: 'blocked', reason: 'contact_changed', issues: [], matches: [] };
+  if (driver.contact_changed_at) return { lookup: { result: 'blocked', reason: 'contact_changed', issues: [], matches: [] }, realmId: null };
 
+  // The whole search is pinned to the company connected now; a reconnect to another company part way through makes it fail instead of mixing the two.
+  const { rows: [conn] } = await db.query('SELECT realm_id FROM quickbooks_connection WHERE environment = $1', [config.environment]);
+  if (!conn) throw new PayrollError(409, 'QuickBooks is not connected; connect it first');
   const client = clientFor(db, config, deps);
-  const vendors = (await viaQuickbooks(() => client.findVendorsByEmail(email))).filter((v) => v.Active !== false && normalizeEmail(v.PrimaryEmailAddr?.Address) === email);
+  const scanned = await viaQuickbooks(() => client.findVendorsByEmail(email, { realm: conn.realm_id }));
+  const realmId = String(scanned.realmId ?? '');
+  if (realmId !== String(conn.realm_id)) throw new PayrollError(409, 'QuickBooks answered for a different company than the one connected; look the driver up again');
+  const vendors = scanned.filter((v) => v.Active !== false && normalizeEmail(v.PrimaryEmailAddr?.Address) === email);
   const matches = vendors.map((v) => ({ vendorId: String(v.Id), displayName: v.DisplayName, vendor1099: v.Vendor1099 === true }));
-  if (matches.length === 0) return { result: 'no_match', reason: null, issues: [], matches };
-  if (matches.length > 1) return { result: 'ambiguous', reason: null, issues: [], matches };
+  const answer = (lookup) => ({ lookup, realmId });
+  if (matches.length === 0) return answer({ result: 'no_match', reason: null, issues: [], matches });
+  if (matches.length > 1) return answer({ result: 'ambiguous', reason: null, issues: [], matches });
 
   const { rows: taken } = await db.query(
-    'SELECT driver_id FROM quickbooks_vendors WHERE environment = $1 AND realm_id = (SELECT realm_id FROM quickbooks_connection WHERE environment = $1) AND vendor_id = $2 AND unlinked_at IS NULL',
-    [config.environment, matches[0].vendorId]);
+    'SELECT driver_id FROM quickbooks_vendors WHERE environment = $1 AND realm_id = $3 AND vendor_id = $2 AND unlinked_at IS NULL',
+    [config.environment, matches[0].vendorId, realmId]);
   const linkedTo = taken.length === 0 ? null : taken[0].driver_id === driver.id ? 'this_driver' : 'another_driver';
-  if (linkedTo === 'another_driver') return { result: 'blocked', reason: 'vendor_linked_to_another_driver', issues: [], matches: [{ ...matches[0], linkedTo }] };
+  if (linkedTo === 'another_driver') return answer({ result: 'blocked', reason: 'vendor_linked_to_another_driver', issues: [], matches: [{ ...matches[0], linkedTo }] });
   // A vendor not marked for 1099 tracking links fine but is called out: its payments would be left out of the 1099 report.
-  return { result: 'match', reason: null, issues: [], matches: [{ ...matches[0], linkedTo }], warnings: matches[0].vendor1099 ? [] : ['vendor_not_1099'] };
+  return answer({ result: 'match', reason: null, issues: [], matches: [{ ...matches[0], linkedTo }], warnings: matches[0].vendor1099 ? [] : ['vendor_not_1099'] });
 };
+
+// Read-only: nothing is saved. result is match | no_match | ambiguous | blocked.
+export const lookupVendor = async (db, admin, where, deps = {}) => (await lookupInCompany(db, admin, where, deps)).lookup;
 
 const NOT_LINKABLE = {
   no_match: "no QuickBooks vendor has this driver's email; nothing was linked",
@@ -105,15 +115,17 @@ export const linkVendor = async (db, admin, { cityId, driverId, vendorId }, deps
   requireSuperAdmin(admin);
   await assertCityAllowed(db, admin, cityId);
   const driver = await loadDesiDriver(db, cityId, driverId); // one snapshot of the contact details: the lookup uses it and the link is saved only if it still holds
-  const lookup = await lookupVendor(db, admin, { cityId, driverId }, { ...deps, driver });
+  const { lookup, realmId } = await lookupInCompany(db, admin, { cityId, driverId }, { ...deps, driver });
   if (lookup.result !== 'match') throw new PayrollError(409, NOT_LINKABLE[lookup.result] ?? 'nothing was linked');
   const [match] = lookup.matches;
   if (String(vendorId) !== match.vendorId) throw new PayrollError(409, 'that is not the vendor found for this driver; look the driver up again');
   if (match.linkedTo === 'this_driver') throw new PayrollError(409, 'this driver is already linked to that vendor');
 
   const config = requireConfigured(deps.env ?? process.env);
+  // The link is made in the company the vendor was found in. If another company was connected since, nothing is linked.
   const { rows: [conn] } = await db.query('SELECT realm_id FROM quickbooks_connection WHERE environment = $1', [config.environment]);
   if (!conn) throw new PayrollError(409, 'QuickBooks is not connected; connect it first');
+  if (String(conn.realm_id) !== realmId) throw new PayrollError(409, 'the QuickBooks company changed since the lookup; look the driver up again');
   try {
     // Under the driver's lock (the same one the Everee links use), so a link and an unlink never interleave.
     const { rows } = await withDriverLock(db, driverId, async (tx) => {
@@ -121,7 +133,7 @@ export const linkVendor = async (db, admin, { cityId, driverId, vendorId }, deps
       return tx.query(
         `INSERT INTO quickbooks_vendors (driver_id, environment, realm_id, vendor_id, link_source, tax_id_supplied, vendor_1099, linked_by)
          VALUES ($1, $2, $3, $4, 'existing_vendor', true, $5, $6) RETURNING ${LINK_COLUMNS}`,
-        [driverId, config.environment, conn.realm_id, match.vendorId, match.vendor1099, admin.id]);
+        [driverId, config.environment, realmId, match.vendorId, match.vendor1099, admin.id]);
     });
     logger.info('Driver linked to a QuickBooks vendor', { driverId, environment: config.environment });
     return { link: viewOfLink(rows[0]), warnings: lookup.warnings ?? [] };

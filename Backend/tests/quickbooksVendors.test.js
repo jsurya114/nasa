@@ -30,8 +30,8 @@ const fakeDb = ({ driver = { id: 7, name: 'Desi One', email: 'Desi@Example.com',
     throw new Error(`unexpected query ${sql}`);
   } };
 };
-const clientOf = (vendors) => ({ findVendorsByEmail: async (email) => { clientOf.asked = email; return vendors; } });
-const deps = (vendors) => ({ env, client: clientOf(vendors) });
+const clientOf = (vendors, realmId = '12345678') => ({ findVendorsByEmail: async (email) => { clientOf.asked = email; return Object.assign([...vendors], { realmId }); } });
+const deps = (vendors, realmId) => ({ env, client: clientOf(vendors, realmId) });
 const where = { cityId: 1, driverId: 7 };
 
 test('only a super admin may look up, link, unlink or list', async () => {
@@ -70,6 +70,17 @@ test('a vendor already linked to another driver is blocked; to this driver is fl
   assert.equal(other.reason, 'vendor_linked_to_another_driver');
   assert.equal((await lookupVendor(fakeDb({ taken: [{ driver_id: 7 }] }), superAdmin, where, deps([vendor()]))).matches[0].linkedTo, 'this_driver');
   assert.deepEqual((await lookupVendor(fakeDb(), superAdmin, where, deps([vendor({ Vendor1099: false })]))).warnings, ['vendor_not_1099']);
+});
+
+test('a search answered for another company than the connected one is refused, and a link is only ever made in the company it was found in', async () => {
+  const other = fakeDb();
+  await assert.rejects(lookupVendor(other, superAdmin, where, deps([vendor()], '99999999')), (e) => e.status === 409 && /different company/.test(e.message));
+  const db = fakeDb();
+  await assert.rejects(linkVendor(db, superAdmin, { ...where, vendorId: '58' }, deps([vendor()], '99999999')), (e) => e.status === 409);
+  assert.ok(!db.log.some((entry) => /INSERT INTO quickbooks_vendors/.test(entry.sql)));
+  const ok = fakeDb();
+  await linkVendor(ok, superAdmin, { ...where, vendorId: '58' }, deps([vendor()]));
+  assert.equal(ok.log.find((entry) => /INSERT INTO quickbooks_vendors/.test(entry.sql)).p[2], '12345678');
 });
 
 test('a driver with no email is blocked without asking QuickBooks, and a Local driver is not found at all', async () => {

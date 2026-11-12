@@ -68,8 +68,10 @@ export const refreshTokens = (config, refreshToken, deps) => tokenCall(config, {
 
 // `auth()` answers { accessToken, realmId } and is called once per request, so a refreshed token is always the one used.
 export const createQuickbooksClient = (config, auth, { fetchImpl = fetch, timeoutMs = REQUEST_TIMEOUT_MS } = {}) => {
-  const request = async (method, path, { body, params = {}, requestId } = {}) => {
+  // `realm` pins the call to one QuickBooks company: if the connection was replaced by another company in the meantime, nothing is sent.
+  const request = async (method, path, { body, params = {}, requestId, realm } = {}) => {
     const { accessToken, realmId } = await auth();
+    if (realm && String(realmId) !== String(realm)) throw new QuickbooksError('The QuickBooks company changed while this was running; nothing was changed. Try again');
     const query = new URLSearchParams({ minorversion: String(MINOR_VERSION), ...params, ...(requestId && { requestid: requestId }) });
     const url = `${config.apiBase}/v3/company/${encodeURIComponent(realmId)}${path}?${query}`;
     const loggedPath = path; // never the query: it can hold an email address
@@ -100,27 +102,51 @@ export const createQuickbooksClient = (config, auth, { fetchImpl = fetch, timeou
   };
 
   const query = async (sql) => (await request('GET', '/query', { params: { query: sql } })).data?.QueryResponse ?? {};
+  // A query whose answer must be a readable QueryResponse (an empty one is `{}`). A missing or unreadable body is an error, never "no rows": the vendor
+  // search must not take a broken page for the end of the list.
+  const queryStrict = async (sql, realm) => {
+    const answer = (await request('GET', '/query', { params: { query: sql }, realm })).data?.QueryResponse;
+    if (!answer || typeof answer !== 'object' || Array.isArray(answer)) throw new QuickbooksError('QuickBooks sent an answer that could not be read');
+    return answer;
+  };
+  const countActiveVendors = async (realm) => {
+    const { totalCount } = await queryStrict('select count(*) from Vendor where Active = true', realm);
+    if (!Number.isInteger(totalCount) || totalCount < 0) throw new QuickbooksError('QuickBooks sent an answer that could not be read');
+    return totalCount;
+  };
 
   return {
     // The company's name: a read-only call that proves the connection works.
     getCompanyInfo: async () => (await request('GET', `/companyinfo/${encodeURIComponent((await auth()).realmId)}`)).data?.CompanyInfo ?? null,
     // Vendors with exactly this email (read-only). A match is only ever used with the driver's own verified email, never the name.
     // QuickBooks cannot filter vendors by email ("PrimaryEmailAddr is not queryable"), so the active vendors are read page by page and compared here.
-    // If the company has more vendors than the limit the search is incomplete, so it fails instead of answering "none found": a wrong "none" would let
-    // a second vendor be made and split the driver's 1099 total.
-    findVendorsByEmail: async (email) => {
+    // The answer is trusted only when the whole list was read from ONE company and is consistent: every page readable, no vendor twice, and the number
+    // read equal to the company's count before and after. Anything else throws, because a false "none found" would let a second vendor be made and split
+    // the driver's 1099 total. The array returned carries `realmId`, the company it was read from: a link or a new vendor must be made in that company.
+    findVendorsByEmail: async (email, { realm } = {}) => {
       const wanted = String(email).trim().toLowerCase();
+      const realmId = realm ?? (await auth()).realmId;
+      const total = await countActiveVendors(realmId);
+      if (total > VENDOR_PAGE_LIMIT * VENDOR_PAGE_SIZE) throw new QuickbooksError('QuickBooks has too many vendors to search by email; link the vendor by hand or ask support');
+      const seen = new Set();
       const found = [];
       for (let page = 0; page < VENDOR_PAGE_LIMIT; page += 1) {
-        const rows = (await query(`select Id, DisplayName, Active, Vendor1099, PrimaryEmailAddr from Vendor where Active = true orderby Id startposition ${page * VENDOR_PAGE_SIZE + 1} maxresults ${VENDOR_PAGE_SIZE}`)).Vendor ?? [];
+        const answer = await queryStrict(`select Id, DisplayName, Active, Vendor1099, PrimaryEmailAddr from Vendor where Active = true orderby Id startposition ${page * VENDOR_PAGE_SIZE + 1} maxresults ${VENDOR_PAGE_SIZE}`, realmId);
+        if (answer.Vendor !== undefined && !Array.isArray(answer.Vendor)) throw new QuickbooksError('QuickBooks sent an answer that could not be read');
+        const rows = answer.Vendor ?? [];
+        for (const v of rows) {
+          if (v?.Id === undefined || v?.Id === null || seen.has(String(v.Id))) throw new QuickbooksError('QuickBooks vendors changed while they were being read; try again');
+          seen.add(String(v.Id));
+        }
         found.push(...rows.filter((v) => String(v.PrimaryEmailAddr?.Address ?? '').trim().toLowerCase() === wanted));
-        if (rows.length < VENDOR_PAGE_SIZE) return found;
+        if (rows.length < VENDOR_PAGE_SIZE) break;
       }
-      throw new QuickbooksError('QuickBooks has too many vendors to search by email; link the vendor by hand or ask support');
+      if (seen.size !== total || (await countActiveVendors(realmId)) !== total) throw new QuickbooksError('QuickBooks vendors changed while they were being read; try again');
+      return Object.assign(found, { realmId: String(realmId) });
     },
     getVendor: async (id) => (await request('GET', `/vendor/${encodeURIComponent(id)}`)).data?.Vendor ?? null,
     // A 1099 contractor vendor. TaxIdentifier is write-only at QuickBooks and is never kept or logged by NASA. `requestId` makes a retry safe.
-    createVendor: async (body, requestId) => (await request('POST', '/vendor', { body, requestId })).data?.Vendor,
+    createVendor: async (body, requestId, { realm } = {}) => (await request('POST', '/vendor', { body, requestId, realm })).data?.Vendor,
     // The accounts a bill and its payment need (read-only), so an admin can choose the expense and bank account once.
     listAccounts: async (type) => (await query(`select Id, Name, AccountType, Active from Account where AccountType = ${quoteValue(type)} and Active = true maxresults 200`)).Account ?? [],
     // A bill owed to a vendor, and the payment that settles it. The same requestId again returns the first answer instead of making a second record.

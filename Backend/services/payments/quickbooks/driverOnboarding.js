@@ -83,9 +83,9 @@ export const startOnboarding = async (db, driverId, body, deps = {}) => {
   let vendor;
   try {
     // Look before creating: the existing Desi drivers are already in QuickBooks, and a second vendor would split their 1099 total.
-    const existing = await client.findVendorsByEmail(email);
+    const existing = await client.findVendorsByEmail(email, { realm: conn.realm_id });
     if (existing.length > 0) throw new OnboardingError(409, 'needs_review', 'we found you in QuickBooks already; your admin needs to confirm it before you can continue', { review: 'existing_vendor' });
-    vendor = await client.createVendor(vendorBody({ details, email, phone }), `nasa-vendor-${driverId}`);
+    vendor = await client.createVendor(vendorBody({ details, email, phone }), `nasa-vendor-${driverId}`, { realm: conn.realm_id });
   } catch (error) {
     if (error instanceof OnboardingError) throw error;
     if (!(error instanceof QuickbooksError)) throw error;

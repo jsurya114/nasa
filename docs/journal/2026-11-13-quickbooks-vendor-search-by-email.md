@@ -7,7 +7,7 @@
 | Issue / PR | none / see the pull request |
 | Branch | `fix/quickbooks-vendor-lookup-by-email` |
 | Type / scope | `fix(payroll)` |
-| Files touched | Backend: `services/payments/quickbooks/quickbooksClient.js`, `tests/quickbooksFoundation.test.js`. Journal entry. |
+| Files touched | Backend: `services/payments/quickbooks/quickbooksClient.js`, `vendorStore.js`, `driverOnboarding.js`; tests `quickbooksFoundation`, `quickbooksVendors`, `quickbooksOnboarding`, `driverContactReview`. Journal entry. |
 | Reserved files touched | None |
 
 **What and why.** The first real QuickBooks connection (production, 12 Nov 2026) showed that "Look up" on the Payroll page failed with `QueryValidationError: property 'PrimaryEmailAddr' is not queryable`. QuickBooks does not allow a vendor query to filter by email, and `findVendorsByEmail` did exactly that. The tests used a fake QuickBooks, so it was never seen before.
@@ -32,3 +32,19 @@
 - A company with many vendors makes several requests per Look up (one per 1000 vendors, at most 20).
 - The driver setup (`driverOnboarding.js`) uses the same function, so it benefits from the same fix.
 - Listing the vendors by name instead of reading all of them would be lighter if a company ever has very many; not needed now.
+
+## Review round (Jasil's review of #283)
+
+1. **One company for the whole search and the write (P1).** Every page of the vendor scan went through `auth()` again, so a reconnect to another QuickBooks company between pages could mix two companies, and the result could then drive a link or a new vendor.
+   - `request()` takes an optional `realm`. If the connection's company differs from it, nothing is sent and a `QuickbooksError` is thrown. A token refresh for the same company is unaffected.
+   - `findVendorsByEmail(email, { realm })` pins every page to that company (the one in `quickbooks_connection`) and returns the list with `realmId`. `createVendor(body, requestId, { realm })` is pinned the same way.
+   - Admin Look up and Link (`vendorStore.js`): the lookup reads the connected company first, pins the search, refuses an answer for another company, and returns the company it used. The link is saved with that company, and is refused (409) if another company was connected since the lookup. The "already linked to another driver" check now uses the same company.
+   - Driver self setup (`driverOnboarding.js`): the search and the vendor creation are pinned to the company read at the start, which is the one the link is saved with.
+2. **A broken page is an error, not the end of the list (P2).** The scan now uses a strict query: the answer must contain a `QueryResponse` object (an empty list is `{}`), and `Vendor`, if present, must be a list. An unreadable body, a missing `QueryResponse`, a Fault inside a 200 answer, or a later page that fails is a provider error, never "no vendors".
+3. **An inconsistent set of pages is an error.** The company's active vendor count is read before and after the scan; a vendor Id that appears twice, or a number read that differs from either count, fails the search ("vendors changed while they were being read; try again"). The 20,000-vendor cap is also checked up front from the count.
+
+Tests: the empty valid list; each kind of broken later page (unreadable body, no `QueryResponse`, null, wrong type, Fault in a 200, a refusal); a missing count; a repeated vendor; a count that grows or does not match; a reconnect to another company between pages (nothing is sent to the second company); a pinned company that differs; `createVendor` pinned; the admin lookup and link refuse another company, and the link is saved in the company searched; the driver setup passes the company to both calls. The company pin, the strict page check and the count check were each removed in turn and a test failed (the repeated-vendor check is also caught by the count check, so removing it alone changes no test). Older test fakes now report the company they searched (the real client always does).
+
+**Tested (after the review round).** Backend suite without the database: 422 tests, 325 passed, 0 failed. Database tests on a local copy, one file at a time (QuickBooks onboarding, vendors, contact review, foundation): 40 passed, 0 failed.
+
+**Not tested.** Against the real QuickBooks company: the count query (`select count(*) from Vendor where Active = true`, answered as `totalCount`) and the paged query follow Intuit's documented query language, but a live Look up still has to be tried after deployment. If the count answer differs from what the code expects, Look up fails closed with a clear error, it does not guess.

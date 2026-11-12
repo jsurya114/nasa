@@ -172,7 +172,7 @@ test('a contact change while a link is being made stops the link: nothing is wri
 
     // QuickBooks, admin link: same
     const vendor = { Id: '58', DisplayName: 'Racing Three', Active: true, Vendor1099: true, PrimaryEmailAddr: { Address: `rc3-${tag}@example.com` } };
-    const qb = { findVendorsByEmail: async () => { await changesContact(qbAdmin); return [vendor]; } };
+    const qb = { findVendorsByEmail: async () => { await changesContact(qbAdmin); return Object.assign([vendor], { realmId: '12345678' }); } };
     await refused(linkVendor(db, sup, { cityId, driverId: qbAdmin, vendorId: '58' }, { env: QUICKBOOKS, client: qb }));
     assert.equal(await links('quickbooks_vendors', qbAdmin), 0);
 
