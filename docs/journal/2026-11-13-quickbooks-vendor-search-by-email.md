@@ -48,3 +48,28 @@ Tests: the empty valid list; each kind of broken later page (unreadable body, no
 **Tested (after the review round).** Backend suite without the database: 422 tests, 325 passed, 0 failed. Database tests on a local copy, one file at a time (QuickBooks onboarding, vendors, contact review, foundation): 40 passed, 0 failed.
 
 **Not tested.** Against the real QuickBooks company: the count query (`select count(*) from Vendor where Active = true`, answered as `totalCount`) and the paged query follow Intuit's documented query language, but a live Look up still has to be tried after deployment. If the count answer differs from what the code expects, Look up fails closed with a clear error, it does not guess.
+
+## Review round 2 (Jasil: carry the lookup fix through the driver's QuickBooks setup and verify it end to end)
+
+The client confirmed that Desi drivers finish their own QuickBooks setup in the driver portal. The portal already had the form (`QuickbooksSetup.jsx`) and the service (`driverOnboarding.js`); this round checked it against the three requirements and fixed what it found.
+
+**Found and fixed: the admin Link failed for any Desi driver with a phone number.** `vendorStore.js` loaded the driver without `phone_number`, so the contact snapshot held no phone, and the check under the driver's lock (email and phone must be unchanged) saw the stored phone as a change: "this driver's email or phone changed while linking; nothing was linked". This is also on `main`. It only showed once the whole path ran against a real database, because the unit tests use a driver without a phone. The driver is now loaded with `phone_number`, as the Everee link already does. A driver without a phone was not affected.
+
+**Checked, and already met after the lookup fix:**
+1. A new Desi driver gives legal name, address, tax ID and the certification, and finishes setup in NASA. No bank account or routing detail is asked for or sent. One 1099 vendor is created with the driver's own NASA email, and no tax ID is kept.
+2. A driver who already has a QuickBooks vendor is never given a second one. Setup scans the vendors by email first. Any match (one or several) goes to review for a super admin, nothing is created or linked by the driver (a driver cannot prove they own an existing record). The admin's Look up then answers `match` for one exact, unlinked vendor and Link saves it (source `existing_vendor`), or answers `ambiguous` / `no_match` and links nothing. Retrying never creates another vendor: after a lost answer the retry finds the vendor QuickBooks already made and goes to the same review.
+3. Completing setup only reads and creates vendors. It never creates a bill or a payment.
+
+**Not changed (decision for Jasil).** Setup does not link a single clean match by itself; an admin presses Link. This follows the Everee onboarding rule that a driver cannot prove ownership of an existing record, and a wrong link would put one person's 1099 payments on another vendor. The driver sees "your admin needs to confirm it" and the form again; no review state is stored, so the admin finds the driver in the Unlinked list of Driver payment setup. A stored "waiting for review" state would need a database table and was left out.
+
+**Tests added** (`quickbooksOnboarding.test.js`, against a local database copy and the real QuickBooks client talking to a stateful stand-in for one QuickBooks company that refuses a vendor query filtered by email, as production did, keeps created vendors, repeats the first answer for the same request id, and records any request that is not a vendor read or create):
+- a new Desi driver: one 1099 vendor, linked, no bank detail sent, a second try refused, no payout;
+- a driver with an existing vendor: two retries create nothing, the admin Look up finds the vendor, Link completes setup, one vendor remains;
+- two vendors with the driver's email: review, ambiguous, nothing linked or created;
+- QuickBooks made the vendor but the answer was lost: the retry does not create another, the admin links the one that exists.
+`quickbooksVendors.test.js`: a driver with a phone number can be linked.
+Undoing the phone fix fails 4 tests; setup ignoring an existing vendor fails 7.
+
+**Tested (after round 2).** Backend suite without the database: 423 tests, 326 passed, 0 failed. Database tests on a local copy, one file at a time: onboarding 12, vendors 17, foundation 14, contact review 2, all passed. Frontend driver setup flow test: 6 passed.
+
+**Not tested.** The real QuickBooks company (the stand-in follows Intuit's documented behaviour, including the email-filter refusal seen in production and the repeated request id), and a real browser click-through of the portal form on a phone. The count query is still to be tried live after deployment.

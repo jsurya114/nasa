@@ -36,7 +36,7 @@ const viaQuickbooks = async (call) => {
 const clientFor = (db, config, deps) => deps.client ?? createQuickbooksClient(config, () => getAuth(db, config, { fetchImpl: deps.fetchImpl }), deps.fetchImpl ? { fetchImpl: deps.fetchImpl } : {});
 
 const loadDesiDriver = async (db, cityId, driverId) => {
-  const { rows } = await db.query(`SELECT id, name, email, city_id, contact_changed_at FROM drivers WHERE id = $1 AND city_id = $2 AND driver_type = 'DESI'`, [driverId, cityId]);
+  const { rows } = await db.query(`SELECT id, name, email, phone_number, city_id, contact_changed_at FROM drivers WHERE id = $1 AND city_id = $2 AND driver_type = 'DESI'`, [driverId, cityId]);
   if (rows.length === 0) throw new PayrollError(404, 'Desi driver not found in this city');
   return rows[0];
 };
@@ -114,7 +114,7 @@ const NOT_LINKABLE = {
 export const linkVendor = async (db, admin, { cityId, driverId, vendorId }, deps = {}) => {
   requireSuperAdmin(admin);
   await assertCityAllowed(db, admin, cityId);
-  const driver = await loadDesiDriver(db, cityId, driverId); // one snapshot of the contact details: the lookup uses it and the link is saved only if it still holds
+  const driver = await loadDesiDriver(db, cityId, driverId); // one snapshot of the contact details (email AND phone): the lookup uses it and the link is saved only if it still holds
   const { lookup, realmId } = await lookupInCompany(db, admin, { cityId, driverId }, { ...deps, driver });
   if (lookup.result !== 'match') throw new PayrollError(409, NOT_LINKABLE[lookup.result] ?? 'nothing was linked');
   const [match] = lookup.matches;

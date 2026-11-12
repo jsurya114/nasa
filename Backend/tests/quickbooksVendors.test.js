@@ -49,6 +49,13 @@ test('a link is refused, and nothing is written, when the driver\'s email or pho
   }
 });
 
+test('a driver with a phone number can be linked: the contact snapshot reads the phone as well as the email', async () => {
+  const db = fakeDb({ driver: { id: 7, name: 'Desi One', email: 'desi@example.com', phone_number: '5125550100', city_id: 1 } });
+  const { link } = await linkVendor(db, superAdmin, { ...where, vendorId: '58' }, deps([vendor()]));
+  assert.equal(link.vendorId, '58');
+  assert.ok(db.log.some((entry) => /FROM drivers WHERE id = \$1 AND city_id = \$2 AND driver_type = 'DESI'/.test(entry.sql) && /phone_number/.test(entry.sql)), 'the driver is loaded with the phone the link is checked against');
+});
+
 test('lookup matches on the driver email only and names the one vendor found', async () => {
   const result = await lookupVendor(fakeDb(), superAdmin, where, deps([vendor()]));
   assert.equal(result.result, 'match');
