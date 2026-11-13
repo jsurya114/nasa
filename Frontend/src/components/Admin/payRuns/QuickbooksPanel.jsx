@@ -45,7 +45,8 @@ function DriverRow({ driver, cityId, onChanged }) {
       setBusy(false);
     }
   };
-  const link = async () => { if (await call("link", { vendorId: lookup.matches[0].vendorId })) { setLookup(null); onChanged(); } };
+  // The link is confirmed for the QuickBooks company the lookup was read from; the server refuses it if another company is connected now.
+  const link = async () => { if (await call("link", { vendorId: lookup.matches[0].vendorId, realmId: lookup.realmId })) { setLookup(null); onChanged(); } };
   const unlink = async () => {
     const reason = window.prompt(`Why unlink ${driver.name} from QuickBooks?`);
     if (reason && (await call("unlink", { reason }))) onChanged();

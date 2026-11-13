@@ -9,6 +9,7 @@ import { linkVendor, listCityVendors, lookupVendor, unlinkVendor } from '../../s
 
 const id = (value) => (/^\d{1,12}$/.test(String(value ?? '')) && Number(value) > 0 ? Number(value) : null);
 const vendorIdOf = (value) => (typeof value === 'string' && /^[0-9]{1,20}$/.test(value) ? value : null);
+const realmIdOf = (value) => (typeof value === 'string' && /^[0-9]{1,30}$/.test(value) ? value : null);
 
 const fail = (res, error, action) => {
   if (error instanceof PayrollError) return res.status(error.status).json({ message: error.message });
@@ -57,7 +58,9 @@ export const postLink = run('link', (req) => {
   const { cityId, driverId } = need(scope(req.body ?? {}), ['cityId', 'driverId']);
   const vendorId = vendorIdOf(req.body?.vendorId);
   if (!vendorId) throw new PayrollError(HttpStatus.BAD_REQUEST, 'vendorId must be the ID of the vendor that was found');
-  return linkVendor(pool, req.admin, { cityId, driverId, vendorId });
+  const realmId = realmIdOf(req.body?.realmId);
+  if (!realmId) throw new PayrollError(HttpStatus.BAD_REQUEST, 'realmId must be the QuickBooks company shown by the lookup; look the driver up again');
+  return linkVendor(pool, req.admin, { cityId, driverId, vendorId, realmId });
 });
 export const postUnlink = run('unlink', (req) => {
   const { cityId, driverId } = need(scope(req.body ?? {}), ['cityId', 'driverId']);
