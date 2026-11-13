@@ -10,7 +10,7 @@ const vendorList = () => ({ environment: "sandbox", summary: { drivers: 2, linke
   { driverId: 7, name: "Desi One", issues: [], link: { vendorId: "58", vendor1099: true } },
   { driverId: 8, name: "Desi Two", issues: [], link: null }, ...extraDrivers] });
 
-const startServer = async ({ status = CONNECTED, lookup = { result: "match", matches: [{ vendorId: "77", displayName: "Desi Two LLC", vendor1099: false, linkedTo: null }], warnings: ["vendor_not_1099"] } } = {}) => {
+const startServer = async ({ status = CONNECTED, lookup = { result: "match", realmId: "12345678", matches: [{ vendorId: "77", displayName: "Desi Two LLC", vendor1099: false, linkedTo: null }], warnings: ["vendor_not_1099"] } } = {}) => {
   const state = { calls: [] };
   await installServer(async (config) => {
     state.calls.push(`${config.method} ${config.url}`);
@@ -73,7 +73,7 @@ describe("QuickBooks panel", () => {
     expect(await screen.findByText(/not marked for 1099 tracking/)).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Link this vendor" }));
     await screen.findByText(/Found vendor/).catch(() => null);
-    expect(server.linked).toEqual({ cityId: 1, driverId: 8, vendorId: "77" });
+    expect(server.linked).toEqual({ cityId: 1, driverId: 8, vendorId: "77", realmId: "12345678" });
   });
 
   it("lets the admin choose the expense and bank accounts for Desi payments once payments are on", async () => {

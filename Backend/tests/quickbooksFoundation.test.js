@@ -42,8 +42,8 @@ test('query values are escaped and the authorization address carries the state',
 test('the client sends the bearer token, minor version and request id, and never logs or returns the email in an error', async () => {
   const calls = [];
   const client = createQuickbooksClient(config, async () => ({ accessToken: 'AT', realmId: '12345678' }), {
-    fetchImpl: async (url, init) => { calls.push({ url, init }); return reply(200, { QueryResponse: { Vendor: [{ Id: '9' }] } }); } });
-  assert.deepEqual(await client.findVendorsByEmail("a'b@x.com"), [{ Id: '9' }]);
+    fetchImpl: async (url, init) => { calls.push({ url, init }); return reply(200, { QueryResponse: /count/.test(url) ? { totalCount: 1 } : { Vendor: [{ Id: '9', PrimaryEmailAddr: { Address: "A'B@x.com" } }] } }); } });
+  assert.deepEqual((await client.findVendorsByEmail("a'b@x.com")).map((v) => v.Id), ['9']);
   assert.match(calls[0].url, /sandbox-quickbooks\.api\.intuit\.com\/v3\/company\/12345678\/query\?/);
   assert.equal(calls[0].init.headers.Authorization, 'Bearer AT');
   assert.match(calls[0].url, /minorversion=75/);
@@ -51,6 +51,86 @@ test('the client sends the bearer token, minor version and request id, and never
   const c2 = createQuickbooksClient(config, async () => ({ accessToken: 'AT', realmId: '12345678' }), { fetchImpl: async (url, init) => { posts.push(url); return reply(200, { Bill: { Id: '5' } }); } });
   assert.equal((await c2.createBill({ x: 1 }, 'nasa-stmt-7')).Id, '5');
   assert.match(posts[0], /requestid=nasa-stmt-7/);
+});
+
+// A fake QuickBooks for the vendor search: it answers the count query and the pages from `pages`, and `hooks` can change what is sent for one call.
+const vendorBook = (pages, { realm = () => '12345678', count = null, reply: custom = null } = {}) => {
+  const urls = [];
+  const total = pages.reduce((n, rows) => n + rows.length, 0);
+  let counts = 0;
+  const fetchImpl = async (url) => {
+    const text = decodeURIComponent(url.replace(/\+/g, ' '));
+    urls.push(text);
+    const made = custom?.(text, urls.length);
+    if (made) return made;
+    if (/select count\(\*\) from Vendor/.test(text)) { counts += 1; return reply(200, { QueryResponse: { totalCount: count ? count(counts) : total } }); }
+    const start = Number(/startposition (\d+)/.exec(text)[1]);
+    return reply(200, { QueryResponse: pages[(start - 1) / 1000] && pages[(start - 1) / 1000].length ? { Vendor: pages[(start - 1) / 1000], startPosition: start } : {} });
+  };
+  let calls = 0;
+  const client = createQuickbooksClient(config, async () => ({ accessToken: 'AT', realmId: realm(++calls) }), { fetchImpl });
+  return { client, urls };
+};
+const vendor = (i, email) => ({ Id: String(i), Active: true, PrimaryEmailAddr: email ? { Address: email } : undefined });
+const fullPage = (from) => Array.from({ length: 1000 }, (_, i) => vendor(from + i, `other${from + i}@x.com`));
+
+test('the vendor search never filters by email at QuickBooks, reads every page, and matches the email here', async () => {
+  const { client, urls } = vendorBook([fullPage(1), [vendor(1001, ' Driver@Example.com '), vendor(1002, 'else@x.com'), vendor(1003)]]);
+  const found = await client.findVendorsByEmail('driver@example.com');
+  assert.deepEqual(found.map((v) => v.Id), ['1001']);
+  assert.equal(found.realmId, '12345678');
+  assert.ok(urls.every((u) => !/where[^&]*PrimaryEmailAddr/i.test(u)), 'QuickBooks cannot filter vendors by email');
+  const pages = urls.filter((u) => /orderby Id/.test(u));
+  assert.match(pages[0], /startposition 1 maxresults 1000/);
+  assert.match(pages[1], /startposition 1001 maxresults 1000/);
+});
+
+test('a valid empty list is "no vendors", and a company with no active vendors is not an error', async () => {
+  const { client } = vendorBook([[]]);
+  assert.deepEqual([...(await client.findVendorsByEmail('a@x.com'))], []);
+});
+
+test('a company with too many vendors to search fails instead of saying no vendor was found', async () => {
+  const { client } = vendorBook([[vendor(1, 'a@x.com')]], { count: () => 20001 });
+  await assert.rejects(() => client.findVendorsByEmail('a@x.com'), (e) => e instanceof QuickbooksError && /too many vendors/.test(e.message));
+});
+
+test('an unreadable or incomplete page is an error, never the end of the list', async () => {
+  const bad = (custom) => vendorBook([fullPage(1), [vendor(1001, 'a@x.com')]], { reply: custom });
+  const second = (answer) => (text) => (/startposition 1001/.test(text) ? answer : null);
+  const unreadable = { ok: true, status: 200, headers: { get: () => null }, json: async () => { throw new SyntaxError('bad json'); } };
+  for (const custom of [second(unreadable), second(reply(200, {})), second(reply(200, { QueryResponse: null })), second(reply(200, { QueryResponse: { Vendor: 'x' } })), second(reply(200, { Fault: { Error: [{ code: '1' }] } }))]) {
+    await assert.rejects(() => bad(custom).client.findVendorsByEmail('a@x.com'), (e) => e instanceof QuickbooksError, 'a broken later page must fail the search');
+  }
+  const noCount = vendorBook([[vendor(1, 'a@x.com')]], { reply: (text) => (/count\(\*\)/.test(text) ? reply(200, { QueryResponse: {} }) : null) });
+  await assert.rejects(() => noCount.client.findVendorsByEmail('a@x.com'), (e) => e instanceof QuickbooksError);
+  const refused = vendorBook([fullPage(1), [vendor(1001, 'a@x.com')]], { reply: second(reply(429, { Fault: { Error: [{ code: '1' }] } })) });
+  await assert.rejects(() => refused.client.findVendorsByEmail('a@x.com'), (e) => e instanceof QuickbooksError && e.status === 429);
+});
+
+test('a vendor list that changes while it is read fails: repeated vendor, or a count that does not match', async () => {
+  const twice = vendorBook([fullPage(1), [vendor(1000, 'a@x.com')]]); // vendor 1000 is on both pages
+  await assert.rejects(() => twice.client.findVendorsByEmail('a@x.com'), (e) => e instanceof QuickbooksError && /changed while/.test(e.message));
+  const grew = vendorBook([[vendor(1, 'a@x.com'), vendor(2)]], { count: (n) => (n === 1 ? 2 : 3) }); // a vendor was added during the read
+  await assert.rejects(() => grew.client.findVendorsByEmail('a@x.com'), (e) => e instanceof QuickbooksError && /changed while/.test(e.message));
+  const shrunk = vendorBook([[vendor(1, 'a@x.com')]], { count: () => 2 }); // fewer vendors read than the company has
+  await assert.rejects(() => shrunk.client.findVendorsByEmail('a@x.com'), (e) => e instanceof QuickbooksError && /changed while/.test(e.message));
+});
+
+test('the whole vendor search stays in one company: a reconnect to another company part way fails, and a pinned company is enforced', async () => {
+  let call = 0;
+  const swapped = vendorBook([fullPage(1), [vendor(1001, 'a@x.com')]], { realm: () => (++call <= 2 ? '11111111' : '22222222') });
+  await assert.rejects(() => swapped.client.findVendorsByEmail('a@x.com'), (e) => e instanceof QuickbooksError && /company changed/.test(e.message));
+  assert.ok(swapped.urls.every((u) => /company\/11111111\//.test(u)), 'nothing was sent to the second company');
+  const pinned = vendorBook([[vendor(1, 'a@x.com')]]);
+  await assert.rejects(() => pinned.client.findVendorsByEmail('a@x.com', { realm: '99999999' }), (e) => e instanceof QuickbooksError && /company changed/.test(e.message));
+  assert.equal(pinned.urls.length, 0);
+  const sameCompany = vendorBook([[vendor(1, 'a@x.com')]]);
+  assert.equal((await sameCompany.client.findVendorsByEmail('a@x.com', { realm: '12345678' })).realmId, '12345678');
+  const made = [];
+  const create = createQuickbooksClient(config, async () => ({ accessToken: 'AT', realmId: '22222222' }), { fetchImpl: async (url) => { made.push(url); return reply(200, { Vendor: { Id: '5' } }); } });
+  await assert.rejects(() => create.createVendor({ DisplayName: 'x' }, 'nasa-vendor-1', { realm: '11111111' }), (e) => e instanceof QuickbooksError && /company changed/.test(e.message));
+  assert.equal(made.length, 0, 'no vendor is made in a different company than the one searched');
 });
 
 test('client errors keep the status and Intuit transaction id, and a lost connection has no status', async () => {
