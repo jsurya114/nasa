@@ -32,22 +32,37 @@ const amountCents = (value) => {
   return typeof n === 'number' && Number.isFinite(n) ? toCents(n.toFixed(2)) : null;
 };
 
+const readWorkerId = (body) => {
+  // The worker the payment belongs to, when the answer says (the field is not fully documented; absent means "not stated", never a match).
+  const rawWorker = body.workerId ?? body.worker?.workerId ?? body.worker?.id;
+  return (typeof rawWorker === 'string' || typeof rawWorker === 'number') && ID_TEXT.test(String(rawWorker)) ? String(rawWorker) : null;
+};
+const readPayDate = (body) => (typeof body.payDate === 'string' && DATE_TEXT.test(body.payDate) ? body.payDate : null);
+
+// A payment Everee marks PAID whose payout list is empty: it is treated like "PAID with a payout still pending" (countsAsLanded), so the same amount
+// and worker checks apply. An amount that cannot be read stays null, and production never marks a payment paid without one.
+const readPaidWithoutPayouts = (body) => ({
+  state: 'pending', netCents: amountCents(body.totalNetPay), payDate: readPayDate(body), workerId: readWorkerId(body), paymentPaid: true,
+});
+
 // state: 'landed' (all payouts PAID) | 'returned' (some FAILED: a bank returned the deposit) | 'pending' | 'unknown'.
 // netCents: the sum of the payouts when every one states an amount, else null.
 export const readPayoutState = (body) => {
   const payouts = body && typeof body === 'object' && Array.isArray(body.netPayouts) ? body.netPayouts : null;
+  // Everee's real production answer for a payment it shows as PAID can carry an EMPTY payout list (seen on a paid contractor payment). The payment's own
+  // PAID then decides, and its total (totalNetPay) is the amount the caller compares with what NASA sent. A payment that is not PAID, or has no payout
+  // list at all, is still not understood.
+  if (payouts && payouts.length === 0 && typeof body.status === 'string' && body.status.toUpperCase() === 'PAID') return readPaidWithoutPayouts(body);
   if (!payouts || payouts.length === 0) return { state: 'unknown', netCents: null, payDate: null, workerId: null };
   const statuses = payouts.map((p) => (p && typeof p.status === 'string' ? p.status.toUpperCase() : ''));
   if (statuses.some((s) => !PAYOUT_STATUSES.has(s))) return { state: 'unknown', netCents: null, payDate: null, workerId: null };
   const amounts = payouts.map((p) => amountCents(p.netAmount));
   const netCents = amounts.every((a) => a !== null) ? amounts.reduce((sum, a) => sum + a, 0) : null;
-  const payDate = typeof body.payDate === 'string' && DATE_TEXT.test(body.payDate) ? body.payDate : null;
+  const payDate = readPayDate(body);
   let state = 'landed';
   if (statuses.includes('FAILED')) state = 'returned';
   else if (statuses.includes('PENDING')) state = 'pending';
-  // The worker the payment belongs to, when the answer says (the field is not fully documented; absent means "not stated", never a match).
-  const rawWorker = body.workerId ?? body.worker?.workerId ?? body.worker?.id;
-  const workerId = (typeof rawWorker === 'string' || typeof rawWorker === 'number') && ID_TEXT.test(String(rawWorker)) ? String(rawWorker) : null;
+  const workerId = readWorkerId(body);
   // The payment's own status (Everee's Payment Data API), apart from its payouts: the sandbox sets it to PAID while the bank payouts stay PENDING.
   const paymentPaid = typeof body.status === 'string' && body.status.toUpperCase() === 'PAID';
   return { state, netCents, payDate, workerId, paymentPaid };

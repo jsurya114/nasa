@@ -65,3 +65,18 @@ test('the sandbox trusts its own payable inside a larger payment; production and
   assert.equal(ownPayableIsPaidInPayment('sandbox', own({ amount: undefined }), want), false, 'no amount');
   assert.equal(ownPayableIsPaidInPayment('sandbox', null, want), false);
 });
+
+test('a payment Everee marks PAID with an empty payout list counts as landed; any other empty list is still not understood', () => {
+  const paid = readPayoutState({ status: 'PAID', netPayouts: [], payDate: '2026-11-12', workerId: 7, totalNetPay: { amount: '81.93', currency: 'USD' } });
+  assert.equal(countsAsLanded(paid), true);
+  assert.equal(paid.netCents, 8193);
+  assert.equal(paid.payDate, '2026-11-12');
+  assert.equal(paid.workerId, '7');
+  assert.equal(readPayoutState({ status: 'paid', netPayouts: [], totalNetPay: 81.93 }).netCents, 8193, 'case does not matter; a plain number is read too');
+  assert.equal(readPayoutState({ status: 'PAID', netPayouts: [] }).netCents, null, 'no total stated: the caller will not mark it paid in production');
+  assert.equal(readPayoutState({ status: 'PAID', netPayouts: [], totalNetPay: 'a lot' }).netCents, null);
+  for (const body of [{ status: 'PENDING', netPayouts: [] }, { status: 'FAILED', netPayouts: [] }, { netPayouts: [] }, { status: 'PAID' }, { status: 'PAID', netPayouts: 'PAID' }, { status: 'PAID', netPayouts: null }]) {
+    assert.equal(countsAsLanded(readPayoutState(body)), false, JSON.stringify(body));
+    assert.equal(readPayoutState(body).state, 'unknown', JSON.stringify(body));
+  }
+});
