@@ -3,11 +3,11 @@ import axios from "../../../../redux/slice/axiosInstance";
 import { formatMoney } from "../../../../utils/money.js";
 import { buttonClass } from "../../payroll/formParts.jsx";
 
-const INTERRUPTED_TEXT = "Paid in cash; sending to QuickBooks was interrupted. Retry";
-const STATUS_TEXT = { paid: "Recorded in QuickBooks", submitted: "Being recorded in QuickBooks…", unconfirmed: "Paid in cash; not confirmed in QuickBooks yet. Retry", failed: "Paid in cash; not recorded in QuickBooks yet. Retry" };
+const INTERRUPTED_TEXT = "Paid by check; sending to QuickBooks was interrupted. Retry";
+const STATUS_TEXT = { paid: "Recorded in QuickBooks", submitted: "Being recorded in QuickBooks…", unconfirmed: "Paid by check; not confirmed in QuickBooks yet. Retry", failed: "Paid by check; not recorded in QuickBooks yet. Retry" };
 const TONE = { paid: "text-green-700", submitted: "text-ink-muted", interrupted: "font-semibold text-amber-800", unconfirmed: "font-semibold text-amber-800", failed: "font-semibold text-red-700" };
 
-// The QuickBooks record of a payment batch, read back from the server. The drivers were paid (cash) when it was confirmed; this only shows whether QuickBooks has the record. Retry is always safe: the server asks QuickBooks for the bill by its number first, so a
+// The QuickBooks record of a payment batch, read back from the server. The drivers were paid (by check) when it was confirmed; this only shows whether QuickBooks has the record. Retry is always safe: the server asks QuickBooks for the bill by its number first, so a
 // bill or payment that did land is found and never made twice.
 export default function QuickbooksResult({ batchId, onChanged }) {
   const [view, setView] = useState(null);

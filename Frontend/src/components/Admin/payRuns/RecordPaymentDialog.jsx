@@ -31,7 +31,7 @@ const METHODS = {
 const CASH = "cash";
 const EVEREE = "everee";
 const QUICKBOOKS = "quickbooks";
-const QUICKBOOKS_LABEL = "Cash in Hand, recorded in QuickBooks";
+const QUICKBOOKS_LABEL = "Check, recorded in QuickBooks";
 const EVEREE_LABEL = "Bank transfer (Everee)";
 const EVEREE_BASE = "/admin/payroll";
 const paid = (d) => d.payoutStatus === "paid";
@@ -359,7 +359,7 @@ export default function RecordPaymentDialog({
           {qbBatchId ? (
             <div className="space-y-4 overflow-y-auto p-5 sm:p-8">
               <p className="text-lg font-semibold">Payment recorded</p>
-              <p className="text-sm text-ink-muted">The drivers are marked paid in Cash in Hand. Each driver's bill and bill payment is recorded in QuickBooks for the 1099 reports; if one is not recorded yet, the payment still stands and you can retry the QuickBooks record.</p>
+              <p className="text-sm text-ink-muted">The drivers are marked paid by check. Each driver's bill and bill payment is recorded in QuickBooks for the 1099 reports; if one is not recorded yet, the payment still stands and you can retry the QuickBooks record.</p>
               <QuickbooksResult batchId={qbBatchId} onChanged={onRecorded} />
               <button type="button" onClick={onClose} className={buttonClass}>Done</button>
             </div>
@@ -463,7 +463,7 @@ export default function RecordPaymentDialog({
                     : step === "review"
                       ? "Choose the drivers to pay. The amounts are the approved amounts of this pay run."
                       : viaQuickbooks
-                        ? "Records the cash you hand to each driver as paid, and sends the same amount to QuickBooks as a bill and a bill payment for the 1099 reports. QuickBooks does not pay anyone."
+                        ? "Records the check you give each driver as paid, and sends the same amount to QuickBooks as a bill and a bill payment for the 1099 reports. QuickBooks does not pay anyone."
                         : viaEveree
                         ? "Sends the approved amounts through Everee. Nothing is paid until you approve the payroll run in Everee and Everee confirms the deposits."
                         : "Records money you paid outside NASA, such as cash. Nothing is sent."}
@@ -616,7 +616,7 @@ export default function RecordPaymentDialog({
                     <div className="grid gap-3 sm:grid-cols-2">
                       {tab === "DESI" ? (
                         <Field label="Payment method">
-                          <p className={`${inputClass} flex items-center`}>{viaQuickbooks ? `${QUICKBOOKS_LABEL} (Desi drivers)` : `${METHODS[CASH]} (Desi drivers are paid in cash only)`}</p>
+                          <p className={`${inputClass} flex items-center`}>{viaQuickbooks ? `${QUICKBOOKS_LABEL} (Desi drivers)` : "Check (Desi drivers are paid by check only)"}</p>
                         </Field>
                       ) : (
                         <Field label="Payment method" error={errors.method}>
@@ -664,14 +664,14 @@ export default function RecordPaymentDialog({
                           onChange={set("note")}
                           disabled={busy}
                           maxLength={200}
-                          placeholder="Receipt number or cash handover details"
+                          placeholder={tab === "DESI" ? "Check number or handover details" : "Receipt number or cash handover details"}
                           className={inputClass}
                         />
                       </Field>
                     )}
                     {method && !viaQuickbooks && (!viaEveree || everee.preview) && (
                       <p role="status" aria-label="Payment summary" className="rounded-xl border border-line p-3 font-semibold">
-                        {viaEveree ? EVEREE_LABEL : METHODS[method]} ·{" "}
+                        {viaEveree ? EVEREE_LABEL : tab === "DESI" ? "Check" : METHODS[method]} ·{" "}
                         {viaEveree ? everee.preview.summary.eligible : chosen.length}{" "}
                         {(viaEveree ? everee.preview.summary.eligible : chosen.length) === 1 ? "driver" : "drivers"} ·{" "}
                         {formatMoney(viaEveree ? everee.preview.summary.total : total)}
@@ -692,7 +692,7 @@ export default function RecordPaymentDialog({
                     )}
                     <p className="text-xs text-ink-muted">
                       {viaQuickbooks
-                        ? "This marks the drivers paid in Cash in Hand and records the same payment in QuickBooks. Check the drivers, date and total above before pressing Pay."
+                        ? "This marks the drivers paid by check and records the same payment in QuickBooks. Check the drivers, date and total above before pressing Pay."
                         : viaEveree
                         ? "This sends the payment to Everee. Check the method, drivers and total above before pressing Pay."
                         : "This creates a permanent payment record. Check the method, drivers and total above before pressing Pay."}

@@ -43,11 +43,11 @@ beforeEach(async () => { removeShell(); await resetBrowser(); });
 afterEach(cleanup);
 
 describe("Pay to drivers: Desi drivers through QuickBooks", () => {
-  it("with QuickBooks payments on, Desi drivers show Cash in Hand recorded in QuickBooks, a preview, a payment date, a cash note and the cash confirmation", async () => {
+  it("with QuickBooks payments on, Desi drivers show Check recorded in QuickBooks, a preview, a payment date, a note and the confirmation", async () => {
     const server = await startServer();
     await mount();
     await toPayment();
-    expect(await screen.findByText("Cash in Hand, recorded in QuickBooks (Desi drivers)")).toBeTruthy();
+    expect(await screen.findByText("Check, recorded in QuickBooks (Desi drivers)")).toBeTruthy();
     expect(await screen.findByText("2 of 2 selected drivers can be recorded now, $230.00 in total.")).toBeTruthy();
     expect(server.previews).toEqual([{ statementIds: "1,2" }]);
     expect(screen.getByLabelText("Paid on")).toBeTruthy();
@@ -94,7 +94,7 @@ describe("Pay to drivers: Desi drivers through QuickBooks", () => {
     fireEvent.change(screen.getByLabelText("Payment note"), { target: { value: "Cash handed over, receipt 12" } });
     fireEvent.click(screen.getByText(/I confirm the selected drivers/));
     fireEvent.click(screen.getByRole("button", { name: "Pay" }));
-    expect(await screen.findByText("Paid in cash; not recorded in QuickBooks yet. Retry")).toBeTruthy();
+    expect(await screen.findByText("Paid by check; not recorded in QuickBooks yet. Retry")).toBeTruthy();
     fireEvent.click(await screen.findByRole("button", { name: "Retry the QuickBooks record" }));
     await waitFor(() => expect(server.retries).toBe(1));
     await waitFor(() => expect(screen.queryByRole("button", { name: /Retry/ })).toBeNull());
@@ -108,7 +108,7 @@ describe("Pay to drivers: Desi drivers through QuickBooks", () => {
     fireEvent.change(screen.getByLabelText("Payment note"), { target: { value: "Cash handed over, receipt 12" } });
     fireEvent.click(screen.getByText(/I confirm the selected drivers/));
     fireEvent.click(screen.getByRole("button", { name: "Pay" }));
-    expect(await screen.findByText("Paid in cash; sending to QuickBooks was interrupted. Retry")).toBeTruthy();
+    expect(await screen.findByText("Paid by check; sending to QuickBooks was interrupted. Retry")).toBeTruthy();
     fireEvent.click(await screen.findByRole("button", { name: "Retry the QuickBooks record" }));
     await waitFor(() => expect(server.retries).toBe(1));
     cleanup();
@@ -127,7 +127,7 @@ describe("Pay to drivers: Desi drivers through QuickBooks", () => {
     const server = await startServer({ paymentsEnabled: false });
     await mount();
     await toPayment();
-    expect(await screen.findByText("Cash in Hand (Desi drivers are paid in cash only)")).toBeTruthy();
+    expect(await screen.findByText("Check (Desi drivers are paid by check only)")).toBeTruthy();
     expect(screen.getByLabelText("Payment note")).toBeTruthy();
     expect(server.previews).toEqual([]);
   });
