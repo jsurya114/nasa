@@ -12,14 +12,16 @@ const plainAdmin = { id: 2, role: 'admin' };
 const vendor = (over = {}) => ({ Id: '58', DisplayName: 'Desi One', Active: true, Vendor1099: true, PrimaryEmailAddr: { Address: 'desi@example.com' }, ...over });
 
 // An in-memory stand-in for the queries the store makes.
-const fakeDb = ({ driver = { id: 7, name: 'Desi One', email: 'Desi@Example.com', city_id: 1 }, taken = [], insertError = null, atLink = {} } = {}) => { // atLink: how the driver's row looks when the link is saved
+const fakeDb = ({ driver = { id: 7, name: 'Desi One', email: 'Desi@Example.com', city_id: 1 }, taken = [], insertError = null, atLink = {}, reconnectAtLock = null } = {}) => { // atLink: how the driver's row looks when the link is saved; reconnectAtLock: QuickBooks is reconnected to this company while the link waits for the driver lock
   const log = [];
+  let realm = '12345678';
   return { log, query: async (sql, p = []) => {
     log.push({ sql, p });
+    if (/pg_advisory_xact_lock/.test(sql) && reconnectAtLock) realm = reconnectAtLock;
     if (/FROM drivers WHERE id = \$1 AND city_id = \$2 AND driver_type = 'DESI'/.test(sql)) return { rows: driver && p[0] === driver.id && p[1] === driver.city_id ? [driver] : [] };
     if (/SELECT email, phone_number, contact_changed_at FROM drivers WHERE id = \$1 FOR SHARE/.test(sql)) return { rows: [{ email: driver.email, phone_number: driver.phone_number ?? null, contact_changed_at: null, ...atLink }] };
     if (/SELECT driver_id FROM quickbooks_vendors/.test(sql)) return { rows: taken };
-    if (/SELECT realm_id FROM quickbooks_connection/.test(sql)) return { rows: [{ realm_id: '12345678' }] };
+    if (/SELECT realm_id FROM quickbooks_connection/.test(sql)) return { rows: [{ realm_id: realm }] };
     if (/SAVEPOINT|pg_advisory_xact_lock/.test(sql)) return { rows: [] };
     if (/INSERT INTO quickbooks_vendors/.test(sql)) { if (insertError) throw insertError; return { rows: [{ id: 1, driver_id: p[0], vendor_id: p[3], link_source: 'existing_vendor', tax_id_supplied: true, vendor_1099: p[4], linked_at: 'now' }] }; }
     if (/UPDATE quickbooks_vendors/.test(sql)) return { rowCount: 1, rows: [] };
@@ -108,6 +110,19 @@ test('a link confirmed for another company than the fresh search used is refused
   const ok = fakeDb();
   await linkVendor(ok, superAdmin, { ...where, vendorId: '58', realmId: '12345678' }, deps([vendor()]));
   assert.equal(ok.log.find((entry) => /INSERT INTO quickbooks_vendors/.test(entry.sql)).p[2], '12345678');
+});
+
+test('the company is re-checked under the driver lock, in the transaction that inserts the link, and a reconnect while the link waits refuses it', async () => {
+  // Reconnected to another company after the lookup and the fresh search, while the link was waiting for the driver lock: nothing is written.
+  const raced = fakeDb({ reconnectAtLock: '99999999' });
+  await assert.rejects(linkVendor(raced, superAdmin, { ...where, vendorId: '58', realmId: '12345678' }, deps([vendor()])), (e) => e.status === 409 && /company changed since the lookup/.test(e.message));
+  assert.ok(!raced.log.some((entry) => /INSERT INTO quickbooks_vendors/.test(entry.sql)), 'no link for the old company');
+  // Normal link: the driver lock, then the connection row share-lock, then the insert, in that order, so the check and the write are in one transaction.
+  const ok = fakeDb();
+  await linkVendor(ok, superAdmin, { ...where, vendorId: '58', realmId: '12345678' }, deps([vendor()]));
+  const at = (re) => ok.log.findIndex((entry) => re.test(entry.sql));
+  const [lock, share, insert] = [at(/pg_advisory_xact_lock/), at(/FROM quickbooks_connection WHERE environment = \$1 FOR SHARE/), at(/INSERT INTO quickbooks_vendors/)];
+  assert.ok(lock >= 0 && share > lock && insert > share, `lock ${lock}, share ${share}, insert ${insert}`);
 });
 
 test('a driver with no email is blocked without asking QuickBooks, and a Local driver is not found at all', async () => {

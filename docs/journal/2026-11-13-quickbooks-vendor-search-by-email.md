@@ -87,3 +87,16 @@ Undoing the phone fix fails 4 tests; setup ignoring an existing vendor fails 7.
 **Not tested.** A real company switch in QuickBooks, and a click-through in the browser.
 
 **Database / config / money.** None.
+
+## Review round 4 (Jasil: verify and lock the company in the transaction that inserts the link)
+
+**Found and fixed.** After round 3 the company was compared before the driver lock was taken. A reconnect could commit while Link waited for that lock, and the link for the old company would then be inserted. The new company ignores that row, but the one-active-link-per-driver index would also stop the driver being linked in the new company.
+
+- The check now runs inside the same transaction as the insert, after the driver lock is held: `SELECT realm_id FROM quickbooks_connection WHERE environment = $1 FOR SHARE`, compared with the company the admin reviewed. The earlier check outside the transaction is removed.
+- The share lock is held until the transaction ends. A reconnect that committed while Link waited is seen and refused with 409 (nothing written); a reconnect that starts while Link is writing waits until the link is saved.
+
+**Tests.** `quickbooksVendors.test.js`: a reconnect that happens while the link waits for the driver lock refuses the link and writes nothing; the normal order is driver lock, then the connection share lock, then the insert. Database tests on a local copy: vendors, onboarding, contact review and foundation, 48 passed, 0 failed (with `PAYROLL_TEST_DB=1 EVEREE_ONBOARDING_ENFORCED=false QUICKBOOKS_ONBOARDING_ENFORCED=false QUICKBOOKS_PAYMENTS_ENABLED=false`). I also checked the lock itself in two real `psql` sessions on a scratch table: an `UPDATE` waited behind a `FOR SHARE` and ran once the first transaction ended.
+
+**Not tested.** An automated test with two real database connections racing a real reconnect (the existing database test runs in one transaction); a real company switch in QuickBooks.
+
+**Database / config / money.** None.

@@ -129,14 +129,16 @@ export const linkVendor = async (db, admin, { cityId, driverId, vendorId, realmI
   if (match.linkedTo === 'this_driver') throw new PayrollError(409, 'this driver is already linked to that vendor');
 
   const config = requireConfigured(deps.env ?? process.env);
-  // The link is made in the company the vendor was found in. If another company was connected since, nothing is linked.
-  const { rows: [conn] } = await db.query('SELECT realm_id FROM quickbooks_connection WHERE environment = $1', [config.environment]);
-  if (!conn) throw new PayrollError(409, 'QuickBooks is not connected; connect it first');
-  if (String(conn.realm_id) !== realmId) throw new PayrollError(409, 'the QuickBooks company changed since the lookup; look the driver up again');
   try {
     // Under the driver's lock (the same one the Everee links use), so a link and an unlink never interleave.
     const { rows } = await withDriverLock(db, driverId, async (tx) => {
       if (!(await contactStillVerified(tx, driverId, contactSnapshot(driver)))) throw new PayrollError(409, CONTACT_CHANGED_WHILE_LINKING);
+      // The link is made in the company the vendor was found in, checked here, after the driver lock is held and in the same transaction as the insert. The connection
+      // row is share-locked until the transaction ends: a reconnect that committed while this link waited for the driver lock is seen here and nothing is linked,
+      // and a reconnect that starts now waits until this link is saved, so a link for the old company can never be written after the company changed.
+      const { rows: [conn] } = await tx.query('SELECT realm_id FROM quickbooks_connection WHERE environment = $1 FOR SHARE', [config.environment]);
+      if (!conn) throw new PayrollError(409, 'QuickBooks is not connected; connect it first');
+      if (String(conn.realm_id) !== realmId) throw new PayrollError(409, 'the QuickBooks company changed since the lookup; look the driver up again');
       return tx.query(
         `INSERT INTO quickbooks_vendors (driver_id, environment, realm_id, vendor_id, link_source, tax_id_supplied, vendor_1099, linked_by)
          VALUES ($1, $2, $3, $4, 'existing_vendor', true, $5, $6) RETURNING ${LINK_COLUMNS}`,
