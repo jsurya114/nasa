@@ -2,9 +2,9 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { CASH, CHECK, EVEREE, METHODS_FOR, evereeTypeBlockers, isDriverType, methodAllowed, typeBlockers } from '../services/payroll/payRuns/driverPaymentRules.js';
 
-// The rule of this feature, as pure functions: Local = Cash in Hand or Everee; Desi = by check (cash only still replays old requests); no type = nothing.
+// The rule of this feature, as pure functions: Local = Cash in Hand or Everee; Desi = by check only; no type = nothing.
 test('Desi drivers are paid by check, never Everee; Local drivers in cash or through Everee, never by check; nobody else is paid', () => {
-  assert.deepEqual([methodAllowed('DESI', CHECK), methodAllowed('DESI', CASH), methodAllowed('DESI', EVEREE)], [true, true, false]);
+  assert.deepEqual([methodAllowed('DESI', CHECK), methodAllowed('DESI', CASH), methodAllowed('DESI', EVEREE)], [true, false, false]);
   assert.deepEqual([methodAllowed('LOCAL', CASH), methodAllowed('LOCAL', EVEREE), methodAllowed('LOCAL', CHECK)], [true, true, false]);
   for (const type of [null, undefined, '', 'local', 'desi', 'OTHER', 0, {}]) {
     assert.equal(methodAllowed(type, CASH), false, `no payment for type ${JSON.stringify(type)}`);

@@ -150,7 +150,7 @@ test('quickbooks payments: reserve, send, settle, replay, partial failure, safe 
       await assert.rejects(retryBatch(db, sup, batch.batch.id, deps(makeQuickbooks().client)), { status: 409, message: /nothing can be retried/ });
     });
 
-    await t.test('a Local driver, an unlinked driver and a non-1099 vendor are blocked, and Desi cash is refused while QuickBooks payments are on', async () => {
+    await t.test('a Local driver, an unlinked driver and a non-1099 vendor are blocked, and a Desi check by hand is refused while QuickBooks payments are on', async () => {
       const mixed = await scenario('M', [[dC, '40.00'], [dD, '30.00']]);
       const preview = await previewQuickbooksBatch(db, sup, mixed.run.id, { env: ARMED });
       const codes = (name) => preview.drivers.find((d) => d.driverName === name)?.blockers.map((b) => b.code) ?? [];
@@ -161,7 +161,7 @@ test('quickbooks payments: reserve, send, settle, replay, partial failure, safe 
       assert.ok(preview.batchBlockers.some((b) => b.code === 'nobody_to_pay'));
       process.env.QUICKBOOKS_ENABLED = 'true'; process.env.QUICKBOOKS_PAYMENTS_ENABLED = 'true';
       try {
-        await assert.rejects(recordRunPayment(db, sup, mixed.run.id, { requestId: randomUUID(), paidOn: '2026-11-08', method: 'cash', reference: 'cash test', statementIds: [(await statement(mixed.run, dC)).id] }), { status: 409, message: /recorded with QuickBooks/ });
+        await assert.rejects(recordRunPayment(db, sup, mixed.run.id, { requestId: randomUUID(), paidOn: '2026-11-08', method: 'check', reference: 'check test', statementIds: [(await statement(mixed.run, dC)).id] }), { status: 409, message: /recorded with QuickBooks/ });
       } finally { delete process.env.QUICKBOOKS_PAYMENTS_ENABLED; delete process.env.QUICKBOOKS_ENABLED; }
     });
 

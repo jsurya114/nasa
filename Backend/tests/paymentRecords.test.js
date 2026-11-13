@@ -235,7 +235,7 @@ test(
           }),
       );
       await t.test(
-        "Local and Desi drivers are paid in Cash in Hand with one row per driver; the type is kept as it was and a later change does not rewrite it",
+        "a Desi driver is paid by check and a Local driver in cash, one row per driver; the type is kept as it was and a later change does not rewrite it",
         async () =>
           isolated(async () => {
             await db.query("UPDATE drivers SET driver_type='DESI' WHERE id=$1", [drivers[0]]);
@@ -243,12 +243,13 @@ test(
             const review = await reviewRunPayments(db, admin, run.id);
             const typeOf = (driver) => review.drivers.find((d) => d.driverId === driver).driverType;
             assert.deepEqual([typeOf(drivers[0]), typeOf(drivers[1])], ["DESI", "LOCAL"]);
-            const done = await recordRunPayment(db, admin, run.id, request());
-            assert.equal(done.receipt.drivers, 2);
+            const done = await recordRunPayment(db, admin, run.id, request({ method: "check", statementIds: [first.id] }));
+            const doneLocal = await recordRunPayment(db, admin, run.id, request({ method: "cash", statementIds: [second.id] }));
+            assert.deepEqual([done.receipt.method, done.receipt.drivers, doneLocal.receipt.method, doneLocal.receipt.drivers], ["check", 1, "cash", 1]);
             const rows = (
               await db.query(
-                "SELECT driver_id,driver_type,amount::text FROM pay_run_payment_items WHERE payment_record_id=$1 ORDER BY driver_id",
-                [done.receipt.id],
+                "SELECT driver_id,driver_type,amount::text FROM pay_run_payment_items WHERE payment_record_id = ANY($1::bigint[]) ORDER BY driver_id",
+                [[done.receipt.id, doneLocal.receipt.id]],
               )
             ).rows;
             assert.deepEqual(
@@ -272,13 +273,40 @@ test(
           }),
       );
       await t.test(
-        "a check is recorded as a check for Desi drivers, is refused for a Local driver, and an older cash record keeps its method",
+        "a check is recorded as a check for Desi drivers",
         async () =>
           isolated(async () => {
             await db.query("UPDATE drivers SET driver_type='DESI' WHERE id=ANY($1::int[])", [drivers]);
             const done = await recordRunPayment(db, admin, run.id, request({ method: "check" }));
             assert.equal(done.receipt.method, "check");
             assert.equal((await one("SELECT method FROM pay_run_payment_records WHERE id=$1", [done.receipt.id])).method, "check");
+          }),
+      );
+      await t.test(
+        "a new cash payment for a Desi driver is refused and writes nothing, while an older cash request still replays its receipt",
+        async () =>
+          isolated(async () => {
+            // An older cash payment, recorded while the drivers were Local (the way cash payments were recorded before this change).
+            await db.query("UPDATE drivers SET driver_type='LOCAL' WHERE id=ANY($1::int[])", [drivers]);
+            const legacy = request({ method: "cash" });
+            const recorded = await recordRunPayment(db, admin, run.id, legacy);
+            assert.equal(recorded.receipt.method, "cash");
+            const before = Number((await one("SELECT count(*) n FROM pay_run_payment_records WHERE pay_run_id=$1", [run.id])).n);
+            // The drivers are Desi now. Retrying the same request ID replays the saved receipt: nothing new is written.
+            await db.query("UPDATE drivers SET driver_type='DESI' WHERE id=ANY($1::int[])", [drivers]);
+            const again = await recordRunPayment(db, admin, run.id, legacy);
+            assert.deepEqual([again.replay, again.receipt.id, again.receipt.method], [true, recorded.receipt.id, "cash"]);
+            assert.equal(Number((await one("SELECT count(*) n FROM pay_run_payment_records WHERE pay_run_id=$1", [run.id])).n), before);
+          }),
+      );
+      await t.test(
+        "a new Desi cash request (an older client) is refused and nothing is written",
+        async () =>
+          isolated(async () => {
+            await db.query("UPDATE drivers SET driver_type='DESI' WHERE id=ANY($1::int[])", [drivers]);
+            await assert.rejects(recordRunPayment(db, admin, run.id, request({ method: "cash" })), { status: 409, message: /not allowed/ });
+            assert.equal(Number((await one("SELECT count(*) n FROM pay_run_payment_records WHERE pay_run_id=$1", [run.id])).n), 0);
+            assert.equal(Number((await one("SELECT count(*) n FROM pay_statements WHERE pay_run_id=$1 AND payout_status='paid'", [run.id])).n), 0);
           }),
       );
       await t.test(
