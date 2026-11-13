@@ -186,7 +186,7 @@ test('desi onboarding and the hold, against a database copy', { skip: !hasDb && 
       const where = { cityId: await cityOf(dExisting), driverId: dExisting };
       const found = await lookupVendor(db, admin, where, { env: ON, client: company.client });
       assert.deepEqual([found.result, found.matches[0].vendorId, found.matches[0].linkedTo], ['match', '58', null]);
-      await linkVendor(db, admin, { ...where, vendorId: '58' }, { env: ON, client: company.client });
+      await linkVendor(db, admin, { ...where, vendorId: '58', realmId: '12345678' }, { env: ON, client: company.client });
       assert.deepEqual((await linkRows(dExisting)).map((r) => [r.vendor_id, r.link_source]), [['58', 'existing_vendor']]);
       assert.equal((await getStatus(db, dExisting, { env: ON })).state, 'complete');
       assert.equal(await code(setupWith(dExisting, company)), 'already_complete');
@@ -199,7 +199,7 @@ test('desi onboarding and the hold, against a database copy', { skip: !hasDb && 
       assert.equal(await code(setupWith(dAmbiguous, company)), 'needs_review');
       const where = { cityId: await cityOf(dAmbiguous), driverId: dAmbiguous };
       assert.equal((await lookupVendor(db, admin, where, { env: ON, client: company.client })).result, 'ambiguous');
-      await assert.rejects(linkVendor(db, admin, { ...where, vendorId: '1' }, { env: ON, client: company.client }), (e) => e.status === 409);
+      await assert.rejects(linkVendor(db, admin, { ...where, vendorId: '1', realmId: '12345678' }, { env: ON, client: company.client }), (e) => e.status === 409);
       assert.deepEqual([company.created.length, (await linkRows(dAmbiguous)).length], [0, 0]);
       await noMoney(company);
     });
@@ -214,7 +214,7 @@ test('desi onboarding and the hold, against a database copy', { skip: !hasDb && 
       const where = { cityId: await cityOf(dLost), driverId: dLost };
       const found = await lookupVendor(db, admin, where, { env: ON, client: company.client });
       assert.deepEqual([found.result, found.matches[0].vendorId], ['match', company.vendors[0].Id]);
-      await linkVendor(db, admin, { ...where, vendorId: company.vendors[0].Id }, { env: ON, client: company.client });
+      await linkVendor(db, admin, { ...where, vendorId: company.vendors[0].Id, realmId: '12345678' }, { env: ON, client: company.client });
       assert.equal((await getStatus(db, dLost, { env: ON })).state, 'complete');
       assert.equal(company.vendors.length, 1);
       await noMoney(company);

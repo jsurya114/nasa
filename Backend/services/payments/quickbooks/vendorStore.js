@@ -102,8 +102,12 @@ const lookupInCompany = async (db, admin, { cityId, driverId }, deps = {}) => {
   return answer({ result: 'match', reason: null, issues: [], matches: [{ ...matches[0], linkedTo }], warnings: matches[0].vendor1099 ? [] : ['vendor_not_1099'] });
 };
 
-// Read-only: nothing is saved. result is match | no_match | ambiguous | blocked.
-export const lookupVendor = async (db, admin, where, deps = {}) => (await lookupInCompany(db, admin, where, deps)).lookup;
+// Read-only: nothing is saved. result is match | no_match | ambiguous | blocked. `realmId` is the QuickBooks company the answer was read from (null when it was blocked
+// before asking); the admin's Link must send it back, so a link can only ever be confirmed against the company the admin reviewed.
+export const lookupVendor = async (db, admin, where, deps = {}) => {
+  const { lookup, realmId } = await lookupInCompany(db, admin, where, deps);
+  return { ...lookup, realmId };
+};
 
 const NOT_LINKABLE = {
   no_match: "no QuickBooks vendor has this driver's email; nothing was linked",
@@ -111,11 +115,14 @@ const NOT_LINKABLE = {
   blocked: 'this driver is blocked; nothing was linked',
 };
 
-export const linkVendor = async (db, admin, { cityId, driverId, vendorId }, deps = {}) => {
+export const linkVendor = async (db, admin, { cityId, driverId, vendorId, realmId: reviewedRealmId }, deps = {}) => {
   requireSuperAdmin(admin);
   await assertCityAllowed(db, admin, cityId);
   const driver = await loadDesiDriver(db, cityId, driverId); // one snapshot of the contact details (email AND phone): the lookup uses it and the link is saved only if it still holds
+  // The company the admin reviewed in Look up. Without it, or if the fresh search was answered by another company (a reconnect between the two requests), nothing is linked.
+  if (typeof reviewedRealmId !== 'string' || reviewedRealmId === '') throw new PayrollError(400, 'the QuickBooks company from the lookup is required; look the driver up again');
   const { lookup, realmId } = await lookupInCompany(db, admin, { cityId, driverId }, { ...deps, driver });
+  if (realmId !== null && realmId !== reviewedRealmId) throw new PayrollError(409, 'the QuickBooks company changed since the lookup; look the driver up again');
   if (lookup.result !== 'match') throw new PayrollError(409, NOT_LINKABLE[lookup.result] ?? 'nothing was linked');
   const [match] = lookup.matches;
   if (String(vendorId) !== match.vendorId) throw new PayrollError(409, 'that is not the vendor found for this driver; look the driver up again');

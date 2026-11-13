@@ -35,7 +35,7 @@ const deps = (vendors, realmId) => ({ env, client: clientOf(vendors, realmId) })
 const where = { cityId: 1, driverId: 7 };
 
 test('only a super admin may look up, link, unlink or list', async () => {
-  for (const call of [() => lookupVendor(fakeDb(), plainAdmin, where, deps([])), () => linkVendor(fakeDb(), plainAdmin, { ...where, vendorId: '58' }, deps([])),
+  for (const call of [() => lookupVendor(fakeDb(), plainAdmin, where, deps([])), () => linkVendor(fakeDb(), plainAdmin, { ...where, vendorId: '58', realmId: '12345678' }, deps([])),
     () => unlinkVendor(fakeDb(), plainAdmin, { ...where, reason: 'left' }, deps([])), () => listCityVendors(fakeDb(), plainAdmin, 1, { env })]) {
     await assert.rejects(call, (e) => e.status === 403);
   }
@@ -44,14 +44,14 @@ test('only a super admin may look up, link, unlink or list', async () => {
 test('a link is refused, and nothing is written, when the driver\'s email or phone changed or is held by the time it is saved', async () => {
   for (const atLink of [{ email: 'new@example.com' }, { phone_number: '5551110000' }, { contact_changed_at: new Date() }]) {
     const db = fakeDb({ atLink });
-    await assert.rejects(linkVendor(db, superAdmin, { ...where, vendorId: '58' }, deps([vendor()])), (e) => e.status === 409 && /changed while linking/.test(e.message));
+    await assert.rejects(linkVendor(db, superAdmin, { ...where, vendorId: '58', realmId: '12345678' }, deps([vendor()])), (e) => e.status === 409 && /changed while linking/.test(e.message));
     assert.ok(!db.log.some((entry) => /INSERT INTO quickbooks_vendors/.test(entry.sql)));
   }
 });
 
 test('a driver with a phone number can be linked: the contact snapshot reads the phone as well as the email', async () => {
   const db = fakeDb({ driver: { id: 7, name: 'Desi One', email: 'desi@example.com', phone_number: '5125550100', city_id: 1 } });
-  const { link } = await linkVendor(db, superAdmin, { ...where, vendorId: '58' }, deps([vendor()]));
+  const { link } = await linkVendor(db, superAdmin, { ...where, vendorId: '58', realmId: '12345678' }, deps([vendor()]));
   assert.equal(link.vendorId, '58');
   assert.ok(db.log.some((entry) => /FROM drivers WHERE id = \$1 AND city_id = \$2 AND driver_type = 'DESI'/.test(entry.sql) && /phone_number/.test(entry.sql)), 'the driver is loaded with the phone the link is checked against');
 });
@@ -83,10 +83,30 @@ test('a search answered for another company than the connected one is refused, a
   const other = fakeDb();
   await assert.rejects(lookupVendor(other, superAdmin, where, deps([vendor()], '99999999')), (e) => e.status === 409 && /different company/.test(e.message));
   const db = fakeDb();
-  await assert.rejects(linkVendor(db, superAdmin, { ...where, vendorId: '58' }, deps([vendor()], '99999999')), (e) => e.status === 409);
+  await assert.rejects(linkVendor(db, superAdmin, { ...where, vendorId: '58', realmId: '12345678' }, deps([vendor()], '99999999')), (e) => e.status === 409);
   assert.ok(!db.log.some((entry) => /INSERT INTO quickbooks_vendors/.test(entry.sql)));
   const ok = fakeDb();
-  await linkVendor(ok, superAdmin, { ...where, vendorId: '58' }, deps([vendor()]));
+  await linkVendor(ok, superAdmin, { ...where, vendorId: '58', realmId: '12345678' }, deps([vendor()]));
+  assert.equal(ok.log.find((entry) => /INSERT INTO quickbooks_vendors/.test(entry.sql)).p[2], '12345678');
+});
+
+test('the lookup names the company it was read from, and a link must send that company back', async () => {
+  assert.equal((await lookupVendor(fakeDb(), superAdmin, where, deps([vendor()]))).realmId, '12345678');
+  assert.equal((await lookupVendor(fakeDb({ driver: { id: 7, name: 'x', email: '', city_id: 1 } }), superAdmin, where, deps([vendor()]))).realmId, null, 'blocked before asking: no company');
+  for (const realmId of [undefined, '', 12345678]) {
+    const db = fakeDb();
+    await assert.rejects(linkVendor(db, superAdmin, { ...where, vendorId: '58', realmId }, deps([vendor()])), (e) => e.status === 400 && /company from the lookup/.test(e.message));
+    assert.ok(!db.log.some((entry) => /INSERT INTO quickbooks_vendors/.test(entry.sql)));
+  }
+});
+
+test('a link confirmed for another company than the fresh search used is refused after a reconnect, and nothing is written', async () => {
+  // The admin reviewed vendor 58 in company 11111111; QuickBooks is connected to 12345678 now, and a vendor with the same ID is found there.
+  const db = fakeDb();
+  await assert.rejects(linkVendor(db, superAdmin, { ...where, vendorId: '58', realmId: '11111111' }, deps([vendor()])), (e) => e.status === 409 && /company changed since the lookup/.test(e.message));
+  assert.ok(!db.log.some((entry) => /INSERT INTO quickbooks_vendors/.test(entry.sql)));
+  const ok = fakeDb();
+  await linkVendor(ok, superAdmin, { ...where, vendorId: '58', realmId: '12345678' }, deps([vendor()]));
   assert.equal(ok.log.find((entry) => /INSERT INTO quickbooks_vendors/.test(entry.sql)).p[2], '12345678');
 });
 
@@ -98,7 +118,7 @@ test('a driver with no email is blocked without asking QuickBooks, and a Local d
 
 test('linking saves the vendor of the exact match with the connected company and no tax ID', async () => {
   const db = fakeDb();
-  const { link } = await linkVendor(db, superAdmin, { ...where, vendorId: '58' }, deps([vendor()]));
+  const { link } = await linkVendor(db, superAdmin, { ...where, vendorId: '58', realmId: '12345678' }, deps([vendor()]));
   assert.equal(link.vendorId, '58');
   const insert = db.log.find((q) => /INSERT INTO quickbooks_vendors/.test(q.sql));
   assert.deepEqual(insert.p, [7, 'sandbox', '12345678', '58', true, 1]);
@@ -106,9 +126,9 @@ test('linking saves the vendor of the exact match with the connected company and
 });
 
 test('linking refuses a different vendor than the one found, a non-match, and a double link', async () => {
-  await assert.rejects(() => linkVendor(fakeDb(), superAdmin, { ...where, vendorId: '999' }, deps([vendor()])), (e) => e.status === 409 && /not the vendor found/.test(e.message));
-  await assert.rejects(() => linkVendor(fakeDb(), superAdmin, { ...where, vendorId: '58' }, deps([])), (e) => e.status === 409);
-  await assert.rejects(() => linkVendor(fakeDb({ insertError: Object.assign(new Error('dup'), { code: '23505' }) }), superAdmin, { ...where, vendorId: '58' }, deps([vendor()])), (e) => e.status === 409 && /already linked/.test(e.message));
+  await assert.rejects(() => linkVendor(fakeDb(), superAdmin, { ...where, vendorId: '999', realmId: '12345678' }, deps([vendor()])), (e) => e.status === 409 && /not the vendor found/.test(e.message));
+  await assert.rejects(() => linkVendor(fakeDb(), superAdmin, { ...where, vendorId: '58', realmId: '12345678' }, deps([])), (e) => e.status === 409);
+  await assert.rejects(() => linkVendor(fakeDb({ insertError: Object.assign(new Error('dup'), { code: '23505' }) }), superAdmin, { ...where, vendorId: '58', realmId: '12345678' }, deps([vendor()])), (e) => e.status === 409 && /already linked/.test(e.message));
 });
 
 test('unlinking needs a reason and keeps history', async () => {

@@ -73,3 +73,17 @@ Undoing the phone fix fails 4 tests; setup ignoring an existing vendor fails 7.
 **Tested (after round 2).** Backend suite without the database: 423 tests, 326 passed, 0 failed. Database tests on a local copy, one file at a time: onboarding 12, vendors 17, foundation 14, contact review 2, all passed. Frontend driver setup flow test: 6 passed.
 
 **Not tested.** The real QuickBooks company (the stand-in follows Intuit's documented behaviour, including the email-filter refusal seen in production and the repeated request id), and a real browser click-through of the portal form on a phone. The count query is still to be tried live after deployment.
+
+## Review round 3 (Jasil: bind the admin's Link to the company shown in Look up)
+
+**Found and fixed.** The Link request sent only the vendor ID. The server compared the company at the start and end of its own fresh search, so a reconnect to another company between the admin's Look up and Link could still accept the same vendor ID from the other company, although the admin had reviewed the first company's record.
+
+- The Look up answer now includes `realmId`, the QuickBooks company it was read from (null when it was blocked before asking).
+- The Link request must send that `realmId` back (`400` if it is missing). The server runs its fresh lookup and refuses with `409 "the QuickBooks company changed since the lookup"` if that search was answered by a different company, before anything is written. The link is still saved in the company that was searched.
+- The admin panel keeps `realmId` from the Look up and sends it with Link. The driver's own setup is unchanged (it searches and creates in one request, pinned to one company).
+
+**Tests.** `quickbooksVendors.test.js`: Look up reports the company (null when blocked); a link without a company is refused (undefined, empty, a number); a link confirmed for another company than the connected one is refused and writes nothing. The existing link calls in `quickbooksVendors`, `quickbooksOnboarding` and `driverContactReview` now send the company. `QuickbooksPanel.test.jsx` checks the panel sends it. Database tests on a local copy: vendors, onboarding and contact review, 33 passed, 0 failed (with `PAYROLL_TEST_DB=1 EVEREE_ONBOARDING_ENFORCED=false QUICKBOOKS_ONBOARDING_ENFORCED=false QUICKBOOKS_PAYMENTS_ENABLED=false`). Frontend `QuickbooksPanel`: 7 passed.
+
+**Not tested.** A real company switch in QuickBooks, and a click-through in the browser.
+
+**Database / config / money.** None.
