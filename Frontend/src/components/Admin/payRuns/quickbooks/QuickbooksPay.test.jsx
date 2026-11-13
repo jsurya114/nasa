@@ -12,9 +12,9 @@ const previewOf = (over = {}) => ({
   drivers: [{ statementId: 1, driverName: "Dee Test", amount: "100.00", eligible: true, blockers: [] }, { statementId: 2, driverName: "Eli Test", amount: "130.00", eligible: true, blockers: [] }],
   summary: { drivers: 2, eligible: 2, blocked: 0, total: "230.00", pendingClaims: { total: 0 } }, batchBlockers: [], canSubmit: true, previewHash: "b".repeat(64), ...over });
 // A status of "interrupted" is a "submitted" item the server says nothing is sending any more; a plain "submitted" one may still be on its way.
-const batch = (statuses) => ({ batch: { id: 9, drivers: 2, total: "230.00", paidOn: "2026-11-08" },
+const batch = (statuses, paidBy = "check") => ({ batch: { id: 9, drivers: 2, total: "230.00", paidOn: "2026-11-08" },
   counts: { paid: statuses.filter((x) => x === "paid").length }, canRetry: statuses.some((x) => !["paid", "submitted"].includes(x)),
-  items: statuses.map((state, n) => ({ itemId: n + 1, driverName: ["Dee Test", "Eli Test"][n], amount: "100.00", status: state === "interrupted" ? "submitted" : state, interrupted: state === "interrupted", quickbooks: { billId: "100", docNumber: `NASA-S${n + 1}` }, error: null })) });
+  items: statuses.map((state, n) => ({ itemId: n + 1, driverName: ["Dee Test", "Eli Test"][n], amount: "100.00", status: state === "interrupted" ? "submitted" : state, interrupted: state === "interrupted", paidBy, quickbooks: { billId: "100", docNumber: `NASA-S${n + 1}` }, error: null })) });
 
 const startServer = async ({ paymentsEnabled = true, preview = previewOf(), batchView = batch(["paid", "paid"]) } = {}) => {
   const state = { posts: [], retries: 0, cashRecords: 0, previews: [] };
@@ -43,11 +43,11 @@ beforeEach(async () => { removeShell(); await resetBrowser(); });
 afterEach(cleanup);
 
 describe("Pay to drivers: Desi drivers through QuickBooks", () => {
-  it("with QuickBooks payments on, Desi drivers show Cash in Hand recorded in QuickBooks, a preview, a payment date, a cash note and the cash confirmation", async () => {
+  it("with QuickBooks payments on, Desi drivers show Check recorded in QuickBooks, a preview, a payment date, a note and the confirmation", async () => {
     const server = await startServer();
     await mount();
     await toPayment();
-    expect(await screen.findByText("Cash in Hand, recorded in QuickBooks (Desi drivers)")).toBeTruthy();
+    expect(await screen.findByText("Check, recorded in QuickBooks (Desi drivers)")).toBeTruthy();
     expect(await screen.findByText("2 of 2 selected drivers can be recorded now, $230.00 in total.")).toBeTruthy();
     expect(server.previews).toEqual([{ statementIds: "1,2" }]);
     expect(screen.getByLabelText("Paid on")).toBeTruthy();
@@ -94,7 +94,7 @@ describe("Pay to drivers: Desi drivers through QuickBooks", () => {
     fireEvent.change(screen.getByLabelText("Payment note"), { target: { value: "Cash handed over, receipt 12" } });
     fireEvent.click(screen.getByText(/I confirm the selected drivers/));
     fireEvent.click(screen.getByRole("button", { name: "Pay" }));
-    expect(await screen.findByText("Paid in cash; not recorded in QuickBooks yet. Retry")).toBeTruthy();
+    expect(await screen.findByText("Paid by check; not recorded in QuickBooks yet. Retry")).toBeTruthy();
     fireEvent.click(await screen.findByRole("button", { name: "Retry the QuickBooks record" }));
     await waitFor(() => expect(server.retries).toBe(1));
     await waitFor(() => expect(screen.queryByRole("button", { name: /Retry/ })).toBeNull());
@@ -108,7 +108,7 @@ describe("Pay to drivers: Desi drivers through QuickBooks", () => {
     fireEvent.change(screen.getByLabelText("Payment note"), { target: { value: "Cash handed over, receipt 12" } });
     fireEvent.click(screen.getByText(/I confirm the selected drivers/));
     fireEvent.click(screen.getByRole("button", { name: "Pay" }));
-    expect(await screen.findByText("Paid in cash; sending to QuickBooks was interrupted. Retry")).toBeTruthy();
+    expect(await screen.findByText("Paid by check; sending to QuickBooks was interrupted. Retry")).toBeTruthy();
     fireEvent.click(await screen.findByRole("button", { name: "Retry the QuickBooks record" }));
     await waitFor(() => expect(server.retries).toBe(1));
     cleanup();
@@ -123,12 +123,24 @@ describe("Pay to drivers: Desi drivers through QuickBooks", () => {
     expect(screen.queryByRole("button", { name: /Retry/ })).toBeNull();
   });
 
-  it("with QuickBooks payments off, Desi drivers are recorded as cash exactly as before", async () => {
+  it("with QuickBooks payments off, Desi drivers are recorded by check and the method sent is check", async () => {
     const server = await startServer({ paymentsEnabled: false });
     await mount();
     await toPayment();
-    expect(await screen.findByText("Cash in Hand (Desi drivers are paid in cash only)")).toBeTruthy();
+    expect(await screen.findByText("Check (Desi drivers are paid by check only)")).toBeTruthy();
     expect(screen.getByLabelText("Payment note")).toBeTruthy();
     expect(server.previews).toEqual([]);
+  });
+
+  it("a batch recorded as cash before this change keeps saying cash; a check batch says check", async () => {
+    await startServer({ batchView: batch(["paid", "failed"], "cash") });
+    await mount();
+    await toPayment();
+    await screen.findByText("2 of 2 selected drivers can be recorded now, $230.00 in total.");
+    fireEvent.change(screen.getByLabelText("Payment note"), { target: { value: "Check 1042" } });
+    fireEvent.click(screen.getByText(/I confirm the selected drivers/));
+    fireEvent.click(screen.getByRole("button", { name: "Pay" }));
+    expect(await screen.findByText("Paid in cash; not recorded in QuickBooks yet. Retry")).toBeTruthy();
+    expect(screen.queryByText(/Paid by check/)).toBeNull();
   });
 });

@@ -54,7 +54,7 @@ test('quickbooks payments: reserve, send, settle, replay, partial failure, safe 
   try {
     await db.query('BEGIN');
     for (const m of ['2026-11-03-issue-141-courier-claims.sql', '2026-11-03-issue-142-driver-ledger.sql', '2026-11-03-issue-143-pay-runs.sql', '2026-11-03-issue-166-ledger-settlements.sql',
-      '2026-11-04-approved-run-payment-records.sql', '2026-11-06-issue-232-driver-type.sql', '2026-11-10-quickbooks-connection.sql', '2026-11-10-quickbooks-payments.sql']) await db.query(migration(m));
+      '2026-11-04-approved-run-payment-records.sql', '2026-11-13-payment-method-check.sql', '2026-11-06-issue-232-driver-type.sql', '2026-11-10-quickbooks-connection.sql', '2026-11-10-quickbooks-payments.sql']) await db.query(migration(m));
 
     const tag = randomUUID();
     const sup = await one("INSERT INTO admin (password, name, email, role) VALUES ('x', $1, $2, 'superadmin') RETURNING id, role", [`Test ${tag}`, `s${tag}@example.com`]);
@@ -113,7 +113,7 @@ test('quickbooks payments: reserve, send, settle, replay, partial failure, safe 
     });
 
     let batch;
-    await t.test('a confirmed batch records the cash payment, then makes one bill and one payment per driver in QuickBooks, and replays safely', async () => {
+    await t.test('a confirmed batch records the check payment, then makes one bill and one payment per driver in QuickBooks, and replays safely', async () => {
       const fake = makeQuickbooks();
       batch = await submit(happy.run, fake.client);
       assert.deepEqual(batch.counts, { submitted: 0, paid: 2, failed: 0, unconfirmed: 0 });
@@ -129,7 +129,7 @@ test('quickbooks payments: reserve, send, settle, replay, partial failure, safe 
       assert.ok(!JSON.stringify([...fake.state.bills.map((b) => b.body), ...fake.state.payments.map((p) => p.body)]).includes(tag), 'no driver name or email is sent');
       assert.deepEqual([sa.payout_status, sa.payout_reference, sa.paid_at !== null], ['paid', 'Cash handed over, receipt book 12', true]);
       const receipt = await one("SELECT method, reference, to_char(paid_on, 'YYYY-MM-DD') AS paid_on FROM pay_run_payment_records WHERE pay_run_id = $1", [happy.run.id]);
-      assert.deepEqual(receipt, { method: 'cash', reference: 'Cash handed over, receipt book 12', paid_on: '2026-11-08' });
+      assert.deepEqual(receipt, { method: 'check', reference: 'Cash handed over, receipt book 12', paid_on: '2026-11-08' });
       assert.equal((await db.query('SELECT 1 FROM pay_run_payment_items i JOIN pay_run_payment_records p ON p.id = i.payment_record_id WHERE p.pay_run_id = $1', [happy.run.id])).rowCount, 2);
       assert.equal((await one('SELECT count(*)::int n FROM payment_dashboard pd JOIN pay_statement_lines l ON l.payment_dashboard_id = pd.id JOIN pay_statements s ON s.id = l.statement_id WHERE s.pay_run_id = $1 AND pd.paid', [happy.run.id])).n, 2);
 
@@ -145,11 +145,12 @@ test('quickbooks payments: reserve, send, settle, replay, partial failure, safe 
       assert.ok(preview.drivers.every((d) => d.blockers.some((b) => b.code === 'already_paid' || b.code === 'in_quickbooks_batch')));
       const view = await getBatchView(db, sup, batch.batch.id);
       assert.equal(view.items.length, 2);
+      assert.ok(view.items.every((i) => i.paidBy === 'check'), 'the result reports the method that was recorded');
       assert.equal(view.canRetry, false);
       await assert.rejects(retryBatch(db, sup, batch.batch.id, deps(makeQuickbooks().client)), { status: 409, message: /nothing can be retried/ });
     });
 
-    await t.test('a Local driver, an unlinked driver and a non-1099 vendor are blocked, and Desi cash is refused while QuickBooks payments are on', async () => {
+    await t.test('a Local driver, an unlinked driver and a non-1099 vendor are blocked, and a Desi check by hand is refused while QuickBooks payments are on', async () => {
       const mixed = await scenario('M', [[dC, '40.00'], [dD, '30.00']]);
       const preview = await previewQuickbooksBatch(db, sup, mixed.run.id, { env: ARMED });
       const codes = (name) => preview.drivers.find((d) => d.driverName === name)?.blockers.map((b) => b.code) ?? [];
@@ -160,7 +161,7 @@ test('quickbooks payments: reserve, send, settle, replay, partial failure, safe 
       assert.ok(preview.batchBlockers.some((b) => b.code === 'nobody_to_pay'));
       process.env.QUICKBOOKS_ENABLED = 'true'; process.env.QUICKBOOKS_PAYMENTS_ENABLED = 'true';
       try {
-        await assert.rejects(recordRunPayment(db, sup, mixed.run.id, { requestId: randomUUID(), paidOn: '2026-11-08', method: 'cash', reference: 'cash test', statementIds: [(await statement(mixed.run, dC)).id] }), { status: 409, message: /recorded with QuickBooks/ });
+        await assert.rejects(recordRunPayment(db, sup, mixed.run.id, { requestId: randomUUID(), paidOn: '2026-11-08', method: 'check', reference: 'check test', statementIds: [(await statement(mixed.run, dC)).id] }), { status: 409, message: /recorded with QuickBooks/ });
       } finally { delete process.env.QUICKBOOKS_PAYMENTS_ENABLED; delete process.env.QUICKBOOKS_ENABLED; }
     });
 

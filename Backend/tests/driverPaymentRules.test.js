@@ -1,14 +1,15 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { CASH, EVEREE, METHODS_FOR, evereeTypeBlockers, isDriverType, methodAllowed, typeBlockers } from '../services/payroll/payRuns/driverPaymentRules.js';
+import { CASH, CHECK, EVEREE, METHODS_FOR, evereeTypeBlockers, isDriverType, methodAllowed, typeBlockers } from '../services/payroll/payRuns/driverPaymentRules.js';
 
-// The rule of this feature, as pure functions: Local = Cash in Hand or Everee; Desi = Cash in Hand only; no type = nothing.
-test('Desi drivers are paid in cash only; Local drivers in cash or through Everee; nobody else is paid', () => {
-  assert.deepEqual([methodAllowed('DESI', CASH), methodAllowed('DESI', EVEREE)], [true, false]);
-  assert.deepEqual([methodAllowed('LOCAL', CASH), methodAllowed('LOCAL', EVEREE)], [true, true]);
+// The rule of this feature, as pure functions: Local = Cash in Hand or Everee; Desi = by check only; no type = nothing.
+test('Desi drivers are paid by check, never Everee; Local drivers in cash or through Everee, never by check; nobody else is paid', () => {
+  assert.deepEqual([methodAllowed('DESI', CHECK), methodAllowed('DESI', CASH), methodAllowed('DESI', EVEREE)], [true, false, false]);
+  assert.deepEqual([methodAllowed('LOCAL', CASH), methodAllowed('LOCAL', EVEREE), methodAllowed('LOCAL', CHECK)], [true, true, false]);
   for (const type of [null, undefined, '', 'local', 'desi', 'OTHER', 0, {}]) {
     assert.equal(methodAllowed(type, CASH), false, `no payment for type ${JSON.stringify(type)}`);
     assert.equal(methodAllowed(type, EVEREE), false);
+    assert.equal(methodAllowed(type, CHECK), false);
   }
   for (const method of ['bank_transfer', 'other', 'CASH', '', null, undefined]) {
     assert.equal(methodAllowed('LOCAL', method), false, `method ${JSON.stringify(method)}`);

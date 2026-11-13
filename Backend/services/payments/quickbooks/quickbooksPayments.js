@@ -4,7 +4,7 @@ import { PayrollError, assertCityAllowed, isSuperAdmin } from '../../payroll/pay
 import { lockCityPayroll } from '../../payroll/claims/claimsStore.js';
 import { reviewRunAsBatch } from '../../payroll/payRuns/payBatchReview.js';
 import { recordRunPayment } from '../../payroll/payRuns/paymentRecords.js';
-import { CASH, methodAllowed } from '../../payroll/payRuns/driverPaymentRules.js';
+import { CHECK, methodAllowed } from '../../payroll/payRuns/driverPaymentRules.js';
 import { parseDate } from '../../payroll/ledger/ledgerRules.js';
 import { inTransaction } from '../everee/batchSubmit.js';
 import { quickbooksPaymentsGate, readQuickbooksConfig } from './quickbooksConfig.js';
@@ -14,7 +14,7 @@ import {
   QB_BLOCKERS, STALE_AFTER_MINUTES, UnexpectedAnswerError, billBody, billPaymentBody, billRequestId, clip, classifyFailure, docNumberOf, paymentRequestId, previewHashOf,
 } from './paymentRules.js';
 
-// Desi drivers are paid CASH IN HAND, outside NASA and outside QuickBooks (the client turned payments off in QuickBooks). QuickBooks is only the record the client files
+// Desi drivers are paid BY CHECK, outside NASA and outside QuickBooks (the client turned payments off in QuickBooks). QuickBooks is only the record the client files
 // 1099s from. So one confirmation does two separate things, in this order:
 //   1. ONE transaction: the cash payment is recorded exactly like any Cash in Hand payment (recordRunPayment: receipt, note, confirmation, statements and earnings marked
 //      paid), and the batch with one item per statement is written. The driver is paid as soon as the admin confirms the cash was handed over.
@@ -167,6 +167,7 @@ export const previewQuickbooksBatch = async (db, admin, runId, deps = {}) => (aw
 
 const itemView = (row, idle = false) => ({ itemId: row.id, statementId: row.pay_statement_id, driverId: row.driver_id, driverName: row.driver_name, amount: row.amount, status: row.status,
   interrupted: row.status === 'submitted' && idle,
+  paidBy: row.paid_by ?? null, // the method recorded on the payment ('check', or 'cash' for older payments), so the screen never guesses it
   quickbooks: { vendorId: row.vendor_id, billId: row.bill_id, billPaymentId: row.bill_payment_id, docNumber: row.doc_number }, attempts: row.attempts, error: row.error_message, lastAttemptAt: row.last_attempt_at, paidAt: row.paid_at });
 
 export const getBatchView = async (db, admin, batchId) => {
@@ -177,7 +178,8 @@ export const getBatchView = async (db, admin, batchId) => {
   await assertCityAllowed(db, admin, batch.city_id);
   const { rows } = await db.query(
     `SELECT i.id, i.pay_statement_id, i.driver_id, d.name AS driver_name, i.amount::text AS amount, i.status, i.vendor_id, i.doc_number, i.bill_id, i.bill_payment_id,
-            i.attempts, i.error_message, i.last_attempt_at, i.paid_at
+            i.attempts, i.error_message, i.last_attempt_at, i.paid_at,
+            (SELECT r.method FROM pay_run_payment_items pi JOIN pay_run_payment_records r ON r.id = pi.payment_record_id WHERE pi.statement_id = i.pay_statement_id) AS paid_by
        FROM quickbooks_payment_items i JOIN drivers d ON d.id = i.driver_id WHERE i.batch_id = $1 ORDER BY d.name, i.id`, [batchId]);
   // Nothing in the batch has changed for a while but items are still "submitted": the server stopped before it finished, and nothing is sending them now.
   const { rows: [activity] } = await db.query(
@@ -332,12 +334,12 @@ export const submitBatch = async (db, admin, { runId, requestId, previewHash, pa
     const ids = items.map((i) => i.statementId);
     // Defence in depth: the drivers are read again under a share lock and only a Desi driver is ever recorded here.
     const { rows: typed } = await tx.query(`SELECT s.id, d.driver_type FROM pay_statements s JOIN drivers d ON d.id = s.driver_id WHERE s.id = ANY($1::bigint[]) ORDER BY s.id FOR SHARE OF d`, [ids]);
-    if (typed.length !== ids.length || typed.some((r) => !methodAllowed(r.driver_type, CASH) || r.driver_type !== 'DESI')) throw new PayrollError(409, 'only Desi drivers are recorded in QuickBooks; a selected driver is Local or has no driver type');
+    if (typed.length !== ids.length || typed.some((r) => !methodAllowed(r.driver_type, CHECK) || r.driver_type !== 'DESI')) throw new PayrollError(409, 'only Desi drivers are recorded in QuickBooks; a selected driver is Local or has no driver type');
     const typeOf = new Map(typed.map((r) => [String(r.id), r.driver_type]));
 
-    // The cash payment itself: the same function that records any Cash in Hand payment (receipt, note, statements and earnings marked paid, all the same checks and locks),
+    // The check payment itself: the same function that records any manual payment (receipt, note, statements and earnings marked paid, all the same checks and locks),
     // in this same transaction. From here the drivers are paid; nothing about QuickBooks can undo that.
-    const recorded = await recordRunPayment(tx, admin, runId, { requestId: requestId.toLowerCase(), paidOn: paid, method: CASH, reference, statementIds: [...ids].sort((a, b) => a - b) }, { viaQuickbooks: true });
+    const recorded = await recordRunPayment(tx, admin, runId, { requestId: requestId.toLowerCase(), paidOn: paid, method: CHECK, reference, statementIds: [...ids].sort((a, b) => a - b) }, { viaQuickbooks: true });
     if (!recorded.receipt) throw new PayrollError(409, 'these drivers are already marked paid; review the run');
     const { rows: [paidCount] } = await tx.query("SELECT count(*)::int AS n FROM pay_statements WHERE id = ANY($1::bigint[]) AND payout_status = 'paid'", [ids]);
     if (paidCount.n !== ids.length) throw new PayrollError(409, 'a statement changed while the payment was recorded; review the run');
