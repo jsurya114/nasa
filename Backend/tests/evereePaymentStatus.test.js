@@ -549,6 +549,26 @@ test('everee payment status: only a payment that landed marks a statement paid',
       fakeN.state.payments['12345678'].status = 'PAID'; // sandbox: the payment's own PAID is the transfer complete
       assert.equal(await check(fakeN, iN.id), 'paid');
     });
+    await t.test('the real production answer for a paid payment has an EMPTY payout list: it is paid when the amount and worker match; another amount, another worker or a payment not PAID change nothing', async () => {
+      const scE = await scenario('EP', [[dA, '81.93'], [dB, '50.00'], [dC, '25.00']]);
+      const fakeE = makeEveree();
+      await sent(scE, fakeE);
+      const [iEA, iEB, iEC] = [await item(scE, dA), await item(scE, dB), await item(scE, dC)];
+      const empty = (driver, total, extra = {}) => ({ workerId: workers[driver], status: 'PAID', totalNetPay: { amount: total, currency: 'USD' }, netPayouts: [], ...extra });
+      for (const [it, id] of [[iEA, 'pay-EA'], [iEB, 'pay-EB'], [iEC, 'pay-EC']]) fakeE.state.payables[it.external_id] = { externalId: it.external_id, paymentStatus: 'PENDING_APPROVAL', paymentId: id };
+      fakeE.state.payments['pay-EB'] = empty(dB, '49.00'); // another amount than NASA sent
+      assert.equal(await check(fakeE, iEB.id), 'amount_differs');
+      fakeE.state.payments['pay-EC'] = empty(dC, '25.00', { workerId: workers[dA] }); // another worker's payment
+      assert.equal(await check(fakeE, iEC.id), 'unknown');
+      fakeE.state.payments['pay-EA'] = empty(dA, '81.93', { status: 'PENDING' }); // the payment itself is not PAID
+      assert.equal(await check(fakeE, iEA.id), 'unknown');
+      for (const [sc, d] of [[scE, dB], [scE, dC], [scE, dA]]) assert.equal((await stmt(sc, d)).payout_status, 'submitted');
+      fakeE.state.payments['pay-EA'] = empty(dA, '81.93');
+      assert.equal(await check(fakeE, iEA.id), 'paid');
+      assert.deepEqual([(await item(scE, dA)).status, (await stmt(scE, dA)).payout_status], ['paid', 'paid']);
+      assert.equal(await check(fakeE, iEA.id), 'unchanged');
+    });
+
     await t.test('sandbox: a worker\'s payment that also holds another send of the same week is paid when our own payable is PAID inside it for our amount', async () => {
       const scD = await scenario('DUP', [[dA, '100.00']]);
       const fakeD = makeEveree();
