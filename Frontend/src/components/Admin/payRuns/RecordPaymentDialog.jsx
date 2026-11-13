@@ -26,9 +26,11 @@ import { typeOf } from "./driverTypes.js";
 const METHODS = {
   bank_transfer: "Bank transfer",
   cash: "Cash in Hand",
+  check: "Check",
   other: "Other",
 };
 const CASH = "cash";
+const CHECK = "check"; // how Desi drivers are paid; saved on the payment, so receipts say what was recorded
 const EVEREE = "everee";
 const QUICKBOOKS = "quickbooks";
 const QUICKBOOKS_LABEL = "Check, recorded in QuickBooks";
@@ -132,8 +134,8 @@ export default function RecordPaymentDialog({
   );
   // Drivers of the open tab that can be chosen: unpaid, not processing, and with a type (a driver with no type is never selectable).
   const selectable = (d) => payable(d) && typeOf(d) === tab && tab !== "NONE";
-  // Desi drivers are recorded in QuickBooks when that is switched on, otherwise in Cash in Hand: the method is fixed either way. A Local payment chooses between Cash in Hand and Everee.
-  const method = tab === "DESI" ? (quickbooksAvailable ? QUICKBOOKS : CASH) : form.method;
+  // Desi drivers are recorded in QuickBooks when that is switched on, otherwise by check: the method is fixed either way. A Local payment chooses between Cash in Hand and Everee.
+  const method = tab === "DESI" ? (quickbooksAvailable ? QUICKBOOKS : CHECK) : form.method;
   const chosen = drivers.filter((d) =>
     selected?.includes(String(d.statementId)),
   );
@@ -297,7 +299,7 @@ export default function RecordPaymentDialog({
       const statementIds = chosen.map((d) => Number(d.statementId));
       const { data } = await axios.post(
         `/admin/payroll/payments/runs/${runId}/record`,
-        { requestId: form.requestId, paidOn: form.paidOn, method: CASH, reference: form.note.trim(), confirmed: form.confirmed, statementIds },
+        { requestId: form.requestId, paidOn: form.paidOn, method: tab === "DESI" ? CHECK : CASH, reference: form.note.trim(), confirmed: form.confirmed, statementIds },
       );
       if (mounted.current) {
         setResult(data);
@@ -616,7 +618,7 @@ export default function RecordPaymentDialog({
                     <div className="grid gap-3 sm:grid-cols-2">
                       {tab === "DESI" ? (
                         <Field label="Payment method">
-                          <p className={`${inputClass} flex items-center`}>{viaQuickbooks ? `${QUICKBOOKS_LABEL} (Desi drivers)` : "Check (Desi drivers are paid by check only)"}</p>
+                          <p className={`${inputClass} flex items-center`}>{viaQuickbooks ? `${QUICKBOOKS_LABEL} (Desi drivers)` : `${METHODS[CHECK]} (Desi drivers are paid by check only)`}</p>
                         </Field>
                       ) : (
                         <Field label="Payment method" error={errors.method}>
@@ -671,7 +673,7 @@ export default function RecordPaymentDialog({
                     )}
                     {method && !viaQuickbooks && (!viaEveree || everee.preview) && (
                       <p role="status" aria-label="Payment summary" className="rounded-xl border border-line p-3 font-semibold">
-                        {viaEveree ? EVEREE_LABEL : tab === "DESI" ? "Check" : METHODS[method]} ·{" "}
+                        {viaEveree ? EVEREE_LABEL : METHODS[method]} ·{" "}
                         {viaEveree ? everee.preview.summary.eligible : chosen.length}{" "}
                         {(viaEveree ? everee.preview.summary.eligible : chosen.length) === 1 ? "driver" : "drivers"} ·{" "}
                         {formatMoney(viaEveree ? everee.preview.summary.total : total)}

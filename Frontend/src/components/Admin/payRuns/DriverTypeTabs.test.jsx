@@ -121,13 +121,13 @@ describe("Pay to drivers by driver type", () => {
     await screen.findByText(/Desi drivers are paid by check only\)/);
     expect(screen.queryByLabelText("Payment method")).toBeNull(); // no dropdown, so nothing to choose
     expect(screen.queryByText(/Everee/)).toBeNull();
-    fireEvent.change(screen.getByLabelText("Payment note"), { target: { value: "Cash handed over" } });
+    fireEvent.change(screen.getByLabelText("Payment note"), { target: { value: "Check 1042 handed over" } });
     fireEvent.click(screen.getByLabelText(/I confirm the selected drivers have received/));
     expect((await screen.findByRole("status", { name: "Payment summary" })).textContent).toBe("Check · 2 drivers · $100.00");
     fireEvent.click(screen.getByRole("button", { name: "Pay" }));
     expect(await screen.findByText("Payment recorded")).toBeTruthy();
     expect(server.records).toHaveLength(1);
-    expect(server.records[0]).toMatchObject({ method: "cash", statementIds: [3, 4], reference: "Cash handed over", confirmed: true });
+    expect(server.records[0]).toMatchObject({ method: "check", statementIds: [3, 4], reference: "Check 1042 handed over", confirmed: true });
     expect(server.previews).toEqual([]);
     expect(server.everee).toEqual([]);
   });

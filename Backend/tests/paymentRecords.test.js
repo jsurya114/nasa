@@ -28,6 +28,7 @@ test("payment confirmation requires a date, method, reference and explicit recei
     confirmed: true,
   };
   assert.ok(parsePaymentRecord(body).request);
+  assert.ok(parsePaymentRecord({ ...body, method: "check" }).request, "a check can be recorded");
   for (const change of [
     { confirmed: false },
     { method: "everee" },
@@ -64,6 +65,7 @@ test(
         "2026-11-03-issue-166-ledger-settlements.sql",
         "2026-11-04-issue-180-claim-courier-name.sql",
         "2026-11-04-approved-run-payment-records.sql",
+        "2026-11-13-payment-method-check.sql",
       ])
         await db.query(
           readFileSync(
@@ -270,6 +272,25 @@ test(
           }),
       );
       await t.test(
+        "a check is recorded as a check for Desi drivers, is refused for a Local driver, and an older cash record keeps its method",
+        async () =>
+          isolated(async () => {
+            await db.query("UPDATE drivers SET driver_type='DESI' WHERE id=ANY($1::int[])", [drivers]);
+            const done = await recordRunPayment(db, admin, run.id, request({ method: "check" }));
+            assert.equal(done.receipt.method, "check");
+            assert.equal((await one("SELECT method FROM pay_run_payment_records WHERE id=$1", [done.receipt.id])).method, "check");
+          }),
+      );
+      await t.test(
+        "a check is refused for a Local driver and nothing is written",
+        async () =>
+          isolated(async () => {
+            await db.query("UPDATE drivers SET driver_type='LOCAL' WHERE id=ANY($1::int[])", [drivers]);
+            await assert.rejects(recordRunPayment(db, admin, run.id, request({ method: "check" })), { status: 409 });
+            assert.equal(Number((await one("SELECT count(*) n FROM pay_run_payment_records WHERE pay_run_id=$1", [run.id])).n), 0);
+          }),
+      );
+      await t.test(
         "a driver with no type is never paid: review blocks them, and recording one refuses the whole selection and writes nothing",
         async () =>
           isolated(async () => {
@@ -300,7 +321,7 @@ test(
           }),
       );
       await t.test(
-        "only Cash in Hand can be recorded by hand: the request check and the server both refuse any other method",
+        "only cash or a check can be recorded by hand: the request check and the server both refuse any other method",
         async () =>
           isolated(async () => {
             for (const method of ["bank_transfer", "other", "everee", "CASH", ""])

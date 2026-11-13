@@ -5,7 +5,7 @@ import { lockCityPayroll } from "../claims/claimsStore.js";
 import { blockersFor, reviewRunAsBatch } from "./payBatchReview.js";
 import { fromCents, toCents } from "./payCalculator.js";
 import { parseDate } from "../ledger/ledgerRules.js";
-import { CASH, methodAllowed, typeBlockers } from "./driverPaymentRules.js";
+import { CASH, CHECK, methodAllowed, typeBlockers } from "./driverPaymentRules.js";
 import { quickbooksPaymentsOn } from "../../payments/quickbooks/quickbooksConfig.js";
 import { blockedDriverIds, ONBOARDING_REQUIRED } from "../../payments/everee/onboardingGate.js";
 
@@ -23,8 +23,8 @@ export const parsePaymentRecord = (body = {}) => {
   if (!UUID.test(requestId))
     errors.requestId = "Refresh the payment form and try again.";
   if (!paidOn) errors.paidOn = "Choose the date the drivers were paid.";
-  // Recording by hand is for Cash in Hand only. Local drivers can also be paid through Everee (its own route); nothing else is offered.
-  if (body.method !== CASH) errors.method = "Choose how the drivers were paid.";
+  // Recording by hand is for Cash in Hand (Local) or a check (Desi). Local drivers can also be paid through Everee (its own route); nothing else is offered.
+  if (body.method !== CASH && body.method !== CHECK) errors.method = "Choose how the drivers were paid.";
   if (reference.length < 3 || reference.length > 200)
     errors.reference = "Add a payment reference or note (3–200 characters).";
   if (body.confirmed !== true)
@@ -229,8 +229,8 @@ export const recordRunPayment = async (db, admin, runId, request, { viaQuickbook
   // drivers and their links are share-locked, so nothing changes between this check and the record below.
   const held = await blockedDriverIds(db, targets.map((s) => s.driver_id), { lock: true });
   if (held.size > 0) throw Object.assign(new PayrollError(409, ONBOARDING_REQUIRED.message), { code: ONBOARDING_REQUIRED.code });
-  // Recording by hand is Cash in Hand only (Everee has its own route), and the type must allow it.
-  if (request.method !== CASH || targets.some((s) => !methodAllowed(s.driver_type, request.method)))
+  // Recording by hand is Cash in Hand or a check (Everee has its own route), and the type must allow it.
+  if ((request.method !== CASH && request.method !== CHECK) || targets.some((s) => !methodAllowed(s.driver_type, request.method)))
     throw new PayrollError(409, "This payment method is not allowed for a selected driver.");
   // With QuickBooks payments on, a Desi driver's payment must be recorded in QuickBooks (it is their 1099 record), never by hand as cash.
   if (quickbooksPaymentsOn() && !viaQuickbooks && targets.some((s) => s.driver_type === "DESI"))
