@@ -1,11 +1,15 @@
 import { readEvereeConfig } from '../payments/everee/evereeConfig.js';
-import { normalizePhone, splitName } from '../payments/everee/workerRules.js';
+import { normalizeEmail, normalizePhone, splitName } from '../payments/everee/workerRules.js';
+import { quickbooksDriverOnboardingGate, quickbooksGate, quickbooksOnboardingEnforced, readQuickbooksConfig } from '../payments/quickbooks/quickbooksConfig.js';
 
-// The Users page's list of drivers: search, filters, sorting and each driver's Everee onboarding status, in one query. Read only.
+// The Users page's list of drivers: search, filters, sorting and each driver's payment setup status, in one query. Read only.
 //
-// Everee status is derived the same way the payment setup overview does it (services/payments/everee/onboardingReadiness.js): a Local driver is
-// "complete" only with a live Everee link for the configured environment AND tenant whose onboarding is complete. NASA's own records are read; nothing
-// is asked of Everee here. Desi drivers do not use Everee, and a driver with no type is waiting to be classified.
+// Local drivers: Everee status, derived the same way the payment setup overview does it (services/payments/everee/onboardingReadiness.js): "complete" only
+// with a live Everee link for the configured environment AND tenant whose onboarding is complete.
+// Desi drivers: QuickBooks status, derived the way the driver portal does it (services/payments/quickbooks/driverOnboarding.js getStatus): "complete" only
+// with a live QuickBooks vendor link for the connected company. A driver who changed their email or phone, whose link was removed, or whose link belongs
+// to another QuickBooks company is "needs-review" (an admin has to look); one with no link is "not-started".
+// NASA's own records are read; nothing is asked of Everee or QuickBooks here. A driver with no type is waiting to be classified.
 
 export const PAGE_SIZE = 10;
 
@@ -61,9 +65,11 @@ const ISSUE_SQL = {
 };
 
 const tablesReady = async (db) => (await db.query("SELECT to_regclass('everee_workers') IS NOT NULL AND to_regclass('everee_onboarding') IS NOT NULL AS ok")).rows[0].ok;
+const quickbooksTablesReady = async (db) => (await db.query("SELECT to_regclass('quickbooks_vendors') IS NOT NULL AND to_regclass('quickbooks_connection') IS NOT NULL AS ok")).rows[0].ok;
 
 // scope: { adminId } for an ordinary admin (only the cities they are assigned to) or { all: true } for a super admin.
-// Returns { drivers, total, totalPages, page, counts, everee }.
+// Returns { drivers, total, totalPages, page, counts, everee, quickbooks }. Each driver has `everee_status` (the Local driver's status; 'not-required' for a
+// Desi driver) and `quickbooks_status` (the Desi driver's status; null for any other driver).
 export async function listDrivers(db, scope, filters, { env = process.env } = {}) {
   const config = readEvereeConfig(env);
   const available = await tablesReady(db);
@@ -72,6 +78,11 @@ export async function listDrivers(db, scope, filters, { env = process.env } = {}
   const evereeEnv = add(config.environment);
   const tenant = add(config.tenantId);
   const configured = add(Boolean(config.configured));
+  const qbConfig = readQuickbooksConfig(env);
+  const qbAvailable = await quickbooksTablesReady(db);
+  const qbGate = quickbooksGate(qbConfig, env);
+  const qbEnv = qbAvailable ? add(qbConfig.environment) : null; // a parameter the query does not use would have no type
+  const qbEnabled = add(Boolean(qbGate.enabled && qbAvailable));
 
   // A server without the Everee tables (a database not migrated yet) has no link or onboarding records: nothing is invented, the status is "unavailable".
   const joins = available
@@ -81,6 +92,16 @@ export async function listDrivers(db, scope, filters, { env = process.env } = {}
        LEFT JOIN (SELECT NULL::int AS driver_id, NULL::text AS state) o ON false`;
   const unlinked = available
     ? `EXISTS (SELECT 1 FROM everee_workers old WHERE old.driver_id = d.id AND old.environment = ${evereeEnv} AND old.unlinked_at IS NOT NULL)`
+    : 'false';
+
+  // The QuickBooks link and the connected company, the same two records the driver portal's "complete" needs. Without the tables nothing is invented.
+  const qbJoins = qbAvailable
+    ? `LEFT JOIN quickbooks_vendors qv ON qv.driver_id = d.id AND qv.environment = ${qbEnv}::text AND qv.unlinked_at IS NULL
+       LEFT JOIN quickbooks_connection qc ON qc.environment = ${qbEnv}::text`
+    : `LEFT JOIN (SELECT NULL::bigint AS id, NULL::text AS realm_id) qv ON false
+       LEFT JOIN (SELECT NULL::text AS realm_id) qc ON false`;
+  const qbUnlinked = qbAvailable
+    ? `EXISTS (SELECT 1 FROM quickbooks_vendors old WHERE old.driver_id = d.id AND old.environment = ${qbEnv}::text AND old.unlinked_at IS NOT NULL)`
     : 'false';
 
   const where = [];
@@ -106,6 +127,11 @@ export async function listDrivers(db, scope, filters, { env = process.env } = {}
     SELECT d.id, d.driver_code, d.name, d.email, d.phone_number, c.job, d.enabled, d.driver_type, d.agreement_signed,
       CASE
         WHEN d.driver_type IS NULL THEN 'classification-required'
+        WHEN d.driver_type = 'DESI' THEN (CASE
+          WHEN NOT ${qbEnabled}::boolean THEN 'service-unavailable'
+          WHEN qv.id IS NOT NULL AND qc.realm_id IS NOT NULL AND qv.realm_id = qc.realm_id THEN 'complete'
+          WHEN qv.id IS NOT NULL OR ${qbUnlinked} OR d.contact_changed_at IS NOT NULL THEN 'needs-review'
+          ELSE 'not-started' END)
         WHEN d.driver_type <> 'LOCAL' THEN 'not-required'
         WHEN NOT ${configured} THEN 'service-unavailable'
         WHEN w.id IS NOT NULL AND w.tenant_id IS DISTINCT FROM ${tenant} THEN 'needs-review'
@@ -118,6 +144,7 @@ export async function listDrivers(db, scope, filters, { env = process.env } = {}
     JOIN city c ON c.id = d.city_id
     ${scopeJoin}
     ${joins}
+    ${qbJoins}
     ${where.length ? `WHERE ${where.join(' AND ')}` : ''}`;
 
   // Counts per status for the chips: every filter except the status itself, so the numbers say what choosing a chip would show.
@@ -134,14 +161,21 @@ export async function listDrivers(db, scope, filters, { env = process.env } = {}
   const { rows } = await db.query(`WITH s AS (${base}) SELECT * FROM s ${statusWhere} ORDER BY ${order} LIMIT ${limit} OFFSET ${offset}`, params);
 
   const drivers = rows.map(({ agreement_signed: agreementSigned, grp, ...driver }) => {
-    // What blocks Everee for a Local driver who is not onboarded: the three things its setup needs from NASA's own records.
+    // What blocks the setup of a driver who is not complete, from NASA's own records. Local: Everee needs a phone, the signed agreement and a first and
+    // last name. Desi: QuickBooks needs the signed agreement and a valid email (the vendor is made with the driver's email).
     const needs = [];
+    const quickbooksNeeds = [];
     if (driver.driver_type === 'LOCAL' && grp !== 'complete') {
       if (!normalizePhone(driver.phone_number)) needs.push('no_phone');
       if (!agreementSigned) needs.push('agreement_not_signed');
       if (!splitName(driver.name)) needs.push('one_word_name');
     }
-    return { ...driver, everee_status: grp, everee_needs: needs };
+    if (driver.driver_type === 'DESI' && grp !== 'complete') {
+      if (!agreementSigned) quickbooksNeeds.push('agreement_not_signed');
+      if (!normalizeEmail(driver.email)) quickbooksNeeds.push('no_email');
+    }
+    const desi = driver.driver_type === 'DESI';
+    return { ...driver, everee_status: desi ? 'not-required' : grp, everee_needs: needs, quickbooks_status: desi ? grp : null, quickbooks_needs: quickbooksNeeds };
   });
 
   return {
@@ -155,6 +189,12 @@ export async function listDrivers(db, scope, filters, { env = process.env } = {}
       configured: Boolean(config.configured),
       onboardingEnabled: String(env.EVEREE_DRIVER_ONBOARDING_ENABLED ?? '').trim().toLowerCase() === 'true',
       enforced: String(env.EVEREE_DRIVER_ONBOARDING_ENABLED ?? '').trim().toLowerCase() === 'true' && String(env.EVEREE_ONBOARDING_ENFORCED ?? '').trim().toLowerCase() === 'true',
+    },
+    quickbooks: {
+      available: qbAvailable,
+      configured: qbGate.enabled,
+      onboardingEnabled: quickbooksDriverOnboardingGate(qbConfig, env).enabled,
+      enforced: quickbooksOnboardingEnforced(env),
     },
   };
 }

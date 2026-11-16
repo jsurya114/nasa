@@ -6,7 +6,7 @@ import Pagination from './Pagination';
 import DriverTypeModal from './DriverTypeModal';
 import { countByType, driverTypeLabel } from './driverType';
 import { toast } from "../utils/toast";
-import { EVEREE_STATUS, ISSUE_OPTIONS, NEEDS, SORT_OPTIONS, STATUS_CHIPS } from "./driverEvereeStatus.js";
+import { EVEREE_STATUS, ISSUE_OPTIONS, NEEDS, SORT_OPTIONS, STATUS_CHIPS, setupOf } from "./driverEvereeStatus.js";
 
 const TYPE_BADGE = {
   LOCAL: "bg-blue-100 text-blue-800",
@@ -28,7 +28,8 @@ function DriversList({ onEdit }) {
     driverFilters: filters,
     counts,
     total,
-    everee
+    everee,
+    quickbooks
   } = useSelector((state) => state.users);   
   
   const [localSearchTerm, setLocalSearchTerm] = useState(reduxSearchTerm || "");
@@ -209,20 +210,29 @@ function DriversList({ onEdit }) {
           )}
         </div>
 
-        {/* Everee onboarding: how many drivers are in each state, as buttons that filter the table */}
+        {/* Payment setup (Everee for Local drivers, QuickBooks for Desi drivers): how many drivers are in each state, as buttons that filter the table */}
         {everee && !everee.onboardingEnabled && (
           <p className="rounded-xl bg-amber-50 p-3 text-sm text-amber-900" data-testid="everee-off">Everee onboarding is switched off, so drivers cannot start it yet. The status below shows what NASA holds today.</p>
+        )}
+        {quickbooks && !quickbooks.configured && (
+          <p className="rounded-xl bg-amber-50 p-3 text-sm text-amber-900" data-testid="quickbooks-unavailable">QuickBooks is not set up on this server, so no status can be shown for Desi drivers.</p>
+        )}
+        {quickbooks?.configured && !quickbooks.onboardingEnabled && (
+          <p className="rounded-xl bg-amber-50 p-3 text-sm text-amber-900" data-testid="quickbooks-off">QuickBooks setup is switched off, so Desi drivers cannot fill in the QuickBooks form yet. The status below shows what NASA holds today.</p>
+        )}
+        {quickbooks?.enforced && (
+          <p className="rounded-xl bg-brand-50 p-3 text-sm text-brand-700" data-testid="quickbooks-enforced">Desi drivers who have not completed QuickBooks setup are on hold: they cannot work or be paid until it is complete.</p>
         )}
         {everee?.enforced && (
           <p className="rounded-xl bg-brand-50 p-3 text-sm text-brand-700" data-testid="everee-enforced">Local drivers who are not onboarded are on hold: they cannot work or be paid until Everee onboarding is complete.</p>
         )}
         {counts && (
-          <div role="group" aria-label="Filter by Everee onboarding status" className="flex flex-wrap gap-2" data-testid="status-chips">
+          <div role="group" aria-label="Filter by payment setup status" className="flex flex-wrap gap-2" data-testid="status-chips">
             <button type="button" aria-pressed={!filters.status} onClick={() => setFilter("status", "")}
               className={`min-h-11 rounded-full border px-4 text-sm font-semibold ${!filters.status ? "border-brand bg-brand text-white" : "border-line bg-white text-ink hover:bg-brand-50"}`}>
               All ({counts.all})
             </button>
-            {STATUS_CHIPS.filter((k) => k !== "service-unavailable" || counts[k] > 0).map((k) => (
+            {STATUS_CHIPS.filter((k) => !["service-unavailable", "not-required"].includes(k) || counts[k] > 0).map((k) => (
               <button key={k} type="button" aria-pressed={filters.status === k} onClick={() => setFilter("status", filters.status === k ? "" : k)}
                 className={`min-h-11 rounded-full border px-4 text-sm font-semibold ${filters.status === k ? "border-brand bg-brand text-white" : "border-line bg-white text-ink hover:bg-brand-50"}`}>
                 {EVEREE_STATUS[k].chip} ({counts[k] ?? 0})
@@ -297,7 +307,7 @@ function DriversList({ onEdit }) {
                 </button>
               </span>
             )}
-            {[["status", "Everee", EVEREE_STATUS[filters.status]?.chip], ["type", "Type", { LOCAL: "Local", DESI: "Desi", none: "Not set" }[filters.type]],
+            {[["status", "Setup", EVEREE_STATUS[filters.status]?.chip], ["type", "Type", { LOCAL: "Local", DESI: "Desi", none: "Not set" }[filters.type]],
               ["enabled", "Account", { enabled: "Enabled", disabled: "Disabled" }[filters.enabled]], ["issue", "Needs fixing", ISSUE_OPTIONS.find((o) => o.value === filters.issue)?.label]]
               .filter(([key]) => filters[key]).map(([key, label, value]) => (
                 <span key={key} className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
@@ -337,7 +347,7 @@ function DriversList({ onEdit }) {
                   className="h-4 w-4"
                 />
               </th>
-              {[["Sl No"], ["Driver Code", "code"], ["Name", "name"], ["Email"], ["Phone"], ["City", "city"], ["Driver Type", "type"], ["Everee", "status"], ["Account", "enabled"], ["Actions"]].map(
+              {[["Sl No"], ["Driver Code", "code"], ["Name", "name"], ["Email"], ["Phone"], ["City", "city"], ["Driver Type", "type"], ["Payment Setup", "status"], ["Account", "enabled"], ["Actions"]].map(
                 ([head, key]) => (
                   <th key={head} className="px-3 py-2 border-b border-line" aria-sort={key && filters.sort === key ? (filters.dir === "asc" ? "ascending" : "descending") : undefined}>
                     {key ? (
@@ -399,19 +409,25 @@ function DriversList({ onEdit }) {
                       {driverTypeLabel(d.driver_type)}
                     </span>
                   </td>
-                  <td className="px-3 py-2 border-b" data-testid={`everee-${d.id}`}>
-                    {EVEREE_STATUS[d.everee_status] ? (
-                      <>
-                        <span title={EVEREE_STATUS[d.everee_status].hint} className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${EVEREE_STATUS[d.everee_status].tone}`}>
-                          {EVEREE_STATUS[d.everee_status].label}
-                        </span>
-                        {(d.everee_needs ?? []).length > 0 && (
-                          <ul className="mt-1 space-y-0.5 text-xs text-red-700">
-                            {d.everee_needs.map((n) => <li key={n}>{NEEDS[n]}</li>)}
-                          </ul>
-                        )}
-                      </>
-                    ) : "-"}
+                  <td className="px-3 py-2 border-b" data-testid={`setup-${d.id}`}>
+                    {(() => {
+                      const setup = setupOf(d);
+                      const words = setup.words[setup.status];
+                      if (!words) return "-";
+                      return (
+                        <>
+                          {setup.provider && <span className="mr-1 text-xs text-gray-500">{setup.provider}</span>}
+                          <span title={words.hint} className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${words.tone}`}>
+                            {words.label}
+                          </span>
+                          {setup.needs.length > 0 && (
+                            <ul className="mt-1 space-y-0.5 text-xs text-red-700">
+                              {setup.needs.map((n) => <li key={n}>{NEEDS[n]}</li>)}
+                            </ul>
+                          )}
+                        </>
+                      );
+                    })()}
                   </td>
                   <td className="px-3 py-2 border-b">
                     {d.enabled ? (
