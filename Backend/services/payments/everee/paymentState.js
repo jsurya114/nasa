@@ -69,7 +69,8 @@ export const readCardPayouts = (listing, { paymentId, workerId = null }) => {
     if (typeof p.type !== 'string' || p.type.toUpperCase() !== CARD_PAYOUT_TYPE) return NOT_VERIFIED('the payout is not a pay card payout');
     inUse.push({ status, cents: amountCents(p.netAmount), worker: readWorkerId({ workerId: p.workerId }) });
   }
-  if (inUse.length === 0) return NOT_VERIFIED("Everee's list has no active payout for this payment");
+  // `empty`: the list has no payout at all (not even a replaced one), which is what Everee answers for a payment paid to the worker's Everee card.
+  if (inUse.length === 0) return { ...NOT_VERIFIED("Everee's list has no active payout for this payment"), empty: listing.items.length === 0 };
   const workers = new Set(inUse.map((p) => p.worker));
   if (workers.size !== 1 || workers.has(null)) return NOT_VERIFIED('the payout does not name one worker');
   const [worker] = workers;
@@ -82,6 +83,28 @@ export const readCardPayouts = (listing, { paymentId, workerId = null }) => {
   if (statuses.includes('RETURNED')) state = 'returned';
   else if (statuses.includes('PENDING')) state = 'pending';
   return { state, netCents, workerId: worker, paymentPaid: false, why: null };
+};
+
+// A payment paid to the worker's Everee card has NO bank payout: in production Everee's net payouts list is empty for it (also for its worker), the Payment
+// Data entry says PAID with an empty `netPayouts` and a net pay of 0.00. The one record that states what was deposited is the payment's own history
+// (GET workers/payment-history/{paymentId}): its `deposits` and its `netEarnings`. It is read only when the payout list is empty, never instead of a bank payout,
+// and only when ALL of this holds: it is this payment's record, names one worker (the worker the payment names, when it does), has at least one deposit, every
+// deposit amount is readable and above zero, and the deposits add up to its own net earnings. The caller still requires the payment itself to be PAID and the
+// amount to equal what NASA froze to the cent. Anything else is not verified: the payment stays unconfirmed for a person.
+export const readDepositRecord = (history, { paymentId, workerId = null }) => {
+  if (!history || typeof history !== 'object' || Array.isArray(history)) return NOT_VERIFIED("Everee's payment record could not be read");
+  if (String(history.paymentId) !== String(paymentId)) return NOT_VERIFIED("Everee's payment record belongs to another payment");
+  const worker = readWorkerId({ workerId: history.workerId });
+  if (worker === null) return NOT_VERIFIED("Everee's payment record does not name the worker");
+  if (workerId !== null && workerId !== worker) return NOT_VERIFIED('the payment and its record name different workers');
+  const deposits = Array.isArray(history.deposits) ? history.deposits : [];
+  if (deposits.length === 0) return NOT_VERIFIED("Everee's payment record lists no deposit");
+  const cents = deposits.map((d) => amountCents(d?.amount));
+  if (cents.some((c) => c === null || c <= 0)) return NOT_VERIFIED('the amount of a deposit could not be read');
+  const netCents = cents.reduce((sum, c) => sum + c, 0);
+  const net = amountCents(history.netEarnings);
+  if (net === null || net !== netCents) return NOT_VERIFIED("the deposits do not add up to the payment's net earnings");
+  return { state: 'landed', netCents, workerId: worker, paymentPaid: false, why: null };
 };
 
 // state: 'landed' (all payouts PAID) | 'returned' (some FAILED: a bank returned the deposit) | 'pending' | 'unknown'.

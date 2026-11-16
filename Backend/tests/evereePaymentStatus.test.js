@@ -38,7 +38,7 @@ const makeEveree = () => {
       state.historyReads += 1;
       if (!(paymentId in state.payments)) throw new EvereeError('Everee did not find what was asked for', { status: 404 });
       const p = state.payments[paymentId];
-      return { status: 200, data: { paymentId, payDate: p.payDate ?? PAY_DATE, ...(p.noPayDate && { payDate: undefined }), deposits: [{ amount: { amount: '1.00', currency: 'USD' } }] }, requestId: 'req-hist' };
+      return { status: 200, data: { paymentId, payDate: p.payDate ?? PAY_DATE, ...(p.noPayDate && { payDate: undefined }), deposits: [{ amount: { amount: '1.00', currency: 'USD' } }], ...(p.history ?? {}) }, requestId: 'req-hist' };
     },
     // Everee's net payouts list for one payment (the test puts the payouts of a payment in `state.netPayouts[paymentId]`).
     listNetPayouts: async (paymentId) => {
@@ -625,6 +625,62 @@ test('everee payment status: only a payment that landed marks a statement paid',
       assert.equal(await check(fakeE, iEA.id), 'paid');
       assert.deepEqual([(await item(scE, dA)).status, (await stmt(scE, dA)).payout_status, (await stmt(scE, dA)).net], ['paid', 'paid', '274.46']);
       assert.equal(await check(fakeE, iEA.id), 'unchanged');
+    });
+
+    await t.test('a card payment with NO payout at all in Everee (the real production shape) is paid on its payment record\'s deposits: they must name this worker, add up to the net earnings and equal what NASA sent', async () => {
+      const scF = await scenario('DR', [[dA, '274.46'], [dB, '50.00'], [dC, '25.00'], [dD, '10.00']]);
+      const fakeF = makeEveree();
+      await sent(scF, fakeF);
+      const [iFA, iFB, iFC, iFD] = [await item(scF, dA), await item(scF, dB), await item(scF, dC), await item(scF, dD)];
+      // Everee for a card payment: PAID, no netPayouts, net pay 0.00, and an empty net payouts list. Only the payment's history states the deposit.
+      const card = (driver) => ({ workerId: workers[driver], status: 'PAID', totalNetPay: { amount: '0.00', currency: 'USD' }, totalTaxableWages: { amount: '274.46', currency: 'USD' }, netPayouts: [] });
+      const record = (driver, amounts, over = {}) => ({ workerId: workers[driver], netEarnings: { amount: amounts.reduce((n, a) => n + Number(a), 0).toFixed(2), currency: 'USD' },
+        deposits: amounts.map((a) => ({ destinationLabel: 'Everee card', amount: { amount: a, currency: 'USD' } })), ...over });
+      for (const [it, id, d] of [[iFA, 'pay-FA', dA], [iFB, 'pay-FB', dB], [iFC, 'pay-FC', dC], [iFD, 'pay-FD', dD]]) {
+        fakeF.state.payables[it.external_id] = { externalId: it.external_id, paymentStatus: 'PENDING_APPROVAL', paymentId: id };
+        fakeF.state.payments[id] = { ...card(d), history: record(d, ['1.00']) };
+      }
+      const unpaid = async (it, outcome, noteText) => {
+        assert.equal(await check(fakeF, it.id), outcome);
+        const row = await one('SELECT i.status, i.check_note, s.payout_status FROM everee_payment_items i JOIN pay_statements s ON s.id = i.pay_statement_id WHERE i.id = $1', [it.id]);
+        assert.deepEqual([row.status, row.payout_status], ['submitted', 'submitted']);
+        if (noteText) assert.match(row.check_note, noteText);
+      };
+      const history = (id, driver, over) => { fakeF.state.payments[id].history = over; return driver; };
+      history('pay-FA', dA, { workerId: workers[dA], deposits: [] });
+      await unpaid(iFA, 'unknown', /lists no deposit/);
+      history('pay-FA', dA, record(dA, ['274.46'], { workerId: workers[dB] })); // the record names another worker
+      await unpaid(iFA, 'unknown', /different workers/);
+      history('pay-FA', dA, record(dA, ['274.46'], { workerId: undefined }));
+      await unpaid(iFA, 'unknown', /does not name the worker/);
+      history('pay-FA', dA, record(dA, ['274.46'], { paymentId: 'another-payment' }));
+      await unpaid(iFA, 'unknown', /another payment/);
+      history('pay-FA', dA, record(dA, ['274.46'], { netEarnings: { amount: '300.00', currency: 'USD' } })); // deposits do not add up to the net earnings
+      await unpaid(iFA, 'unknown', /do not add up/);
+      history('pay-FA', dA, record(dA, ['274.46'], { netEarnings: undefined }));
+      await unpaid(iFA, 'unknown', /do not add up/);
+      history('pay-FA', dA, record(dA, ['0.00']));
+      await unpaid(iFA, 'unknown', /amount of a deposit/);
+      history('pay-FB', dB, record(dB, ['49.00'])); // another amount than NASA sent, even where the sandbox own-payable allowance would say it is fine
+      fakeF.state.payables[iFB.external_id] = { externalId: iFB.external_id, paymentStatus: 'PAID', paymentId: 'pay-FB', amount: { amount: 50, currency: 'USD' } };
+      await unpaid(iFB, 'amount_differs');
+      // A bank payout in Everee's list is never overridden by the history: the list is not empty, so only the payout rules apply.
+      fakeF.state.netPayouts['pay-FC'] = [{ id: 'po-1', paymentId: 'pay-FC', workerId: workers[dC], type: 'DIRECT_DEPOSIT', status: 'PAID', netAmount: { amount: '25.00', currency: 'USD' }, supersededByIds: [] }];
+      history('pay-FC', dC, record(dC, ['25.00']));
+      await unpaid(iFC, 'unknown', /not a pay card payout/);
+      fakeF.state.netPayouts['pay-FC'] = [{ id: 'po-2', paymentId: 'pay-FC', workerId: workers[dC], type: 'PAY_CARD', status: 'SUPERSEDED', netAmount: { amount: '25.00', currency: 'USD' }, supersededByIds: ['x'] }];
+      await unpaid(iFC, 'unknown', /no active payout/); // only a replaced payout: not the empty-list case
+      // The payment itself must be PAID.
+      fakeF.state.netPayouts['pay-FC'] = [];
+      fakeF.state.payments['pay-FC'] = { ...card(dC), status: 'PENDING', history: record(dC, ['25.00']) };
+      await unpaid(iFC, 'unknown');
+      for (const d of [dA, dB, dC, dD]) assert.equal((await stmt(scF, d)).payout_status, 'submitted');
+      history('pay-FA', dA, record(dA, ['274.46']));
+      assert.equal(await check(fakeF, iFA.id), 'paid');
+      assert.deepEqual([(await item(scF, dA)).status, (await stmt(scF, dA)).payout_status, (await stmt(scF, dA)).net], ['paid', 'paid', '274.46']);
+      assert.equal(await check(fakeF, iFA.id), 'unchanged');
+      history('pay-FD', dD, record(dD, ['4.00', '6.00'])); // a split across deposits is summed
+      assert.equal(await check(fakeF, iFD.id), 'paid');
     });
 
     await t.test('sandbox: a worker\'s payment that also holds another send of the same week is paid when our own payable is PAID inside it for our amount', async () => {
