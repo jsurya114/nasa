@@ -80,3 +80,19 @@ test('a payment Everee marks PAID with an empty payout list counts as landed; an
     assert.equal(readPayoutState(body).state, 'unknown', JSON.stringify(body));
   }
 });
+
+test('a card payment (PAID, no payouts, net pay 0.00) is read at its wages only when nothing is deducted or withheld', () => {
+  const card = { status: 'PAID', netPayouts: [], payDate: '2026-11-12', workerId: 7, totalNetPay: { amount: '0.00' }, totalTaxableWages: { amount: '274.46' },
+    totalNonTaxablePay: { amount: '0.00' }, employeeDeductions: [], employeeTaxWithholdings: [] };
+  const read = readPayoutState(card);
+  assert.equal(countsAsLanded(read), true);
+  assert.equal(read.netCents, 27446);
+  assert.equal(readPayoutState({ ...card, totalNonTaxablePay: { amount: '10.00' } }).netCents, 28446, 'non-taxable pay is part of the pay');
+  assert.equal(readPayoutState({ ...card, employeeDeductions: [{}] }).netCents, 0, 'a deduction: the stated net pay stays');
+  assert.equal(readPayoutState({ ...card, employeeTaxWithholdings: [{}] }).netCents, 0, 'a withholding: the stated net pay stays');
+  const { employeeDeductions, ...noList } = card;
+  assert.equal(readPayoutState(noList).netCents, 0, 'a missing deduction list is not "none": the stated net pay stays');
+  assert.equal(readPayoutState({ ...card, totalTaxableWages: { amount: 'lots' } }).netCents, 0);
+  assert.equal(readPayoutState({ ...card, totalTaxableWages: { amount: '0.00' } }).netCents, 0, 'no wages: still zero');
+  assert.equal(readPayoutState({ ...card, totalNetPay: { amount: '81.93' } }).netCents, 8193, 'a stated net pay above zero is never replaced');
+});

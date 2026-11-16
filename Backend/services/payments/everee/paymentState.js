@@ -41,8 +41,21 @@ const readPayDate = (body) => (typeof body.payDate === 'string' && DATE_TEXT.tes
 
 // A payment Everee marks PAID whose payout list is empty: it is treated like "PAID with a payout still pending" (countsAsLanded), so the same amount
 // and worker checks apply. An amount that cannot be read stays null, and production never marks a payment paid without one.
+const isEmptyList = (value) => Array.isArray(value) && value.length === 0;
+
+// A payment paid to the worker's Everee card has no bank payout and Everee states its net pay as 0.00 (seen on a paid contractor payment), while the
+// wages are stated. With no deductions and no withholdings listed, the worker's pay is the wages. Anything else (a net pay above zero, a deduction or
+// withholding, a wage that cannot be read) keeps the stated net pay, so the amount check never relies on a guess.
+const paidAmountCents = (body) => {
+  const net = amountCents(body.totalNetPay);
+  if (net !== 0 || !isEmptyList(body.employeeDeductions) || !isEmptyList(body.employeeTaxWithholdings)) return net;
+  const wages = amountCents(body.totalTaxableWages);
+  const nonTaxable = amountCents(body.totalNonTaxablePay);
+  return wages !== null && nonTaxable !== null && wages + nonTaxable > 0 ? wages + nonTaxable : net;
+};
+
 const readPaidWithoutPayouts = (body) => ({
-  state: 'pending', netCents: amountCents(body.totalNetPay), payDate: readPayDate(body), workerId: readWorkerId(body), paymentPaid: true,
+  state: 'pending', netCents: paidAmountCents(body), payDate: readPayDate(body), workerId: readWorkerId(body), paymentPaid: true,
 });
 
 // state: 'landed' (all payouts PAID) | 'returned' (some FAILED: a bank returned the deposit) | 'pending' | 'unknown'.

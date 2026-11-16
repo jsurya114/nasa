@@ -569,6 +569,27 @@ test('everee payment status: only a payment that landed marks a statement paid',
       assert.equal(await check(fakeE, iEA.id), 'unchanged');
     });
 
+    await t.test('a card payment (PAID, no payouts, net pay 0.00) is paid at its wages when they match; other wages, a deduction or another worker change nothing', async () => {
+      const scK = await scenario('CK', [[dA, '274.46'], [dB, '50.00'], [dC, '25.00']]);
+      const fakeK = makeEveree();
+      await sent(scK, fakeK);
+      const [iKA, iKB, iKC] = [await item(scK, dA), await item(scK, dB), await item(scK, dC)];
+      const card = (driver, wages, extra = {}) => ({ workerId: workers[driver], status: 'PAID', totalNetPay: { amount: '0.00', currency: 'USD' }, totalTaxableWages: { amount: wages, currency: 'USD' },
+        totalNonTaxablePay: { amount: '0.00', currency: 'USD' }, employeeDeductions: [], employeeTaxWithholdings: [], netPayouts: [], ...extra });
+      for (const [it, id] of [[iKA, 'pay-KA'], [iKB, 'pay-KB'], [iKC, 'pay-KC']]) fakeK.state.payables[it.external_id] = { externalId: it.external_id, paymentStatus: 'PENDING_APPROVAL', paymentId: id };
+      fakeK.state.payments['pay-KB'] = card(dB, '49.00'); // other wages than NASA sent
+      assert.equal(await check(fakeK, iKB.id), 'amount_differs');
+      fakeK.state.payments['pay-KC'] = card(dC, '25.00', { employeeDeductions: [{ amount: { amount: '5.00' } }] }); // a deduction: net pay 0.00 stays, which is not what was sent
+      assert.equal(await check(fakeK, iKC.id), 'amount_differs');
+      fakeK.state.payments['pay-KA'] = card(dA, '274.46', { workerId: workers[dB] }); // another worker's payment
+      assert.equal(await check(fakeK, iKA.id), 'unknown');
+      for (const d of [dA, dB, dC]) assert.equal((await stmt(scK, d)).payout_status, 'submitted');
+      fakeK.state.payments['pay-KA'] = card(dA, '274.46');
+      assert.equal(await check(fakeK, iKA.id), 'paid');
+      assert.deepEqual([(await item(scK, dA)).status, (await stmt(scK, dA)).payout_status, (await stmt(scK, dA)).net], ['paid', 'paid', '274.46']);
+      assert.equal(await check(fakeK, iKA.id), 'unchanged');
+    });
+
     await t.test('sandbox: a worker\'s payment that also holds another send of the same week is paid when our own payable is PAID inside it for our amount', async () => {
       const scD = await scenario('DUP', [[dA, '100.00']]);
       const fakeD = makeEveree();
