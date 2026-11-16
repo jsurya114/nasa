@@ -11,9 +11,11 @@ vi.mock("../../reuse/Nav", () => ({ default: () => null }));
 // The Claims page: read only, one list for claims not matched to a driver yet and one for matched claims, for the admin's cities. A fake server answers
 // GET /admin/claims the way the real one does (the server does the scoping, filtering and paging; here we check what is asked and what is shown).
 const claim = (id, over = {}) => ({ id, courier: "gofo", waybill: `GF000${id}`, claimType: "Lost parcel", claimDate: "2026-11-03", amount: "25.00", city: "Test City", status: "unresolved",
-  reason: "no delivery history for this waybill yet", courierName: "Cy Courier", driverName: null, driverCode: null, deducted: false, ...over });
+  reason: "no delivery history for this waybill yet", courierName: "Cy Courier", driverName: null, driverCode: null, deduction: { state: "none", applied: "0.00", paid: "0.00", left: null, payout: null }, ...over });
 const UNMATCHED = [claim(1), claim(2, { status: "ambiguous", reason: "the waybill is linked to more than one driver", courierName: null })];
-const MATCHED = [claim(3, { status: "chargeable", driverName: "Ann Driver", driverCode: 4455, reason: "matched by waybill", courierName: null, deducted: true }), claim(4, { status: "exempt", driverName: "Bob Driver", driverCode: 4456, claimType: "Tracking interruption" })];
+const MATCHED = [claim(3, { status: "chargeable", driverName: "Ann Driver", driverCode: 4455, reason: "matched by waybill", courierName: null, deduction: { state: "full", applied: "25.00", paid: "0.00", left: "0.00", payout: "finalized" } }), claim(4, { status: "exempt", driverName: "Bob Driver", driverCode: 4456, claimType: "Tracking interruption" }),
+  claim(5, { status: "chargeable", driverName: "Cy Driver", driverCode: 4457, amount: "50.00", deduction: { state: "partial", applied: "35.00", paid: "15.00", left: "15.00", payout: "partly_paid" } }),
+  claim(6, { status: "chargeable", driverName: "Di Driver", driverCode: 4458, deduction: { state: "full", applied: "25.00", paid: "25.00", left: "0.00", payout: "paid" } })];
 
 const startServer = async ({ unmatched = UNMATCHED, matched = MATCHED, totalPages = 1, fail = false } = {}) => {
   const asked = [];
@@ -48,7 +50,7 @@ it("opens on the claims not matched to a driver yet, with the waybill, why, and 
   expect(row.getByText("$25.00")).toBeTruthy();
   expect(within(screen.getByTestId("claim-2")).getByText("Not clear which driver")).toBeTruthy();
   expect(screen.getByRole("button", { name: "Not matched yet (2)" }).getAttribute("aria-pressed")).toBe("true");
-  expect(screen.getByRole("button", { name: "Matched to a driver (2)" })).toBeTruthy();
+  expect(screen.getByRole("button", { name: "Matched to a driver (4)" })).toBeTruthy();
   expect(screen.getByTestId("claims-total").textContent).toBe("2 claims");
 });
 
@@ -63,9 +65,18 @@ it("the matched list names the driver and says when a claim was already taken of
   expect(row.getByText("#4455")).toBeTruthy();
   expect(row.getByText("Chargeable")).toBeTruthy();
   expect(row.getByText("Deducted")).toBeTruthy();
+  // A finalized run is approval, not a payout: it says so until the statements are recorded as paid.
+  expect(row.getByTestId("deduction-3").textContent).toBe("$25.00 · in a finalized run, not paid out yet");
   const exempt = within(screen.getByTestId("claim-4"));
   expect(exempt.getByText("Exempt")).toBeTruthy();
   expect(exempt.queryByText("Deducted")).toBeNull();
+  expect(exempt.queryByTestId("deduction-4")).toBeNull();
+  // An amended claim partly deducted is not shown as fully deducted: what was applied, the amount, what is left, and how much has been paid out.
+  const partial = within(screen.getByTestId("claim-5"));
+  expect(partial.getByText("Part deducted")).toBeTruthy();
+  expect(partial.queryByText("Deducted")).toBeNull();
+  expect(partial.getByTestId("deduction-5").textContent).toBe("$35.00 of $50.00 deducted, $15.00 left · partly paid out");
+  expect(within(screen.getByTestId("claim-6")).getByTestId("deduction-6").textContent).toBe("$25.00 · paid out");
   expect(screen.getByRole("columnheader", { name: "Driver" })).toBeTruthy();
 });
 

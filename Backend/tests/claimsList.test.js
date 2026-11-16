@@ -2,7 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { randomBytes, randomUUID } from 'node:crypto';
-import { ClaimsInputError, PAGE_SIZE, listClaims, parseClaimsQuery } from '../services/admin/claimsList.js';
+import { ClaimsInputError, PAGE_SIZE, claimsScopeOf, deductionOf, listClaims, parseClaimsQuery } from '../services/admin/claimsList.js';
+import { getClaims } from '../controllers/admin/claimsController.js';
 
 // The Claims page's list. The first test needs no database; the second runs the real query in a rolled-back transaction (PAYROLL_TEST_DB=1 and the DB_*
 // variables) with made-up cities, drivers, admins and claims.
@@ -76,8 +77,8 @@ test('the claims list: matched and unmatched, only the admin\'s cities, only cur
       const w6 = unmatched.claims.find((c) => c.waybill === `W6${tag}`);
       assert.equal(w6.amount, '12.00', 'the latest version, not the superseded one');
       const w3 = unmatched.claims.find((c) => c.waybill === `W3${tag}`);
-      assert.deepEqual([w3.status, w3.reason, w3.driverName, w3.courierName, w3.city, w3.claimType, w3.claimDate, w3.amount, w3.deducted],
-        ['unresolved', 'no delivery history for this waybill yet', null, 'Cy Courier', mine.job, 'Lost parcel', '2026-11-03', '25.00', false]);
+      assert.deepEqual([w3.status, w3.reason, w3.driverName, w3.courierName, w3.city, w3.claimType, w3.claimDate, w3.amount, w3.deduction.state],
+        ['unresolved', 'no delivery history for this waybill yet', null, 'Cy Courier', mine.job, 'Lost parcel', '2026-11-03', '25.00', 'none']);
       const w1 = matched.claims.find((c) => c.waybill === `W1${tag}`);
       assert.deepEqual([w1.status, w1.driverName, w1.driverCode, w1.courierName], ['chargeable', ann.name, w1.driverCode, null]);
       assert.equal(matched.claims.find((c) => c.waybill === `W2${tag}`).status, 'exempt');
@@ -109,17 +110,70 @@ test('the claims list: matched and unmatched, only the admin\'s cities, only cur
       assert.deepEqual(counted.counts, { matched: 2, unmatched: 0 }, 'the counts follow the search');
     });
 
-    await t.test('a claim already taken off a driver\'s pay in a finalized run says so; a draft run does not', async () => {
-      const run = (status) => one(
-        `INSERT INTO pay_runs (request_id, city_id, period_start, period_end, data_type, status, created_by) VALUES ($1, $2, '2026-11-01', '2026-11-07', 'weekly', 'draft', $3) RETURNING id`, [randomUUID(), mine.id, sup.id]);
-      const draft = await run();
-      const statement = (r, d) => one(`INSERT INTO pay_statements (pay_run_id, driver_id, gross, insurance, reimbursements, claim_deductions, recoveries, net, carried_forward) VALUES ($1, $2, 100, 0, 0, 25, 0, 75, 0) RETURNING id`, [r, d]);
-      const st = await statement(draft.id, ann.id);
-      await db.query(`INSERT INTO pay_statement_lines (statement_id, line_type, amount, claim_id) VALUES ($1, 'claim', -25, $2)`, [st.id, c1]);
-      const deducted = async () => Object.fromEntries((await q({ tab: 'matched' })).claims.map((c) => [c.waybill.replace(tag, ''), c.deducted]));
-      assert.deepEqual(await deducted(), { W1: false, W2: false }, 'a draft run has not deducted anything');
-      await db.query("UPDATE pay_runs SET status = 'finalized', finalized_by = $2, finalized_at = now() WHERE id = $1", [draft.id, sup.id]);
-      assert.deepEqual(await deducted(), { W1: true, W2: false });
+    const run = (period, status = 'draft') => one(
+      `INSERT INTO pay_runs (request_id, city_id, period_start, period_end, data_type, status, created_by) VALUES ($1, $2, $3, $4, 'weekly', 'draft', $5) RETURNING id`, [randomUUID(), mine.id, period[0], period[1], sup.id]);
+    const finalize = (id) => db.query("UPDATE pay_runs SET status = 'finalized', finalized_by = $2, finalized_at = now() WHERE id = $1", [id, sup.id]);
+    const statement = (r, d, taken) => one(`INSERT INTO pay_statements (pay_run_id, driver_id, gross, insurance, reimbursements, claim_deductions, recoveries, net, carried_forward) VALUES ($1, $2, 100, 0, 0, $3, 0, $4, 0) RETURNING id`, [r, d, taken, 100 - taken]);
+    const takeLine = (st, claimId, amount) => db.query(`INSERT INTO pay_statement_lines (statement_id, line_type, amount, claim_id) VALUES ($1, 'claim', $2, $3)`, [st, `-${amount}`, claimId]);
+    const deductionsOf = async (waybill) => (await q({ tab: 'matched' })).claims.find((c) => c.waybill === `${waybill}${tag}`).deduction;
+
+    await t.test('a claim taken off a driver\'s pay: a draft run has deducted nothing; a finalized run says how much, and whether it was paid out', async () => {
+      const draft = await run(['2026-11-01', '2026-11-07']);
+      const st = await statement(draft.id, ann.id, 25);
+      await takeLine(st.id, c1, '25.00');
+      assert.deepEqual(await deductionsOf('W1'), { state: 'none', applied: '0.00', paid: '0.00', left: '0.00', payout: null }, 'a draft run has not deducted anything (its 25.00 is held, so nothing is left to take)');
+      assert.equal((await deductionsOf('W2')).state, 'none');
+      await finalize(draft.id);
+      assert.deepEqual(await deductionsOf('W1'), { state: 'full', applied: '25.00', paid: '0.00', left: '0.00', payout: 'finalized' }, 'finalized is approval, not a completed payout');
+      await db.query("UPDATE pay_statements SET payout_status = 'paid' WHERE id = $1", [st.id]);
+      assert.deepEqual(await deductionsOf('W1'), { state: 'full', applied: '25.00', paid: '25.00', left: '0.00', payout: 'paid' }, 'the payout has completed');
+    });
+
+    await t.test('an amended claim keeps what was taken under its earlier version, and a partial deduction is not shown as a full one', async () => {
+      const key = randomBytes(32).toString('hex');
+      const v1 = await claim(mine.id, 'W7', 'chargeable', { driver: ann, key, version: 1, superseded: true, amount: '40.00', day: '2026-11-06' });
+      const runA = await run(['2026-10-01', '2026-10-07']);
+      const stA = await statement(runA.id, ann.id, 15);
+      await takeLine(stA.id, v1, '15.00'); // 15.00 of the 40.00 was taken in run A
+      await finalize(runA.id);
+      const v2 = await claim(mine.id, 'W7', 'chargeable', { driver: ann, key, version: 2, amount: '50.00', day: '2026-11-06' }); // the carrier amended it to 50.00
+      assert.deepEqual(await deductionsOf('W7'), { state: 'partial', applied: '15.00', paid: '0.00', left: '35.00', payout: 'finalized' },
+        'the earlier version\'s deduction still counts (a badge keyed to the latest version id would lose it)');
+      const runB = await run(['2026-10-08', '2026-10-14']);
+      const stB = await statement(runB.id, ann.id, 20);
+      await takeLine(stB.id, v2, '20.00');
+      await finalize(runB.id);
+      await db.query("UPDATE pay_statements SET payout_status = 'paid' WHERE id = $1", [stA.id]);
+      assert.deepEqual(await deductionsOf('W7'), { state: 'partial', applied: '35.00', paid: '15.00', left: '15.00', payout: 'partly_paid' }, 'two runs, one paid out, one only finalized');
+      const runC = await run(['2026-10-15', '2026-10-21']);
+      const stC = await statement(runC.id, ann.id, 15);
+      await takeLine(stC.id, v2, '15.00');
+      await finalize(runC.id);
+      assert.deepEqual(await deductionsOf('W7'), { state: 'full', applied: '50.00', paid: '15.00', left: '0.00', payout: 'partly_paid' });
+    });
+
+    await t.test('the deduction shape, apart from the database: none, partial, full, and what is left never below zero', () => {
+      assert.deepEqual(deductionOf({ amount: '25.00', appliedCents: 0, paidCents: 0, leftCents: 2500 }), { state: 'none', applied: '0.00', paid: '0.00', left: '25.00', payout: null });
+      assert.deepEqual(deductionOf({ amount: '25.00', appliedCents: '1000', paidCents: '1000', leftCents: '1500' }), { state: 'partial', applied: '10.00', paid: '10.00', left: '15.00', payout: 'paid' });
+      assert.deepEqual(deductionOf({ amount: '25.00', appliedCents: 2500, paidCents: 0, leftCents: -500 }), { state: 'full', applied: '25.00', paid: '0.00', left: '0.00', payout: 'finalized' });
+      assert.equal(deductionOf({ amount: '25.00', appliedCents: 0, paidCents: 0, leftCents: null }).left, null, 'an unmatched or exempt claim has no amount left to take');
+    });
+
+    await t.test('who may read: the database decides, not the token (a demoted, disabled, unknown or driver account gets nothing)', async () => {
+      assert.deepEqual(await claimsScopeOf(db, { id: sup.id, role: 'superadmin' }), { all: true });
+      assert.deepEqual(await claimsScopeOf(db, { id: adm.id, role: 'admin' }), { adminId: adm.id });
+      assert.deepEqual(await claimsScopeOf(db, { id: adm.id, role: 'superadmin' }), { adminId: adm.id }, 'a token that still says super admin for an admin in the database');
+      assert.deepEqual(await claimsScopeOf(db, { id: sup.id, role: 'admin' }), { all: true }, 'promoted in the database');
+      await db.query("UPDATE admin SET role = 'admin' WHERE id = $1", [sup.id]);
+      assert.deepEqual(await claimsScopeOf(db, { id: sup.id, role: 'superadmin' }), { adminId: sup.id }, 'a demoted super admin sees only their own cities (none assigned: nothing)');
+      assert.deepEqual((await listClaims(db, await claimsScopeOf(db, { id: sup.id, role: 'superadmin' }), parseClaimsQuery({}))).claims, []);
+      await db.query("UPDATE admin SET role = 'superadmin', is_active = false WHERE id = $1", [sup.id]);
+      assert.equal(await claimsScopeOf(db, { id: sup.id, role: 'superadmin' }), null, 'a disabled account');
+      await db.query('UPDATE admin SET is_active = true WHERE id = $1', [sup.id]);
+      for (const bad of [{ id: 987654321, role: 'admin' }, { id: adm.id, role: 'driver' }, { id: 'x', role: 'admin' }, { id: 0, role: 'superadmin' }, undefined]) assert.equal(await claimsScopeOf(db, bad), null, JSON.stringify(bad));
+      const res = { code: null, status(c) { this.code = c; return this; }, json() { return this; } };
+      await getClaims({ user: { id: 987654321, role: 'superadmin' }, query: {} }, res); // an account that does not exist, with a token that says super admin
+      assert.equal(res.code, 403);
     });
 
     await t.test('paging: twenty a page, a page past the end is empty, and the counts do not move', async () => {

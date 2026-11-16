@@ -1,6 +1,6 @@
 import React from "react";
 import { formatMoney } from "../../../utils/money.js";
-import { CLAIM_STATUS } from "./claimsApi.js";
+import { CLAIM_STATUS, deductionWords } from "./claimsApi.js";
 
 // One page of claims. Matched claims name the driver NASA matched; an unmatched claim shows the courier name from the carrier's file, and why it is not matched.
 export default function ClaimsTable({ claims, matched }) {
@@ -17,6 +17,7 @@ export default function ClaimsTable({ claims, matched }) {
         <tbody>
           {claims.map((c) => {
             const status = CLAIM_STATUS[c.status] ?? { label: c.status, tone: "bg-gray-100 text-gray-700", hint: "" };
+            const deduction = deductionWords(c.deduction, c.amount, formatMoney);
             return (
               <tr key={c.id} data-testid={`claim-${c.id}`}>
                 <td className="px-3 py-2 border-b font-mono text-xs">{c.waybill}</td>
@@ -29,7 +30,8 @@ export default function ClaimsTable({ claims, matched }) {
                 <td className="px-3 py-2 border-b">{c.city}</td>
                 <td className="px-3 py-2 border-b">
                   <span title={status.hint} className={`inline-flex items-center rounded-full px-2 py-1 text-xs font-medium ${status.tone}`}>{status.label}</span>
-                  {c.deducted && <span className="ml-1 inline-flex items-center rounded-full bg-purple-100 px-2 py-1 text-xs font-medium text-purple-800">Deducted</span>}
+                  {deduction && <span className="ml-1 inline-flex items-center rounded-full bg-purple-100 px-2 py-1 text-xs font-medium text-purple-800">{deduction.label}</span>}
+                  {deduction && <p className="mt-1 text-xs text-ink-muted" data-testid={`deduction-${c.id}`}>{deduction.detail}</p>}
                   {!matched && c.reason && <p className="mt-1 text-xs text-ink-muted">{c.reason}</p>}
                 </td>
               </tr>

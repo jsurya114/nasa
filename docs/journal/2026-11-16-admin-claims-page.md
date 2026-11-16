@@ -25,6 +25,16 @@ drivers and which are not matched yet, with the waybill. There is now a **Claims
 - **Read only.** The page changes no claim, matching, pay run or payment. The only code path added reads `courier_claims`, `courier_claim_matches`,
   `drivers`, `city` and the pay statement lines.
 
+**Review fixes.**
+- Who may read is checked in the database on every request (`claimsScopeOf`): the admin must exist and be active; a super admin (in the database now)
+  sees all cities, an ordinary admin only their assigned cities, and anything else (a disabled or deleted account, a driver id, an unknown role) gets 403.
+  The role in the token is not used, so a disabled account or a changed role takes effect at once.
+- The "Deducted" badge now comes from the claim's own deduction history, keyed by claim identity (`claim_key`, every version and driver), not from the latest
+  version's id. Each claim carries `deduction`: `state` (none, partial, full), `applied` (taken in finalized pay runs), `paid` (the part whose statement payout is
+  recorded as paid), `left` (what is still owed for the current version, the payroll's own figure `NET_COLLECTED_SQL`; null unless chargeable) and `payout`
+  (finalized, partly_paid, paid). The page says "Deducted" or "Part deducted", the amounts, what is left, and whether it is only in a finalized run or paid out.
+  An amended claim keeps what was taken under its earlier version, and a draft run counts as nothing deducted.
+
 **Database.** None. Read only; no new column, table or index. (The list uses the existing indexes on `courier_claims` and `courier_claim_matches`.)
 
 **Config and dependencies.** None.
@@ -38,6 +48,11 @@ drivers and which are not matched yet, with the waybill. There is now a **Claims
   reading changes nothing. Whole backend suite without the database: 429 tests, 331 passed, 0 failed (98 need the database).
 - Frontend: full suite 609 passed; lint of the new files clean; build clean. New tests for the page (both lists, driver and reason, city, search, paging,
   empty, error with retry), the menu link for an ordinary admin and the route outside the super admin guards.
+
+**Tested after the review.** `claimsList` tests with the database copy: 11 passed. They cover a claim amended after a partial deduction (the earlier
+version's 15.00 still counts; then 35.00 of 50.00 with one run paid out and one only finalized; then fully deducted), a draft run deducting nothing,
+finalized versus paid out, the pure shape, and who may read (a stale super admin token, promotion, demotion, a disabled, unknown or driver account, and a 403
+from the route handler). Frontend `Claims` tests: 6 passed (partial, full and paid-out wording).
 
 **Not tested.** In a browser against real data, and a real sign-in as an ordinary admin.
 
