@@ -98,12 +98,13 @@ test('today is taken in America/Chicago', () => {
   assert.equal(chicagoToday(new Date('2026-11-11T06:30:00Z')), '2026-11-11');
 });
 
-test('the routes check the token and then the super admin role before any invoice route, and are mounted before /admin', () => {
+test('the routes check the token and then the Invoices access before any invoice route (but the access question), and are mounted before /admin', () => {
   const lines = readFileSync(new URL('../routes/invoiceRoutes.js', import.meta.url), 'utf8').split('\n').map((l) => l.trim());
   const auth = lines.indexOf('router.use(adminAuth);');
-  const role = lines.indexOf("router.use(requireRole('superadmin'));");
-  const first = lines.findIndex((l) => /^router\.(get|post|put|patch|delete)\(/.test(l));
-  assert.ok(auth > -1 && role > auth && first > role);
+  const access = lines.indexOf('router.use(requireInvoiceAccess);');
+  const routes = lines.map((text, line) => ({ text, line })).filter(({ text }) => /^router\.(get|post|put|patch|delete)\(/.test(text));
+  const others = routes.filter(({ text }) => !text.startsWith("router.get('/access'"));
+  assert.ok(auth > -1 && access > auth && others.every(({ line }) => line > access));
   const app = readFileSync(new URL('../app.js', import.meta.url), 'utf8');
   assert.ok(app.indexOf("app.use('/admin/invoices'") > -1 && app.indexOf("app.use('/admin/invoices'") < app.indexOf("app.use('/admin', "));
 });

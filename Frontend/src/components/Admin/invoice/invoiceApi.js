@@ -19,7 +19,8 @@ export const markPaymentReceived = async (id, payment) => (await axios.post(`${B
 export const problemOf = (error, fallback = "That did not work. Check your connection and try again.") => {
   const status = error?.response?.status;
   const data = error?.response?.data ?? {};
-  if (status === 403) return { message: "Invoices are for the super admin only." };
+  // The server's own words when it gave them (for example "You can edit only the vendors you created."); a plain refusal means no Invoices access.
+  if (status === 403) return { message: typeof data.message === "string" && data.message !== "FORBIDDEN" ? data.message : "You do not have access to Invoices. Ask the super admin to switch it on for you." };
   if ((status === 400 || status === 404 || status === 409) && typeof data.message === "string") return { message: data.message, errors: data.errors, code: data.code, status };
   return { message: fallback };
 };

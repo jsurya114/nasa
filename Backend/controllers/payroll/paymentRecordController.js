@@ -34,7 +34,7 @@ const fail = (res, error) => {
 export const getPaymentRuns = async (req, res) => {
   const { view = "ready", cityId, beforeId } = req.query;
   if (
-    !["ready", "history"].includes(view) ||
+    !["ready", "partly", "history"].includes(view) ||
     (cityId && !paymentId(cityId)) ||
     (beforeId && !paymentId(beforeId))
   )

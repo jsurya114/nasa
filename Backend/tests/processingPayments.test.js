@@ -41,7 +41,14 @@ test('payments in progress: the card keeps them out of what is left to pay, and 
     const sOf = Object.fromEntries(statements.map((s) => [s.driver_id, s]));
     const setStatus = (driver, status) => db.query('UPDATE pay_statements SET payout_status = $2 WHERE id = $1', [sOf[driver].id, status]);
     const rows = (...drivers) => drivers.map((d) => ({ id: rowOf[d], driver_id: d, paid: false }));
-    const card = async () => (await listPaymentRuns(db, superAdmin, { cityId: city })).runs.find((r) => String(r.id) === String(run.id));
+    // The run's card, wherever it is: "ready" while nothing is paid, "partly" once some drivers are paid.
+    const card = async () => {
+      for (const view of ['ready', 'partly']) {
+        const found = (await listPaymentRuns(db, superAdmin, { cityId: city, view })).runs.find((r) => String(r.id) === String(run.id));
+        if (found) return found;
+      }
+      return undefined;
+    };
     const cents = (v) => Math.round(Number(v) * 100);
 
     await t.test('nothing sent yet: everything is left to pay and nothing is marked', async () => {

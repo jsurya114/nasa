@@ -210,6 +210,22 @@ test('everee payment status: only a payment that landed marks a statement paid',
       assert.equal(await check(fake, iB.id), 'paid', 'an unconfirmed item that landed is paid too');
     });
 
+    await t.test('an unconfirmed item whose payment ID came from an event gets its blocked payable status cleared once Everee is processing it', async () => {
+      const scU = await scenario('UB', [[dE, '40.00']]);
+      await sent(scU, fake);
+      const iE = await item(scU, dE);
+      fake.state.payables[iE.external_id] = { externalId: iE.external_id, paymentStatus: 'UNPAYABLE_WORKER' };
+      assert.equal(await check(fake, iE.id), 'waiting');
+      assert.equal((await item(scU, dE)).status, 'unconfirmed');
+      await db.query("UPDATE everee_payment_items SET everee_payment_id = 'pay-E', payment_link = 'event' WHERE id = $1", [iE.id]);
+      assert.equal(await check(fake, iE.id), 'not_processed', 'still blocked at Everee: the item stays unconfirmed');
+      assert.equal((await item(scU, dE)).status, 'unconfirmed');
+      fake.state.payables[iE.external_id] = { externalId: iE.external_id, paymentStatus: 'PENDING_PAYMENT', paymentId: 'pay-E' };
+      assert.equal(await check(fake, iE.id), 'not_processed');
+      assert.deepEqual([(await item(scU, dE)).status, (await item(scU, dE)).error_message, (await stmt(scU, dE)).payout_status, (await item(scU, dE)).everee_payable_status],
+        ['submitted', null, 'submitted', 'PENDING_PAYMENT']);
+    });
+
     await t.test('events only prompt a fresh look: a payment event for a payment that is not ours does nothing, and the state comes from Everee, not the event', async () => {
       assert.equal(await applyPaymentEvent(db, { paymentId: 'someone-else' }, { environment: 'sandbox' }, fake.client, deps(fake.client)), 'no_item');
       assert.equal(await applyPaymentEvent(db, {}, { environment: 'sandbox' }, fake.client, deps(fake.client)), 'no_payment_id');
