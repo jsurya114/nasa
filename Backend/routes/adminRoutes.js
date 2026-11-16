@@ -11,7 +11,7 @@ import { changeDriverTypes } from '../controllers/admin/driverTypeController.js'
 import { createAccessCode, deleteAccessCode } from '../controllers/admin/accessCodeControllers.js';
 import { DailyExcelUpload, getUpdatedTempDashboardData } from '../controllers/admin/fileUploadsController.js';
 import { getAccessCodes, updateAccessCode, } from '../controllers/admin/accessCodeControllers.js';
-import { changeRoleAdmin, changeStatusAdmin, createAdmins, getAdmins, updateAdmin, getAdminCities } from '../controllers/admin/addAdminController.js';
+import { changeRoleAdmin, changeStatusAdmin, createAdmins, getAdmins, updateAdmin, getAdminCities, toggleAdminInvoices } from '../controllers/admin/addAdminController.js';
 import { getPaymentDashboardData, getAllPaymentDashboardData, updatePaymentData, updateWeeklyTempDataToDashboard, payDriver, getSummaryData } from '../controllers/admin/dashboardController.js';
 import adminJourneyController from '../controllers/admin/adminJourneyController.js';
 import adminAuth from '../middlewares/adminAuth.js';
@@ -59,6 +59,7 @@ router.post("/create-admin", superAdminAuth, createAdmins);
 router.get('/get-admins', superAdminAuth, getAdmins);
 router.patch('/toggle-admin/:id', superAdminAuth, changeStatusAdmin);
 router.patch('/toggle-admin-role/:id', superAdminAuth, changeRoleAdmin);
+router.patch('/toggle-admin-invoices/:id', superAdminAuth, toggleAdminInvoices);
 router.put('/update-admin/:id', superAdminAuth, updateAdmin);
 
 router.post('/doubleStop/dailyFileUpload', upload.single('file'), DailyExcelUpload)

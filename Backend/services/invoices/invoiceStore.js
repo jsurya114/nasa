@@ -21,6 +21,9 @@ const vendorView = (r) => ({
   contactName: r.contact_name, contactEmail: r.contact_email, billingType: r.billing_type, updatedAt: r.updated_at,
 });
 
+// The super admin works on every invoice; any other admin only on the invoices they created. `null` means no restriction.
+export const ownerOf = (admin) => (!admin || admin.role === 'superadmin' ? null : Number(admin.id));
+
 // ---------- vendors ----------
 
 export const listVendors = async (db) => (await db.query('SELECT * FROM invoice_vendors ORDER BY lower(billing_name), id')).rows.map(vendorView);
@@ -90,8 +93,8 @@ const invoiceView = (r, lines) => ({
 
 const SELECT_INVOICE = `SELECT i.*, v.billing_name AS vendor_name FROM invoices i JOIN invoice_vendors v ON v.id = i.vendor_id`;
 
-export const getInvoice = async (db, id) => {
-  const { rows } = await db.query(`${SELECT_INVOICE} WHERE i.id = $1`, [id]);
+export const getInvoice = async (db, id, admin = null) => {
+  const { rows } = await db.query(`${SELECT_INVOICE} WHERE i.id = $1 AND ($2::int IS NULL OR i.created_by = $2)`, [id, ownerOf(admin)]);
   if (!rows[0]) throw new InvoiceError(404, 'Invoice not found.');
   const { rows: lines } = await db.query('SELECT * FROM invoice_lines WHERE invoice_id = $1 ORDER BY position', [id]);
   return invoiceView(rows[0], lines);
@@ -127,7 +130,7 @@ const lockVendor = async (db, vendorId) => {
 export const createInvoice = async (db, admin, input, requestId) => {
   if (requestId) {
     const { rows } = await db.query('SELECT id FROM invoices WHERE request_id = $1', [requestId]);
-    if (rows[0]) return { invoice: await getInvoice(db, rows[0].id), replay: true };
+    if (rows[0]) return { invoice: await getInvoice(db, rows[0].id, admin), replay: true };
   }
   const vendor = await lockVendor(db, input.vendorId);
   if (vendor.billing_type !== input.type) throw new InvoiceError(400, `${vendor.billing_name} is billed ${vendor.billing_type === 'hourly' ? 'hourly' : 'by item'}: use that form.`);
@@ -144,13 +147,13 @@ export const createInvoice = async (db, admin, input, requestId) => {
     throw error;
   }
   await insertLines(db, row.id, input.lines);
-  return { invoice: await getInvoice(db, row.id), replay: false };
+  return { invoice: await getInvoice(db, row.id, admin), replay: false };
 };
 
 // Updates a pending invoice under its own number and invoice date. `version` is the version the admin opened: an invoice changed since (or marked paid) is
 // refused, so nobody overwrites a change they have not seen. The type never changes; a different vendor must bill the same way. Call inside a transaction.
 export const updateInvoice = async (db, admin, id, input, version) => {
-  const { rows } = await db.query('SELECT * FROM invoices WHERE id = $1 FOR UPDATE', [id]);
+  const { rows } = await db.query('SELECT * FROM invoices WHERE id = $1 AND ($2::int IS NULL OR created_by = $2) FOR UPDATE', [id, ownerOf(admin)]);
   const current = rows[0];
   if (!current) throw new InvoiceError(404, 'Invoice not found.');
   if (current.status === 'paid') throw new InvoiceError(409, 'This invoice is paid and can no longer be changed.', { code: 'invoice_paid' });
@@ -172,19 +175,19 @@ export const updateInvoice = async (db, admin, id, input, version) => {
   }
   await db.query('DELETE FROM invoice_lines WHERE invoice_id = $1', [id]);
   await insertLines(db, id, input.lines);
-  return getInvoice(db, id);
+  return getInvoice(db, id, admin);
 };
 
 // Records that the full amount was received outside NASA. Nothing is sent or transferred. The same confirmation sent again (a retry) answers with the
 // invoice as it is and changes nothing, so revenue can never count it twice; a different date or reference for an invoice already paid is refused.
 // With `version`, an invoice edited after the admin opened the confirmation is refused, so they always confirm the amount they saw. Call inside a transaction.
 export const markPaymentReceived = async (db, admin, id, payment) => {
-  const { rows } = await db.query('SELECT * FROM invoices WHERE id = $1 FOR UPDATE', [id]);
+  const { rows } = await db.query('SELECT * FROM invoices WHERE id = $1 AND ($2::int IS NULL OR created_by = $2) FOR UPDATE', [id, ownerOf(admin)]);
   const current = rows[0];
   if (!current) throw new InvoiceError(404, 'Invoice not found.');
   if (current.status === 'paid') {
     const same = day(current.payment_received_on) === payment.receivedOn && (current.payment_reference ?? null) === payment.reference;
-    if (same) return { invoice: await getInvoice(db, id), replay: true };
+    if (same) return { invoice: await getInvoice(db, id, admin), replay: true };
     throw new InvoiceError(409, `Payment for this invoice was already recorded as received on ${day(current.payment_received_on)}.`, { code: 'invoice_paid' });
   }
   if (payment.version !== null && payment.version !== current.version) {
@@ -195,7 +198,7 @@ export const markPaymentReceived = async (db, admin, id, payment) => {
             updated_by = $4, updated_at = now()
       WHERE id = $1`,
     [id, payment.receivedOn, payment.reference, admin.id]);
-  return { invoice: await getInvoice(db, id), replay: false };
+  return { invoice: await getInvoice(db, id, admin), replay: false };
 };
 
 // A number to start from: the highest all-digit invoice number plus one, keeping its width (0028 -> 0029). The admin can type any other number.
@@ -215,10 +218,11 @@ const ORDER = {
   amount: (dir) => `i.total ${dir}, i.invoice_date DESC, i.id DESC`,
 };
 
-export const listInvoices = async (db, f) => {
+export const listInvoices = async (db, f, admin = null) => {
   const params = [];
   const add = (value) => { params.push(value); return `$${params.length}`; };
   const where = [];
+  if (ownerOf(admin) !== null) where.push(`i.created_by = ${add(ownerOf(admin))}`);
   if (f.search) {
     const like = add(`%${f.search.replace(/[\\%_]/g, (m) => `\\${m}`)}%`);
     where.push(`(i.invoice_number ILIKE ${like} OR v.billing_name ILIKE ${like} OR i.bill_to->>'name' ILIKE ${like})`);

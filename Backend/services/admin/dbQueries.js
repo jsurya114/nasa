@@ -134,12 +134,13 @@ export const dbService = {
                 a.email AS admin_email,
                 a.role AS admin_role,
                 a.is_active,
+                a.can_use_invoices,
                 COALESCE(STRING_AGG(c.job, ', '), '') AS cities
             FROM admin a
             LEFT JOIN admin_city_ref acr ON a.id = acr.admin_id
             LEFT JOIN city c ON acr.city_id = c.id
             WHERE a.id != $1
-            GROUP BY a.id, a.name, a.email, a.role, a.is_active
+            GROUP BY a.id, a.name, a.email, a.role, a.is_active, a.can_use_invoices
             ORDER BY a.id
             LIMIT $2 OFFSET $3`,
             [100, limit, offset]
@@ -268,6 +269,17 @@ export const dbService = {
                         END
              WHERE id = $1 
              RETURNING id, name, email, role, is_active`,
+            [id]
+        );
+        return result.rows[0];
+    },
+
+    // Switches Invoices on or off for one ordinary admin. A super admin already has it, so nothing changes for one.
+    toggleInvoiceAccessOfAdmin: async (id) => {
+        const result = await pool.query(
+            `UPDATE admin SET can_use_invoices = NOT can_use_invoices
+             WHERE id = $1 AND role = 'admin'
+             RETURNING id, can_use_invoices`,
             [id]
         );
         return result.rows[0];

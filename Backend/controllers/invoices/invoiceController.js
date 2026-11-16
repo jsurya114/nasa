@@ -1,8 +1,10 @@
-// HTTP side of the Invoices module. Super admin only (routes/invoiceRoutes.js checks the token and the role before any of these run).
+// HTTP side of the Invoices module. Super admin, or an admin with Invoices switched on (routes/invoiceRoutes.js checks the token and the access before
+// any of these run, except getAccess). An admin works only on the invoices they created: the store scopes every read and write by the admin.
 // The admin always comes from the verified token. Short messages only: never the request body or SQL.
 import pool from '../../config/db.js';
 import HttpStatus from '../../utils/statusCodes.js';
 import logger from '../../utils/logger.js';
+import { invoiceAccessOf } from '../../middlewares/requireInvoiceAccess.js';
 import { withTransaction } from '../../services/payroll/claims/claimsStore.js';
 import { InvoiceInputError, parseHistoryQuery, parseInvoice, parsePayment, parseVendor } from '../../services/invoices/invoiceRules.js';
 import {
@@ -28,6 +30,8 @@ const handle = (action, job) => async (req, res) => {
   }
 };
 
+export const getAccess = handle('access', async (req, res) => res.status(HttpStatus.OK).json({ allowed: await invoiceAccessOf(adminOf(req)) }));
+
 export const getVendors = handle('vendor list', async (_req, res) => res.status(HttpStatus.OK).json({ vendors: await listVendors(pool) }));
 
 export const postVendor = handle('vendor create', async (req, res) => {
@@ -42,14 +46,14 @@ export const putVendor = handle('vendor update', async (req, res) => {
   return res.status(HttpStatus.OK).json({ vendor: await updateVendor(pool, adminOf(req), id, vendor) });
 });
 
-export const getInvoices = handle('history', async (req, res) => res.status(HttpStatus.OK).json(await listInvoices(pool, parseHistoryQuery(req.query))));
+export const getInvoices = handle('history', async (req, res) => res.status(HttpStatus.OK).json(await listInvoices(pool, parseHistoryQuery(req.query), adminOf(req))));
 
 export const getNextNumber = handle('next number', async (_req, res) => res.status(HttpStatus.OK).json({ invoiceNumber: await nextInvoiceNumber(pool) }));
 
 export const getOneInvoice = handle('read', async (req, res) => {
   const id = idOf(req.params.id);
   if (!id) return res.status(HttpStatus.NOT_FOUND).json({ message: 'Invoice not found.' });
-  return res.status(HttpStatus.OK).json({ invoice: await getInvoice(pool, id) });
+  return res.status(HttpStatus.OK).json({ invoice: await getInvoice(pool, id, adminOf(req)) });
 });
 
 export const postInvoice = handle('create', async (req, res) => {

@@ -284,8 +284,9 @@ const userLoadSlice = createSlice({
             })
             .addCase(toggleAvailAdmin.fulfilled, (state, action) => {
                 const updatedAdmin = action.payload.data;
+                // Merged into the row: the answer is short (no cities, no Invoices switch), and those must stay on the row.
                 state.admins = state.admins.map(d =>
-                    d.id === updatedAdmin.id ? updatedAdmin : d
+                    d.id === updatedAdmin.id ? { ...d, ...updatedAdmin } : d
                 );
                 state.loading = false;
                 state.success = action.payload.message;
@@ -301,8 +302,9 @@ const userLoadSlice = createSlice({
             })
             .addCase(toggleAdminRole.fulfilled, (state, action) => {
                 const updatedAdmin = action.payload.data;
+                // Merged into the row: the answer is short (no cities, no Invoices switch), and those must stay on the row.
                 state.admins = state.admins.map(d =>
-                    d.id === updatedAdmin.id ? updatedAdmin : d
+                    d.id === updatedAdmin.id ? { ...d, ...updatedAdmin } : d
                 );
                 state.loading = false;
                 state.success = action.payload.message;

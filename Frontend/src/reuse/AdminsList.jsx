@@ -4,6 +4,7 @@ import { useDispatch, useSelector } from "react-redux";
 import { clearPaginateTerms, getAdmins, toggleAvailAdmin } from "../redux/slice/admin/userLoadSlice";
 import Pagination from "./Pagination";
 import { toast } from "../utils/toast";
+import axios from "../redux/slice/axiosInstance";
 
 function AdminsList({ onEdit }) {
   const dispatch = useDispatch();
@@ -18,6 +19,24 @@ function AdminsList({ onEdit }) {
 
   function handleToggleChange(id) {
     dispatch(toggleAvailAdmin(id));
+  }
+
+  // The Invoices switch of each ordinary admin. The server's answer is kept here, so the switch shows what is saved.
+  const [invoiceAccess, setInvoiceAccess] = useState({});
+  const [invoiceBusy, setInvoiceBusy] = useState(null);
+  const hasInvoices = (a) => (a.id in invoiceAccess ? invoiceAccess[a.id] : a.can_use_invoices === true);
+
+  async function handleInvoiceToggle(a) {
+    setInvoiceBusy(a.id);
+    try {
+      const { data } = await axios.patch(`/admin/toggle-admin-invoices/${a.id}`);
+      setInvoiceAccess((current) => ({ ...current, [a.id]: data.data.can_use_invoices === true }));
+      toast.success(data.message);
+    } catch (error) {
+      toast.error(error.response?.data?.message || "Invoices access could not be changed.");
+    } finally {
+      setInvoiceBusy(null);
+    }
   }
 
   function handleEdit(admin) {
@@ -46,7 +65,7 @@ function AdminsList({ onEdit }) {
           <table className="w-full border-collapse text-sm">
             <thead>
               <tr className="bg-gray-50 text-left">
-                {["Sl No", "Name", "Email", "Role", "Cities", "Status", "Actions"].map((head, i) => (
+                {["Sl No", "Name", "Email", "Role", "Cities", "Status", "Invoices", "Actions"].map((head, i) => (
                   <th key={i} className="px-3 py-2 border-b border-line">
                     {head}
                   </th>
@@ -55,7 +74,7 @@ function AdminsList({ onEdit }) {
             </thead>
             <tbody>
               {adminsLoad && admins.length === 0 ? (
-                <SkeletonTableRows rows={5} cols={7} label="Loading admins..." />
+                <SkeletonTableRows rows={5} cols={8} label="Loading admins..." />
               ) : admins.length > 0 ? (
                 admins.map((a, i) => (
                   <tr key={a.id} className={!a.is_active ? "bg-gray-50" : ""}>
@@ -101,6 +120,26 @@ function AdminsList({ onEdit }) {
                           </svg>
                           Disabled
                         </span>
+                      )}
+                    </td>
+                    <td className="px-3 py-2 border-b">
+                      {a.admin_role === "admin" ? (
+                        <label
+                          className="inline-flex min-h-11 cursor-pointer items-center gap-2"
+                          title={hasInvoices(a) ? "Switch Invoices off for this admin" : "Switch Invoices on for this admin"}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={hasInvoices(a)}
+                            disabled={invoiceBusy === a.id}
+                            onChange={() => handleInvoiceToggle(a)}
+                            aria-label={`Invoices for ${a.admin_name}`}
+                            className="h-5 w-5 accent-purple-600"
+                          />
+                          <span className="text-xs">{hasInvoices(a) ? "On" : "Off"}</span>
+                        </label>
+                      ) : (
+                        <span className="text-xs text-gray-500">Always</span>
                       )}
                     </td>
                     <td className="px-3 py-2 border-b">
@@ -156,7 +195,7 @@ function AdminsList({ onEdit }) {
                 ))
               ) : (
                 <tr>
-                  <td colSpan="7" className="text-center py-8 text-gray-500">
+                  <td colSpan="8" className="text-center py-8 text-gray-500">
                     <div className="flex flex-col items-center gap-2">
                       <svg className="w-12 h-12 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />

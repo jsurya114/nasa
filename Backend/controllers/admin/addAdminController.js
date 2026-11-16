@@ -172,6 +172,32 @@ export const changeRoleAdmin = async(req, res) => {
     }
 }
 
+// The super admin switches Invoices on or off for one ordinary admin. The switch is read from the database on every Invoices request.
+export const toggleAdminInvoices = async (req, res) => {
+    try {
+        if (req.user.role !== 'superadmin') {
+            return res.status(HttpStatus.FORBIDDEN).json({ message: "Only superadmin can change Invoices access" });
+        }
+        const id = Number(req.params.id);
+        if (!Number.isInteger(id) || id <= 0) {
+            return res.status(HttpStatus.NOT_FOUND).json({ message: "Admin does not exist!" });
+        }
+        const admin = await dbService.getAdminById(id);
+        if (!admin) {
+            return res.status(HttpStatus.NOT_FOUND).json({ message: "Admin does not exist!" });
+        }
+        if (admin.role !== 'admin') {
+            return res.status(HttpStatus.BAD_REQUEST).json({ message: "A super admin already has access to Invoices" });
+        }
+        const data = await dbService.toggleInvoiceAccessOfAdmin(id);
+        logger.info('Invoices access changed', { adminId: id, canUseInvoices: data.can_use_invoices, changedBy: req.user.id });
+        return res.status(HttpStatus.OK).json({ message: data.can_use_invoices ? "Invoices switched on" : "Invoices switched off", data });
+    } catch (err) {
+        logger.error("Error changing Invoices access", err);
+        return res.status(HttpStatus.INTERNAL_SERVER_ERROR).json({ message: "Server error" });
+    }
+};
+
 // Add this export to addAdminController.js
 
 export const updateAdmin = async(req, res) => {
