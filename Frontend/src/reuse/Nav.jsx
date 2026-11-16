@@ -15,9 +15,11 @@ import {
   ReceiptText,
 } from "lucide-react";
 import GlassTabBar from "./GlassTabBar.jsx";
+import useInvoiceAccess from "../components/Admin/invoice/useInvoiceAccess.js";
 
 function Nav() {
   const isSuperAdmin = useSelector((state) => state.admin?.isSuperAdmin === true);
+  const canUseInvoices = useInvoiceAccess() === "yes";
   const links = [
     { to: "/admin/dashboard", Icon: LayoutDashboard, label: "Dashboard" },
     { to: "/admin/create-users", Icon: Users, label: "Users" },
@@ -27,13 +29,13 @@ function Nav() {
     { to: "/admin/manage-access-codes", Icon: KeyRound, label: "Access Codes" },
     { to: "/admin/driver-availability", Icon: CalendarDays, label: "Availability" },
     { to: "/admin/agreements", Icon: FileText, label: "Agreements" },
-    // Payroll, pay runs, Insights and Invoices are for the super admin only.
+    // Payroll, pay runs and Insights are for the super admin only. Invoices is also for the admins the super admin switched it on for.
     ...(isSuperAdmin ? [
       { to: "/admin/payroll", Icon: Wallet, label: "Payroll" },
       { to: "/admin/pay-runs", Icon: Banknote, label: "Pay runs" },
       { to: "/admin/insights", Icon: BarChart3, label: "Insights" },
-      { to: "/admin/invoices", Icon: ReceiptText, label: "Invoices" },
     ] : []),
+    ...(canUseInvoices ? [{ to: "/admin/invoices", Icon: ReceiptText, label: "Invoices" }] : []),
   ];
 
   return <GlassTabBar items={links} primaryCount={4} moreLabel="More" navLabel="Admin navigation" lang="en" />;
