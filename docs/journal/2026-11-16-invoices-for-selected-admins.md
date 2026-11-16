@@ -28,6 +28,16 @@
 - `userLoadSlice`: enabling or disabling an admin now merges the short answer into the row instead of replacing it, so the row keeps its cities and
   its Invoices switch.
 
+**Review fixes.**
+- The switch saves the wanted value. `PATCH /admin/toggle-admin-invoices/:id` now needs `{ "enabled": true | false }` (anything else is 400) and
+  writes that value, instead of inverting what is stored. A repeated request (for example a revoke whose answer was lost) ends in the same state.
+  The admins list sends the opposite of what it shows, as the wanted state.
+- Privileged access comes from the database, not the token. The Invoices access check reads the admin's current role, active flag and switch on every
+  request (`invoiceActorOf`) and the routes use that admin (`req.invoiceActor`), so a super admin token for someone demoted or disabled gives nothing,
+  and an admin promoted in the database is unrestricted whatever the token says. An invoice route without that checked admin is refused (403).
+- The switch endpoint also needs the caller to be an active super admin in the database now, not only in the token.
+- Not changed: the shared `superAdminAuth` middleware (used by other super admin routes) still trusts the token role; that is a separate follow-up.
+
 **Database.** `Backend/migrations/2026-11-16-admin-invoice-access.sql`:
 ```sql
 ALTER TABLE admin ADD COLUMN IF NOT EXISTS can_use_invoices boolean NOT NULL DEFAULT false;
@@ -46,6 +56,11 @@ now asks for the column and fails without it.
   `invoiceStore` (12) and `invoiceRules` (8, one route-order test updated) pass. Whole backend suite without the database: 431 tests, 333 passed, 0 failed
   (98 need the database). One earlier run showed 2 failures in the carrier statement route tests that did not appear in a rerun or alone; the cause was not found.
 - Frontend: full suite 610 passed; lint and build clean. New tests for the route guard, the menu and the admin switch.
+
+**Tested after the review.** `invoiceAccess` tests with the database copy: 11 passed (the endpoint refuses a stale or deactivated super admin and a missing
+or non-boolean `enabled`; an on, off, off sequence leaves it off; the database setter run twice for off and for on; a token saying super admin
+does not help a demoted or switched-off admin; a promoted one is unrestricted; a route without the checked admin answers 403). Frontend
+`AdminsList` tests: 3 passed (the wanted state is sent for on and for off).
 
 **Not tested.** In a browser with real data, and a real sign-in as an ordinary admin.
 

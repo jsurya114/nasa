@@ -9,11 +9,11 @@ vi.mock("../utils/toast", () => ({ toast }));
 const ANN = { id: 9, admin_name: "Ann Admin", admin_email: "ann@example.com", admin_role: "admin", is_active: true, cities: "Test City", can_use_invoices: false };
 const BOSS = { id: 4, admin_name: "Bea Boss", admin_email: "bea@example.com", admin_role: "superadmin", is_active: true, cities: "", can_use_invoices: false };
 
-const mount = async (patch) => {
-  const state = { patches: [] };
+const mount = async (patch, ann = ANN) => {
+  const state = { patches: [], bodies: [] };
   await installServer(async (config) => {
-    if (config.url === "/admin/get-admins") return { status: 200, data: { admins: [ANN, BOSS], page: 1, totalPages: 1 } };
-    if (config.url.startsWith("/admin/toggle-admin-invoices/")) { state.patches.push(config.url); return patch(); }
+    if (config.url === "/admin/get-admins") return { status: 200, data: { admins: [ann, BOSS], page: 1, totalPages: 1 } };
+    if (config.url.startsWith("/admin/toggle-admin-invoices/")) { state.patches.push(config.url); state.bodies.push(JSON.parse(config.data)); return patch(); }
     return { status: 200, data: {} };
   });
   const [{ configureStore }, { Provider }] = await Promise.all([import("@reduxjs/toolkit"), import("react-redux")]);
@@ -44,10 +44,25 @@ it("switching it on is saved on the server and shown as saved; a failure leaves 
   fireEvent.click(screen.getByRole("checkbox", { name: "Invoices for Ann Admin" }));
   await waitFor(() => expect(screen.getByRole("checkbox", { name: "Invoices for Ann Admin" }).checked).toBe(true));
   expect(s.patches).toEqual(["/admin/toggle-admin-invoices/9"]);
+  expect(s.bodies).toEqual([{ enabled: true }]); // the wanted state is sent, not a flip
   expect(toast.success).toHaveBeenCalledWith("Invoices switched on");
   cleanup();
   await mount(() => ({ status: 500, data: { message: "Server error" } }));
   fireEvent.click(screen.getByRole("checkbox", { name: "Invoices for Ann Admin" }));
   await waitFor(() => expect(toast.error).toHaveBeenCalledWith("Server error"));
   expect(screen.getByRole("checkbox", { name: "Invoices for Ann Admin" }).checked).toBe(false);
+});
+
+it("switching it off sends the wanted state, off, so a repeated request cannot switch it back on", async () => {
+  const s = await mount(() => ({ status: 200, data: { message: "Invoices switched off", data: { id: 9, can_use_invoices: false } } }));
+  const box = () => screen.getByRole("checkbox", { name: "Invoices for Ann Admin" });
+  fireEvent.click(box());
+  await waitFor(() => expect(box().checked).toBe(false));
+  expect(s.bodies).toEqual([{ enabled: true }]); // it was off, so the wanted state is on
+  cleanup();
+  const t = await mount(() => ({ status: 200, data: { message: "Invoices switched off", data: { id: 9, can_use_invoices: false } } }), { ...ANN, can_use_invoices: true });
+  expect(screen.getByRole("checkbox", { name: "Invoices for Ann Admin" }).checked).toBe(true);
+  fireEvent.click(screen.getByRole("checkbox", { name: "Invoices for Ann Admin" }));
+  await waitFor(() => expect(t.bodies).toEqual([{ enabled: false }]));
+  await waitFor(() => expect(screen.getByRole("checkbox", { name: "Invoices for Ann Admin" }).checked).toBe(false));
 });

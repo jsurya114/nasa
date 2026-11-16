@@ -275,12 +275,13 @@ export const dbService = {
     },
 
     // Switches Invoices on or off for one ordinary admin. A super admin already has it, so nothing changes for one.
-    toggleInvoiceAccessOfAdmin: async (id) => {
-        const result = await pool.query(
-            `UPDATE admin SET can_use_invoices = NOT can_use_invoices
+    // Saves the wanted value, never the opposite of what is stored: sending the same request again leaves the same state.
+    setInvoiceAccessOfAdmin: async (id, enabled, db = pool) => {
+        const result = await db.query(
+            `UPDATE admin SET can_use_invoices = $2
              WHERE id = $1 AND role = 'admin'
              RETURNING id, can_use_invoices`,
-            [id]
+            [id, enabled === true]
         );
         return result.rows[0];
     },

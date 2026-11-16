@@ -29,7 +29,8 @@ function AdminsList({ onEdit }) {
   async function handleInvoiceToggle(a) {
     setInvoiceBusy(a.id);
     try {
-      const { data } = await axios.patch(`/admin/toggle-admin-invoices/${a.id}`);
+      // The wanted state is sent, not "the opposite": a repeated request after a lost answer ends in the same state.
+      const { data } = await axios.patch(`/admin/toggle-admin-invoices/${a.id}`, { enabled: !hasInvoices(a) });
       setInvoiceAccess((current) => ({ ...current, [a.id]: data.data.can_use_invoices === true }));
       toast.success(data.message);
     } catch (error) {

@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 import { randomBytes } from 'node:crypto';
 import { parseHistoryQuery, parseInvoice, parseVendor } from '../services/invoices/invoiceRules.js';
 import { createInvoice, createVendor, getInvoice, listInvoices, listVendors, markPaymentReceived, ownerOf, updateInvoice, updateVendor } from '../services/invoices/invoiceStore.js';
-import { invoiceAccessOf } from '../middlewares/requireInvoiceAccess.js';
+import { invoiceAccessOf, invoiceActorOf } from '../middlewares/requireInvoiceAccess.js';
 import { dbService } from '../services/admin/dbQueries.js';
 import { toggleAdminInvoices } from '../controllers/admin/addAdminController.js';
 
@@ -27,21 +27,49 @@ test('the invoice routes: one access check after the sign-in check, and only the
   assert.ok(routes.length >= 10, 'the invoice routes sit after the access check');
 });
 
-test('the super admin switches Invoices on for an ordinary admin only', async () => {
-  const real = [dbService.getAdminById, dbService.toggleInvoiceAccessOfAdmin];
+test('the super admin saves Invoices on or off for an ordinary admin: the wanted value, and only while a super admin in the database', async () => {
+  const real = [dbService.getAdminById, dbService.setInvoiceAccessOfAdmin];
   const res = () => ({ code: null, body: null, status(c) { this.code = c; return this; }, json(b) { this.body = b; return this; } });
-  const call = async (user, id) => { const r = res(); await toggleAdminInvoices({ user, params: { id } }, r); return r; };
+  const stored = { 5: false };
+  const people = { 1: { id: 1, role: 'superadmin', is_active: true }, 2: { id: 2, role: 'admin', is_active: true }, 3: { id: 3, role: 'superadmin', is_active: false },
+    5: { id: 5, role: 'admin' }, 6: { id: 6, role: 'superadmin' } };
+  const call = async (user, id, body = { enabled: true }) => { const r = res(); await toggleAdminInvoices({ user, params: { id }, body }, r); return r; };
+  const boss = { id: 1, role: 'superadmin' };
   try {
-    dbService.getAdminById = async (id) => ({ 5: { id: 5, role: 'admin' }, 6: { id: 6, role: 'superadmin' } })[id];
-    dbService.toggleInvoiceAccessOfAdmin = async (id) => ({ id, can_use_invoices: true });
-    assert.equal((await call({ id: 1, role: 'admin' }, '5')).code, 403, 'an ordinary admin cannot switch it');
-    assert.equal((await call({ id: 1, role: 'superadmin' }, 'abc')).code, 404);
-    assert.equal((await call({ id: 1, role: 'superadmin' }, '999')).code, 404);
-    assert.equal((await call({ id: 1, role: 'superadmin' }, '6')).code, 400, 'a super admin already has it');
-    const ok = await call({ id: 1, role: 'superadmin' }, '5');
-    assert.deepEqual([ok.code, ok.body.data], [200, { id: 5, can_use_invoices: true }]);
+    dbService.getAdminById = async (id) => people[id];
+    dbService.setInvoiceAccessOfAdmin = async (id, enabled) => { stored[id] = enabled; return { id, can_use_invoices: enabled }; };
+    assert.equal((await call({ id: 2, role: 'admin' }, '5')).code, 403, 'an ordinary admin cannot switch it');
+    assert.equal((await call({ id: 2, role: 'superadmin' }, '5')).code, 403, 'a token that still says super admin, for someone who is an admin now');
+    assert.equal((await call({ id: 3, role: 'superadmin' }, '5')).code, 403, 'a deactivated super admin');
+    assert.equal((await call({ id: 99, role: 'superadmin' }, '5')).code, 403, 'a super admin who no longer exists');
+    assert.equal(stored[5], false, 'none of those changed anything');
+    assert.equal((await call(boss, 'abc')).code, 404);
+    assert.equal((await call(boss, '999')).code, 404);
+    assert.equal((await call(boss, '6')).code, 400, 'a super admin already has it');
+    for (const body of [{}, { enabled: 'true' }, { enabled: 1 }, { enabled: null }]) assert.equal((await call(boss, '5', body)).code, 400, JSON.stringify(body));
+    const noBody = res();
+    await toggleAdminInvoices({ user: boss, params: { id: '5' } }, noBody);
+    assert.equal(noBody.code, 400, 'no body at all');
+    assert.equal(stored[5], false, 'a request that does not say on or off changes nothing');
+    const on = await call(boss, '5', { enabled: true });
+    assert.deepEqual([on.code, on.body.data, stored[5]], [200, { id: 5, can_use_invoices: true }, true]);
+    const off = await call(boss, '5', { enabled: false });
+    assert.deepEqual([off.code, off.body.data.can_use_invoices, stored[5]], [200, false, false]);
+    const again = await call(boss, '5', { enabled: false }); // the same revoke sent a second time (the first answer was lost)
+    assert.deepEqual([again.code, again.body.data.can_use_invoices, stored[5]], [200, false, false], 'a repeated revoke does not grant access again');
   } finally {
-    [dbService.getAdminById, dbService.toggleInvoiceAccessOfAdmin] = real;
+    [dbService.getAdminById, dbService.setInvoiceAccessOfAdmin] = real;
+  }
+});
+
+test('an invoice route never runs without the admin the access check read from the database', async () => {
+  const res = () => ({ code: null, status(c) { this.code = c; return this; }, json() { return this; } });
+  const { getOneInvoice, getInvoices } = await import('../controllers/invoices/invoiceController.js');
+  for (const handler of [getOneInvoice, getInvoices]) {
+    const r = res();
+    // A token that says super admin is not enough: without req.invoiceActor the request is refused before any query.
+    await handler({ params: { id: '1' }, query: {}, admin: { id: 1, role: 'superadmin' }, user: { id: 1, role: 'superadmin' } }, r);
+    assert.equal(r.code, 403);
   }
 });
 
@@ -82,6 +110,37 @@ test('invoices for selected admins: the switch decides access at once, and a sel
       await db.query('UPDATE admin SET can_use_invoices = false WHERE id = $1', [ann.id]);
       assert.equal(await invoiceAccessOf(ann, db), false, 'switched off again');
       await db.query('UPDATE admin SET can_use_invoices = true WHERE id = $1', [ann.id]);
+    });
+
+    await t.test('the role comes from the database: a token that says super admin does not help a demoted or disabled one, and a promoted admin is unrestricted', async () => {
+      const staleSuper = { id: ann.id, role: 'superadmin' }; // Ann is an admin in the database (Invoices on), but an old token says super admin
+      assert.deepEqual(await invoiceActorOf(staleSuper, db), { id: ann.id, role: 'admin' }, 'she is limited to her own invoices');
+      await db.query('UPDATE admin SET can_use_invoices = false WHERE id = $1', [ann.id]);
+      assert.equal(await invoiceAccessOf(staleSuper, db), false, 'and with Invoices off, a super admin token gives nothing');
+      await db.query('UPDATE admin SET can_use_invoices = true WHERE id = $1', [ann.id]);
+      await db.query("UPDATE admin SET role = 'admin' WHERE id = $1", [boss.id]); // the super admin is demoted
+      assert.equal(await invoiceAccessOf(boss, db), false, 'a demoted super admin loses access at once (Invoices was never switched on for them)');
+      await db.query("UPDATE admin SET role = 'superadmin', is_active = false WHERE id = $1", [boss.id]);
+      assert.equal(await invoiceAccessOf(boss, db), false, 'a disabled super admin has no access');
+      await db.query("UPDATE admin SET is_active = true WHERE id = $1", [boss.id]);
+      assert.deepEqual(await invoiceActorOf({ id: boss.id, role: 'admin' }, db), { id: boss.id, role: 'superadmin' }, 'promoted in the database: unrestricted, whatever the token says');
+      assert.equal(ownerOf(await invoiceActorOf({ id: boss.id, role: 'admin' }, db)), null);
+    });
+
+    await t.test('saving the wanted value: switching off twice leaves it off, switching on twice leaves it on, and a super admin row is never changed', async () => {
+      const state = async (id) => (await one('SELECT can_use_invoices FROM admin WHERE id = $1', [id])).can_use_invoices;
+      assert.equal(await state(bob.id), true);
+      for (let i = 0; i < 2; i += 1) {
+        assert.deepEqual(await dbService.setInvoiceAccessOfAdmin(bob.id, false, db), { id: bob.id, can_use_invoices: false });
+        assert.equal(await state(bob.id), false, 'a revoke sent twice is still a revoke');
+        assert.equal(await invoiceAccessOf(bob, db), false);
+      }
+      for (let i = 0; i < 2; i += 1) {
+        assert.deepEqual(await dbService.setInvoiceAccessOfAdmin(bob.id, true, db), { id: bob.id, can_use_invoices: true });
+        assert.equal(await invoiceAccessOf(bob, db), true);
+      }
+      assert.equal(await dbService.setInvoiceAccessOfAdmin(boss.id, true, db), undefined, 'a super admin is not an ordinary admin');
+      assert.equal(await state(boss.id), false);
     });
 
     const vendor = await createVendor(db, ann, parseVendor({ billingName: `Shared Co ${tag}`, addressLine1: '1 Main St', billingType: 'hourly' }));

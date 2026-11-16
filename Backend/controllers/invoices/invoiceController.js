@@ -1,6 +1,6 @@
 // HTTP side of the Invoices module. Super admin, or an admin with Invoices switched on (routes/invoiceRoutes.js checks the token and the access before
 // any of these run, except getAccess). An admin works only on the invoices they created: the store scopes every read and write by the admin.
-// The admin always comes from the verified token. Short messages only: never the request body or SQL.
+// The admin is the one the access check read from the database (req.invoiceActor), never the role in the token. Short messages only: never the request body or SQL.
 import pool from '../../config/db.js';
 import HttpStatus from '../../utils/statusCodes.js';
 import logger from '../../utils/logger.js';
@@ -11,7 +11,11 @@ import {
   InvoiceError, createInvoice, createVendor, getInvoice, listInvoices, listVendors, markPaymentReceived, nextInvoiceNumber, updateInvoice, updateVendor,
 } from '../../services/invoices/invoiceStore.js';
 
-const adminOf = (req) => req.admin ?? req.user;
+// Fails closed: without the checked admin nothing runs (an unset admin would otherwise be read as unrestricted).
+const adminOf = (req) => {
+  if (!req.invoiceActor) throw new InvoiceError(HttpStatus.FORBIDDEN, 'FORBIDDEN');
+  return req.invoiceActor;
+};
 const idOf = (value) => (/^\d{1,18}$/.test(String(value ?? '')) && Number(value) > 0 ? Number(value) : null);
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -30,7 +34,7 @@ const handle = (action, job) => async (req, res) => {
   }
 };
 
-export const getAccess = handle('access', async (req, res) => res.status(HttpStatus.OK).json({ allowed: await invoiceAccessOf(adminOf(req)) }));
+export const getAccess = handle('access', async (req, res) => res.status(HttpStatus.OK).json({ allowed: await invoiceAccessOf(req.admin) }));
 
 export const getVendors = handle('vendor list', async (_req, res) => res.status(HttpStatus.OK).json({ vendors: await listVendors(pool) }));
 
