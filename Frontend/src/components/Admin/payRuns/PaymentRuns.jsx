@@ -256,6 +256,7 @@ export default function PaymentRuns({ cities = [], onRecorded }) {
           key={opened.id}
           runId={opened.id}
           cityName={opened.city}
+          readOnly={view === "history"}
           onClose={() => setOpened(null)}
           onRecorded={recorded}
         />

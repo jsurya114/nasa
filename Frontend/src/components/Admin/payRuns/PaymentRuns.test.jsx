@@ -250,6 +250,23 @@ it("records selected drivers only, and retries a lost response with the same req
   expect(screen.queryByText("Remaining driver pay")).toBeNull();
   expect(screen.queryByRole("button", { name: "Pay to drivers" })).toBeNull();
   expect(screen.getByRole("button", { name: "View payment records" })).toBeTruthy();
+  // Opened from the history, the dialog only shows what was recorded: the receipt is there, the driver still to pay is not offered, and nothing can be paid.
+  fireEvent.click(screen.getByRole("button", { name: "View payment records" }));
+  await screen.findByRole("heading", { name: "Payment records" });
+  const dialog = screen.getByRole("dialog");
+  expect(within(dialog).getByText("Dee Test")).toBeTruthy();
+  expect(within(dialog).getByText(/Synthetic cash receipt/)).toBeTruthy();
+  expect(within(dialog).queryByText("Eli Test")).toBeNull();
+  expect(within(dialog).getByText(/1 driver is still to pay: find them under Partly paid/)).toBeTruthy();
+  expect(within(dialog).queryByRole("checkbox")).toBeNull();
+  for (const name of ["Continue with payment", "Pay", "Select all unpaid", "Deselect all"]) expect(within(dialog).queryByRole("button", { name })).toBeNull();
+  expect(within(dialog).getByRole("button", { name: "Done" })).toBeTruthy();
+  expect(s.posts).toHaveLength(2); // the two sends of the first payment, none from the history
+  fireEvent.click(within(dialog).getByRole("button", { name: "Done" }));
+  // Under "Partly paid" the same run still opens the payment workflow.
+  fireEvent.click(screen.getByRole("button", { name: "Partly paid" }));
+  fireEvent.click(await screen.findByRole("button", { name: "Pay to drivers" }));
+  expect(await screen.findByRole("button", { name: "Continue with payment" })).toBeTruthy();
 });
 it("processing payments cannot be included in confirmation: the driver is not selectable and not counted, and is labelled as processing", async () => {
   const s = await setup({ blocked: true });

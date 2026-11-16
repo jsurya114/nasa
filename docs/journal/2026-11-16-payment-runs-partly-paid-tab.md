@@ -22,6 +22,11 @@ showed in both, with the same card, which confused the super admin. There are no
 A run is never in "Awaiting payment" and another tab at once. Drivers whose payment is with Everee (submitted or unconfirmed) are not paid, so a
 run with none paid stays in Awaiting payment, as before.
 
+**Review fix: the history dialog is read-only.** "View payment records" on a partly paid run in Payment history used to open the payment workflow
+(remaining drivers pre-selected, "Continue with payment"). `RecordPaymentDialog` has a new `readOnly` prop, set when it is opened from Payment history:
+it shows the paid and processing drivers with their receipts, says how many drivers are still to pay and where to find them (Partly paid), selects
+nobody, and has no checkboxes, no Everee run results, no Pay or Continue buttons, only Done. From Partly paid it still opens the payment workflow.
+
 **Database.** None. The run list query's grouping condition changed; the new `partly` value of `view` is accepted by the route.
 
 **Config and dependencies.** None.
@@ -33,7 +38,8 @@ run with none paid stays in Awaiting payment, as before.
   QUICKBOOKS_ONBOARDING_ENFORCED=false QUICKBOOKS_PAYMENTS_ENABLED=false`), run one file at a time: 16 and 6 passed, 0 failed. The new assertions
   (a run with one of two drivers paid is not in `ready`, is in `partly` and in `history` with `paid_total` 40.00; fully paid leaves `partly`) fail with the old query.
 - Two database test files run at the same time fail on a clean `develop` too, so the suite must run them one at a time.
-- Frontend: full suite 603 passed. `PaymentRuns` test updated for three tabs.
+- Frontend: full suite 603 passed. `PaymentRuns` test updated for three tabs. After the review fix: the `payRuns` tests (76) pass; the extended test opens the
+  history action of a partly paid run, sees the receipt, and finds no checkbox, Continue, Pay or Select buttons; it fails without the fix.
 
 **Not tested.** In a browser against real data.
 
