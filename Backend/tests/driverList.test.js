@@ -28,6 +28,8 @@ test('the list: Everee status for every driver, counts, filters, sorting, search
     await db.query('BEGIN');
     await db.query(readFileSync(new URL('../migrations/2026-11-04-issue-031-everee-workers.sql', import.meta.url), 'utf8'));
     await db.query(readFileSync(new URL('../migrations/2026-11-07-issue-242-everee-driver-onboarding.sql', import.meta.url), 'utf8'));
+    await db.query(readFileSync(new URL('../migrations/2026-11-10-quickbooks-connection.sql', import.meta.url), 'utf8'));
+    await db.query(readFileSync(new URL('../migrations/2026-11-11-driver-contact-review.sql', import.meta.url), 'utf8'));
     const tag = randomBytes(3).toString('hex');
     const city = async (n) => (await one('INSERT INTO city (job, city_code, city_type) VALUES ($1, $2, $3) RETURNING id, job', [`LD ${n} ${tag}`, `LD${n}${tag}`.toUpperCase(), 'DAILY']));
     const mine = await city('A');
@@ -78,7 +80,7 @@ test('the list: Everee status for every driver, counts, filters, sorting, search
     });
 
     await t.test('counts per status describe what choosing a chip would show, with every other filter applied', async () => {
-      assert.deepEqual((await list({})).counts, { all: 12, complete: 1, 'in-progress': 3, 'not-started': 2, 'needs-review': 4, 'not-required': 1, 'classification-required': 1, 'service-unavailable': 0 });
+      assert.deepEqual((await list({})).counts, { all: 12, complete: 1, 'in-progress': 3, 'not-started': 2, 'needs-review': 4, 'company-not-connected': 0, 'not-required': 0, 'classification-required': 1, 'service-unavailable': 1 }); // QuickBooks is not set up in this test, so the Desi driver is "unavailable"
       const localOnly = (await list({ type: 'LOCAL' })).counts;
       assert.deepEqual([localOnly.all, localOnly['not-required'], localOnly['classification-required']], [10, 0, 0]);
       assert.equal((await list({ status: 'complete' })).counts.all, 12, 'the status filter itself does not change the chip counts');
@@ -111,9 +113,9 @@ test('the list: Everee status for every driver, counts, filters, sorting, search
       const byStatus = await first('status', 'asc');
       assert.deepEqual(byStatus.slice(0, 4).sort(), ['Legacy', 'Removed', 'Review', 'Wrong'], 'needs review first');
       assert.deepEqual(byStatus.slice(4, 6).sort(), ['Mononym', 'Off'], 'then not started');
-      assert.deepEqual(byStatus.slice(-2), ['Untyped', 'Desi'], 'waiting for a type, then not needed, last');
+      assert.deepEqual(byStatus.slice(-2), ['Desi', 'Untyped'], 'QuickBooks not set up, then waiting for a type, last');
       const descending = await first('status', 'desc');
-      assert.deepEqual(descending.slice(0, 2), ['Desi', 'Untyped']);
+      assert.deepEqual(descending.slice(0, 2), ['Untyped', 'Desi']);
       assert.equal(await first('name', 'asc').then((n) => n.join(',')), [...(await first('name', 'asc'))].sort((a, b) => a.localeCompare(b)).join(','));
       const codes = (await list({ sort: 'code', dir: 'desc' })).drivers.map((d) => d.driver_code);
       assert.deepEqual(codes, [...codes].sort((a, b) => b - a));
@@ -157,6 +159,64 @@ test('the list: Everee status for every driver, counts, filters, sorting, search
       assert.equal(status.Untyped, 'classification-required');
       assert.equal(r.everee.configured, false);
       assert.ok(s);
+    });
+
+    await t.test('Desi drivers get a QuickBooks status from NASA\'s own records: linked is complete; a changed contact, a removed link or another company is needs review; none is not started', async () => {
+      const QB = { QUICKBOOKS_ENABLED: 'true', QUICKBOOKS_ENVIRONMENT: 'sandbox', QUICKBOOKS_CLIENT_ID: 'id', QUICKBOOKS_CLIENT_SECRET: 'secret', QUICKBOOKS_REDIRECT_URI: 'https://example.test/callback',
+        QUICKBOOKS_TOKEN_KEY: 'a'.repeat(64), QUICKBOOKS_DRIVER_ONBOARDING_ENABLED: 'true', QUICKBOOKS_ONBOARDING_ENFORCED: 'true' };
+      const qbCity = await city('Q');
+      await db.query("DELETE FROM quickbooks_connection WHERE environment = 'sandbox'");
+      await db.query(`INSERT INTO quickbooks_connection (environment, realm_id, access_token_enc, refresh_token_enc, access_expires_at, refresh_expires_at, connected_by)
+        VALUES ('sandbox', '1234567890', 'x', 'y', now() + interval '1 hour', now() + interval '1 day', $1)`, [admin]);
+      const qbLink = (id, { realm = '1234567890', gone = false } = {}) => db.query(
+        `INSERT INTO quickbooks_vendors (driver_id, environment, realm_id, vendor_id, link_source, linked_by, unlinked_by, unlinked_at, unlink_reason)
+         VALUES ($1, 'sandbox', $2, $3, 'existing_vendor', $4, $5, $6, $7)`,
+        [id, realm, String(Math.floor(Math.random() * 1e9) + 1), admin, gone ? admin : null, gone ? new Date() : null, gone ? 'test' : null]);
+      const d = (label, over = {}) => driver(label, { cityId: qbCity.id, type: 'DESI', ...over });
+      const linked = await d('QLinked'); await qbLink(linked.id);
+      const fresh = await d('QFresh');
+      const noAgreement = await d('QNoagreement', { signed: false });
+      const changed = await d('QChanged'); await db.query('UPDATE drivers SET contact_changed_at = now() WHERE id = $1', [changed.id]);
+      const removed = await d('QRemoved'); await qbLink(removed.id, { gone: true });
+      const otherCompany = await d('QOther'); await qbLink(otherCompany.id, { realm: '9999999999' });
+      const linkedAndChanged = await d('QBoth'); await qbLink(linkedAndChanged.id); await db.query('UPDATE drivers SET contact_changed_at = now() WHERE id = $1', [linkedAndChanged.id]);
+      const localOne = await driver('QLocal', { cityId: qbCity.id });
+      const q = (over = {}, env = { ...ENV, ...QB }) => listDrivers(db, { all: true }, parseListQuery({ city: qbCity.job, sort: 'name', ...over }), { env });
+      const result = await q();
+      const byName = Object.fromEntries(result.drivers.map((x) => [x.name.split(' ')[0], x]));
+      assert.deepEqual(Object.fromEntries(Object.entries(byName).map(([k, x]) => [k, x.quickbooks_status])), {
+        QLinked: 'complete', QFresh: 'not-started', QNoagreement: 'not-started', QChanged: 'needs-review', QRemoved: 'needs-review', QOther: 'needs-review', QBoth: 'complete', QLocal: null,
+      });
+      assert.equal(byName.QLinked.everee_status, 'not-required', 'a Desi driver does not use Everee');
+      assert.equal(byName.QLocal.everee_status, 'not-started', 'a Local driver is still about Everee');
+      assert.deepEqual([byName.QFresh.quickbooks_needs, byName.QNoagreement.quickbooks_needs, byName.QLinked.quickbooks_needs], [[], ['agreement_not_signed'], []]);
+      await db.query("UPDATE drivers SET email = 'not-an-email' WHERE id = $1", [fresh.id]);
+      assert.deepEqual((await q({ search: 'QFresh' })).drivers[0].quickbooks_needs, ['no_email'], 'a driver without a valid email cannot be set up in QuickBooks');
+      assert.deepEqual(result.quickbooks, { available: true, configured: true, companyConnected: true, onboardingEnabled: true, enforced: true });
+      assert.equal(result.counts.complete, 2);
+      assert.equal(result.counts['needs-review'], 3);
+      assert.deepEqual((await q({ status: 'needs-review', type: 'DESI' })).drivers.map((x) => x.name.split(' ')[0]).sort(), ['QChanged', 'QOther', 'QRemoved']);
+      // Without QuickBooks set up, a Desi driver is never guessed at: the status is "unavailable"; with the onboarding switched off the real status still shows.
+      const off = await q({}, { ...ENV, ...QB, QUICKBOOKS_ENABLED: 'false' });
+      assert.equal(off.drivers.find((x) => x.id === linked.id).quickbooks_status, 'service-unavailable');
+      assert.equal(off.quickbooks.configured, false);
+      const paused = await q({}, { ...ENV, ...QB, QUICKBOOKS_DRIVER_ONBOARDING_ENABLED: 'false' });
+      assert.equal(paused.drivers.find((x) => x.id === linked.id).quickbooks_status, 'complete');
+      assert.deepEqual([paused.quickbooks.onboardingEnabled, paused.quickbooks.enforced], [false, false]);
+      // Enabled, but no company connected: nobody can be linked or checked, so every Desi driver says so (a linked one too) and none is sent to the form.
+      await db.query("DELETE FROM quickbooks_connection WHERE environment = 'sandbox'");
+      const none = await q();
+      assert.equal(none.quickbooks.companyConnected, false);
+      assert.equal(none.quickbooks.configured, true);
+      const statuses = Object.fromEntries(none.drivers.map((x) => [x.name.split(' ')[0], x.quickbooks_status]));
+      assert.deepEqual(statuses, { QLinked: 'company-not-connected', QFresh: 'company-not-connected', QNoagreement: 'company-not-connected', QChanged: 'company-not-connected',
+        QRemoved: 'company-not-connected', QOther: 'company-not-connected', QBoth: 'company-not-connected', QLocal: null });
+      assert.deepEqual(none.drivers.filter((x) => x.driver_type === 'DESI').flatMap((x) => x.quickbooks_needs), [], 'no form requirements are listed while nothing can be linked');
+      assert.equal(none.counts['company-not-connected'], 7);
+      assert.equal((await q({ status: 'company-not-connected' })).total, 7);
+      assert.equal(none.drivers.find((x) => x.name.startsWith('QLocal')).everee_status, 'not-started', 'a Local driver is not affected');
+      assert.equal((await q({}, { ...ENV, ...QB, QUICKBOOKS_ENABLED: 'false' })).quickbooks.companyConnected, false);
+      void localOne; void noAgreement; void changed; void removed; void otherCompany; void linkedAndChanged;
     });
 
     await t.test('reading the list changes nothing', async () => {

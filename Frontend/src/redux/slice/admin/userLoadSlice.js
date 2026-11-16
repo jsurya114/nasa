@@ -170,6 +170,7 @@ const userLoadSlice = createSlice({
         counts: null,
         total: 0,
         everee: null,
+        quickbooks: null,
         // Kept apart from `loading` so changing types never swaps the table for its loading skeleton.
         changingType: false
     },
@@ -237,6 +238,7 @@ const userLoadSlice = createSlice({
                 state.counts = action.payload.counts ?? null;
                 state.total = action.payload.total ?? action.payload.drivers.length;
                 state.everee = action.payload.everee ?? null;
+                state.quickbooks = action.payload.quickbooks ?? null;
                 state.loading = false;
                 state.success = null;
             })
