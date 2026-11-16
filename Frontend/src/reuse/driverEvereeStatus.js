@@ -6,6 +6,7 @@ export const EVEREE_STATUS = Object.freeze({
   "in-progress": { label: "In progress", tone: "bg-blue-100 text-blue-800", chip: "In progress", hint: "The driver has started Everee onboarding but has not finished it." },
   "not-started": { label: "Not started", tone: "bg-amber-100 text-amber-800", chip: "Not started", hint: "The driver has not started Everee onboarding." },
   "needs-review": { label: "Needs review", tone: "bg-red-100 text-red-800", chip: "Needs review", hint: "An admin has to check this driver's Everee setup (an older or unverified link, or a possible existing worker). It is not something the driver can fix." },
+  "company-not-connected": { label: "Company not connected", tone: "bg-amber-100 text-amber-800", chip: "Company not connected", hint: "No QuickBooks company is connected yet, so no Desi driver can be linked. Connect the company first; then the status of each driver shows here." },
   "not-required": { label: "Not needed", tone: "bg-gray-100 text-gray-700", chip: "Not needed", hint: "This driver does not use Everee." },
   "classification-required": { label: "Type not set", tone: "bg-gray-100 text-gray-700", chip: "Type not set", hint: "Set this driver as Local or Desi first. Only Local drivers onboard with Everee." },
   "service-unavailable": { label: "Everee not set up", tone: "bg-gray-100 text-gray-700", chip: "Not set up", hint: "Everee is not configured on this server, so no status can be shown." },
@@ -14,7 +15,7 @@ export const EVEREE_STATUS = Object.freeze({
 // The same statuses for a Desi driver, whose setup is the QuickBooks form in the driver app. Only the hints (and the "not set up" word) differ.
 export const QUICKBOOKS_STATUS = Object.freeze({
   ...EVEREE_STATUS,
-  complete: { ...EVEREE_STATUS.complete, hint: "The driver filled in the QuickBooks form and is linked to a QuickBooks vendor. They can be paid through QuickBooks." },
+  complete: { ...EVEREE_STATUS.complete, hint: "A QuickBooks vendor is linked to this driver. Payments are made by check, outside NASA; QuickBooks only records them." },
   "not-started": { ...EVEREE_STATUS["not-started"], hint: "The driver has not filled in the QuickBooks form yet." },
   "needs-review": { ...EVEREE_STATUS["needs-review"], hint: "An admin has to check this driver's QuickBooks link (a changed email or phone, a removed link, or a link to another QuickBooks company). It is not something the driver can fix." },
   "service-unavailable": { ...EVEREE_STATUS["service-unavailable"], label: "QuickBooks not set up", hint: "QuickBooks is not set up on this server, so no status can be shown." },
@@ -26,7 +27,7 @@ export const setupOf = (driver) => (driver.driver_type === "DESI" && driver.quic
   : { provider: driver.driver_type === "LOCAL" ? "Everee" : null, status: driver.everee_status, needs: driver.everee_needs ?? [], words: EVEREE_STATUS });
 
 // Order of the status chips above the table.
-export const STATUS_CHIPS = Object.freeze(["complete", "in-progress", "not-started", "needs-review", "not-required", "classification-required", "service-unavailable"]);
+export const STATUS_CHIPS = Object.freeze(["complete", "in-progress", "not-started", "needs-review", "company-not-connected", "not-required", "classification-required", "service-unavailable"]);
 
 // What a driver still needs before the setup can work (from NASA's own records): a Local driver for Everee, a Desi driver for QuickBooks.
 export const NEEDS = Object.freeze({

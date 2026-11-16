@@ -80,7 +80,7 @@ test('the list: Everee status for every driver, counts, filters, sorting, search
     });
 
     await t.test('counts per status describe what choosing a chip would show, with every other filter applied', async () => {
-      assert.deepEqual((await list({})).counts, { all: 12, complete: 1, 'in-progress': 3, 'not-started': 2, 'needs-review': 4, 'not-required': 0, 'classification-required': 1, 'service-unavailable': 1 }); // QuickBooks is not set up in this test, so the Desi driver is "unavailable"
+      assert.deepEqual((await list({})).counts, { all: 12, complete: 1, 'in-progress': 3, 'not-started': 2, 'needs-review': 4, 'company-not-connected': 0, 'not-required': 0, 'classification-required': 1, 'service-unavailable': 1 }); // QuickBooks is not set up in this test, so the Desi driver is "unavailable"
       const localOnly = (await list({ type: 'LOCAL' })).counts;
       assert.deepEqual([localOnly.all, localOnly['not-required'], localOnly['classification-required']], [10, 0, 0]);
       assert.equal((await list({ status: 'complete' })).counts.all, 12, 'the status filter itself does not change the chip counts');
@@ -192,7 +192,7 @@ test('the list: Everee status for every driver, counts, filters, sorting, search
       assert.deepEqual([byName.QFresh.quickbooks_needs, byName.QNoagreement.quickbooks_needs, byName.QLinked.quickbooks_needs], [[], ['agreement_not_signed'], []]);
       await db.query("UPDATE drivers SET email = 'not-an-email' WHERE id = $1", [fresh.id]);
       assert.deepEqual((await q({ search: 'QFresh' })).drivers[0].quickbooks_needs, ['no_email'], 'a driver without a valid email cannot be set up in QuickBooks');
-      assert.deepEqual(result.quickbooks, { available: true, configured: true, onboardingEnabled: true, enforced: true });
+      assert.deepEqual(result.quickbooks, { available: true, configured: true, companyConnected: true, onboardingEnabled: true, enforced: true });
       assert.equal(result.counts.complete, 2);
       assert.equal(result.counts['needs-review'], 3);
       assert.deepEqual((await q({ status: 'needs-review', type: 'DESI' })).drivers.map((x) => x.name.split(' ')[0]).sort(), ['QChanged', 'QOther', 'QRemoved']);
@@ -203,6 +203,19 @@ test('the list: Everee status for every driver, counts, filters, sorting, search
       const paused = await q({}, { ...ENV, ...QB, QUICKBOOKS_DRIVER_ONBOARDING_ENABLED: 'false' });
       assert.equal(paused.drivers.find((x) => x.id === linked.id).quickbooks_status, 'complete');
       assert.deepEqual([paused.quickbooks.onboardingEnabled, paused.quickbooks.enforced], [false, false]);
+      // Enabled, but no company connected: nobody can be linked or checked, so every Desi driver says so (a linked one too) and none is sent to the form.
+      await db.query("DELETE FROM quickbooks_connection WHERE environment = 'sandbox'");
+      const none = await q();
+      assert.equal(none.quickbooks.companyConnected, false);
+      assert.equal(none.quickbooks.configured, true);
+      const statuses = Object.fromEntries(none.drivers.map((x) => [x.name.split(' ')[0], x.quickbooks_status]));
+      assert.deepEqual(statuses, { QLinked: 'company-not-connected', QFresh: 'company-not-connected', QNoagreement: 'company-not-connected', QChanged: 'company-not-connected',
+        QRemoved: 'company-not-connected', QOther: 'company-not-connected', QBoth: 'company-not-connected', QLocal: null });
+      assert.deepEqual(none.drivers.filter((x) => x.driver_type === 'DESI').flatMap((x) => x.quickbooks_needs), [], 'no form requirements are listed while nothing can be linked');
+      assert.equal(none.counts['company-not-connected'], 7);
+      assert.equal((await q({ status: 'company-not-connected' })).total, 7);
+      assert.equal(none.drivers.find((x) => x.name.startsWith('QLocal')).everee_status, 'not-started', 'a Local driver is not affected');
+      assert.equal((await q({}, { ...ENV, ...QB, QUICKBOOKS_ENABLED: 'false' })).quickbooks.companyConnected, false);
       void localOne; void noAgreement; void changed; void removed; void otherCompany; void linkedAndChanged;
     });
 

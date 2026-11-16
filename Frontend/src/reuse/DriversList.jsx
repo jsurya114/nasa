@@ -217,6 +217,9 @@ function DriversList({ onEdit }) {
         {quickbooks && !quickbooks.configured && (
           <p className="rounded-xl bg-amber-50 p-3 text-sm text-amber-900" data-testid="quickbooks-unavailable">QuickBooks is not set up on this server, so no status can be shown for Desi drivers.</p>
         )}
+        {quickbooks?.configured && quickbooks.companyConnected === false && (
+          <p className="rounded-xl bg-amber-50 p-3 text-sm text-amber-900" data-testid="quickbooks-no-company">No QuickBooks company is connected, so Desi drivers cannot be linked yet. Connect the company first.</p>
+        )}
         {quickbooks?.configured && !quickbooks.onboardingEnabled && (
           <p className="rounded-xl bg-amber-50 p-3 text-sm text-amber-900" data-testid="quickbooks-off">QuickBooks setup is switched off, so Desi drivers cannot fill in the QuickBooks form yet. The status below shows what NASA holds today.</p>
         )}
@@ -232,7 +235,7 @@ function DriversList({ onEdit }) {
               className={`min-h-11 rounded-full border px-4 text-sm font-semibold ${!filters.status ? "border-brand bg-brand text-white" : "border-line bg-white text-ink hover:bg-brand-50"}`}>
               All ({counts.all})
             </button>
-            {STATUS_CHIPS.filter((k) => !["service-unavailable", "not-required"].includes(k) || counts[k] > 0).map((k) => (
+            {STATUS_CHIPS.filter((k) => !["service-unavailable", "not-required", "company-not-connected"].includes(k) || counts[k] > 0).map((k) => (
               <button key={k} type="button" aria-pressed={filters.status === k} onClick={() => setFilter("status", filters.status === k ? "" : k)}
                 className={`min-h-11 rounded-full border px-4 text-sm font-semibold ${filters.status === k ? "border-brand bg-brand text-white" : "border-line bg-white text-ink hover:bg-brand-50"}`}>
                 {EVEREE_STATUS[k].chip} ({counts[k] ?? 0})

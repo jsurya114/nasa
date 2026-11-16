@@ -17,19 +17,19 @@ const DRIVERS = [
   row(7, "Gus Desi", "not-required", { driver_type: "DESI", quickbooks_status: "not-started", quickbooks_needs: ["agreement_not_signed", "no_email"] }),
   row(8, "Hal Desi", "not-required", { driver_type: "DESI", quickbooks_status: "needs-review", quickbooks_needs: [] }),
 ];
-const COUNTS = { all: 8, complete: 2, "in-progress": 1, "not-started": 2, "needs-review": 2, "not-required": 0, "classification-required": 1, "service-unavailable": 0 };
+const COUNTS = { all: 8, complete: 2, "in-progress": 1, "not-started": 2, "needs-review": 2, "company-not-connected": 0, "not-required": 0, "classification-required": 1, "service-unavailable": 0 };
 const EVEREE = { available: true, configured: true, onboardingEnabled: true, enforced: true };
-const QUICKBOOKS = { available: true, configured: true, onboardingEnabled: true, enforced: true };
+const QUICKBOOKS = { available: true, configured: true, companyConnected: true, onboardingEnabled: true, enforced: true };
 const statusOf = (d) => (d.driver_type === "DESI" ? d.quickbooks_status : d.everee_status);
 
-const startServer = async ({ everee = EVEREE, quickbooks = QUICKBOOKS, drivers = DRIVERS } = {}) => {
+const startServer = async ({ everee = EVEREE, quickbooks = QUICKBOOKS, drivers = DRIVERS, counts = COUNTS } = {}) => {
   const lists = [];
   await installServer(async (config) => {
     if (config.url === "/admin/get-users") {
       const p = config.params ?? {};
       lists.push(p);
       const shown = drivers.filter((d) => !p.status || statusOf(d) === p.status);
-      return { status: 200, data: { drivers: shown, page: p.page ?? 1, totalPages: 1, total: shown.length, counts: COUNTS, everee, quickbooks } };
+      return { status: 200, data: { drivers: shown, page: p.page ?? 1, totalPages: 1, total: shown.length, counts, everee, quickbooks } };
     }
     return { status: 200, data: {} };
   });
@@ -72,7 +72,11 @@ describe("Users page: payment setup status", () => {
       expect(cell.getByText("QuickBooks"), name).toBeTruthy();
       expect(cell.getByText(label), name).toBeTruthy();
     }
-    expect(within(rowOf("Eli Desi")).getByText("Onboarded").getAttribute("title")).toMatch(/QuickBooks vendor/);
+    // Onboarded means a vendor is linked (the driver may have filled the form, or an admin linked an existing vendor); it does not say the driver is paid through NASA.
+    const linkedHint = within(rowOf("Eli Desi")).getByText("Onboarded").getAttribute("title");
+    expect(linkedHint).toMatch(/QuickBooks vendor is linked/);
+    expect(linkedHint).toMatch(/check, outside NASA/);
+    expect(linkedHint).not.toMatch(/filled in|can be paid through/);
     expect(within(rowOf("Gus Desi")).getByText("Not started").getAttribute("title")).toMatch(/QuickBooks form/);
     const gus = within(screen.getByTestId("setup-7"));
     expect(gus.getByText("Agreement not signed")).toBeTruthy();
@@ -80,6 +84,25 @@ describe("Users page: payment setup status", () => {
     expect(within(screen.getByTestId("setup-5")).queryByRole("list")).toBeNull();
     expect(within(rowOf("Flo Untyped")).queryByText("Everee")).toBeNull();
     expect(within(rowOf("Flo Untyped")).queryByText("QuickBooks")).toBeNull();
+  });
+
+  it("with no QuickBooks company connected, Desi drivers say so and are not sent to a form they cannot complete", async () => {
+    const desi = (id, name, over = {}) => row(id, name, "not-required", { driver_type: "DESI", quickbooks_status: "company-not-connected", quickbooks_needs: [], ...over });
+    await startServer({ quickbooks: { ...QUICKBOOKS, companyConnected: false }, drivers: [DRIVERS[0], desi(5, "Eli Desi"), desi(7, "Gus Desi")] });
+    await mount();
+    expect(screen.getByTestId("quickbooks-no-company").textContent).toMatch(/No QuickBooks company is connected/);
+    for (const name of ["Eli Desi", "Gus Desi"]) {
+      const cell = within(rowOf(name));
+      expect(cell.getByText("Company not connected").getAttribute("title"), name).toMatch(/Connect the company first/);
+      expect(cell.queryByText(/Add a valid email|Agreement not signed/), name).toBeNull();
+    }
+    expect(within(rowOf("Eli Desi")).queryByText("Not started")).toBeNull();
+    // The chip appears only when some driver is in this state.
+    expect(within(screen.getByTestId("status-chips")).queryByRole("button", { name: /Company not connected/ })).toBeNull();
+    cleanup();
+    await startServer({ quickbooks: { ...QUICKBOOKS, companyConnected: false }, drivers: [DRIVERS[0], desi(5, "Eli Desi"), desi(7, "Gus Desi")], counts: { ...COUNTS, "company-not-connected": 2 } });
+    await mount();
+    expect(within(screen.getByTestId("status-chips")).getByRole("button", { name: "Company not connected (2)" })).toBeTruthy();
   });
 
   it("says when QuickBooks is not set up or switched off, and when Desi drivers who are not set up are on hold", async () => {

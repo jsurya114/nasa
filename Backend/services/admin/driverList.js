@@ -8,7 +8,8 @@ import { quickbooksDriverOnboardingGate, quickbooksGate, quickbooksOnboardingEnf
 // with a live Everee link for the configured environment AND tenant whose onboarding is complete.
 // Desi drivers: QuickBooks status, derived the way the driver portal does it (services/payments/quickbooks/driverOnboarding.js getStatus): "complete" only
 // with a live QuickBooks vendor link for the connected company. A driver who changed their email or phone, whose link was removed, or whose link belongs
-// to another QuickBooks company is "needs-review" (an admin has to look); one with no link is "not-started".
+// to another QuickBooks company is "needs-review" (an admin has to look); one with no link is "not-started". While no QuickBooks company is connected
+// at all, every Desi driver is "company-not-connected": no link can be made or checked, so nobody is sent to the form.
 // NASA's own records are read; nothing is asked of Everee or QuickBooks here. A driver with no type is waiting to be classified.
 
 export const PAGE_SIZE = 10;
@@ -16,7 +17,7 @@ export const PAGE_SIZE = 10;
 export class ListInputError extends Error {}
 
 // The statuses an admin can filter by. 'in-progress' covers a started setup, one being created and one being checked by Everee.
-export const STATUSES = Object.freeze(['complete', 'in-progress', 'not-started', 'needs-review', 'not-required', 'classification-required', 'service-unavailable']);
+export const STATUSES = Object.freeze(['complete', 'in-progress', 'not-started', 'needs-review', 'company-not-connected', 'not-required', 'classification-required', 'service-unavailable']);
 export const ISSUES = Object.freeze(['no_phone', 'agreement_not_signed', 'one_word_name']);
 export const SORTS = Object.freeze(['name', 'code', 'city', 'type', 'status', 'enabled']);
 const TYPES = ['LOCAL', 'DESI', 'none'];
@@ -47,7 +48,7 @@ export const parseListQuery = (query = {}) => {
 
 // Pending work first when sorted ascending, finished and not-applicable last.
 const STATUS_RANK = `CASE s.grp WHEN 'needs-review' THEN 1 WHEN 'not-started' THEN 2 WHEN 'in-progress' THEN 3 WHEN 'complete' THEN 4
-  WHEN 'service-unavailable' THEN 5 WHEN 'classification-required' THEN 6 ELSE 7 END`;
+  WHEN 'company-not-connected' THEN 5 WHEN 'service-unavailable' THEN 6 WHEN 'classification-required' THEN 7 ELSE 8 END`;
 const SORT_SQL = {
   name: 'lower(s.name)',
   code: 's.driver_code',
@@ -129,6 +130,7 @@ export async function listDrivers(db, scope, filters, { env = process.env } = {}
         WHEN d.driver_type IS NULL THEN 'classification-required'
         WHEN d.driver_type = 'DESI' THEN (CASE
           WHEN NOT ${qbEnabled}::boolean THEN 'service-unavailable'
+          WHEN qc.realm_id IS NULL THEN 'company-not-connected'
           WHEN qv.id IS NOT NULL AND qc.realm_id IS NOT NULL AND qv.realm_id = qc.realm_id THEN 'complete'
           WHEN qv.id IS NOT NULL OR ${qbUnlinked} OR d.contact_changed_at IS NOT NULL THEN 'needs-review'
           ELSE 'not-started' END)
@@ -148,6 +150,9 @@ export async function listDrivers(db, scope, filters, { env = process.env } = {}
     ${where.length ? `WHERE ${where.join(' AND ')}` : ''}`;
 
   // Counts per status for the chips: every filter except the status itself, so the numbers say what choosing a chip would show.
+  const companyConnected = qbAvailable && qbGate.enabled
+    ? (await db.query('SELECT 1 FROM quickbooks_connection WHERE environment = $1 AND realm_id IS NOT NULL LIMIT 1', [qbConfig.environment])).rowCount > 0
+    : false;
   const { rows: countRows } = await db.query(`WITH s AS (${base}) SELECT grp, count(*)::int AS n FROM s GROUP BY grp`, params);
   const counts = Object.fromEntries(STATUSES.map((k) => [k, 0]));
   for (const r of countRows) counts[r.grp] = r.n;
@@ -170,7 +175,8 @@ export async function listDrivers(db, scope, filters, { env = process.env } = {}
       if (!agreementSigned) needs.push('agreement_not_signed');
       if (!splitName(driver.name)) needs.push('one_word_name');
     }
-    if (driver.driver_type === 'DESI' && grp !== 'complete') {
+    // No company connected: the form cannot be completed by anyone yet, so no form requirements are listed.
+    if (driver.driver_type === 'DESI' && grp !== 'complete' && grp !== 'company-not-connected') {
       if (!agreementSigned) quickbooksNeeds.push('agreement_not_signed');
       if (!normalizeEmail(driver.email)) quickbooksNeeds.push('no_email');
     }
@@ -193,6 +199,7 @@ export async function listDrivers(db, scope, filters, { env = process.env } = {}
     quickbooks: {
       available: qbAvailable,
       configured: qbGate.enabled,
+      companyConnected,
       onboardingEnabled: quickbooksDriverOnboardingGate(qbConfig, env).enabled,
       enforced: quickbooksOnboardingEnforced(env),
     },
