@@ -13,6 +13,7 @@ import { DailyExcelUpload, getUpdatedTempDashboardData } from '../controllers/ad
 import { getAccessCodes, updateAccessCode, } from '../controllers/admin/accessCodeControllers.js';
 import { changeRoleAdmin, changeStatusAdmin, createAdmins, getAdmins, updateAdmin, getAdminCities } from '../controllers/admin/addAdminController.js';
 import { getPaymentDashboardData, getAllPaymentDashboardData, updatePaymentData, updateWeeklyTempDataToDashboard, payDriver, getSummaryData } from '../controllers/admin/dashboardController.js';
+import { getClaims } from '../controllers/admin/claimsController.js';
 import adminJourneyController from '../controllers/admin/adminJourneyController.js';
 import adminAuth from '../middlewares/adminAuth.js';
 import superAdminAuth from '../middlewares/superAdminAuth.js';
@@ -51,6 +52,9 @@ router.patch('/toggle-user/:id', changeStatusUser);
 router.put('/update-user/:id', updateUser);
 // Local or Desi for one or many drivers at once, all in one transaction (any admin, own cities only).
 router.patch('/drivers/type', changeDriverTypes);
+
+// The carrier's claims for the admin's own cities (all for a super admin): matched to a driver, or not yet. Read only.
+router.get('/claims', getClaims);
 
 router.get('/get-cities', jobController.getCities);
 router.get('/get-admin-cities', getAdminCities);

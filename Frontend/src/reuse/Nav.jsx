@@ -13,6 +13,7 @@ import {
   Banknote,
   BarChart3,
   ReceiptText,
+  FileWarning,
 } from "lucide-react";
 import GlassTabBar from "./GlassTabBar.jsx";
 
@@ -27,6 +28,7 @@ function Nav() {
     { to: "/admin/manage-access-codes", Icon: KeyRound, label: "Access Codes" },
     { to: "/admin/driver-availability", Icon: CalendarDays, label: "Availability" },
     { to: "/admin/agreements", Icon: FileText, label: "Agreements" },
+    { to: "/admin/claims", Icon: FileWarning, label: "Claims" },
     // Payroll, pay runs, Insights and Invoices are for the super admin only.
     ...(isSuperAdmin ? [
       { to: "/admin/payroll", Icon: Wallet, label: "Payroll" },
