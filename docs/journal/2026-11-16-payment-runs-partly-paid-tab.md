@@ -38,4 +38,4 @@ whose paid drivers are none stays in Awaiting payment, as before.
 
 **Risks and follow-ups.**
 - A run that used to appear in Payment history because one driver was paid now appears under Partly paid until every driver is paid.
-- The older `partly` cards of a run whose last unpaid drivers are only "processing" stay in Partly paid until Everee confirms them.
+- A run whose remaining drivers are only "processing" with Everee stays in Partly paid until Everee confirms them.
