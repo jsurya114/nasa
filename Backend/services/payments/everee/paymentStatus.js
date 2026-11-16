@@ -7,7 +7,7 @@ import { readEvereeConfig } from './evereeConfig.js';
 import { createEvereeClient, EvereeError } from './evereeClient.js';
 import { DEFAULT_TIME_ZONE } from './payableRules.js';
 import { clip, defaultSleep, inTransaction, recordPayableStatus, withRateLimitRetry } from './batchSubmit.js';
-import { countsAsLanded, isPaymentId, ownPayableIsPaidInPayment, readPayable, readPayoutState } from './paymentState.js';
+import { countsAsLanded, isPaymentId, ownPayableIsPaidInPayment, readCardPayouts, readPayable, readPayoutState } from './paymentState.js';
 
 // Reading payments back from Everee (issue #31, part 5). The only place where an Everee item becomes "paid", and it happens only when
 // Everee's Payment Data API says EVERY payout of the payment is PAID (money deposited), or the payment itself is PAID with no payout FAILED (see
@@ -191,7 +191,25 @@ export const reconcileItem = async (db, itemId, deps = {}, client) => {
     return 'not_processed';
   }
 
-  const payout = readPayoutState(payment);
+  let payout = readPayoutState(payment);
+  if (payout.needsPayoutCheck) {
+    // PAID with no payouts (a card payment): the payment's own total proves nothing, so Everee's payouts of this payment are read and verified.
+    let listing;
+    try {
+      ({ data: listing } = await withRateLimitRetry(() => client.listNetPayouts(paymentId), deps));
+    } catch (error) {
+      const why = error instanceof EvereeError ? (error.status ?? 'no answer') : 'error';
+      logger.warn('Everee net payouts could not be read', { itemId: item.id, reason: why });
+      await note(db, item.id, `Everee's payouts for this payment could not be read (${why}); it is looked at again later. Nothing was changed.`);
+      return 'unreadable';
+    }
+    const verified = readCardPayouts(listing, { paymentId, workerId: payout.workerId });
+    if (verified.state === 'unknown') {
+      await note(db, item.id, `Everee shows this payment as paid, but its card payout could not be verified (${verified.why}), so it is not marked paid. Check it in Everee.`);
+      return 'unknown';
+    }
+    payout = { ...payout, ...verified };
+  }
   if (payout.state === 'unknown') {
     await note(db, item.id, "Everee's answer for this payment was not understood, so it is not marked paid. Check it in Everee.");
     return 'unknown';

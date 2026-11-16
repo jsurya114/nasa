@@ -23,7 +23,7 @@ const PAY_DATE = '2026-11-09';
 
 // A fake Everee: payables and payments are whatever the test puts in `state`.
 const makeEveree = () => {
-  const state = { payables: {}, payments: {}, readFails: false, historyReads: 0, dataReads: 0, dataFails: false, payableReads: 0, missing: new Set() };
+  const state = { payables: {}, payments: {}, readFails: false, historyReads: 0, dataReads: 0, dataFails: false, netPayouts: {}, netPayoutReads: 0, netPayoutsFail: false, payableReads: 0, missing: new Set() };
   const client = {
     createPayable: async (body) => ({ status: 201, data: { externalId: body.externalId }, requestId: 'req-ok' }),
     requestPayout: async (ids) => ({ status: 201, data: { payableCount: ids.length, payableExternalIds: ids }, requestId: 'req-pay' }),
@@ -39,6 +39,13 @@ const makeEveree = () => {
       if (!(paymentId in state.payments)) throw new EvereeError('Everee did not find what was asked for', { status: 404 });
       const p = state.payments[paymentId];
       return { status: 200, data: { paymentId, payDate: p.payDate ?? PAY_DATE, ...(p.noPayDate && { payDate: undefined }), deposits: [{ amount: { amount: '1.00', currency: 'USD' } }] }, requestId: 'req-hist' };
+    },
+    // Everee's net payouts list for one payment (the test puts the payouts of a payment in `state.netPayouts[paymentId]`).
+    listNetPayouts: async (paymentId) => {
+      state.netPayoutReads += 1;
+      if (state.netPayoutsFail) throw new EvereeError('Everee answered 500', { status: 500 });
+      const items = state.netPayouts[paymentId] ?? [];
+      return { status: 200, data: { items, pageSize: items.length, hasNextPage: false, hasPreviousPage: false }, requestId: 'req-net' };
     },
     // The Payment Data API: the payments of one pay date, with the payouts (the test puts a payment's own answer in `state.payments`).
     getPaymentData: async (payDate, after) => {
@@ -549,45 +556,49 @@ test('everee payment status: only a payment that landed marks a statement paid',
       fakeN.state.payments['12345678'].status = 'PAID'; // sandbox: the payment's own PAID is the transfer complete
       assert.equal(await check(fakeN, iN.id), 'paid');
     });
-    await t.test('the real production answer for a paid payment has an EMPTY payout list: it is paid when the amount and worker match; another amount, another worker or a payment not PAID change nothing', async () => {
-      const scE = await scenario('EP', [[dA, '81.93'], [dB, '50.00'], [dC, '25.00']]);
+    await t.test('a payment PAID with an EMPTY payout list (a card payment) is paid only when Everee\'s net payouts verify it; anything missing, pending, returned or different changes nothing', async () => {
+      const scE = await scenario('EP', [[dA, '274.46'], [dB, '50.00'], [dC, '25.00']]);
       const fakeE = makeEveree();
       await sent(scE, fakeE);
       const [iEA, iEB, iEC] = [await item(scE, dA), await item(scE, dB), await item(scE, dC)];
-      const empty = (driver, total, extra = {}) => ({ workerId: workers[driver], status: 'PAID', totalNetPay: { amount: total, currency: 'USD' }, netPayouts: [], ...extra });
-      for (const [it, id] of [[iEA, 'pay-EA'], [iEB, 'pay-EB'], [iEC, 'pay-EC']]) fakeE.state.payables[it.external_id] = { externalId: it.external_id, paymentStatus: 'PENDING_APPROVAL', paymentId: id };
-      fakeE.state.payments['pay-EB'] = empty(dB, '49.00'); // another amount than NASA sent
-      assert.equal(await check(fakeE, iEB.id), 'amount_differs');
-      fakeE.state.payments['pay-EC'] = empty(dC, '25.00', { workerId: workers[dA] }); // another worker's payment
-      assert.equal(await check(fakeE, iEC.id), 'unknown');
-      fakeE.state.payments['pay-EA'] = empty(dA, '81.93', { status: 'PENDING' }); // the payment itself is not PAID
-      assert.equal(await check(fakeE, iEA.id), 'unknown');
-      for (const [sc, d] of [[scE, dB], [scE, dC], [scE, dA]]) assert.equal((await stmt(sc, d)).payout_status, 'submitted');
-      fakeE.state.payments['pay-EA'] = empty(dA, '81.93');
+      // What Everee really showed for a card payment: PAID, no payouts, net pay 0.00, the wages stated. None of it is taken as the amount.
+      const card = (driver, extra = {}) => ({ workerId: workers[driver], status: 'PAID', totalNetPay: { amount: '0.00', currency: 'USD' }, totalTaxableWages: { amount: '274.46', currency: 'USD' },
+        employeeDeductions: [], employeeTaxWithholdings: [], netPayouts: [], ...extra });
+      const payout = (id, driver, amount, extra = {}) => ({ id: `po-${id}`, paymentId: id, workerId: workers[driver], type: 'PAY_CARD', status: 'PAID', netAmount: { amount, currency: 'USD' }, supersededByIds: [], ...extra });
+      for (const [it, id, d] of [[iEA, 'pay-EA', dA], [iEB, 'pay-EB', dB], [iEC, 'pay-EC', dC]]) {
+        fakeE.state.payables[it.external_id] = { externalId: it.external_id, paymentStatus: 'PENDING_APPROVAL', paymentId: id };
+        fakeE.state.payments[id] = card(d);
+      }
+      const unpaid = async (it, outcome, noteText) => {
+        assert.equal(await check(fakeE, it.id), outcome);
+        const row = await one('SELECT i.status, i.check_note, s.payout_status FROM everee_payment_items i JOIN pay_statements s ON s.id = i.pay_statement_id WHERE i.id = $1', [it.id]);
+        assert.deepEqual([row.status, row.payout_status], ['submitted', 'submitted']);
+        if (noteText) assert.match(row.check_note, noteText);
+      };
+      await unpaid(iEA, 'unknown', /could not be verified/); // no payout listed at all: the wages and the 0.00 prove nothing
+      fakeE.state.netPayoutsFail = true;
+      await unpaid(iEA, 'unreadable', /could not be read/);
+      fakeE.state.netPayoutsFail = false;
+      fakeE.state.netPayouts['pay-EA'] = [payout('pay-EA', dA, '274.46', { type: 'DIRECT_DEPOSIT' })];
+      await unpaid(iEA, 'unknown', /not a pay card payout/);
+      fakeE.state.netPayouts['pay-EA'] = [payout('pay-EA', dA, '274.46', { status: 'PENDING' })];
+      await unpaid(iEA, 'pending');
+      fakeE.state.netPayouts['pay-EA'] = [payout('pay-EA', dB, '274.46')]; // another worker's payout
+      await unpaid(iEA, 'unknown', /different workers/);
+      fakeE.state.netPayouts['pay-EB'] = [payout('pay-EB', dB, '49.00')]; // another amount than NASA sent
+      await unpaid(iEB, 'amount_differs');
+      fakeE.state.payments['pay-EC'] = card(dC, { workerId: workers[dA] }); // the payment names another worker
+      fakeE.state.netPayouts['pay-EC'] = [payout('pay-EC', dC, '25.00')];
+      await unpaid(iEC, 'unknown');
+      fakeE.state.payments['pay-EC'] = card(dC, { status: 'PENDING' }); // the payment itself is not PAID
+      await unpaid(iEC, 'unknown');
+      fakeE.state.netPayouts['pay-EA'] = [payout('pay-EA', dA, '274.46', { status: 'RETURNED' })];
+      assert.equal(await check(fakeE, iEA.id), 'returned'); // flagged for a person, never paid
+      assert.equal((await stmt(scE, dA)).payout_status, 'submitted');
+      fakeE.state.netPayouts['pay-EA'] = [payout('pay-EA', dA, '274.46')];
       assert.equal(await check(fakeE, iEA.id), 'paid');
-      assert.deepEqual([(await item(scE, dA)).status, (await stmt(scE, dA)).payout_status], ['paid', 'paid']);
+      assert.deepEqual([(await item(scE, dA)).status, (await stmt(scE, dA)).payout_status, (await stmt(scE, dA)).net], ['paid', 'paid', '274.46']);
       assert.equal(await check(fakeE, iEA.id), 'unchanged');
-    });
-
-    await t.test('a card payment (PAID, no payouts, net pay 0.00) is paid at its wages when they match; other wages, a deduction or another worker change nothing', async () => {
-      const scK = await scenario('CK', [[dA, '274.46'], [dB, '50.00'], [dC, '25.00']]);
-      const fakeK = makeEveree();
-      await sent(scK, fakeK);
-      const [iKA, iKB, iKC] = [await item(scK, dA), await item(scK, dB), await item(scK, dC)];
-      const card = (driver, wages, extra = {}) => ({ workerId: workers[driver], status: 'PAID', totalNetPay: { amount: '0.00', currency: 'USD' }, totalTaxableWages: { amount: wages, currency: 'USD' },
-        totalNonTaxablePay: { amount: '0.00', currency: 'USD' }, employeeDeductions: [], employeeTaxWithholdings: [], netPayouts: [], ...extra });
-      for (const [it, id] of [[iKA, 'pay-KA'], [iKB, 'pay-KB'], [iKC, 'pay-KC']]) fakeK.state.payables[it.external_id] = { externalId: it.external_id, paymentStatus: 'PENDING_APPROVAL', paymentId: id };
-      fakeK.state.payments['pay-KB'] = card(dB, '49.00'); // other wages than NASA sent
-      assert.equal(await check(fakeK, iKB.id), 'amount_differs');
-      fakeK.state.payments['pay-KC'] = card(dC, '25.00', { employeeDeductions: [{ amount: { amount: '5.00' } }] }); // a deduction: net pay 0.00 stays, which is not what was sent
-      assert.equal(await check(fakeK, iKC.id), 'amount_differs');
-      fakeK.state.payments['pay-KA'] = card(dA, '274.46', { workerId: workers[dB] }); // another worker's payment
-      assert.equal(await check(fakeK, iKA.id), 'unknown');
-      for (const d of [dA, dB, dC]) assert.equal((await stmt(scK, d)).payout_status, 'submitted');
-      fakeK.state.payments['pay-KA'] = card(dA, '274.46');
-      assert.equal(await check(fakeK, iKA.id), 'paid');
-      assert.deepEqual([(await item(scK, dA)).status, (await stmt(scK, dA)).payout_status, (await stmt(scK, dA)).net], ['paid', 'paid', '274.46']);
-      assert.equal(await check(fakeK, iKA.id), 'unchanged');
     });
 
     await t.test('sandbox: a worker\'s payment that also holds another send of the same week is paid when our own payable is PAID inside it for our amount', async () => {
