@@ -33,7 +33,9 @@ const UNCERTAIN_AFTER_MINUTES = 5;
 // Placeholders: $2 is the list of waiting statuses.
 const DUE_SQL = `(i.status = ANY($2::text[]) OR (i.status = 'paid' AND i.deposit_returned))
   AND (i.everee_payment_id IS NOT NULL OR i.payout_requested_at IS NOT NULL
-       OR (COALESCE(i.last_attempt_at, i.created_at) < now() - make_interval(mins => ${UNCERTAIN_AFTER_MINUTES}) AND COALESCE(i.send_lease_until, 'epoch') < now()))`;
+       OR (COALESCE(i.last_attempt_at, i.created_at) < now() - make_interval(mins => ${UNCERTAIN_AFTER_MINUTES}) AND COALESCE(i.send_lease_until, 'epoch') < now()))
+  -- an admin marked the statement paid by force: Everee is not asked about it again
+  AND NOT (i.status = ANY($2::text[]) AND EXISTS (SELECT 1 FROM pay_statements ps WHERE ps.id = i.pay_statement_id AND ps.payout_status = 'paid'))`;
 
 const note = (tx, itemId, text, extra = '') => tx.query(
   `UPDATE everee_payment_items SET check_note = $2, last_checked_at = now(), updated_at = now() ${extra} WHERE id = $1`, [itemId, text ? clip(text).slice(0, 300) : null]);

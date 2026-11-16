@@ -94,6 +94,8 @@ const itemView = (row) => ({
   everee: { payableStatus: row.everee_payable_status, payoutRequested: Boolean(row.payout_requested_at), depositReturned: row.deposit_returned },
   attempts: row.attempts, error: row.error_message, lastAttemptAt: row.last_attempt_at,
   paidAt: row.paid_at, payDate: row.everee_pay_date, lastCheckedAt: row.last_checked_at, note: row.check_note,
+  // An admin marked the statement paid by force while Everee had not confirmed it: the item is closed, never waiting, failed or retried.
+  ...(row.status !== 'paid' && row.statement_paid === true && { markedPaidByAdmin: true }),
 });
 
 export const getBatchView = async (db, admin, batchId) => {
@@ -104,14 +106,15 @@ export const getBatchView = async (db, admin, batchId) => {
   await assertCityAllowed(db, admin, batch.city_id);
   const { rows } = await db.query(
     `SELECT i.id, i.pay_statement_id, i.driver_id, d.name AS driver_name, i.amount::text AS amount, i.status, i.everee_payable_status, i.payout_requested_at,
-            i.deposit_returned, i.attempts, i.error_message, i.last_attempt_at, i.paid_at, to_char(i.everee_pay_date, 'YYYY-MM-DD') AS everee_pay_date, i.last_checked_at, i.check_note
-       FROM everee_payment_items i JOIN drivers d ON d.id = i.driver_id WHERE i.batch_id = $1 ORDER BY d.name, i.id`, [batchId]);
+            i.deposit_returned, i.attempts, i.error_message, i.last_attempt_at, i.paid_at, to_char(i.everee_pay_date, 'YYYY-MM-DD') AS everee_pay_date, i.last_checked_at, i.check_note,
+            (s.payout_status = 'paid') AS statement_paid
+       FROM everee_payment_items i JOIN drivers d ON d.id = i.driver_id JOIN pay_statements s ON s.id = i.pay_statement_id WHERE i.batch_id = $1 ORDER BY d.name, i.id`, [batchId]);
   const { rows: payouts } = await db.query(
     `SELECT id, started_at, finished_at, asked_count, taken_count, outcome, http_status, everee_request_id, error_message
        FROM everee_payout_requests WHERE batch_id = $1 ORDER BY id DESC LIMIT 5`, [batchId]);
   const items = rows.map(itemView);
-  const count = (status) => items.filter((i) => i.status === status).length;
-  const waitingForPayout = rows.filter((r) => r.status === 'submitted' && !r.payout_requested_at).length;
+  const count = (status) => items.filter((i) => i.status === status && i.markedPaidByAdmin !== true).length;
+  const waitingForPayout = rows.filter((r) => r.status === 'submitted' && !r.payout_requested_at && !r.statement_paid).length;
   return {
     batch: { id: batch.id, runId: batch.pay_run_id, cityId: batch.city_id, environment: batch.environment, drivers: batch.driver_count, total: batch.total, createdAt: batch.created_at, requestId: batch.request_id },
     counts: { submitted: count('submitted'), paid: count('paid'), failed: count('failed'), unconfirmed: count('unconfirmed') },

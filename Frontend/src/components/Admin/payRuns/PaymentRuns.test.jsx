@@ -4,6 +4,7 @@ import {
   fireEvent,
   render,
   screen,
+  waitFor,
   within,
 } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
@@ -40,7 +41,7 @@ const setup = async ({
       },
     ];
   }
-  const state = { posts: [], receipts: new Map(), lostReply };
+  const state = { posts: [], forced: [], receipts: new Map(), lostReply };
   const run = {
     id: 17,
     city_id: 3,
@@ -99,6 +100,18 @@ const setup = async ({
           nextBeforeId: null,
         },
       };
+    }
+    if (config.url.endsWith("/force-paid")) {
+      const body = JSON.parse(config.data);
+      state.forced.push(body);
+      drivers
+        .filter((d) => body.statementIds.includes(d.statementId))
+        .forEach((d) => {
+          d.payoutStatus = "paid";
+          d.eligible = false;
+          d.payment = { ...receipt, method: "other", reference: `Forced: ${body.reason}`, paid_on: body.paidOn };
+        });
+      return { status: 200, data: { receipt: { ...receipt, method: "other" }, replay: false } };
     }
     if (config.url.endsWith("/record")) {
       const body = JSON.parse(config.data);
@@ -351,4 +364,32 @@ it("keeps payment details when going back but requires confirmation again if the
   );
   fireEvent.click(screen.getByRole("button", { name: "Pay" }));
   expect(s.posts).toHaveLength(0);
+});
+
+it("a driver the system cannot pay (processing, unconfirmed, needs review) can be marked paid by force, from Pay to drivers only; the history never offers it", async () => {
+  const s = await setup({ blocked: true });
+  fireEvent.click(await screen.findByRole("button", { name: "Pay to drivers" }));
+  const dialog = await screen.findByRole("dialog");
+  // Every driver that is not paid has the option, including the one whose payment is processing (no checkbox, no way to pay it the normal way).
+  expect(await within(dialog).findAllByRole("button", { name: "Force mark as paid" })).toHaveLength(2);
+  expect(within(dialog).queryByRole("checkbox", { name: /Dee Test/ })).toBeNull();
+  fireEvent.click(within(dialog).getAllByRole("button", { name: "Force mark as paid" })[0]); // Dee Test, the processing one
+  fireEvent.change(within(dialog).getByLabelText("Reason"), { target: { value: "Paid in cash outside the system" } });
+  fireEvent.click(within(dialog).getByRole("checkbox", { name: /I confirm that Dee Test is paid \$40\.00/ }));
+  fireEvent.click(within(dialog).getByRole("button", { name: "Mark as paid" }));
+  await waitFor(() => expect(s.forced).toHaveLength(1));
+  expect(s.forced[0]).toMatchObject({ statementIds: [1], reason: "Paid in cash outside the system", confirmed: true });
+  expect(s.posts).toHaveLength(0); // nothing went through the normal recording
+  expect(s.recorded).toHaveBeenCalled();
+  // The review is read again: Dee is paid now and the option is left only on the other driver.
+  await waitFor(() => expect(within(screen.getByRole("dialog")).getAllByRole("button", { name: "Force mark as paid" })).toHaveLength(1));
+});
+
+it("the payment history, which only shows what was recorded, never offers to force a payment", async () => {
+  await setup({ history: true });
+  fireEvent.click(screen.getByRole("button", { name: "Payment history" }));
+  fireEvent.click(await screen.findByRole("button", { name: "View payment records" }));
+  const dialog = await screen.findByRole("dialog");
+  await screen.findByRole("heading", { name: "Payment records" });
+  expect(within(dialog).queryByRole("button", { name: "Force mark as paid" })).toBeNull();
 });
