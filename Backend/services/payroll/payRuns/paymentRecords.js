@@ -180,7 +180,7 @@ export const settlePaidStatements = async (db, { statementIds, earnings, paidOn,
 // `viaQuickbooks`: the QuickBooks batch (a Desi driver's cash payment, recorded in QuickBooks for the 1099) is the one caller allowed to record Desi cash while QuickBooks payments are on.
 // `force`: a super admin's forced mark (see parseForcePayment). It skips what only stops the SYSTEM from paying (a payment in progress, a failed attempt, a driver
 // type or onboarding hold, the QuickBooks rule, earnings that changed) but never what makes the statement unpayable: the run must be approved, a statement already paid
-// is left alone, and a statement below zero is refused. Source earnings that changed are not touched (as when Everee completes a payment).
+// is left alone, a statement below zero is refused, and a Desi driver is refused while QuickBooks payments are on (the QuickBooks flow keeps their 1099 record). Source earnings that changed are not touched (as when Everee completes a payment).
 export const recordRunPayment = async (db, admin, runId, request, { viaQuickbooks = false, force = false } = {}) => {
   if (force) await assertSuperAdminNow(db, admin);
   const found = (
@@ -242,6 +242,10 @@ export const recordRunPayment = async (db, admin, runId, request, { viaQuickbook
   if (!targets.length)
     return { receipt: null, replay: false, alreadyPaid: true, driverNames: [] };
   if (force) {
+    // With QuickBooks payments on, a Desi driver's payment is their 1099 record and must go through QuickBooks. A forced mark would pay the statement
+    // with no accounting entry to follow up, so it is refused here until the QuickBooks flow itself can be forced.
+    if (quickbooksPaymentsOn() && targets.some((s) => s.driver_type === "DESI"))
+      throw new PayrollError(409, "A Desi driver's payment is recorded with QuickBooks, so it cannot be marked paid by force here. Use Pay to drivers on the Desi tab.");
     if (targets.some((s) => toCents(s.net) < 0))
       throw new PayrollError(409, "A selected statement is below zero, so it cannot be marked paid.");
   } else if (

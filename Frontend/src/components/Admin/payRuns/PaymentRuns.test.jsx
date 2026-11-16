@@ -25,11 +25,14 @@ const setup = async ({
   blocked = false,
   history = false,
   lostReply = false,
+  desi = false,
+  quickbooks = false,
 } = {}) => {
   const drivers = [
     driver(1, "Dee Test", "40.00"),
     driver(2, "Eli Test", "190.00"),
   ];
+  if (desi) drivers[1].driverType = "DESI";
   if (blocked) {
     drivers[0].eligible = false;
     drivers[0].payoutStatus = "submitted";
@@ -155,6 +158,9 @@ const setup = async ({
       },
     };
   });
+  // The page asks the server whether QuickBooks payments are on through this hook; the test decides the answer.
+  vi.resetModules();
+  vi.doMock("./quickbooks/useQuickbooksPaymentsAvailable.js", () => ({ default: () => quickbooks }));
   const { default: PaymentRuns } = await import("./PaymentRuns.jsx");
   const recorded = vi.fn();
   render(
@@ -193,6 +199,7 @@ beforeEach(async () => {
 });
 afterEach(() => {
   cleanup();
+  vi.doUnmock("./quickbooks/useQuickbooksPaymentsAvailable.js");
   vi.unstubAllGlobals();
 });
 
@@ -392,4 +399,22 @@ it("the payment history, which only shows what was recorded, never offers to for
   const dialog = await screen.findByRole("dialog");
   await screen.findByRole("heading", { name: "Payment records" });
   expect(within(dialog).queryByRole("button", { name: "Force mark as paid" })).toBeNull();
+});
+
+it("with QuickBooks payments on, a Desi driver is not offered the forced mark (the server refuses it), while a Local driver is; with them off a Desi driver is offered it", async () => {
+  await setup({ blocked: true, desi: true, quickbooks: true });
+  fireEvent.click(await screen.findByRole("button", { name: "Pay to drivers" }));
+  const dialog = await screen.findByRole("dialog");
+  await within(dialog).findByText("Eli Test"); // the Desi tab opens first: Eli is the Desi driver
+  expect(within(dialog).queryByRole("button", { name: "Force mark as paid" })).toBeNull();
+  fireEvent.click(within(dialog).getByRole("tab", { name: /Local drivers/ }));
+  expect(await within(dialog).findAllByRole("button", { name: "Force mark as paid" })).toHaveLength(1);
+});
+
+it("with QuickBooks payments off, a Desi driver is offered the forced mark", async () => {
+  await setup({ blocked: true, desi: true, quickbooks: false });
+  fireEvent.click(await screen.findByRole("button", { name: "Pay to drivers" }));
+  const dialog = await screen.findByRole("dialog");
+  await within(dialog).findByText("Eli Test");
+  expect(within(dialog).getAllByRole("button", { name: "Force mark as paid" })).toHaveLength(1);
 });

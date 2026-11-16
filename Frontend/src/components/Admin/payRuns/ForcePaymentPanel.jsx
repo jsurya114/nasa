@@ -61,7 +61,7 @@ export default function ForcePaymentPanel({ runId, driver, onDone }) {
     <div role="group" aria-label={`Force mark ${driver.driverName} as paid`} onKeyDown={keepForm} className="mt-2 space-y-3 rounded-xl border border-red-200 bg-red-50 p-3 text-sm">
       <p className="font-semibold text-red-800">Force mark {driver.driverName} as paid</p>
       <p className="text-red-900">
-        Use this only when {driver.driverName} has been paid, or will be paid, outside NASA. {amount} is recorded as paid and nothing is sent to Everee or QuickBooks.
+        Use this only when {driver.driverName} has already been paid {amount} outside NASA. The payment is recorded as paid now, a receipt is kept, the driver is notified, and nothing is sent to Everee or QuickBooks.
         If an Everee payment is still processing, the driver could be paid twice.
       </p>
       <Field label="Date paid" error={errors.paidOn}>

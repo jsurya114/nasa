@@ -608,7 +608,7 @@ export default function RecordPaymentDialog({
                           {d.providerPayment && (
                             <ProviderPaymentLine payment={d.providerPayment} />
                           )}
-                          {!readOnly && !paid(d) && (
+                          {!readOnly && !paid(d) && !(quickbooksAvailable && typeOf(d) === "DESI") && (
                             <ForcePaymentPanel runId={runId} driver={d} onDone={afterForce} />
                           )}
                         </li>

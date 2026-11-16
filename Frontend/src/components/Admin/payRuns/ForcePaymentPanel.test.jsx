@@ -30,7 +30,9 @@ it("opens on request, says what it does, and cannot be sent without a reason and
   expect(screen.queryByRole("group", { name: /Force mark Dee Test as paid/ })).toBeNull();
   open();
   const panel = screen.getByRole("group", { name: "Force mark Dee Test as paid" });
-  expect(panel.textContent).toMatch(/\$190\.00 is recorded as paid and nothing is sent to Everee or QuickBooks/);
+  expect(panel.textContent).toMatch(/has already been paid \$190\.00 outside NASA/);
+  expect(panel.textContent).toMatch(/nothing is sent to Everee or QuickBooks/);
+  expect(panel.textContent).not.toMatch(/will be paid/);
   expect(panel.textContent).toMatch(/could be paid twice/);
   expect(submit().disabled).toBe(true);
   fireEvent.change(screen.getByLabelText("Reason"), { target: { value: "too short" } });

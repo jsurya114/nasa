@@ -55,9 +55,9 @@ test('force mark as paid: a super admin only, for any payment status, with a rea
     // No driver has a type, so a normal payment is refused for every one of them (the type rule), which a forced mark does not depend on.
     const driver = async (n) => (await one("INSERT INTO drivers (password, name, email, driver_code, city_id, enabled) VALUES ('x', $1, $2, $3, $4, true) RETURNING id",
       [`Force Driver ${n}`, `f${n}${tag}@example.com`, 8810000 + n, city])).id;
-    const [d1, d2, d3, d4] = [await driver(1), await driver(2), await driver(3), await driver(4)];
+    const [d1, d2, d3, d4, d5, d6, d7] = [await driver(1), await driver(2), await driver(3), await driver(4), await driver(5), await driver(6), await driver(7)];
     const rowOf = {};
-    for (const [d, gross] of [[d1, '100.00'], [d2, '50.00'], [d3, '25.00'], [d4, '10.00']]) {
+    for (const [d, gross] of [[d1, '100.00'], [d2, '50.00'], [d3, '25.00'], [d4, '10.00'], [d5, '5.00'], [d6, '6.00'], [d7, '7.00']]) {
       const dd = (await one('INSERT INTO dashboard_data (driver_id, route_id, start_seq, end_seq, journey_date, packages) VALUES ($1,$2,0,0,$3,10) RETURNING id', [d, route, '2026-11-02'])).id;
       rowOf[d] = (await one('UPDATE payment_dashboard SET closed = true, paid = false, driver_payment = $2, insurance_deduction = 0 WHERE dashboard_data_id = $1 RETURNING id', [dd, gross])).id;
     }
@@ -200,6 +200,54 @@ test('force mark as paid: a super admin only, for any payment status, with a rea
       await db.query("UPDATE pay_statements SET payout_status = 'submitted' WHERE id = $1", [sOf[d1].id]);
       await retryBatch(db, boss, batch.id, { env: ARMED, client, sleep: async () => {}, throttleMs: 0 }).catch(() => null);
       assert.deepEqual(asked, [[`nasa-stmt-${sOf[d1].id}`]], 'a payable of an unpaid statement is still asked to be paid out');
+    });
+    await t.test('a payout request keeps the statement rows locked while Everee is asked, so a forced mark cannot overlap it', async () => {
+      await db.query("UPDATE pay_statements SET payout_status = 'submitted' WHERE id = $1", [sOf[d5].id]);
+      const batch = await one(`INSERT INTO everee_payment_batches (request_id, pay_run_id, city_id, environment, preview_hash, driver_count, total, created_by)
+        VALUES ($1, $2, $3, 'sandbox', $4, 1, 50.00, $5) RETURNING id`, [randomUUID(), run.id, city, 'c'.repeat(64), boss.id]);
+      await one(`INSERT INTO everee_payment_items (batch_id, pay_statement_id, driver_id, everee_worker_id, external_id, amount, status, everee_payable_status)
+        VALUES ($1, $2, $3, 'EW-2', $4, 50.00, 'submitted', 'PENDING_APPROVAL') RETURNING id`, [batch.id, sOf[d5].id, d5, `nasa-stmt-${sOf[d5].id}`]);
+      // Every statement this connection runs is written down, so the test can see what is open while the provider is being called.
+      const events = [];
+      const watched = new Proxy(db, { get: (target, key) => (key === 'query'
+        ? (sql, params) => { events.push(String(sql).replace(/\s+/g, ' ').trim()); return target.query(sql, params); }
+        : (typeof target[key] === 'function' ? target[key].bind(target) : target[key])) });
+      let seenDuringCall = null;
+      const client = {
+        requestPayout: async (ids) => {
+          const open = events.filter((e) => e.startsWith('SAVEPOINT')).length - events.filter((e) => e.startsWith('RELEASE SAVEPOINT') || e.startsWith('ROLLBACK TO SAVEPOINT')).length;
+          seenDuringCall = { open, locked: events.some((e) => /FROM everee_payment_items i JOIN pay_statements ps .* FOR UPDATE OF ps, i/.test(e)) };
+          return { status: 200, data: { payableExternalIds: ids }, requestId: 'req' };
+        },
+        getPayable: async () => ({ status: 200, data: { paymentStatus: 'PENDING_APPROVAL' } }),
+      };
+      await retryBatch(watched, boss, batch.id, { env: ARMED, client, sleep: async () => {}, throttleMs: 0 });
+      assert.deepEqual(seenDuringCall, { open: 1, locked: true }, 'the rows were locked, inside a transaction that was still open, when Everee was asked');
+      assert.equal((await one('SELECT payout_requested_at IS NOT NULL AS asked FROM everee_payment_items WHERE batch_id = $1', [batch.id])).asked, true);
+      // A forced mark after the request goes through (the screen warns that Everee was already asked), and the payout is not asked for again.
+      await force(d5);
+      assert.equal((await stmt(d5)).payout_status, 'paid');
+    });
+
+    await t.test('with QuickBooks payments on, a Desi driver is not marked paid by force (the QuickBooks flow keeps the 1099 record); with them off it is, and a Local driver always is', async () => {
+      const keep = { on: process.env.QUICKBOOKS_PAYMENTS_ENABLED, qb: process.env.QUICKBOOKS_ENABLED };
+      await db.query("UPDATE drivers SET driver_type = 'DESI' WHERE id = $1", [d6]);
+      await db.query("UPDATE drivers SET driver_type = 'LOCAL' WHERE id = $1", [d7]);
+      try {
+        process.env.QUICKBOOKS_PAYMENTS_ENABLED = 'true';
+        process.env.QUICKBOOKS_ENABLED = 'true';
+        const before = await records();
+        await rejects(() => force(d6), 409, /QuickBooks/);
+        assert.equal(await records(), before, 'nothing was recorded');
+        assert.notEqual((await stmt(d6)).payout_status, 'paid');
+        await force(d7);
+        assert.equal((await stmt(d7)).payout_status, 'paid', 'a Local driver is still marked paid');
+        process.env.QUICKBOOKS_PAYMENTS_ENABLED = 'false';
+        await force(d6);
+        assert.equal((await stmt(d6)).payout_status, 'paid', 'with QuickBooks payments off, a Desi driver is marked paid by force');
+      } finally {
+        for (const [key, value] of [['QUICKBOOKS_PAYMENTS_ENABLED', keep.on], ['QUICKBOOKS_ENABLED', keep.qb]]) { if (value === undefined) delete process.env[key]; else process.env[key] = value; }
+      }
     });
   } finally {
     await db.query('ROLLBACK');

@@ -243,46 +243,54 @@ const inspectUntaken = async (db, items, deps, client) => {
 };
 
 // ONE request to pay out the payables of this batch that Everee has accepted and not yet been asked to pay.
+// The rows of those payables and their statements stay locked from the check "is the statement still unpaid" until the answer is written, the provider call
+// included. A forced mark (or any manual recording) locks the same statement rows, so the two cannot overlap: either the statement is already paid and is
+// left out of the request, or the payout was already requested and the forced mark sees it. Locks are taken in statement order, like the record route.
 const requestPayout = async (db, batchId, deps, client) => {
-  const { rows: waiting } = await db.query(
-    `SELECT i.id, i.external_id, i.pay_statement_id FROM everee_payment_items i
-      WHERE i.batch_id = $1 AND i.status = 'submitted' AND i.payout_requested_at IS NULL
-        -- never ask Everee to pay out a payable whose statement is already paid (an admin marked it paid by force): that could pay the driver twice
-        AND NOT EXISTS (SELECT 1 FROM pay_statements ps WHERE ps.id = i.pay_statement_id AND ps.payout_status = 'paid')
-        AND (i.everee_payable_status IS NOT NULL OR EXISTS (SELECT 1 FROM everee_payment_attempts a WHERE a.item_id = i.id AND a.outcome = 'accepted')) ORDER BY i.id`, [batchId]);
-  if (waiting.length === 0) return null;
-  const { rows: [request] } = await db.query('INSERT INTO everee_payout_requests (batch_id, asked_count) VALUES ($1, $2) RETURNING id', [batchId, waiting.length]);
-  const asked = waiting.map((w) => w.external_id);
+  const sent = await inTransaction(db, async (tx) => {
+    const { rows: waiting } = await tx.query(
+      `SELECT i.id, i.external_id, i.pay_statement_id FROM everee_payment_items i JOIN pay_statements ps ON ps.id = i.pay_statement_id
+        WHERE i.batch_id = $1 AND i.status = 'submitted' AND i.payout_requested_at IS NULL
+          -- never ask Everee to pay out a payable whose statement is already paid (an admin marked it paid by force): that could pay the driver twice
+          AND ps.payout_status IS DISTINCT FROM 'paid'
+          AND (i.everee_payable_status IS NOT NULL OR EXISTS (SELECT 1 FROM everee_payment_attempts a WHERE a.item_id = i.id AND a.outcome = 'accepted'))
+        ORDER BY ps.id, i.id FOR UPDATE OF ps, i`, [batchId]);
+    if (waiting.length === 0) return null;
+    const { rows: [request] } = await tx.query('INSERT INTO everee_payout_requests (batch_id, asked_count) VALUES ($1, $2) RETURNING id', [batchId, waiting.length]);
+    const asked = waiting.map((w) => w.external_id);
 
-  let outcome; let taken = null; let status = null; let requestId = null; let message = null; let named = [];
-  try {
-    const answer = await withRateLimitRetry(() => client.requestPayout(asked), deps);
-    status = answer.status;
-    requestId = answer.requestId;
-    named = Array.isArray(answer.data?.payableExternalIds) ? answer.data.payableExternalIds.filter((id) => asked.includes(id)) : [];
-    taken = named.length;
-    outcome = taken > 0 ? 'requested' : 'nothing_to_process';
-    if (taken > 0) {
-      await db.query('UPDATE everee_payment_items SET payout_requested_at = now(), updated_at = now() WHERE batch_id = $1 AND external_id = ANY($2::text[])', [batchId, named]);
+    let outcome; let taken = null; let status = null; let requestId = null; let message = null; let named = [];
+    try {
+      const answer = await withRateLimitRetry(() => client.requestPayout(asked), deps);
+      status = answer.status;
+      requestId = answer.requestId;
+      named = Array.isArray(answer.data?.payableExternalIds) ? answer.data.payableExternalIds.filter((id) => asked.includes(id)) : [];
+      taken = named.length;
+      outcome = taken > 0 ? 'requested' : 'nothing_to_process';
+      if (taken > 0) {
+        await tx.query('UPDATE everee_payment_items SET payout_requested_at = now(), updated_at = now() WHERE batch_id = $1 AND external_id = ANY($2::text[])', [batchId, named]);
+      }
+    } catch (error) {
+      const kind = classifyFailure(error);
+      outcome = kind.outcome;
+      status = kind.status;
+      requestId = error.requestId ?? null;
+      message = error.message;
     }
-  } catch (error) {
-    const kind = classifyFailure(error);
-    outcome = kind.outcome;
-    status = kind.status;
-    requestId = error.requestId ?? null;
-    message = error.message;
-  }
-  await db.query(
-    'UPDATE everee_payout_requests SET finished_at = now(), outcome = $2, taken_count = $3, http_status = $4, everee_request_id = $5, error_message = $6 WHERE id = $1',
-    [request.id, outcome, taken, status, requestId, message ? clip(message) : null]);
-  // The request ran but did not take everything: look at what Everee says about the payables it left.
-  if (outcome === 'requested' || outcome === 'nothing_to_process') {
-    const takenIds = new Set(named);
+    await tx.query(
+      'UPDATE everee_payout_requests SET finished_at = now(), outcome = $2, taken_count = $3, http_status = $4, everee_request_id = $5, error_message = $6 WHERE id = $1',
+      [request.id, outcome, taken, status, requestId, message ? clip(message) : null]);
+    return { outcome, named, asked };
+  });
+  if (sent === null) return null;
+  // The request ran but did not take everything: look at what Everee says about the payables it left (the locks are released by now).
+  if (sent.outcome === 'requested' || sent.outcome === 'nothing_to_process') {
+    const takenIds = new Set(sent.named);
     const { rows: left } = await db.query(
-      `SELECT id, external_id, pay_statement_id FROM everee_payment_items WHERE batch_id = $1 AND external_id = ANY($2::text[]) AND payout_requested_at IS NULL AND status = 'submitted' ORDER BY id`, [batchId, asked]);
+      `SELECT id, external_id, pay_statement_id FROM everee_payment_items WHERE batch_id = $1 AND external_id = ANY($2::text[]) AND payout_requested_at IS NULL AND status = 'submitted' ORDER BY id`, [batchId, sent.asked]);
     await inspectUntaken(db, left.filter((i) => !takenIds.has(i.external_id)), deps, client);
   }
-  return outcome;
+  return sent.outcome;
 };
 
 const sendBatch = async (db, batchId, itemIds, deps, client) => {
