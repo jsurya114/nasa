@@ -39,11 +39,50 @@ const readWorkerId = (body) => {
 };
 const readPayDate = (body) => (typeof body.payDate === 'string' && DATE_TEXT.test(body.payDate) ? body.payDate : null);
 
-// A payment Everee marks PAID whose payout list is empty: it is treated like "PAID with a payout still pending" (countsAsLanded), so the same amount
-// and worker checks apply. An amount that cannot be read stays null, and production never marks a payment paid without one.
+// A payment Everee marks PAID whose payout list is empty: a card payment has no bank payout, and Everee states its net pay as 0.00. An empty list
+// proves nothing about what was delivered (the payment's total is the sum of its payouts), so the amount is NOT taken from here: `needsPayoutCheck`
+// tells the caller to read the payouts of this payment from Everee's net payouts list and verify them (readCardPayouts) before anything is settled.
 const readPaidWithoutPayouts = (body) => ({
-  state: 'pending', netCents: amountCents(body.totalNetPay), payDate: readPayDate(body), workerId: readWorkerId(body), paymentPaid: true,
+  state: 'pending', netCents: null, payDate: readPayDate(body), workerId: readWorkerId(body), paymentPaid: true, needsPayoutCheck: true,
 });
+
+const NET_PAYOUT_STATUSES = new Set(['PENDING', 'PAID', 'RETURNED', 'SUPERSEDED']);
+const CARD_PAYOUT_TYPE = 'PAY_CARD';
+const NOT_VERIFIED = (why) => ({ state: 'unknown', netCents: null, workerId: null, paymentPaid: false, why });
+
+// Everee's net payouts list for one payment (GET /integration/v1/net-payouts?payment-id=): each payout has its payment, worker, type, status and
+// amount. A payment paid to the worker's Everee card is verified here and only here: every payout in use must belong to this payment, be a card
+// payout (PAY_CARD), and name the same worker (the worker the payment itself names, when it does). Replaced payouts (SUPERSEDED) are ignored; with no
+// other payout, or any payout whose type, status, amount or worker is not understood, nothing is claimed. Then RETURNED is 'returned', PENDING is
+// 'pending', and only when every payout in use is PAID is it 'landed', with the sum of their amounts. The caller still compares that sum with
+// what NASA froze and checks the worker.
+export const readCardPayouts = (listing, { paymentId, workerId = null }) => {
+  if (!listing || typeof listing !== 'object' || !Array.isArray(listing.items)) return NOT_VERIFIED("Everee's payout list could not be read");
+  if (listing.hasNextPage) return NOT_VERIFIED("Everee's payout list for this payment is longer than one page");
+  const inUse = [];
+  for (const p of listing.items) {
+    if (!p || typeof p !== 'object') return NOT_VERIFIED("a payout in Everee's list was not understood");
+    const status = typeof p.status === 'string' ? p.status.toUpperCase() : '';
+    if (!NET_PAYOUT_STATUSES.has(status)) return NOT_VERIFIED("a payout in Everee's list has a status that is not understood");
+    if (status === 'SUPERSEDED') continue;
+    if (String(p.paymentId) !== String(paymentId)) return NOT_VERIFIED('a payout in the list belongs to another payment');
+    if (typeof p.type !== 'string' || p.type.toUpperCase() !== CARD_PAYOUT_TYPE) return NOT_VERIFIED('the payout is not a pay card payout');
+    inUse.push({ status, cents: amountCents(p.netAmount), worker: readWorkerId({ workerId: p.workerId }) });
+  }
+  if (inUse.length === 0) return NOT_VERIFIED("Everee's list has no active payout for this payment");
+  const workers = new Set(inUse.map((p) => p.worker));
+  if (workers.size !== 1 || workers.has(null)) return NOT_VERIFIED('the payout does not name one worker');
+  const [worker] = workers;
+  if (workerId !== null && workerId !== worker) return NOT_VERIFIED("the payment and its payout name different workers");
+  if (inUse.some((p) => p.cents === null || p.cents <= 0)) return NOT_VERIFIED('the amount of the payout could not be read');
+  const netCents = inUse.reduce((sum, p) => sum + p.cents, 0);
+  const statuses = inUse.map((p) => p.status);
+  // paymentPaid stays false: a pending payout must never count as landed through the payment's own PAID.
+  let state = 'landed';
+  if (statuses.includes('RETURNED')) state = 'returned';
+  else if (statuses.includes('PENDING')) state = 'pending';
+  return { state, netCents, workerId: worker, paymentPaid: false, why: null };
+};
 
 // state: 'landed' (all payouts PAID) | 'returned' (some FAILED: a bank returned the deposit) | 'pending' | 'unknown'.
 // netCents: the sum of the payouts when every one states an amount, else null.

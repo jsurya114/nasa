@@ -7,7 +7,7 @@ import { readEvereeConfig } from './evereeConfig.js';
 import { createEvereeClient, EvereeError } from './evereeClient.js';
 import { DEFAULT_TIME_ZONE } from './payableRules.js';
 import { clip, defaultSleep, inTransaction, recordPayableStatus, withRateLimitRetry } from './batchSubmit.js';
-import { countsAsLanded, isPaymentId, ownPayableIsPaidInPayment, readPayable, readPayoutState } from './paymentState.js';
+import { countsAsLanded, isPaymentId, ownPayableIsPaidInPayment, readCardPayouts, readPayable, readPayoutState } from './paymentState.js';
 
 // Reading payments back from Everee (issue #31, part 5). The only place where an Everee item becomes "paid", and it happens only when
 // Everee's Payment Data API says EVERY payout of the payment is PAID (money deposited), or the payment itself is PAID with no payout FAILED (see
@@ -150,6 +150,15 @@ export const reconcileItem = async (db, itemId, deps = {}, client) => {
       await note(db, item.id, `Everee's payable could not be read (${why}); it is looked at again later. Nothing was changed.`);
       return 'unreadable';
     }
+  } else if (item.status === 'unconfirmed') {
+    // The payment ID can arrive through an event while the item is still "unconfirmed" from an earlier blocked payable (for example a worker who
+    // had not finished onboarding). Read the payable again so that stale blocked state clears; a failed read changes nothing.
+    try {
+      const { data } = await withRateLimitRetry(() => client.getPayable(item.external_id), deps);
+      await inTransaction(db, (tx) => recordPayableStatus(tx, item, readPayable(data).paymentStatus));
+    } catch (error) {
+      logger.warn('Everee payable could not be re-read for an unconfirmed item', { itemId: item.id, reason: error instanceof EvereeError ? (error.status ?? 'no answer') : 'error' });
+    }
   }
   if (!paymentId) {
     await note(db, item.id, 'Everee has not put this payable in a payment yet.');
@@ -191,9 +200,33 @@ export const reconcileItem = async (db, itemId, deps = {}, client) => {
     return 'not_processed';
   }
 
-  const payout = readPayoutState(payment);
+  let payout = readPayoutState(payment);
+  if (payout.needsPayoutCheck) {
+    // PAID with no payouts (a card payment): the payment's own total proves nothing, so Everee's payouts of this payment are read and verified.
+    let listing;
+    try {
+      ({ data: listing } = await withRateLimitRetry(() => client.listNetPayouts(paymentId), deps));
+    } catch (error) {
+      const why = error instanceof EvereeError ? (error.status ?? 'no answer') : 'error';
+      logger.warn('Everee net payouts could not be read', { itemId: item.id, reason: why });
+      await note(db, item.id, `Everee's payouts for this payment could not be read (${why}); it is looked at again later. Nothing was changed.`);
+      return 'unreadable';
+    }
+    const verified = readCardPayouts(listing, { paymentId, workerId: payout.workerId });
+    if (verified.state === 'unknown') {
+      await note(db, item.id, `Everee shows this payment as paid, but its card payout could not be verified (${verified.why}), so it is not marked paid. Check it in Everee.`);
+      return 'unknown';
+    }
+    payout = { ...payout, ...verified };
+  }
   if (payout.state === 'unknown') {
     await note(db, item.id, "Everee's answer for this payment was not understood, so it is not marked paid. Check it in Everee.");
+    return 'unknown';
+  }
+  // The payment must be this item's worker's, when the answer says whose it is. Checked before anything is recorded about the payment (a returned payout
+  // for another worker must never set this item's return flag).
+  if (payout.workerId !== null && payout.workerId !== String(item.everee_worker_id)) {
+    await note(db, item.id, "Everee's payment belongs to a different worker than this payment was made for, so it is not marked paid. Check it in Everee.");
     return 'unknown';
   }
   if (payout.state === 'pending' && !countsAsLanded(payout)) {
@@ -204,11 +237,6 @@ export const reconcileItem = async (db, itemId, deps = {}, client) => {
     await note(db, item.id, "A bank returned this deposit. It is not paid until the driver's bank details are fixed and Everee's retry settles.", ', deposit_returned = true');
     return 'returned';
   }
-  // The payment must be this item's worker's, when the answer says whose it is.
-  if (payout.workerId !== null && payout.workerId !== String(item.everee_worker_id)) {
-    await note(db, item.id, "Everee's payment belongs to a different worker than this payment was made for, so it is not marked paid. Check it in Everee.");
-    return 'unknown';
-  }
   // Landed. An answer without its amount is not enough in production (the real answer shape is not proven yet), nor for a payment found only
   // through an event: it stays "unknown" until the amount can be read and matches.
   if (payout.netCents === null && (item.environment === 'production' || item.payment_link === 'event')) {
@@ -218,7 +246,9 @@ export const reconcileItem = async (db, itemId, deps = {}, client) => {
   // The amount, when Everee states it, must be exactly what this item froze (a worker's payment may hold only our item or several).
   if (payout.netCents !== null && payout.netCents !== toCents(item.amount)) {
     const { rows: [sum] } = await db.query('SELECT COALESCE(SUM(amount), 0)::text AS total FROM everee_payment_items WHERE everee_payment_id = $1', [paymentId]);
-    if (payout.netCents !== toCents(sum.total) && !(await ownPayableIsPaid(client, item, paymentId, deps))) {
+    // The sandbox's own-payable allowance is for a payment that also holds other sends. It never stands in for a verified card payout: a card total that
+    // differs from what NASA sent stays unconfirmed in every environment.
+    if (payout.netCents !== toCents(sum.total) && (payout.needsPayoutCheck || !(await ownPayableIsPaid(client, item, paymentId, deps)))) {
       await note(db, item.id, `Everee paid ${fromCents(payout.netCents)} for this payment but ${sum.total} was sent. It is not marked paid; check it in Everee.`);
       return 'amount_differs';
     }

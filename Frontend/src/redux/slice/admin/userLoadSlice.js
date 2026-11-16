@@ -170,6 +170,7 @@ const userLoadSlice = createSlice({
         counts: null,
         total: 0,
         everee: null,
+        quickbooks: null,
         // Kept apart from `loading` so changing types never swaps the table for its loading skeleton.
         changingType: false
     },
@@ -237,6 +238,7 @@ const userLoadSlice = createSlice({
                 state.counts = action.payload.counts ?? null;
                 state.total = action.payload.total ?? action.payload.drivers.length;
                 state.everee = action.payload.everee ?? null;
+                state.quickbooks = action.payload.quickbooks ?? null;
                 state.loading = false;
                 state.success = null;
             })
@@ -284,8 +286,9 @@ const userLoadSlice = createSlice({
             })
             .addCase(toggleAvailAdmin.fulfilled, (state, action) => {
                 const updatedAdmin = action.payload.data;
+                // Merged into the row: the answer is short (no cities, no Invoices switch), and those must stay on the row.
                 state.admins = state.admins.map(d =>
-                    d.id === updatedAdmin.id ? updatedAdmin : d
+                    d.id === updatedAdmin.id ? { ...d, ...updatedAdmin } : d
                 );
                 state.loading = false;
                 state.success = action.payload.message;
@@ -301,8 +304,9 @@ const userLoadSlice = createSlice({
             })
             .addCase(toggleAdminRole.fulfilled, (state, action) => {
                 const updatedAdmin = action.payload.data;
+                // Merged into the row: the answer is short (no cities, no Invoices switch), and those must stay on the row.
                 state.admins = state.admins.map(d =>
-                    d.id === updatedAdmin.id ? updatedAdmin : d
+                    d.id === updatedAdmin.id ? { ...d, ...updatedAdmin } : d
                 );
                 state.loading = false;
                 state.success = action.payload.message;

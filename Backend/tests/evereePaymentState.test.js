@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { countsAsLanded, ownPayableIsPaidInPayment, readPayable, readPayoutState } from '../services/payments/everee/paymentState.js';
+import { countsAsLanded, ownPayableIsPaidInPayment, readCardPayouts, readPayable, readPayoutState } from '../services/payments/everee/paymentState.js';
 
 test('a payment has landed only when EVERY payout is PAID', () => {
   const state = (netPayouts, extra = {}) => readPayoutState({ paymentId: 'p1', netPayouts, ...extra });
@@ -66,17 +66,43 @@ test('the sandbox trusts its own payable inside a larger payment; production and
   assert.equal(ownPayableIsPaidInPayment('sandbox', null, want), false);
 });
 
-test('a payment Everee marks PAID with an empty payout list counts as landed; any other empty list is still not understood', () => {
-  const paid = readPayoutState({ status: 'PAID', netPayouts: [], payDate: '2026-11-12', workerId: 7, totalNetPay: { amount: '81.93', currency: 'USD' } });
-  assert.equal(countsAsLanded(paid), true);
-  assert.equal(paid.netCents, 8193);
+test('a payment Everee marks PAID with an empty payout list proves nothing by itself: its payouts must be read; any other empty list is not understood', () => {
+  const paid = readPayoutState({ status: 'PAID', netPayouts: [], payDate: '2026-11-12', workerId: 7, totalNetPay: { amount: '0.00', currency: 'USD' }, totalTaxableWages: { amount: '274.46' } });
+  assert.equal(paid.needsPayoutCheck, true);
+  assert.equal(paid.netCents, null, 'neither the net pay nor the wages is taken as the amount delivered');
   assert.equal(paid.payDate, '2026-11-12');
   assert.equal(paid.workerId, '7');
-  assert.equal(readPayoutState({ status: 'paid', netPayouts: [], totalNetPay: 81.93 }).netCents, 8193, 'case does not matter; a plain number is read too');
-  assert.equal(readPayoutState({ status: 'PAID', netPayouts: [] }).netCents, null, 'no total stated: the caller will not mark it paid in production');
-  assert.equal(readPayoutState({ status: 'PAID', netPayouts: [], totalNetPay: 'a lot' }).netCents, null);
+  assert.equal(readPayoutState({ status: 'paid', netPayouts: [] }).needsPayoutCheck, true, 'case does not matter');
   for (const body of [{ status: 'PENDING', netPayouts: [] }, { status: 'FAILED', netPayouts: [] }, { netPayouts: [] }, { status: 'PAID' }, { status: 'PAID', netPayouts: 'PAID' }, { status: 'PAID', netPayouts: null }]) {
     assert.equal(countsAsLanded(readPayoutState(body)), false, JSON.stringify(body));
     assert.equal(readPayoutState(body).state, 'unknown', JSON.stringify(body));
   }
+});
+
+test('a card payment is verified from Everee\'s net payouts list: payment, card type, worker, status and amount', () => {
+  const payout = (extra = {}) => ({ id: '1', paymentId: '555', workerId: 'W-1', type: 'PAY_CARD', status: 'PAID', netAmount: { amount: '274.46', currency: 'USD' }, supersededByIds: [], ...extra });
+  const read = (items, workerId = null, extra = {}) => readCardPayouts({ items, hasNextPage: false, ...extra }, { paymentId: '555', workerId });
+  const ok = read([payout()], 'W-1');
+  assert.deepEqual([ok.state, ok.netCents, ok.workerId, ok.paymentPaid], ['landed', 27446, 'W-1', false]);
+  assert.equal(countsAsLanded(ok), true);
+  assert.equal(read([payout({ netAmount: { amount: '100.00' } }), payout({ id: '2', netAmount: { amount: '174.46' } })]).netCents, 27446, 'a split across payouts is summed');
+  assert.equal(read([payout(), payout({ id: '2', status: 'SUPERSEDED', type: 'DIRECT_DEPOSIT', paymentId: '9' })]).state, 'landed', 'a replaced payout is ignored');
+  // Not verified: nothing is claimed.
+  for (const [what, items, worker] of [
+    ['no payouts', [], null], ['only a replaced payout', [payout({ status: 'SUPERSEDED' })], null],
+    ['a bank payout', [payout({ type: 'DIRECT_DEPOSIT' })], null], ['no type', [payout({ type: undefined })], null], ['a push to card', [payout({ type: 'PUSH_TO_CARD' })], null],
+    ['another payment', [payout({ paymentId: '556' })], null], ['no worker', [payout({ workerId: undefined })], null],
+    ['two workers', [payout(), payout({ id: '2', workerId: 'W-2' })], null], ['another worker than the payment', [payout()], 'W-2'],
+    ['no amount', [payout({ netAmount: undefined })], null], ['a zero amount', [payout({ netAmount: { amount: '0.00' } })], null],
+    ['a status not understood', [payout({ status: 'DONE' })], null], ['a payout that is not an object', [null], null],
+  ]) {
+    const got = read(items, worker);
+    assert.equal(got.state, 'unknown', what);
+    assert.equal(countsAsLanded(got), false, what);
+  }
+  assert.equal(read([payout()], null, { hasNextPage: true }).state, 'unknown', 'a longer list is not read half');
+  for (const bad of [null, {}, { items: 'x' }]) assert.equal(readCardPayouts(bad, { paymentId: '555' }).state, 'unknown');
+  // Pending and returned never count as landed, even though the payment itself says PAID.
+  assert.deepEqual([read([payout({ status: 'PENDING' })]).state, countsAsLanded(read([payout({ status: 'PENDING' })]))], ['pending', false]);
+  assert.equal(read([payout(), payout({ id: '2', status: 'RETURNED' })]).state, 'returned');
 });
