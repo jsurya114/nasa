@@ -5,7 +5,8 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { finalizeRun, generateRun, getRun } from '../services/payroll/payRuns/payRunStore.js';
 import { FORCE_REASON_MAX, parseForcePayment, recordRunPayment, reviewRunPayments } from '../services/payroll/payRuns/paymentRecords.js';
-import { getBatchView } from '../services/payments/everee/batchSubmit.js';
+import { getBatchView, retryBatch } from '../services/payments/everee/batchSubmit.js';
+import { EvereeError } from '../services/payments/everee/evereeClient.js';
 import { checkBatch } from '../services/payments/everee/paymentStatus.js';
 
 // "Force mark as paid": a super admin records a driver as paid although the system cannot confirm it. The parser needs no database; the rest needs a PostgreSQL copy
@@ -139,7 +140,7 @@ test('force mark as paid: a super admin only, for any payment status, with a rea
       await db.query("UPDATE pay_runs SET status = 'finalized', closed_at = NULL WHERE id = $1", [run.id]);
     });
 
-    await t.test('an Everee item that was waiting is closed by the forced mark: it is shown as marked by an admin, is not counted as waiting or retried, and Everee is not asked about it again', async () => {
+    await t.test('an Everee item that was waiting is shown as marked by an admin after the forced mark, and is still checked: if Everee later confirms it, both are shown with a double payment note', async () => {
       const batch = await one(`INSERT INTO everee_payment_batches (request_id, pay_run_id, city_id, environment, preview_hash, driver_count, total, created_by)
         VALUES ($1, $2, $3, 'sandbox', $4, 1, 10.00, $5) RETURNING id`, [randomUUID(), run.id, city, 'a'.repeat(64), boss.id]);
       await setStatus(d4, 'unconfirmed');
@@ -156,12 +157,49 @@ test('force mark as paid: a super admin only, for any payment status, with a rea
       const reviewed = await reviewRunPayments(db, boss, run.id);
       assert.deepEqual([entry(reviewed, d4).providerPayment.markedPaidByAdmin, entry(reviewed, d4).providerPayment.needsReview, entry(reviewed, d4).payment.method], [true, false, 'other']);
       assert.equal(entry(review, d4).providerPayment.markedPaidByAdmin, undefined, 'the field is added only when it is true');
-      let asked = 0;
-      const client = new Proxy({}, { get: () => async () => { asked += 1; throw new Error('Everee must not be asked'); } });
-      const checked = await checkBatch(db, boss, batch.id, { env: ARMED, client });
-      assert.equal(checked.checked, 0, 'the closed item is not looked at again');
-      assert.equal(asked, 0);
-      assert.equal((await one('SELECT status FROM everee_payment_items WHERE id = $1', [item.id])).status, 'unconfirmed', 'the Everee item itself is not rewritten as paid');
+      // Everee is still looked at: while it has not processed the payment nothing changes; when it confirms the payment, the statement is NOT touched but the
+      // item is closed as paid with a note that a person must check for a double payment.
+      const payment = { id: 'pay-4', status: 'PAID', workerId: 'EW-4', payDate: '2026-11-09', netPayouts: [{ id: 'po-4', status: 'PAID', netAmount: { amount: '10.00', currency: 'USD' } }] };
+      let processed = false;
+      const client = {
+        getPayable: async () => ({ status: 200, data: { paymentStatus: 'PAID', paymentId: 'pay-4' } }),
+        getPaymentHistoryItem: async () => { if (!processed) throw new EvereeError('not found', { status: 404 }); return { status: 200, data: { paymentId: 'pay-4', payDate: '2026-11-09' } }; },
+        getPaymentData: async () => ({ status: 200, data: { items: [payment], hasNextPage: false } }),
+      };
+      const reference = (await stmt(d4)).payout_reference;
+      const first = await checkBatch(db, boss, batch.id, { env: ARMED, client, throttleMs: 0 });
+      assert.equal(first.checked, 1, 'the closed item is still checked');
+      assert.deepEqual(first.results, { not_processed: 1 });
+      assert.equal((await stmt(d4)).payout_status, 'paid');
+      processed = true;
+      const second = await checkBatch(db, boss, batch.id, { env: ARMED, client, throttleMs: 0 });
+      assert.deepEqual(second.results, { paid_after_force: 1 });
+      const closed = await one('SELECT status, check_note, everee_payment_id FROM everee_payment_items WHERE id = $1', [item.id]);
+      assert.deepEqual([closed.status, closed.everee_payment_id], ['paid', 'pay-4']);
+      assert.match(closed.check_note, /paid by force.*paid twice/);
+      assert.equal((await stmt(d4)).payout_reference, reference, 'the statement and its receipt are not rewritten');
+      assert.equal(Number((await one('SELECT count(*) AS n FROM pay_run_payment_items WHERE statement_id = $1', [sOf[d4].id])).n), 1, 'no second receipt');
+      const done = await getBatchView(db, boss, batch.id);
+      assert.deepEqual([done.counts.paid, done.items[0].markedPaidByAdmin], [1, undefined], 'now it is an Everee payment too, so both are shown');
+    });
+
+    await t.test('a retry never asks Everee to pay out a payable whose statement was marked paid by force', async () => {
+      // d1 was forced paid earlier. Its payable was accepted by Everee but the payout was never requested: a retry would normally request it.
+      const batch = await one(`INSERT INTO everee_payment_batches (request_id, pay_run_id, city_id, environment, preview_hash, driver_count, total, created_by)
+        VALUES ($1, $2, $3, 'sandbox', $4, 1, 100.00, $5) RETURNING id`, [randomUUID(), run.id, city, 'b'.repeat(64), boss.id]);
+      await one(`INSERT INTO everee_payment_items (batch_id, pay_statement_id, driver_id, everee_worker_id, external_id, amount, status, everee_payable_status)
+        VALUES ($1, $2, $3, 'EW-1', $4, 100.00, 'submitted', 'PENDING_APPROVAL') RETURNING id`, [batch.id, sOf[d1].id, d1, `nasa-stmt-${sOf[d1].id}`]);
+      assert.equal((await stmt(d1)).payout_status, 'paid');
+      const asked = [];
+      const client = { requestPayout: async (ids) => { asked.push(ids); return { status: 200, data: { payableExternalIds: ids }, requestId: 'req' }; }, getPayable: async () => ({ status: 200, data: { paymentStatus: 'PENDING_APPROVAL' } }) };
+      const view = await getBatchView(db, boss, batch.id);
+      assert.deepEqual([view.items[0].markedPaidByAdmin, view.canRetry], [true, false]);
+      await retryBatch(db, boss, batch.id, { env: ARMED, client, sleep: async () => {}, throttleMs: 0 }).catch(() => null);
+      assert.deepEqual(asked, [], 'Everee was not asked to pay it out');
+      // Control: the same payable on a statement that is NOT paid is still asked for, so the exclusion is only for a paid statement.
+      await db.query("UPDATE pay_statements SET payout_status = 'submitted' WHERE id = $1", [sOf[d1].id]);
+      await retryBatch(db, boss, batch.id, { env: ARMED, client, sleep: async () => {}, throttleMs: 0 }).catch(() => null);
+      assert.deepEqual(asked, [[`nasa-stmt-${sOf[d1].id}`]], 'a payable of an unpaid statement is still asked to be paid out');
     });
   } finally {
     await db.query('ROLLBACK');

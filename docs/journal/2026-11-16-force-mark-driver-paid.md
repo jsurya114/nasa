@@ -26,9 +26,15 @@ refuses "a selected payment is processing, unconfirmed or needs review"). A supe
   QuickBooks rule for Desi drivers, and source earnings that changed or were already marked paid (those rows are left exactly as they were; the statement is
   still marked paid).
 - What it **never** skips: the run must be approved (finalized), the statement must belong to the run, and a statement below zero is refused.
-- Nothing is sent to Everee or QuickBooks. An Everee item that was waiting is closed: it is shown as "Marked paid by an admin", is not counted as waiting,
-  failed or retried, and the 15-minute check no longer asks Everee about it (the item itself is not rewritten as paid, so nothing says Everee confirmed it).
-  The two API answers that show Everee items get one extra field, `markedPaidByAdmin: true`, only for such an item; nothing changes for any other item.
+- Nothing is sent to Everee or QuickBooks. An Everee item that was waiting is shown as "Marked paid by an admin" and is not counted as waiting, failed or
+  retried; it is not rewritten as paid (nothing says Everee confirmed it). The two API answers that show Everee items get one extra field,
+  `markedPaidByAdmin: true`, only for such an item; nothing changes for any other item.
+- **No double payment through NASA (security review).** (1) "Retry" asks Everee to pay out payables that were accepted but not yet requested; that request now
+  leaves out any payable whose statement is already paid, so a forced mark can never be followed by a payout request from NASA. (2) The 15-minute check keeps
+  looking at such an item. If Everee later confirms the payment, the statement and its receipt are not touched, but the item is closed as paid with the note
+  "Everee also confirmed this payment after an admin marked the driver paid by force. Check that the driver was not paid twice." (and a warning is logged), so the
+  list shows both instead of hiding a double payment.
+- Still possible, and shown in the panel: if Everee was already asked to pay out before the forced mark (`payout requested`), Everee may pay; NASA cannot stop that.
 
 **Database.** None. `pay_run_payment_records.method` already allows `other`, and `pay_run_payment_items.driver_type` is nullable.
 
@@ -39,9 +45,9 @@ No payment is made or reversed anywhere.
 
 **Tested.**
 - Backend on a local copy (`PAYROLL_TEST_DB=1 EVEREE_ONBOARDING_ENFORCED=false QUICKBOOKS_ONBOARDING_ENFORCED=false QUICKBOOKS_PAYMENTS_ENABLED=false`, one file at a
-  time): `forcePayment` 9 passed (an admin, a disabled super admin and a stale token are refused; the normal way still refuses a processing, failed or untyped driver; a
+  time): `forcePayment` 10 passed (an admin, a disabled super admin and a stale token are refused; the normal way still refuses a processing, failed or untyped driver; a
   forced mark records the receipt, the statement and the source rows; a repeat is a replay, other details a 409, a paid statement is untouched; changed source rows are
-  not touched; another run's statement and an unapproved run are refused; a waiting Everee item is closed and not asked about again). `evereePaymentStatus` 29,
+  not touched; another run's statement and an unapproved run are refused; a waiting Everee item is shown as marked by an admin and still checked, and a later Everee confirmation closes it with the double payment note; a retry never requests payout for a paid statement, but still does for an unpaid one). `evereePaymentStatus` 29,
   `paymentRecords` 16, `processingPayments` 6 passed. `evereeSubmit` 25 passed and 1 failed (test 2): the same single failure as on a clean `develop`, caused by one
   leftover committed attempt row in this local test database; it is not related to this change.
 - `evereeSubmit` test 9 was updated: a failed Everee item whose statement was paid by hand is now closed (counted as marked by an admin, no longer as failed).

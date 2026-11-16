@@ -7,7 +7,7 @@ export const ITEM_STATUS = Object.freeze({
   failed: { label: "Not sent", tone: "red", help: "Everee refused it. Nothing was paid; it can be tried again." },
   unconfirmed: { label: "Unconfirmed", tone: "red", help: "It is not known whether Everee took it. Check it in Everee before doing anything else." },
   not_submitted: { label: "Not sent", tone: "gray", help: "" },
-  marked_paid: { label: "Marked paid by an admin", tone: "gray", help: "An admin marked this driver paid by force. Everee was not told, and is not asked about this payment again." },
+  marked_paid: { label: "Marked paid by an admin", tone: "gray", help: "An admin marked this driver paid by force. Everee was not told. If Everee confirms this payment later, it is shown here, so check that the driver is not paid twice." },
 });
 
 export const TONE_CLASS = Object.freeze({

@@ -33,9 +33,7 @@ const UNCERTAIN_AFTER_MINUTES = 5;
 // Placeholders: $2 is the list of waiting statuses.
 const DUE_SQL = `(i.status = ANY($2::text[]) OR (i.status = 'paid' AND i.deposit_returned))
   AND (i.everee_payment_id IS NOT NULL OR i.payout_requested_at IS NOT NULL
-       OR (COALESCE(i.last_attempt_at, i.created_at) < now() - make_interval(mins => ${UNCERTAIN_AFTER_MINUTES}) AND COALESCE(i.send_lease_until, 'epoch') < now()))
-  -- an admin marked the statement paid by force: Everee is not asked about it again
-  AND NOT (i.status = ANY($2::text[]) AND EXISTS (SELECT 1 FROM pay_statements ps WHERE ps.id = i.pay_statement_id AND ps.payout_status = 'paid'))`;
+       OR (COALESCE(i.last_attempt_at, i.created_at) < now() - make_interval(mins => ${UNCERTAIN_AFTER_MINUTES}) AND COALESCE(i.send_lease_until, 'epoch') < now()))`;
 
 const note = (tx, itemId, text, extra = '') => tx.query(
   `UPDATE everee_payment_items SET check_note = $2, last_checked_at = now(), updated_at = now() ${extra} WHERE id = $1`, [itemId, text ? clip(text).slice(0, 300) : null]);
@@ -56,6 +54,15 @@ const completePaid = (db, item, paymentId, payDate) => inTransaction(db, async (
             (SELECT count(*) FROM pay_statement_lines l WHERE l.statement_id = s.id AND l.active AND l.line_type = 'earning')::int AS earning_lines
        FROM everee_payment_items i JOIN pay_statements s ON s.id = i.pay_statement_id WHERE i.id = $1 FOR UPDATE OF i, s`, [item.id]);
   if (fresh.item_status === 'paid') return 'already_paid';
+  // An admin already marked this statement paid by force and Everee has now confirmed the payment too: the statement is NOT touched (it is already paid and its
+  // receipt stands), but the item is closed as paid with a note, so the list shows both and a person checks that the driver was not paid twice.
+  if (fresh.payout_status === 'paid' && OPEN.includes(fresh.item_status)) {
+    await tx.query(
+      `UPDATE everee_payment_items SET status = 'paid', paid_at = now(), everee_payment_id = $2, everee_pay_date = $3, deposit_returned = false, error_message = NULL,
+              check_note = $4, last_checked_at = now(), updated_at = now() WHERE id = $1`,
+      [item.id, paymentId, payDate, 'Everee also confirmed this payment after an admin marked the driver paid by force. Check that the driver was not paid twice.']);
+    return 'paid_after_force';
+  }
   if (!OPEN.includes(fresh.item_status) || !OPEN.includes(fresh.payout_status)) return 'not_completable';
   const earnings = await lockApprovedEarnings(tx, [fresh.id]);
   const changed = invalidWork([fresh], earnings).size > 0;
@@ -263,7 +270,8 @@ export const reconcileItem = async (db, itemId, deps = {}, client) => {
     return 'retry_settled';
   }
   const done = await completePaid(db, item, paymentId, payout.payDate);
-  logger.info('Everee payment confirmed as landed', { itemId: item.id, outcome: done });
+  if (done === 'paid_after_force') logger.warn('Everee confirmed a payment that an admin had marked paid by force: possible double payment', { itemId: item.id });
+  else logger.info('Everee payment confirmed as landed', { itemId: item.id, outcome: done });
   return done;
 };
 

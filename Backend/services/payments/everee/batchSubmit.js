@@ -247,6 +247,8 @@ const requestPayout = async (db, batchId, deps, client) => {
   const { rows: waiting } = await db.query(
     `SELECT i.id, i.external_id, i.pay_statement_id FROM everee_payment_items i
       WHERE i.batch_id = $1 AND i.status = 'submitted' AND i.payout_requested_at IS NULL
+        -- never ask Everee to pay out a payable whose statement is already paid (an admin marked it paid by force): that could pay the driver twice
+        AND NOT EXISTS (SELECT 1 FROM pay_statements ps WHERE ps.id = i.pay_statement_id AND ps.payout_status = 'paid')
         AND (i.everee_payable_status IS NOT NULL OR EXISTS (SELECT 1 FROM everee_payment_attempts a WHERE a.item_id = i.id AND a.outcome = 'accepted')) ORDER BY i.id`, [batchId]);
   if (waiting.length === 0) return null;
   const { rows: [request] } = await db.query('INSERT INTO everee_payout_requests (batch_id, asked_count) VALUES ($1, $2) RETURNING id', [batchId, waiting.length]);
