@@ -592,6 +592,16 @@ test('everee payment status: only a payment that landed marks a statement paid',
       await unpaid(iEC, 'unknown');
       fakeE.state.payments['pay-EC'] = card(dC, { status: 'PENDING' }); // the payment itself is not PAID
       await unpaid(iEC, 'unknown');
+      // A returned payout of ANOTHER worker must not set this item's return flag: the worker is checked before the return is recorded.
+      fakeE.state.payments['pay-EC'] = card(dC);
+      fakeE.state.netPayouts['pay-EC'] = [payout('pay-EC', dA, '25.00', { status: 'RETURNED' })];
+      await unpaid(iEC, 'unknown', /different worker/);
+      assert.equal((await item(scE, dC)).deposit_returned, false, 'another worker\'s returned payout leaves this item\'s return flag alone');
+      fakeE.state.netPayouts['pay-EC'] = [payout('pay-EC', dC, '25.00')];
+      // Sandbox: the shared own-payable allowance (the payable is PAID inside the payment for the amount sent) does not accept a card total that differs.
+      fakeE.state.payables[iEB.external_id] = { externalId: iEB.external_id, paymentStatus: 'PAID', paymentId: 'pay-EB', amount: { amount: 50, currency: 'USD' } };
+      await unpaid(iEB, 'amount_differs'); // the payout says 49.00; NASA sent 50.00
+      assert.equal((await stmt(scE, dB)).payout_status, 'submitted');
       fakeE.state.netPayouts['pay-EA'] = [payout('pay-EA', dA, '274.46', { status: 'RETURNED' })];
       assert.equal(await check(fakeE, iEA.id), 'returned'); // flagged for a person, never paid
       assert.equal((await stmt(scE, dA)).payout_status, 'submitted');

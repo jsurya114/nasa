@@ -214,6 +214,12 @@ export const reconcileItem = async (db, itemId, deps = {}, client) => {
     await note(db, item.id, "Everee's answer for this payment was not understood, so it is not marked paid. Check it in Everee.");
     return 'unknown';
   }
+  // The payment must be this item's worker's, when the answer says whose it is. Checked before anything is recorded about the payment (a returned payout
+  // for another worker must never set this item's return flag).
+  if (payout.workerId !== null && payout.workerId !== String(item.everee_worker_id)) {
+    await note(db, item.id, "Everee's payment belongs to a different worker than this payment was made for, so it is not marked paid. Check it in Everee.");
+    return 'unknown';
+  }
   if (payout.state === 'pending' && !countsAsLanded(payout)) {
     await note(db, item.id, 'Everee has the payment; the deposit is not complete yet.');
     return 'pending';
@@ -221,11 +227,6 @@ export const reconcileItem = async (db, itemId, deps = {}, client) => {
   if (payout.state === 'returned') {
     await note(db, item.id, "A bank returned this deposit. It is not paid until the driver's bank details are fixed and Everee's retry settles.", ', deposit_returned = true');
     return 'returned';
-  }
-  // The payment must be this item's worker's, when the answer says whose it is.
-  if (payout.workerId !== null && payout.workerId !== String(item.everee_worker_id)) {
-    await note(db, item.id, "Everee's payment belongs to a different worker than this payment was made for, so it is not marked paid. Check it in Everee.");
-    return 'unknown';
   }
   // Landed. An answer without its amount is not enough in production (the real answer shape is not proven yet), nor for a payment found only
   // through an event: it stays "unknown" until the amount can be read and matches.
@@ -236,7 +237,9 @@ export const reconcileItem = async (db, itemId, deps = {}, client) => {
   // The amount, when Everee states it, must be exactly what this item froze (a worker's payment may hold only our item or several).
   if (payout.netCents !== null && payout.netCents !== toCents(item.amount)) {
     const { rows: [sum] } = await db.query('SELECT COALESCE(SUM(amount), 0)::text AS total FROM everee_payment_items WHERE everee_payment_id = $1', [paymentId]);
-    if (payout.netCents !== toCents(sum.total) && !(await ownPayableIsPaid(client, item, paymentId, deps))) {
+    // The sandbox's own-payable allowance is for a payment that also holds other sends. It never stands in for a verified card payout: a card total that
+    // differs from what NASA sent stays unconfirmed in every environment.
+    if (payout.netCents !== toCents(sum.total) && (payout.needsPayoutCheck || !(await ownPayableIsPaid(client, item, paymentId, deps)))) {
       await note(db, item.id, `Everee paid ${fromCents(payout.netCents)} for this payment but ${sum.total} was sent. It is not marked paid; check it in Everee.`);
       return 'amount_differs';
     }

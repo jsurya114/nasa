@@ -25,6 +25,13 @@ nothing about what was delivered. This version removes that inference and verifi
   returned), a different amount, or an Everee error (nothing changes and it is looked at again).
 - This also replaces the amount source of the earlier empty-list rule (#286): that rule took the amount from `totalNetPay`.
 
+**Second review round.**
+- The worker is now checked before a payment's state is acted on, so a returned (or pending) payout that belongs to another worker can no longer set this
+  item's return flag; it is left as "not understood" with a note.
+- In the sandbox, the allowance that accepts a payment holding several sends (our own payable is PAID inside it for the amount sent) no longer applies to a
+  card payout: a card total that differs from what NASA sent stays unconfirmed in every environment.
+- Both have regression cases in `evereePaymentStatus` (27 pass; the two new assertions fail without the change).
+
 **Database.** None.
 
 **Config and dependencies.** None. One new read-only call to Everee.
