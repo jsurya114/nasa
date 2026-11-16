@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { countsAsLanded, ownPayableIsPaidInPayment, readCardPayouts, readPayable, readPayoutState } from '../services/payments/everee/paymentState.js';
+import { countsAsLanded, ownPayableIsPaidInPayment, readCardPayouts, readDepositRecord, readPayable, readPayoutState } from '../services/payments/everee/paymentState.js';
 
 test('a payment has landed only when EVERY payout is PAID', () => {
   const state = (netPayouts, extra = {}) => readPayoutState({ paymentId: 'p1', netPayouts, ...extra });
@@ -105,4 +105,31 @@ test('a card payment is verified from Everee\'s net payouts list: payment, card 
   // Pending and returned never count as landed, even though the payment itself says PAID.
   assert.deepEqual([read([payout({ status: 'PENDING' })]).state, countsAsLanded(read([payout({ status: 'PENDING' })]))], ['pending', false]);
   assert.equal(read([payout(), payout({ id: '2', status: 'RETURNED' })]).state, 'returned');
+});
+
+test('an empty payout list is "empty" only when Everee lists no payout at all, so only then the payment record\'s deposits are read', () => {
+  const listing = (items) => ({ items, hasNextPage: false });
+  assert.equal(readCardPayouts(listing([]), { paymentId: '555' }).empty, true);
+  const replaced = [{ id: '1', paymentId: '555', workerId: 'W-1', type: 'PAY_CARD', status: 'SUPERSEDED', netAmount: { amount: '5.00' } }];
+  assert.notEqual(readCardPayouts(listing(replaced), { paymentId: '555' }).empty, true, 'a replaced payout is not "no payout"');
+  assert.notEqual(readCardPayouts(listing([{ id: '1', paymentId: '9', workerId: 'W-1', type: 'PAY_CARD', status: 'PAID' }]), { paymentId: '555' }).empty, true);
+});
+
+test('a payment record verifies a card payment only with this payment, one worker, readable deposits and deposits equal to the net earnings', () => {
+  const record = (over = {}) => ({ paymentId: '555', workerId: 'W-1', netEarnings: { amount: '135.73', currency: 'USD' }, deposits: [{ destinationLabel: 'x', amount: { amount: '135.73', currency: 'USD' } }], ...over });
+  const ok = readDepositRecord(record(), { paymentId: '555', workerId: 'W-1' });
+  assert.deepEqual([ok.state, ok.netCents, ok.workerId, ok.paymentPaid], ['landed', 13573, 'W-1', false]);
+  assert.equal(countsAsLanded(ok), true);
+  assert.equal(readDepositRecord(record({ deposits: [{ amount: { amount: '100.00' } }, { amount: { amount: '35.73' } }] }), { paymentId: '555' }).netCents, 13573, 'summed');
+  for (const [what, history, worker] of [
+    ['nothing', null, null], ['another payment', record({ paymentId: '556' }), null], ['no worker', record({ workerId: undefined }), null],
+    ['another worker than the payment', record(), 'W-2'], ['no deposits', record({ deposits: [] }), null], ['deposits not a list', record({ deposits: 'x' }), null],
+    ['a zero deposit', record({ deposits: [{ amount: { amount: '0.00' } }], netEarnings: { amount: '0.00' } }), null],
+    ['an unreadable deposit', record({ deposits: [{ amount: { amount: 'lots' } }] }), null], ['no net earnings', record({ netEarnings: undefined }), null],
+    ['deposits that differ from the net earnings', record({ netEarnings: { amount: '140.00' } }), null],
+  ]) {
+    const got = readDepositRecord(history, { paymentId: '555', workerId: worker });
+    assert.equal(got.state, 'unknown', what);
+    assert.equal(countsAsLanded(got), false, what);
+  }
 });

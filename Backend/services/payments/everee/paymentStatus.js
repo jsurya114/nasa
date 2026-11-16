@@ -7,7 +7,7 @@ import { readEvereeConfig } from './evereeConfig.js';
 import { createEvereeClient, EvereeError } from './evereeClient.js';
 import { DEFAULT_TIME_ZONE } from './payableRules.js';
 import { clip, defaultSleep, inTransaction, recordPayableStatus, withRateLimitRetry } from './batchSubmit.js';
-import { countsAsLanded, isPaymentId, ownPayableIsPaidInPayment, readCardPayouts, readPayable, readPayoutState } from './paymentState.js';
+import { countsAsLanded, isPaymentId, ownPayableIsPaidInPayment, readCardPayouts, readDepositRecord, readPayable, readPayoutState } from './paymentState.js';
 
 // Reading payments back from Everee (issue #31, part 5). The only place where an Everee item becomes "paid", and it happens only when
 // Everee's Payment Data API says EVERY payout of the payment is PAID (money deposited), or the payment itself is PAID with no payout FAILED (see
@@ -212,9 +212,11 @@ export const reconcileItem = async (db, itemId, deps = {}, client) => {
       await note(db, item.id, `Everee's payouts for this payment could not be read (${why}); it is looked at again later. Nothing was changed.`);
       return 'unreadable';
     }
-    const verified = readCardPayouts(listing, { paymentId, workerId: payout.workerId });
+    let verified = readCardPayouts(listing, { paymentId, workerId: payout.workerId });
+    // Everee lists no payout at all for a payment paid to the worker's Everee card; its payment history then states the deposits (already read above).
+    if (verified.state === 'unknown' && verified.empty) verified = readDepositRecord(body, { paymentId, workerId: payout.workerId });
     if (verified.state === 'unknown') {
-      await note(db, item.id, `Everee shows this payment as paid, but its card payout could not be verified (${verified.why}), so it is not marked paid. Check it in Everee.`);
+      await note(db, item.id, `Everee shows this payment as paid, but its card payment could not be verified (${verified.why}), so it is not marked paid. Check it in Everee.`);
       return 'unknown';
     }
     payout = { ...payout, ...verified };
