@@ -150,6 +150,15 @@ export const reconcileItem = async (db, itemId, deps = {}, client) => {
       await note(db, item.id, `Everee's payable could not be read (${why}); it is looked at again later. Nothing was changed.`);
       return 'unreadable';
     }
+  } else if (item.status === 'unconfirmed') {
+    // The payment ID can arrive through an event while the item is still "unconfirmed" from an earlier blocked payable (for example a worker who
+    // had not finished onboarding). Read the payable again so that stale blocked state clears; a failed read changes nothing.
+    try {
+      const { data } = await withRateLimitRetry(() => client.getPayable(item.external_id), deps);
+      await inTransaction(db, (tx) => recordPayableStatus(tx, item, readPayable(data).paymentStatus));
+    } catch (error) {
+      logger.warn('Everee payable could not be re-read for an unconfirmed item', { itemId: item.id, reason: error instanceof EvereeError ? (error.status ?? 'no answer') : 'error' });
+    }
   }
   if (!paymentId) {
     await note(db, item.id, 'Everee has not put this payable in a payment yet.');
