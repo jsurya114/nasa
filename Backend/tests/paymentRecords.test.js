@@ -572,11 +572,20 @@ test(
             }),
             { status: 409 },
           );
-          const cards = (await listPaymentRuns(db, admin)).runs;
+          const cards = (await listPaymentRuns(db, admin, { view: "partly" })).runs;
           const card = cards.find((r) => String(r.id) === String(run.id));
           assert.deepEqual(
             [card.paid, card.drivers, card.remaining],
             [1, 2, "190.00"],
+          );
+          // One of two drivers paid: the run is in "partly" only, never in "ready" or "history".
+          const inView = async (view) =>
+            (await listPaymentRuns(db, admin, { view })).runs.some(
+              (r) => String(r.id) === String(run.id),
+            );
+          assert.deepEqual(
+            [await inView("ready"), await inView("partly"), await inView("history")],
+            [false, true, false],
           );
           assert.equal(
             (
@@ -642,12 +651,8 @@ test(
             ),
             false,
           );
-          assert.equal(
-            (await listPaymentRuns(db, admin, { view: "history" })).runs.some(
-              (r) => String(r.id) === String(run.id),
-            ),
-            true,
-          );
+          assert.equal(await inView("partly"), false, "fully paid leaves the partly paid view");
+          assert.equal(await inView("history"), true);
           const after = (await getRun(db, admin, run.id)).statements;
           for (const old of frozen) {
             const current = after.find((s) => s.id === old.id);

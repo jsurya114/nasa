@@ -299,8 +299,10 @@ export const listPaymentRuns = async (
       WHERE r.status='finalized' AND ($1::int IS NULL OR r.city_id=$1)
         AND ($2::boolean OR EXISTS(SELECT 1 FROM admin_city_ref a WHERE a.admin_id=$3 AND a.city_id=r.city_id))
         AND ($4::bigint IS NULL OR r.id<$4) GROUP BY r.id,c.job
-      HAVING CASE WHEN $5='history' THEN count(*) FILTER(WHERE s.payout_status='paid')>0
-                  ELSE count(*) FILTER(WHERE s.payout_status<>'paid')>0 END
+      -- A run is in exactly one view: ready (nothing paid yet), partly (some drivers paid, some not) or history (every driver paid).
+      HAVING CASE WHEN $5='history' THEN count(*) FILTER(WHERE s.payout_status='paid')=count(*)
+                  WHEN $5='partly' THEN count(*) FILTER(WHERE s.payout_status='paid') BETWEEN 1 AND count(*)-1
+                  ELSE count(*) FILTER(WHERE s.payout_status='paid')=0 END
       ORDER BY r.id DESC LIMIT 11`,
     [cityId, admin?.role === "superadmin", admin?.id, beforeId, view],
   );

@@ -6,6 +6,13 @@ import { formatMoney } from "../../../utils/money.js";
 import RecordPaymentDialog from "./RecordPaymentDialog.jsx";
 import { buttonClass, primaryClass } from "../payroll/formParts.jsx";
 
+// A pay run is in exactly one view: nothing paid yet, some drivers paid, or every driver paid.
+const EMPTY_TEXT = {
+  ready: "No approved pay runs are awaiting payment. Prepare a run when you are ready to pay.",
+  partly: "No pay runs are partly paid.",
+  history: "No fully paid pay runs for these cities yet.",
+};
+
 // Independent of delivery-history filters: an approved run remains visible until its payment is recorded.
 export default function PaymentRuns({ cities = [], onRecorded }) {
   const [view, setView] = useState("ready");
@@ -106,6 +113,7 @@ export default function PaymentRuns({ cities = [], onRecorded }) {
         >
           {[
             ["ready", "Awaiting payment"],
+            ["partly", "Partly paid"],
             ["history", "Payment history"],
           ].map(([key, label]) => (
             <button
@@ -167,9 +175,7 @@ export default function PaymentRuns({ cities = [], onRecorded }) {
             aria-hidden="true"
           />
           <p>
-            {view === "ready"
-              ? "No approved pay runs are awaiting payment. Prepare a run when you are ready to pay."
-              : "No payments have been recorded for these cities yet."}
+            {EMPTY_TEXT[view]}
           </p>
         </div>
       )}

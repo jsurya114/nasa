@@ -69,7 +69,11 @@ const setup = async ({
     if (config.url === "/admin/payroll/payments/runs") {
       const paid = drivers.filter((d) => d.payoutStatus === "paid").length;
       const show =
-        config.params.view === "history" ? paid > 0 : paid < drivers.length;
+        config.params.view === "history"
+          ? paid === drivers.length
+          : config.params.view === "partly"
+            ? paid > 0 && paid < drivers.length
+            : paid === 0;
       return {
         status: 200,
         data: {
@@ -228,9 +232,15 @@ it("records selected drivers only, and retries a lost response with the same req
   expect(s.posts[0].statementIds).toEqual([1]);
   expect(s.receipts.size).toBe(1);
   fireEvent.click(screen.getByRole("button", { name: "Done" }));
+  // One of two drivers is paid: the run leaves "Awaiting payment" and is shown only under "Partly paid", not in the payment history.
+  await screen.findByText(/No approved pay runs are awaiting payment/);
+  fireEvent.click(screen.getByRole("button", { name: "Partly paid" }));
   expect(
     await screen.findByRole("button", { name: "Pay to drivers" }),
   ).toBeTruthy();
+  expect(screen.getByText("Partly paid", { selector: "span" })).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Payment history" }));
+  await screen.findByText(/No fully paid pay runs/);
 });
 it("processing payments cannot be included in confirmation: the driver is not selectable and not counted, and is labelled as processing", async () => {
   const s = await setup({ blocked: true });
