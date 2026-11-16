@@ -294,13 +294,15 @@ export const listPaymentRuns = async (
             -- same money is not asked for twice. It leaves the remaining amount for good only when Everee confirms the deposit (paid).
             COALESCE(sum(s.net) FILTER(WHERE s.payout_status NOT IN ('paid','submitted','unconfirmed')),0)::text AS remaining,
             COALESCE(sum(s.net) FILTER(WHERE s.payout_status IN ('submitted','unconfirmed')),0)::text AS processing_total,
+            COALESCE(sum(s.net) FILTER(WHERE s.payout_status='paid'),0)::text AS paid_total,
             sum(s.net)::text AS total
        FROM pay_runs r JOIN city c ON c.id=r.city_id JOIN pay_statements s ON s.pay_run_id=r.id
       WHERE r.status='finalized' AND ($1::int IS NULL OR r.city_id=$1)
         AND ($2::boolean OR EXISTS(SELECT 1 FROM admin_city_ref a WHERE a.admin_id=$3 AND a.city_id=r.city_id))
         AND ($4::bigint IS NULL OR r.id<$4) GROUP BY r.id,c.job
-      -- A run is in exactly one view: ready (nothing paid yet), partly (some drivers paid, some not) or history (every driver paid).
-      HAVING CASE WHEN $5='history' THEN count(*) FILTER(WHERE s.payout_status='paid')=count(*)
+      -- ready: nothing paid yet. partly: some drivers paid, some not. history: every payment made so far, so a partly paid run is listed here too
+      -- (its card shows only what was paid). A run is never in both ready and another view.
+      HAVING CASE WHEN $5='history' THEN count(*) FILTER(WHERE s.payout_status='paid')>0
                   WHEN $5='partly' THEN count(*) FILTER(WHERE s.payout_status='paid') BETWEEN 1 AND count(*)-1
                   ELSE count(*) FILTER(WHERE s.payout_status='paid')=0 END
       ORDER BY r.id DESC LIMIT 11`,

@@ -70,7 +70,7 @@ const setup = async ({
       const paid = drivers.filter((d) => d.payoutStatus === "paid").length;
       const show =
         config.params.view === "history"
-          ? paid === drivers.length
+          ? paid > 0
           : config.params.view === "partly"
             ? paid > 0 && paid < drivers.length
             : paid === 0;
@@ -85,6 +85,10 @@ const setup = async ({
                   paid,
                   processing: blocked ? 1 : 0,
                   total: "230.00",
+                  paid_total: drivers
+                    .filter((d) => d.payoutStatus === "paid")
+                    .reduce((n, d) => n + Number(d.amounts.net), 0)
+                    .toFixed(2),
                   remaining: drivers
                     .filter((d) => d.payoutStatus !== "paid")
                     .reduce((n, d) => n + Number(d.amounts.net), 0)
@@ -239,8 +243,13 @@ it("records selected drivers only, and retries a lost response with the same req
     await screen.findByRole("button", { name: "Pay to drivers" }),
   ).toBeTruthy();
   expect(screen.getByText("Partly paid", { selector: "span" })).toBeTruthy();
+  // The payment made so far is in the history, as paid money only: no remaining amount and no button to pay again.
   fireEvent.click(screen.getByRole("button", { name: "Payment history" }));
-  await screen.findByText(/No fully paid pay runs/);
+  expect(await screen.findByText("Paid so far")).toBeTruthy();
+  expect(screen.getByText("$40.00")).toBeTruthy(); // the one driver paid (Dee), not the 190.00 still to pay
+  expect(screen.queryByText("Remaining driver pay")).toBeNull();
+  expect(screen.queryByRole("button", { name: "Pay to drivers" })).toBeNull();
+  expect(screen.getByRole("button", { name: "View payment records" })).toBeTruthy();
 });
 it("processing payments cannot be included in confirmation: the driver is not selectable and not counted, and is labelled as processing", async () => {
   const s = await setup({ blocked: true });

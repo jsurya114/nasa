@@ -578,14 +578,19 @@ test(
             [card.paid, card.drivers, card.remaining],
             [1, 2, "190.00"],
           );
-          // One of two drivers paid: the run is in "partly" only, never in "ready" or "history".
+          // One of two drivers paid: the run is not awaiting payment; it is under "partly", and its payment so far is in the history too.
           const inView = async (view) =>
             (await listPaymentRuns(db, admin, { view })).runs.some(
               (r) => String(r.id) === String(run.id),
             );
           assert.deepEqual(
             [await inView("ready"), await inView("partly"), await inView("history")],
-            [false, true, false],
+            [false, true, true],
+          );
+          assert.equal(
+            (await listPaymentRuns(db, admin, { view: "history" })).runs.find((r) => String(r.id) === String(run.id)).paid_total,
+            "40.00",
+            "the history card of a partly paid run carries what was paid",
           );
           assert.equal(
             (

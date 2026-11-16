@@ -10,16 +10,17 @@
 | Files touched | Backend: `services/payroll/payRuns/paymentRecords.js`, `controllers/payroll/paymentRecordController.js`; tests `paymentRecords`, `processingPayments`. Frontend: `components/Admin/payRuns/PaymentRuns.jsx` and its test. Journal entry. |
 | Reserved files touched | None |
 
-**What and why.** The Driver payments card on the dashboard had two tabs, "Awaiting payment" and "Payment history". A run with some drivers
-paid and some not showed in both, which confused the super admin. There are now three tabs and a run is in exactly one:
+**What and why.** The Driver payments card had two tabs, "Awaiting payment" and "Payment history". A run with some drivers paid and some not
+showed in both, with the same card, which confused the super admin. There are now three tabs:
 
 - **Awaiting payment**: no driver of the run is paid yet.
-- **Partly paid** (new): at least one driver is paid and at least one is not.
-- **Payment history**: every driver of the run is paid.
+- **Partly paid** (new): at least one driver is paid and at least one is not. The card is the same as before: remaining amount and "Pay to drivers".
+- **Payment history**: every run with at least one payment recorded, so the payments already made on a partly paid run show here too. For a partly
+  paid run the history card shows only what was paid ("Paid so far", `paid_total`, "X of Y drivers marked paid") and "View payment records".
+  It shows no remaining amount and no "Pay to drivers" button, so it does not look like it is waiting for payment.
 
-The card itself is unchanged. A partly paid run keeps its "Pay to drivers" button, its remaining amount and its processing line, and its
-payment records are still shown in the same dialog. Drivers whose payment is with Everee (submitted or unconfirmed) are not paid, so a run
-whose paid drivers are none stays in Awaiting payment, as before.
+A run is never in "Awaiting payment" and another tab at once. Drivers whose payment is with Everee (submitted or unconfirmed) are not paid, so a
+run with none paid stays in Awaiting payment, as before.
 
 **Database.** None. The run list query's grouping condition changed; the new `partly` value of `view` is accepted by the route.
 
@@ -30,12 +31,12 @@ whose paid drivers are none stays in Awaiting payment, as before.
 **Tested.**
 - Backend `paymentRecords` and `processingPayments` database tests on a local copy (`PAYROLL_TEST_DB=1 EVEREE_ONBOARDING_ENFORCED=false
   QUICKBOOKS_ONBOARDING_ENFORCED=false QUICKBOOKS_PAYMENTS_ENABLED=false`), run one file at a time: 16 and 6 passed, 0 failed. The new assertions
-  (a run with one of two drivers paid is in `partly` only; fully paid is in `history` only) fail with the old query.
+  (a run with one of two drivers paid is not in `ready`, is in `partly` and in `history` with `paid_total` 40.00; fully paid leaves `partly`) fail with the old query.
 - Two database test files run at the same time fail on a clean `develop` too, so the suite must run them one at a time.
 - Frontend: full suite 603 passed. `PaymentRuns` test updated for three tabs.
 
 **Not tested.** In a browser against real data.
 
 **Risks and follow-ups.**
-- A run that used to appear in Payment history because one driver was paid now appears under Partly paid until every driver is paid.
+- A partly paid run is in two tabs (Partly paid and Payment history) on purpose, but the two cards differ: one is to pay what is left, the other is a record of what was paid.
 - A run whose remaining drivers are only "processing" with Everee stays in Partly paid until Everee confirms them.

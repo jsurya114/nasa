@@ -6,11 +6,11 @@ import { formatMoney } from "../../../utils/money.js";
 import RecordPaymentDialog from "./RecordPaymentDialog.jsx";
 import { buttonClass, primaryClass } from "../payroll/formParts.jsx";
 
-// A pay run is in exactly one view: nothing paid yet, some drivers paid, or every driver paid.
+// Awaiting payment: nothing paid yet. Partly paid: some drivers paid. Payment history: every run with a payment recorded, partly paid ones included.
 const EMPTY_TEXT = {
   ready: "No approved pay runs are awaiting payment. Prepare a run when you are ready to pay.",
   partly: "No pay runs are partly paid.",
-  history: "No fully paid pay runs for these cities yet.",
+  history: "No payments have been recorded for these cities yet.",
 };
 
 // Independent of delivery-history filters: an approved run remains visible until its payment is recorded.
@@ -182,6 +182,8 @@ export default function PaymentRuns({ cities = [], onRecorded }) {
       <ul className="mt-4 grid gap-3 lg:grid-cols-2">
         {state.runs.map((r) => {
           const allPaid = r.paid === r.drivers;
+          // In the payment history a partly paid run shows only what was paid, so it does not look as if it still waits for payment.
+          const paidSoFar = view === "history" && !allPaid;
           // Drivers whose payment is already with Everee are not "remaining": they are shown apart until Everee confirms the deposit.
           const processingTotal = Number(r.processing_total ?? 0);
           const onlyProcessingLeft = !allPaid && r.processing > 0 && Number(r.remaining) === 0;
@@ -205,17 +207,17 @@ export default function PaymentRuns({ cities = [], onRecorded }) {
                 </span>
               </div>
               <p className="mt-4 text-sm text-ink-muted">
-                {allPaid ? "Total driver pay recorded" : "Remaining driver pay"}
+                {allPaid ? "Total driver pay recorded" : paidSoFar ? "Paid so far" : "Remaining driver pay"}
               </p>
               <p className="mt-1 text-2xl font-bold tabular-nums text-brand">
-                {formatMoney(allPaid ? r.total : r.remaining)}
+                {formatMoney(allPaid ? r.total : paidSoFar ? r.paid_total : r.remaining)}
               </p>
               <p className="mt-2 text-sm">
                 {r.paid} of {r.drivers} drivers marked paid
                 {r.processing > 0 &&
                   ` · ${r.processing} payment(s) processing or unconfirmed`}
               </p>
-              {r.processing > 0 && (
+              {r.processing > 0 && !paidSoFar && (
                 <p className="mt-1 text-sm font-semibold text-amber-800" data-testid="processing-amount">
                   Processing, not counted above: {formatMoney(processingTotal)} ({r.processing} {r.processing === 1 ? "driver" : "drivers"})
                 </p>
@@ -230,9 +232,9 @@ export default function PaymentRuns({ cities = [], onRecorded }) {
                 <button
                   type="button"
                   onClick={() => setOpened(r)}
-                  className={allPaid || onlyProcessingLeft ? buttonClass : primaryClass}
+                  className={allPaid || paidSoFar || onlyProcessingLeft ? buttonClass : primaryClass}
                 >
-                  {allPaid ? "View payment records" : onlyProcessingLeft ? "View payment status" : "Pay to drivers"}
+                  {allPaid || paidSoFar ? "View payment records" : onlyProcessingLeft ? "View payment status" : "Pay to drivers"}
                 </button>
               </div>
             </li>
