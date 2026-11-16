@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { randomBytes } from 'node:crypto';
 import { parseHistoryQuery, parseInvoice, parseVendor } from '../services/invoices/invoiceRules.js';
-import { createInvoice, createVendor, getInvoice, listInvoices, listVendors, markPaymentReceived, ownerOf, updateInvoice } from '../services/invoices/invoiceStore.js';
+import { createInvoice, createVendor, getInvoice, listInvoices, listVendors, markPaymentReceived, ownerOf, updateInvoice, updateVendor } from '../services/invoices/invoiceStore.js';
 import { invoiceAccessOf } from '../middlewares/requireInvoiceAccess.js';
 import { dbService } from '../services/admin/dbQueries.js';
 import { toggleAdminInvoices } from '../controllers/admin/addAdminController.js';
@@ -118,9 +118,15 @@ test('invoices for selected admins: the switch decides access at once, and a sel
       assert.equal(byBoss.invoiceNumber, `B${tag}`);
     });
 
-    await t.test('vendors are shared by the admins who have Invoices', async () => {
+    await t.test('vendors are shared for listing and invoices, but only their creator or the super admin may change one', async () => {
       const names = (await listVendors(db)).map((v) => v.billingName);
-      assert.ok(names.includes(vendor.billingName));
+      assert.ok(names.includes(vendor.billingName), 'Bob sees the vendor Ann created');
+      const change = (admin, id = vendor.id) => updateVendor(db, admin, id, parseVendor({ billingName: `Shared Co ${tag}`, addressLine1: '2 Side St', billingType: 'hourly' }));
+      await rejects(() => change(bob), 403);
+      await rejects(() => change(bob, 987654321), 404);
+      assert.equal((await change(ann)).addressLine1, '2 Side St', 'the creator may');
+      assert.equal((await change(boss)).addressLine1, '2 Side St', 'the super admin may');
+      assert.equal((await one('SELECT address_line1 FROM invoice_vendors WHERE id = $1', [vendor.id])).address_line1, '2 Side St');
     });
   } finally {
     await db.query('ROLLBACK');

@@ -88,3 +88,11 @@ it("the real route table puts the Invoices page behind the Invoices guard, outsi
   expect(page).toBeLessThan(app.indexOf("</Route>", guard));
   expect(page > superClose || page < superGuard).toBe(true);
 });
+
+it("a refused Invoices request tells an admin without access what to do, and passes on the server's own reason", async () => {
+  const { problemOf } = await import("../../components/Admin/invoice/invoiceApi.js");
+  const refused = (message) => ({ response: { status: 403, data: message ? { message } : {} } });
+  expect(problemOf(refused("FORBIDDEN")).message).toMatch(/Ask the super admin to switch it on/);
+  expect(problemOf(refused()).message).toMatch(/Ask the super admin to switch it on/);
+  expect(problemOf(refused("You can edit only the vendors you created.")).message).toBe("You can edit only the vendors you created.");
+});

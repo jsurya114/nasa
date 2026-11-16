@@ -7,7 +7,7 @@
 | Issue / PR | none / see the pull request |
 | Branch | `feat/invoices-for-selected-admins` |
 | Type / scope | `feat(backend)` and `feat(frontend)` |
-| Files touched | Backend: `middlewares/requireInvoiceAccess.js` (new), `routes/invoiceRoutes.js`, `controllers/invoices/invoiceController.js`, `services/invoices/invoiceStore.js`, `routes/adminRoutes.js`, `controllers/admin/addAdminController.js`, `services/admin/dbQueries.js`, migration `2026-11-16-admin-invoice-access` (+ rollback); tests `invoiceAccess` (new), `invoiceRules`. Frontend: `routes/admin/InvoiceRoute.jsx` (new), `components/Admin/invoice/useInvoiceAccess.js` (new), `reuse/Nav.jsx`, `reuse/AdminsList.jsx`, `App.jsx`, `redux/slice/admin/userLoadSlice.js`; tests. Journal entry. |
+| Files touched | Backend: `middlewares/requireInvoiceAccess.js` (new), `routes/invoiceRoutes.js`, `controllers/invoices/invoiceController.js`, `services/invoices/invoiceStore.js`, `routes/adminRoutes.js`, `controllers/admin/addAdminController.js`, `services/admin/dbQueries.js`, migration `2026-11-16-admin-invoice-access` (+ rollback); tests `invoiceAccess` (new), `invoiceRules`. Frontend: `routes/admin/InvoiceRoute.jsx` (new), `components/Admin/invoice/useInvoiceAccess.js` (new), `components/Admin/invoice/invoiceApi.js`, `reuse/Nav.jsx`, `reuse/AdminsList.jsx`, `App.jsx`, `redux/slice/admin/userLoadSlice.js`; tests. Journal entry. |
 | Reserved files touched | None. The sign-in code (`adminSlice`, `axiosInstance`, route guards `ProtectedRoutes`) is not changed. |
 
 **What and why.** Invoices were for the super admin only. The super admin can now switch Invoices on for single ordinary admins.
@@ -21,8 +21,10 @@
   received and see the history.
 - **Only their own invoices.** A selected admin sees, opens, edits and records payment only on invoices they created (`created_by`). Another admin's
   invoice answers "not found". The list and its search are limited the same way. The super admin sees all. Saved vendors are shared by everyone who has
-  Invoices (a vendor name is unique, so two admins cannot each create the same one).
+  Invoices for listing and for making invoices (a vendor name is unique, so two admins cannot each create the same one), but a vendor can be edited
+  only by the admin who created it or by the super admin, so one admin cannot change the billing details other admins' next invoices are filled in with.
 - **Menu and page.** The Invoices link and the page follow the server's answer. Insights is still super admin only (it counts all invoices).
+- A refused Invoices request no longer says "for the super admin only". It says the admin has no access (ask the super admin), or passes on the server's reason.
 - `userLoadSlice`: enabling or disabling an admin now merges the short answer into the row instead of replacing it, so the row keeps its cities and
   its Invoices switch.
 
@@ -40,7 +42,7 @@ now asks for the column and fails without it.
 **Tested.**
 - Backend `invoiceAccess` (new, 8 passed on a local copy with `PAYROLL_TEST_DB=1 EVEREE_ONBOARDING_ENFORCED=false QUICKBOOKS_ONBOARDING_ENFORCED=false
   QUICKBOOKS_PAYMENTS_ENABLED=false`): route order; the toggle endpoint (ordinary admin refused, unknown id, a super admin target, success); the switch
-  on, off, disabled admin, driver role and missing admin; the list, search, single read, edit and "payment received" limited to the admin's own invoices.
+  on, off, disabled admin, driver role and missing admin; the list, search, single read, edit and "payment received" limited to the admin's own invoices; a vendor edited by its creator and the super admin, refused for another admin.
   `invoiceStore` (12) and `invoiceRules` (8, one route-order test updated) pass. Whole backend suite without the database: 431 tests, 333 passed, 0 failed
   (98 need the database). One earlier run showed 2 failures in the carrier statement route tests that did not appear in a rerun or alone; the cause was not found.
 - Frontend: full suite 610 passed; lint and build clean. New tests for the route guard, the menu and the admin switch.

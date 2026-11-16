@@ -44,14 +44,19 @@ export const createVendor = async (db, admin, v) => {
 };
 
 // Editing a vendor changes what the next invoice is filled in with. Saved invoices keep their own copy of the bill-to block and are never touched.
+// A vendor is edited only by the admin who created it or by the super admin.
 export const updateVendor = async (db, admin, id, v) => {
   try {
     const { rows } = await db.query(
       `UPDATE invoice_vendors SET billing_name = $2, address_line1 = $3, address_line2 = $4, contact_name = $5, contact_email = $6, billing_type = $7,
               updated_by = $8, updated_at = now()
-        WHERE id = $1 RETURNING *`,
-      [id, v.billingName, v.addressLine1, v.addressLine2, v.contactName, v.contactEmail, v.billingType, admin.id]);
-    if (!rows[0]) throw new InvoiceError(404, 'Vendor not found.');
+        WHERE id = $1 AND ($9::int IS NULL OR created_by = $9) RETURNING *`,
+      [id, v.billingName, v.addressLine1, v.addressLine2, v.contactName, v.contactEmail, v.billingType, admin.id, ownerOf(admin)]);
+    if (!rows[0]) {
+      // Vendors are shared for listing and for invoices, but only the admin who made one (or the super admin) may change it.
+      const { rows: [exists] } = await db.query('SELECT 1 AS yes FROM invoice_vendors WHERE id = $1', [id]);
+      throw exists ? new InvoiceError(403, 'You can edit only the vendors you created.') : new InvoiceError(404, 'Vendor not found.');
+    }
     return vendorView(rows[0]);
   } catch (error) {
     if (nameTaken(error)) throw new InvoiceError(409, 'A vendor with this billing name already exists.');
