@@ -39,19 +39,24 @@ export const claimsScopeOf = async (db, tokenAdmin) => {
 };
 
 // What has been deducted for one claim, from the pay run history of the claim itself (every version of it, any driver, keyed by claim_key):
-//   applied  taken in finalized pay runs (finalized means approved, not that the driver was paid)
-//   paid     the part of that whose statement payout is recorded as paid
-//   left     what is still owed for the current version (the payroll's own figure: eligible amount less what was really collected, drafts included)
-// payout: 'paid' (all applied money has been paid out), 'partly_paid', or 'finalized' (approved runs only so far). state: none | partial | full.
-export const deductionOf = ({ amount, appliedCents, paidCents, leftCents }) => {
+//   applied   taken in finalized pay runs, as history (finalized means approved, not that the driver was paid); never reduced by a refund
+//   paid      the part of that whose statement payout is recorded as paid
+//   refunded  given back by approved corrections whose payout is paid (the payroll's own netting: gross taken less what is still collected)
+//   left      what is still owed for the current version (the payroll's own figure: eligible amount less what was really collected, drafts included)
+// payout: 'paid' (all applied money has been paid out), 'partly_paid', or 'finalized' (approved runs only so far).
+// state: none | partial | full | refunded, judged on what stands after refunds (applied less refunded): a fully refunded claim is not "deducted".
+export const deductionOf = ({ amount, appliedCents, paidCents, grossCents = appliedCents, collectedCents = grossCents, leftCents }) => {
   const applied = Number(appliedCents);
   const paid = Number(paidCents);
+  const refunded = Math.max(Number(grossCents) - Number(collectedCents), 0);
+  const standing = Math.max(applied - refunded, 0);
   const total = toCents(amount);
-  const state = applied <= 0 ? 'none' : applied >= total ? 'full' : 'partial';
+  const state = applied <= 0 ? 'none' : standing >= total ? 'full' : standing > 0 ? 'partial' : 'refunded';
   return {
     state,
     applied: fromCents(applied),
     paid: fromCents(paid),
+    refunded: fromCents(refunded),
     left: leftCents === null || leftCents === undefined ? null : fromCents(Math.max(Number(leftCents), 0)),
     payout: applied <= 0 ? null : paid >= applied ? 'paid' : paid > 0 ? 'partly_paid' : 'finalized',
   };
@@ -77,7 +82,8 @@ export const listClaims = async (db, scope, filters) => {
   // The deduction history of the claim itself, by claim identity, so an amended claim keeps what was taken under an earlier version.
   const history = `LEFT JOIN LATERAL (
       SELECT (SUM(-l.amount) FILTER (WHERE r.status = 'finalized') * 100)::bigint AS applied_cents,
-             (SUM(-l.amount) FILTER (WHERE r.status = 'finalized' AND s.payout_status = 'paid') * 100)::bigint AS paid_cents
+             (SUM(-l.amount) FILTER (WHERE r.status = 'finalized' AND s.payout_status = 'paid') * 100)::bigint AS paid_cents,
+             (SUM(-l.amount) * 100)::bigint AS gross_cents
         FROM courier_claims cv
         JOIN pay_statement_lines l ON l.claim_id = cv.id AND l.active AND l.line_type = 'claim'
         JOIN pay_statements s ON s.id = l.statement_id
@@ -97,6 +103,7 @@ export const listClaims = async (db, scope, filters) => {
     `SELECT c.id, c.courier, c.waybill, c.claim_type, to_char(c.claim_at, 'YYYY-MM-DD') AS claim_date, c.deduction_amount::text AS amount,
             c.courier_name, ci.job AS city, m.status, m.reason, d.name AS driver_name, d.driver_code,
             COALESCE(h.applied_cents, 0)::bigint AS applied_cents, COALESCE(h.paid_cents, 0)::bigint AS paid_cents,
+            COALESCE(h.gross_cents, 0)::bigint AS gross_cents, (${NET_COLLECTED_SQL('c')} * 100)::bigint AS collected_cents,
             CASE WHEN m.status = 'chargeable' THEN ((m.eligible_deduction - ${NET_COLLECTED_SQL('c')}) * 100)::bigint END AS left_cents
        ${rowsFrom} AND m.status = ANY($${n + 1}::text[])
       ORDER BY c.claim_at DESC, c.id DESC LIMIT $${n + 2} OFFSET $${n + 3}`,
@@ -106,7 +113,7 @@ export const listClaims = async (db, scope, filters) => {
     claims: rows.map((r) => ({
       id: Number(r.id), courier: r.courier, waybill: r.waybill, claimType: r.claim_type, claimDate: r.claim_date, amount: r.amount, city: r.city,
       status: r.status, reason: r.reason, courierName: r.courier_name, driverName: r.driver_name, driverCode: r.driver_code,
-      deduction: deductionOf({ amount: r.amount, appliedCents: r.applied_cents, paidCents: r.paid_cents, leftCents: r.left_cents }),
+      deduction: deductionOf({ amount: r.amount, appliedCents: r.applied_cents, paidCents: r.paid_cents, grossCents: r.gross_cents, collectedCents: r.collected_cents, leftCents: r.left_cents }),
     })),
     total, page: filters.page, pageSize: PAGE_SIZE, totalPages: Math.ceil(total / PAGE_SIZE), counts,
   };

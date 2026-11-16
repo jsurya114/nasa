@@ -121,12 +121,12 @@ test('the claims list: matched and unmatched, only the admin\'s cities, only cur
       const draft = await run(['2026-11-01', '2026-11-07']);
       const st = await statement(draft.id, ann.id, 25);
       await takeLine(st.id, c1, '25.00');
-      assert.deepEqual(await deductionsOf('W1'), { state: 'none', applied: '0.00', paid: '0.00', left: '0.00', payout: null }, 'a draft run has not deducted anything (its 25.00 is held, so nothing is left to take)');
+      assert.deepEqual(await deductionsOf('W1'), { state: 'none', applied: '0.00', paid: '0.00', refunded: '0.00', left: '0.00', payout: null }, 'a draft run has not deducted anything (its 25.00 is held, so nothing is left to take)');
       assert.equal((await deductionsOf('W2')).state, 'none');
       await finalize(draft.id);
-      assert.deepEqual(await deductionsOf('W1'), { state: 'full', applied: '25.00', paid: '0.00', left: '0.00', payout: 'finalized' }, 'finalized is approval, not a completed payout');
+      assert.deepEqual(await deductionsOf('W1'), { state: 'full', applied: '25.00', paid: '0.00', refunded: '0.00', left: '0.00', payout: 'finalized' }, 'finalized is approval, not a completed payout');
       await db.query("UPDATE pay_statements SET payout_status = 'paid' WHERE id = $1", [st.id]);
-      assert.deepEqual(await deductionsOf('W1'), { state: 'full', applied: '25.00', paid: '25.00', left: '0.00', payout: 'paid' }, 'the payout has completed');
+      assert.deepEqual(await deductionsOf('W1'), { state: 'full', applied: '25.00', paid: '25.00', refunded: '0.00', left: '0.00', payout: 'paid' }, 'the payout has completed');
     });
 
     await t.test('an amended claim keeps what was taken under its earlier version, and a partial deduction is not shown as a full one', async () => {
@@ -137,25 +137,53 @@ test('the claims list: matched and unmatched, only the admin\'s cities, only cur
       await takeLine(stA.id, v1, '15.00'); // 15.00 of the 40.00 was taken in run A
       await finalize(runA.id);
       const v2 = await claim(mine.id, 'W7', 'chargeable', { driver: ann, key, version: 2, amount: '50.00', day: '2026-11-06' }); // the carrier amended it to 50.00
-      assert.deepEqual(await deductionsOf('W7'), { state: 'partial', applied: '15.00', paid: '0.00', left: '35.00', payout: 'finalized' },
+      assert.deepEqual(await deductionsOf('W7'), { state: 'partial', applied: '15.00', paid: '0.00', refunded: '0.00', left: '35.00', payout: 'finalized' },
         'the earlier version\'s deduction still counts (a badge keyed to the latest version id would lose it)');
       const runB = await run(['2026-10-08', '2026-10-14']);
       const stB = await statement(runB.id, ann.id, 20);
       await takeLine(stB.id, v2, '20.00');
       await finalize(runB.id);
       await db.query("UPDATE pay_statements SET payout_status = 'paid' WHERE id = $1", [stA.id]);
-      assert.deepEqual(await deductionsOf('W7'), { state: 'partial', applied: '35.00', paid: '15.00', left: '15.00', payout: 'partly_paid' }, 'two runs, one paid out, one only finalized');
+      assert.deepEqual(await deductionsOf('W7'), { state: 'partial', applied: '35.00', paid: '15.00', refunded: '0.00', left: '15.00', payout: 'partly_paid' }, 'two runs, one paid out, one only finalized');
       const runC = await run(['2026-10-15', '2026-10-21']);
       const stC = await statement(runC.id, ann.id, 15);
       await takeLine(stC.id, v2, '15.00');
       await finalize(runC.id);
-      assert.deepEqual(await deductionsOf('W7'), { state: 'full', applied: '50.00', paid: '15.00', left: '0.00', payout: 'partly_paid' });
+      assert.deepEqual(await deductionsOf('W7'), { state: 'full', applied: '50.00', paid: '15.00', refunded: '0.00', left: '0.00', payout: 'partly_paid' });
+    });
+
+    await t.test('a paid correction gives money back: the history stays, the refund is shown, and what is left to deduct is never hidden', async () => {
+      const w8 = await claim(mine.id, 'W8', 'chargeable', { driver: ann, amount: '30.00', day: '2026-11-06' });
+      const runD = await run(['2026-09-01', '2026-09-07']);
+      const stD = await statement(runD.id, ann.id, 30);
+      await takeLine(stD.id, w8, '30.00');
+      await finalize(runD.id);
+      const refund = async (amount, payoutStatus, period) => {
+        const entry = await one(
+          `INSERT INTO driver_ledger_entries (request_id, driver_id, city_id, entry_type, direction, amount, reason, effective_date, claim_type, waybill, claim_courier, created_by)
+           VALUES ($1, $2, $3, 'correction', 'credit', $4, 'Refund of a wrongly charged claim', '2026-11-08', 'Lost parcel', $5, 'gofo', $6) RETURNING id`,
+          [randomUUID(), ann.id, mine.id, amount, `W8${tag}`, sup.id]);
+        const runR = await run(period);
+        const stR = await statement(runR.id, ann.id, 0);
+        await db.query(`INSERT INTO pay_statement_lines (statement_id, line_type, amount, ledger_entry_id) VALUES ($1, 'reimbursement', $2, $3)`, [stR.id, amount, entry.id]);
+        await finalize(runR.id);
+        if (payoutStatus === 'paid') await db.query("UPDATE pay_statements SET payout_status = 'paid' WHERE id = $1", [stR.id]);
+      };
+      assert.deepEqual(await deductionsOf('W8'), { state: 'full', applied: '30.00', paid: '0.00', refunded: '0.00', left: '0.00', payout: 'finalized' });
+      await refund('10.00', 'not_submitted', ['2026-09-08', '2026-09-14']); // approved, but the money has not reached the driver
+      assert.equal((await deductionsOf('W8')).refunded, '0.00', 'a correction counts only once it is paid');
+      await refund('10.00', 'paid', ['2026-09-15', '2026-09-21']);
+      assert.deepEqual(await deductionsOf('W8'), { state: 'partial', applied: '30.00', paid: '0.00', refunded: '10.00', left: '10.00', payout: 'finalized' },
+        'part refunded: the 30.00 stays as history, 10.00 is back and can be taken again');
+      await refund('20.00', 'paid', ['2026-09-22', '2026-09-28']);
+      assert.deepEqual(await deductionsOf('W8'), { state: 'refunded', applied: '30.00', paid: '0.00', refunded: '30.00', left: '30.00', payout: 'finalized' },
+        'fully refunded: nothing stands, the whole amount is left to deduct');
     });
 
     await t.test('the deduction shape, apart from the database: none, partial, full, and what is left never below zero', () => {
-      assert.deepEqual(deductionOf({ amount: '25.00', appliedCents: 0, paidCents: 0, leftCents: 2500 }), { state: 'none', applied: '0.00', paid: '0.00', left: '25.00', payout: null });
-      assert.deepEqual(deductionOf({ amount: '25.00', appliedCents: '1000', paidCents: '1000', leftCents: '1500' }), { state: 'partial', applied: '10.00', paid: '10.00', left: '15.00', payout: 'paid' });
-      assert.deepEqual(deductionOf({ amount: '25.00', appliedCents: 2500, paidCents: 0, leftCents: -500 }), { state: 'full', applied: '25.00', paid: '0.00', left: '0.00', payout: 'finalized' });
+      assert.deepEqual(deductionOf({ amount: '25.00', appliedCents: 0, paidCents: 0, leftCents: 2500 }), { state: 'none', applied: '0.00', paid: '0.00', refunded: '0.00', left: '25.00', payout: null });
+      assert.deepEqual(deductionOf({ amount: '25.00', appliedCents: '1000', paidCents: '1000', leftCents: '1500' }), { state: 'partial', applied: '10.00', paid: '10.00', refunded: '0.00', left: '15.00', payout: 'paid' });
+      assert.deepEqual(deductionOf({ amount: '25.00', appliedCents: 2500, paidCents: 0, leftCents: -500 }), { state: 'full', applied: '25.00', paid: '0.00', refunded: '0.00', left: '0.00', payout: 'finalized' });
       assert.equal(deductionOf({ amount: '25.00', appliedCents: 0, paidCents: 0, leftCents: null }).left, null, 'an unmatched or exempt claim has no amount left to take');
     });
 

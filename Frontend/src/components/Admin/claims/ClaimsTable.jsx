@@ -17,7 +17,7 @@ export default function ClaimsTable({ claims, matched }) {
         <tbody>
           {claims.map((c) => {
             const status = CLAIM_STATUS[c.status] ?? { label: c.status, tone: "bg-gray-100 text-gray-700", hint: "" };
-            const deduction = deductionWords(c.deduction, c.amount, formatMoney);
+            const deduction = deductionWords(c.deduction, formatMoney);
             return (
               <tr key={c.id} data-testid={`claim-${c.id}`}>
                 <td className="px-3 py-2 border-b font-mono text-xs">{c.waybill}</td>

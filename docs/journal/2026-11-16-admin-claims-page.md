@@ -35,6 +35,14 @@ drivers and which are not matched yet, with the waybill. There is now a **Claims
   (finalized, partly_paid, paid). The page says "Deducted" or "Part deducted", the amounts, what is left, and whether it is only in a finalized run or paid out.
   An amended claim keeps what was taken under its earlier version, and a draft run counts as nothing deducted.
 
+**Second review round.**
+- A paid correction (a refund) is now part of the claim's deduction history. `deduction.applied` stays the gross amount deducted in finalized runs and is
+  worded as history ("deducted in finalized runs"); the new `deduction.refunded` is what paid corrections gave back (the payroll's own netting; an approved
+  but unpaid correction counts nothing). The state follows what still stands after refunds: full, partial, or `refunded` ("Deducted, then refunded").
+  Any positive amount left to deduct is always shown, whatever the badge says.
+- The branch now includes `develop` (the merged Invoices pull request), which resolves the shared `Nav.jsx` lines: the Claims link stays for every admin, Invoices for the
+  admins it is switched on for.
+
 **Database.** None. Read only; no new column, table or index. (The list uses the existing indexes on `courier_claims` and `courier_claim_matches`.)
 
 **Config and dependencies.** None.
@@ -53,6 +61,10 @@ drivers and which are not matched yet, with the waybill. There is now a **Claims
 version's 15.00 still counts; then 35.00 of 50.00 with one run paid out and one only finalized; then fully deducted), a draft run deducting nothing,
 finalized versus paid out, the pure shape, and who may read (a stale super admin token, promotion, demotion, a disabled, unknown or driver account, and a 403
 from the route handler). Frontend `Claims` tests: 6 passed (partial, full and paid-out wording).
+
+**Tested after the second review.** `claimsList` database tests: 12 passed, including a claim of 30.00 fully deducted and then refunded by paid corrections
+(unpaid correction: nothing changes; 10.00 paid: partial with 10.00 left; 30.00 paid: refunded with 30.00 left). Frontend `Claims`, `SuperAdminRoute` and
+`src/reuse` tests pass.
 
 **Not tested.** In a browser against real data, and a real sign-in as an ordinary admin.
 
