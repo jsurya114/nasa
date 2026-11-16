@@ -99,6 +99,9 @@ export const createEvereeClient = (config, { fetchImpl = fetch, timeoutMs = REQU
     // One payment of a worker by its payment ID. Everee answers 404 until the payment has been processed for deposit. Read-only. Its answer
     // says the pay date, the worker and the amounts, but not whether the bank deposit has settled (it has no payout statuses).
     getPaymentHistoryItem: (paymentId) => request('GET', `/integration/v1/workers/payment-history/${encodeURIComponent(paymentId)}`),
+    // The payouts of one payment (GET net-payouts, filtered by payment ID): each states its worker, type (DIRECT_DEPOSIT, PAY_CARD ...), status
+    // (PENDING, PAID, RETURNED, SUPERSEDED) and net amount. 1000 at most per page. Read-only.
+    listNetPayouts: (paymentId) => request('GET', `/integration/v1/net-payouts?payment-id=${encodeURIComponent(paymentId)}&limit=1000`),
     // Everee's Payment Data API: the payments of one pay date (YYYY-MM-DD), each with its `netPayouts` and their statuses PENDING, PAID or
     // FAILED, 1000 at most per page; `after` is the previous page's nextCursor. Only paid payments are listed. Read-only.
     getPaymentData: (payDate, after) => request('GET', `/integration/v1/payment-data?pay-date=${encodeURIComponent(payDate)}&limit=1000${after ? `&after=${encodeURIComponent(after)}` : ''}`),

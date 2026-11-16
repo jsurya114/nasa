@@ -71,8 +71,10 @@ it("the menu lists Payroll, Pay runs and Insights for the super admin only", () 
   expect(forAdmin).not.toContain("/admin/payroll");
   expect(forAdmin).not.toContain("/admin/pay-runs");
   expect(forAdmin).not.toContain("/admin/insights");
+  expect(forAdmin, "Claims is for every admin").toContain("/admin/claims");
   cleanup();
   const forSuper = navLinks(true);
+  expect(forSuper).toContain("/admin/claims");
   expect(forSuper).toContain("/admin/payroll");
   expect(forSuper).toContain("/admin/pay-runs");
   expect(forSuper).toContain("/admin/insights");

@@ -51,6 +51,7 @@ export default function RecordPaymentDialog({
   cityName,
   onClose,
   onRecorded,
+  readOnly = false,
 }) {
   const selectedRef = useRef(null);
   const [review, setReview] = useState({ status: "loading", data: null });
@@ -108,6 +109,7 @@ export default function RecordPaymentDialog({
           .filter(payable)
           .map((d) => String(d.statementId));
         // First load (nothing chosen yet): open the first tab that has drivers to pay and select its drivers. A refresh keeps the choice that is still valid.
+        if (readOnly) return; // the payment history only shows what was recorded: nothing is chosen for payment
         if (selectedRef.current === null) {
           const first = firstTab(data.drivers);
           setTab(first);
@@ -125,10 +127,13 @@ export default function RecordPaymentDialog({
           });
       });
     return () => controller.abort();
-  }, [runId, version]);
+  }, [runId, version, readOnly]);
 
   const drivers = review.data?.drivers ?? [];
   const allPaid = drivers.length > 0 && drivers.every(paid);
+  // Records only: every driver is paid, or the dialog was opened from the payment history. No driver can be chosen and nothing can be paid from here.
+  const records = allPaid || readOnly;
+  const stillToPay = drivers.filter(payable).length;
   const counts = Object.fromEntries(
     ["LOCAL", "DESI", "NONE"].map((k) => [k, { total: drivers.filter((d) => typeOf(d) === k).length, unpaid: drivers.filter((d) => typeOf(d) === k && payable(d)).length }]),
   );
@@ -146,7 +151,8 @@ export default function RecordPaymentDialog({
     chosen.reduce((n, d) => n + Math.round(Number(d.amounts.net) * 100), 0) /
     100
   ).toFixed(2);
-  const visible = (allPaid ? drivers : drivers.filter((d) => typeOf(d) === tab)).filter((d) =>
+  const shown = readOnly ? drivers.filter((d) => paid(d) || processing(d)) : allPaid ? drivers : drivers.filter((d) => typeOf(d) === tab);
+  const visible = shown.filter((d) =>
     d.driverName.toLowerCase().includes(search.trim().toLowerCase()),
   );
   const chosenIds = chosen.map((d) => Number(d.statementId));
@@ -339,7 +345,7 @@ export default function RecordPaymentDialog({
                   ? "Submitted to Everee"
                   : result
                     ? "Payment recorded"
-                    : allPaid
+                    : records
                       ? "Payment records"
                       : "Pay to drivers"}
               </DialogTitle>
@@ -447,7 +453,7 @@ export default function RecordPaymentDialog({
                 ref={bodyRef}
                 className="space-y-4 overflow-y-auto p-4 sm:p-6"
               >
-                {!allPaid && (
+                {!records && (
                   <h3
                     ref={stepTitle}
                     tabIndex={-1}
@@ -462,7 +468,9 @@ export default function RecordPaymentDialog({
                 <p className="rounded-xl bg-brand-50 p-3 text-sm text-brand-dark">
                   {allPaid
                     ? "All driver payments in this run are recorded. Payment dates, notes and confirmation details are kept below."
-                    : step === "review"
+                    : readOnly
+                      ? `Payments recorded so far in this run.${stillToPay ? ` ${stillToPay} ${stillToPay === 1 ? "driver is" : "drivers are"} still to pay: find them under Partly paid.` : ""}`
+                      : step === "review"
                       ? "Choose the drivers to pay. The amounts are the approved amounts of this pay run."
                       : viaQuickbooks
                         ? "Records the check you give each driver as paid, and sends the same amount to QuickBooks as a bill and a bill payment for the 1099 reports. QuickBooks does not pay anyone."
@@ -470,13 +478,13 @@ export default function RecordPaymentDialog({
                         ? "Sends the approved amounts through Everee. Nothing is paid until you approve the payroll run in Everee and Everee confirms the deposits."
                         : "Records money you paid outside NASA, such as cash. Nothing is sent."}
                 </p>
-                {evereeAvailable && step === "review" && (
+                {evereeAvailable && step === "review" && !readOnly && (
                   <EvereeRunResults runId={runId} reloadKey={resultsKey} onChanged={onRecorded} />
                 )}
-                {!allPaid && step === "review" && (
+                {!records && step === "review" && (
                   <DriverTypeTabs tab={tab} counts={counts} onChange={changeTab} disabled={busy} />
                 )}
-                {!allPaid && (
+                {!records && (
                   <div className="flex flex-wrap items-center justify-between gap-3">
                     <div>
                       <p className="text-sm text-ink-muted">
@@ -517,7 +525,7 @@ export default function RecordPaymentDialog({
                     )}
                   </div>
                 )}
-                {(allPaid || step === "review") && (
+                {(records || step === "review") && (
                   <>
                     <input
                       type="search"
@@ -613,7 +621,7 @@ export default function RecordPaymentDialog({
                     )}
                   </>
                 )}
-                {!allPaid && step === "payment" && (
+                {!records && step === "payment" && (
                   <>
                     <div className="grid gap-3 sm:grid-cols-2">
                       {tab === "DESI" ? (
@@ -754,9 +762,9 @@ export default function RecordPaymentDialog({
                   disabled={busy}
                   className={buttonClass}
                 >
-                  {allPaid ? "Done" : "Cancel"}
+                  {records ? "Done" : "Cancel"}
                 </button>
-                {!allPaid && step === "payment" && (
+                {!records && step === "payment" && (
                   <button
                     type="button"
                     disabled={busy}
@@ -766,7 +774,7 @@ export default function RecordPaymentDialog({
                     Back
                   </button>
                 )}
-                {!allPaid && (
+                {!records && (
                   <button
                     type={step === "review" ? "button" : "submit"}
                     onClick={

@@ -11,8 +11,9 @@ import { changeDriverTypes } from '../controllers/admin/driverTypeController.js'
 import { createAccessCode, deleteAccessCode } from '../controllers/admin/accessCodeControllers.js';
 import { DailyExcelUpload, getUpdatedTempDashboardData } from '../controllers/admin/fileUploadsController.js';
 import { getAccessCodes, updateAccessCode, } from '../controllers/admin/accessCodeControllers.js';
-import { changeRoleAdmin, changeStatusAdmin, createAdmins, getAdmins, updateAdmin, getAdminCities } from '../controllers/admin/addAdminController.js';
+import { changeRoleAdmin, changeStatusAdmin, createAdmins, getAdmins, updateAdmin, getAdminCities, toggleAdminInvoices } from '../controllers/admin/addAdminController.js';
 import { getPaymentDashboardData, getAllPaymentDashboardData, updatePaymentData, updateWeeklyTempDataToDashboard, payDriver, getSummaryData } from '../controllers/admin/dashboardController.js';
+import { getClaims } from '../controllers/admin/claimsController.js';
 import adminJourneyController from '../controllers/admin/adminJourneyController.js';
 import adminAuth from '../middlewares/adminAuth.js';
 import superAdminAuth from '../middlewares/superAdminAuth.js';
@@ -52,6 +53,9 @@ router.put('/update-user/:id', updateUser);
 // Local or Desi for one or many drivers at once, all in one transaction (any admin, own cities only).
 router.patch('/drivers/type', changeDriverTypes);
 
+// The carrier's claims for the admin's own cities (all for a super admin): matched to a driver, or not yet. Read only.
+router.get('/claims', getClaims);
+
 router.get('/get-cities', jobController.getCities);
 router.get('/get-admin-cities', getAdminCities);
 
@@ -59,6 +63,7 @@ router.post("/create-admin", superAdminAuth, createAdmins);
 router.get('/get-admins', superAdminAuth, getAdmins);
 router.patch('/toggle-admin/:id', superAdminAuth, changeStatusAdmin);
 router.patch('/toggle-admin-role/:id', superAdminAuth, changeRoleAdmin);
+router.patch('/toggle-admin-invoices/:id', superAdminAuth, toggleAdminInvoices);
 router.put('/update-admin/:id', superAdminAuth, updateAdmin);
 
 router.post('/doubleStop/dailyFileUpload', upload.single('file'), DailyExcelUpload)
