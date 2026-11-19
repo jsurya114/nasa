@@ -3,7 +3,7 @@
 import { assertCityAllowed, isSuperAdmin, PayrollError } from "./payRunStore.js";
 import { lockCityPayroll } from "../claims/claimsStore.js";
 import { blockersFor, reviewRunAsBatch } from "./payBatchReview.js";
-import { fromCents, toCents } from "./payCalculator.js";
+import { fromCents, MIN_PAY_FOR_INSURANCE_CENTS, toCents } from "./payCalculator.js";
 import { parseDate } from "../ledger/ledgerRules.js";
 import { CASH, CHECK, methodAllowed, typeBlockers } from "./driverPaymentRules.js";
 import { quickbooksPaymentsOn } from "../../payments/quickbooks/quickbooksConfig.js";
@@ -105,6 +105,8 @@ export const approvedWork = async (db, ids, lock = false) =>
       `SELECT pd.id,pd.dashboard_data_id,pd.paid,pd.closed,pd.driver_payment::text AS gross,pd.insurance_deduction::text AS insurance,
           (pd.driver_id=s.driver_id AND dd.driver_id=pd.driver_id AND dd.route_id=pd.route_id AND dd.journey_date=pd.journey_date) AS same_work,
           l.statement_id,l.amount::text AS frozen_gross,
+          -- a statement drafted with no insurance because the driver's pay was under the minimum (see payCalculator): its source rows still carry insurance
+          (s.insurance=0 AND s.gross*100<${MIN_PAY_FOR_INSURANCE_CENTS}) AS insurance_waived,
           COALESCE((SELECT -SUM(i.amount) FROM pay_statement_lines i WHERE i.statement_id=l.statement_id AND i.payment_dashboard_id=pd.id AND i.active AND i.line_type='insurance'),0)::text AS frozen_insurance
      FROM pay_statement_lines l JOIN payment_dashboard pd ON pd.id=l.payment_dashboard_id
      JOIN dashboard_data dd ON dd.id=pd.dashboard_data_id JOIN pay_statements s ON s.id=l.statement_id
@@ -132,7 +134,7 @@ export const invalidWork = (statements, earnings) => {
               !e.closed ||
               e.paid ||
               toCents(e.gross ?? "0") !== toCents(e.frozen_gross) ||
-              toCents(e.insurance ?? "0") !== toCents(e.frozen_insurance),
+              (e.insurance_waived ? toCents(e.frozen_insurance) !== 0 : toCents(e.insurance ?? "0") !== toCents(e.frozen_insurance)),
           )
         );
       })
