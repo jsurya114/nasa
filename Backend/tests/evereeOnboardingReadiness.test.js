@@ -32,7 +32,9 @@ test('read-only readiness previews the gate using current city, tenant and verif
       const r=await onboardingReadiness(db,admin,{cityId:city},{env:ENV});
       assert.equal(r.enforced,false);assert.equal(r.onboardingEnabled,false);
       assert.equal(r.summary.localDrivers,2);assert.equal(r.summary.complete,1);assert.equal(r.summary.wouldHold,1);assert.equal(r.summary.unclassified,1);
-      assert.equal(r.drivers.find(d=>d.driverId===verified).paymentReady,false);
+      assert.equal(r.drivers.find(d=>d.driverId===verified).paymentReady,true,'a failed tax ID does not hold payment by default');
+      const blocked=await onboardingReadiness(db,admin,{cityId:city},{env:{...ENV,EVEREE_BLOCK_ON_TAX_ID_FAILURE:'true'}});
+      assert.equal(blocked.drivers.find(d=>d.driverId===verified).paymentReady,false,'with the block switched on it is held');
       assert.equal(r.drivers.find(d=>d.driverId===wrongTenant).reason,'link_not_verified_for_tenant');
       assert.ok(r.drivers.every(d=>!Object.hasOwn(d,'email')&&!Object.hasOwn(d,'phone_number')));
       const filtered=await onboardingReadiness(db,admin,{cityId:city,state:'needs-review'},{env:ENV});

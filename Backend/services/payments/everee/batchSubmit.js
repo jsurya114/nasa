@@ -455,7 +455,7 @@ export const retryBatch = async (db, admin, batchId, deps = {}) => {
       const { rows: [link] } = await tx.query(
         `SELECT everee_worker_id, external_worker_id, onboarding_complete, tin_status, terminated FROM everee_workers
           WHERE driver_id = $1 AND environment = $2 AND unlinked_at IS NULL`, [item.driver_id, config.environment]);
-      if (!link || !readyToPay({ onboardingComplete: link.onboarding_complete, tinStatus: link.tin_status, terminated: link.terminated })) continue;
+      if (!link || !readyToPay({ onboardingComplete: link.onboarding_complete, tinStatus: link.tin_status, terminated: link.terminated }, env)) continue;
       // The payable goes to the worker saved on the item. If the driver has been linked to another Everee worker since, that is not the worker
       // whose readiness was just checked, so it is not sent: it stays failed until a person looks.
       if (link.everee_worker_id !== item.everee_worker_id || (link.external_worker_id ?? null) !== (item.external_worker_id ?? null)) {

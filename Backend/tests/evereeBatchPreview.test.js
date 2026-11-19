@@ -86,6 +86,22 @@ test('everee batch preview: who can be paid and why not, one hash for what would
       await assert.rejects(preview(sup1, 987654321), { status: 404 });
     });
 
+    await t.test('a failed tax ID in Everee is a warning that does not stop the payment, unless the block is switched on', async () => {
+      await db.query("UPDATE everee_workers SET tin_status = 'VERIFICATION_FAILED' WHERE driver_id = $1", [dA]);
+      const warned = by(await preview(sup2, main.id, ARMED), dA);
+      assert.deepEqual([warned.eligible, warned.worker.ready, codes(warned.blockers)], [true, true, ['tax_id_check_failed']]);
+      assert.equal(warned.blockers[0].severity, 'disclose');
+      assert.match(warned.blockers[0].message, /tax ID check failed in Everee/);
+      const held = by(await preview(sup2, main.id, { ...ARMED, EVEREE_BLOCK_ON_TAX_ID_FAILURE: 'true' }), dA);
+      assert.deepEqual([held.eligible, codes(held.blockers)], [false, ['worker_not_ready']]);
+      assert.deepEqual(held.blockers[0].problems.map((p) => p.code), ['tin_verification_failed']);
+      // Only the tax ID failure is softened: a worker who has not finished onboarding is held either way.
+      await db.query("UPDATE everee_workers SET onboarding_complete = false WHERE driver_id = $1", [dA]);
+      assert.equal(by(await preview(sup2, main.id, ARMED), dA).eligible, false);
+      await db.query("UPDATE everee_workers SET tin_status = 'VERIFIED', onboarding_complete = true WHERE driver_id = $1", [dA]);
+      assert.deepEqual([by(await preview(sup2, main.id, ARMED), dA).eligible, codes(by(await preview(sup2, main.id, ARMED), dA).blockers)], [true, []]);
+    });
+
     await t.test('a run that is not finalized cannot be paid: it says why for the whole batch and for each driver', async () => {
       const r = await preview(sup1, draft.id, ARMED);
       assert.equal(r.canSubmit, false);

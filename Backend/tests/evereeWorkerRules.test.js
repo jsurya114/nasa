@@ -70,11 +70,16 @@ test('what is returned about a match is masked, and the link source follows what
   assert.equal(linkSourceOf(['phone']), 'matched_phone');
 });
 
-test('a worker is ready to be paid only when onboarding is complete, the tax ID did not fail and they are not separated', () => {
+test('a worker is ready to be paid when onboarding is complete and they are not separated; a failed tax ID holds them only when the block is switched on', () => {
   assert.equal(readyToPay({ onboardingComplete: true, tinStatus: 'VERIFIED', terminated: false }), true);
   assert.equal(readyToPay({ onboardingComplete: true, tinStatus: null, terminated: false }), true);
   assert.equal(readyToPay({ onboardingComplete: false, tinStatus: 'VERIFIED', terminated: false }), false);
-  assert.equal(readyToPay({ onboardingComplete: true, tinStatus: 'VERIFICATION_FAILED', terminated: false }), false);
+  // A failed tax ID does not hold the payment by default (Everee decides what it does with it); EVEREE_BLOCK_ON_TAX_ID_FAILURE=true holds it again.
+  assert.equal(readyToPay({ onboardingComplete: true, tinStatus: 'VERIFICATION_FAILED', terminated: false }, {}), true);
+  assert.equal(readyToPay({ onboardingComplete: true, tinStatus: 'VERIFICATION_FAILED', terminated: false }, { EVEREE_BLOCK_ON_TAX_ID_FAILURE: 'true' }), false);
+  assert.equal(readyToPay({ onboardingComplete: true, tinStatus: 'VERIFICATION_FAILED', terminated: false }, { EVEREE_BLOCK_ON_TAX_ID_FAILURE: 'false' }), true);
+  assert.equal(readyToPay({ onboardingComplete: false, tinStatus: 'VERIFICATION_FAILED', terminated: false }, {}), false, 'onboarding still has to be complete');
+  assert.equal(readyToPay({ onboardingComplete: true, tinStatus: 'VERIFICATION_FAILED', terminated: true }, {}), false, 'a worker who left is never ready');
   assert.equal(readyToPay({ onboardingComplete: true, tinStatus: 'VERIFIED', terminated: true }), false);
 });
 
