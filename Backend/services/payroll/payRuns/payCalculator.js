@@ -8,6 +8,9 @@
 //   A debit with no arrangement is flagged for review and not recovered.
 // - Only matched, chargeable claims are recovered. Pending claims are not this function's input at all.
 
+// A driver whose pay for a run is below this pays no insurance for that run (set by the owner, 19 Nov 2026): at $1.92 a day, a short week could otherwise end below zero.
+export const MIN_PAY_FOR_INSURANCE_CENTS = 500;
+
 export const RECOVERY_LIMIT_TYPES = Object.freeze(['percent_of_available', 'fixed_amount']);
 
 export const toCents = (value) => {
@@ -78,11 +81,15 @@ export const calculateStatement = (input) => {
   const lines = [];
 
   const earnings = [...(input.earnings ?? [])].sort(byDateThenId('journeyDate'));
+  // A driver whose pay in this run is under the minimum pays no insurance for it, so insurance alone can never push a small week below zero.
+  const waiveInsurance = earnings.reduce((sum, e) => sum + toCents(e.gross), 0) < MIN_PAY_FOR_INSURANCE_CENTS;
   let grossCents = 0;
   let insuranceCents = 0;
+  let waivedCents = 0;
   for (const e of earnings) {
     const gross = toCents(e.gross);
-    const insurance = toCents(e.insurance ?? 0);
+    const insurance = waiveInsurance ? 0 : toCents(e.insurance ?? 0);
+    if (waiveInsurance) waivedCents += toCents(e.insurance ?? 0);
     grossCents += gross;
     insuranceCents += insurance;
     lines.push({ type: 'earning', paymentId: e.paymentId, journeyDate: e.journeyDate, amount: fromCents(gross) });
@@ -95,6 +102,8 @@ export const calculateStatement = (input) => {
     reimbursementCents += cents;
     lines.push({ type: 'reimbursement', entryId: r.entryId, amount: fromCents(cents) });
   }
+
+  if (waivedCents > 0) flags.push({ code: 'insurance_waived', message: `pay under $${fromCents(MIN_PAY_FOR_INSURANCE_CENTS)} for this run, so no insurance ($${fromCents(waivedCents)}) was taken` });
 
   const availableCents = grossCents - insuranceCents + reimbursementCents;
   if (availableCents < 0) flags.push({ code: 'negative_before_recovery', message: 'insurance is more than the pay; review before finalizing' });

@@ -1,0 +1,16 @@
+# Copy to terraform.tfvars (not committed). Nothing here is secret.
+region        = "us-east-1"          # CONFIRM: the region where the current server runs
+api_domain    = "api.nasaroutes.com"
+acme_email    = "ops@example.com"    # Let's Encrypt contact (direct mode)
+alert_email   = "ops@example.com"
+
+# Cost-first starting point
+enable_alb         = false
+enable_nat_gateway = false
+architecture       = "arm64"
+instance_type      = "t4g.medium"
+asg_min            = 1
+asg_desired        = 1
+asg_max            = 1
+
+monthly_budget_usd = 100

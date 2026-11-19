@@ -1,0 +1,6 @@
+# Copy to backend.hcl (not committed), then: terraform init -backend-config=backend.hcl
+bucket       = "nasa-terraform-state-<ACCOUNT_ID>"
+key          = "prod/network-compute.tfstate"
+region       = "us-east-1"
+use_lockfile = true
+encrypt      = true

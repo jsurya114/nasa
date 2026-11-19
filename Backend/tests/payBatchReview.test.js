@@ -63,7 +63,7 @@ test('the batch review reads a run read-only, by city, and tells who can be paid
       await db.query('UPDATE payment_dashboard SET closed = true, paid = false, driver_payment = $2, insurance_deduction = $3 WHERE dashboard_data_id = $1', [dd, gross, insurance]);
     };
     await payRow(d1, '2026-11-02', '100.00', '1.92');
-    await payRow(d2, '2026-11-02', '1.00', '1.92'); // insurance is more than the pay: a negative statement
+    await payRow(d2, '2026-11-02', '5.00', '5.76'); // pay of $5 (not under the minimum) and more insurance than pay: a negative statement
     const { run } = await generateRun(db, superAdmin, { requestId: randomUUID(), cityId: city, periodStart: '2026-11-01', periodEnd: '2026-11-07', dataType: 'daily' });
     const snapshot = async () => (await db.query(`SELECT (SELECT count(*) FROM pay_statements) s, (SELECT count(*) FROM pay_statement_lines) l, (SELECT count(*) FROM pay_runs) r, (SELECT string_agg(payout_status, ',') FROM pay_statements) p`)).rows[0];
 
