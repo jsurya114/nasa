@@ -57,6 +57,35 @@ export const parsePaymentRecord = (body = {}) => {
       };
 };
 
+// "Force mark as paid": a super admin records that a driver IS paid although the system cannot confirm it (a payment that is processing, unconfirmed,
+// failed or held, or one paid outside NASA). It always records the method "other", needs a written reason (kept on the receipt as "Forced: ...") and an explicit
+// confirmation, and names the statements to mark. Nothing is sent to Everee or QuickBooks.
+export const FORCE_REASON_MIN = 10;
+export const FORCE_REASON_MAX = 180;
+export const parseForcePayment = (body = {}) => {
+  const errors = {};
+  const requestId = typeof body.requestId === "string" ? body.requestId.toLowerCase() : "";
+  const paidOn = parseDate(body.paidOn);
+  const reason = typeof body.reason === "string" ? body.reason.trim().replace(/\s+/g, " ") : "";
+  if (!UUID.test(requestId)) errors.requestId = "Refresh the payment form and try again.";
+  if (!paidOn) errors.paidOn = "Choose the date the driver was paid.";
+  if (reason.length < FORCE_REASON_MIN || reason.length > FORCE_REASON_MAX)
+    errors.reason = `Say why this driver is marked paid (${FORCE_REASON_MIN}–${FORCE_REASON_MAX} characters).`;
+  if (body.confirmed !== true) errors.confirmed = "Confirm that you want to mark this payment as paid.";
+  const ids = Array.isArray(body.statementIds) ? body.statementIds : [];
+  if (ids.length === 0 || ids.length > 50 || ids.some((v) => !paymentId(v))) errors.statementIds = "Choose the driver to mark as paid.";
+  return Object.keys(errors).length
+    ? { errors }
+    : { request: { requestId, paidOn, method: "other", reference: `Forced: ${reason}`, statementIds: [...new Set(ids.map(Number))].sort((a, b) => a - b) } };
+};
+
+// Whether this admin is an active super admin in the database now: a forced payment never relies on the role in the session token.
+const assertSuperAdminNow = async (db, admin) => {
+  const { rows: [row] } = await db.query("SELECT role,is_active FROM admin WHERE id=$1", [Number(admin?.id)]);
+  if (!row || row.is_active !== true || row.role !== "superadmin")
+    throw new PayrollError(403, "Only a super admin can mark a payment as paid by force.");
+};
+
 const receipt = async (db, id) => {
   const { rows } = await db.query(
     `SELECT p.id, p.pay_run_id, p.recorded_by, a.name AS recorded_by_name,
@@ -149,7 +178,11 @@ export const settlePaidStatements = async (db, { statementIds, earnings, paidOn,
 };
 
 // `viaQuickbooks`: the QuickBooks batch (a Desi driver's cash payment, recorded in QuickBooks for the 1099) is the one caller allowed to record Desi cash while QuickBooks payments are on.
-export const recordRunPayment = async (db, admin, runId, request, { viaQuickbooks = false } = {}) => {
+// `force`: a super admin's forced mark (see parseForcePayment). It skips what only stops the SYSTEM from paying (a payment in progress, a failed attempt, a driver
+// type or onboarding hold, the QuickBooks rule, earnings that changed) but never what makes the statement unpayable: the run must be approved, a statement already paid
+// is left alone, a statement below zero is refused, and a Desi driver is refused while QuickBooks payments are on (the QuickBooks flow keeps their 1099 record). Source earnings that changed are not touched (as when Everee completes a payment).
+export const recordRunPayment = async (db, admin, runId, request, { viaQuickbooks = false, force = false } = {}) => {
+  if (force) await assertSuperAdminNow(db, admin);
   const found = (
     await db.query("SELECT id,city_id FROM pay_runs WHERE id=$1", [runId])
   ).rows[0];
@@ -208,7 +241,14 @@ export const recordRunPayment = async (db, admin, runId, request, { viaQuickbook
   const targets = selected.filter((s) => s.payout_status !== "paid");
   if (!targets.length)
     return { receipt: null, replay: false, alreadyPaid: true, driverNames: [] };
-  if (
+  if (force) {
+    // With QuickBooks payments on, a Desi driver's payment is their 1099 record and must go through QuickBooks. A forced mark would pay the statement
+    // with no accounting entry to follow up, so it is refused here until the QuickBooks flow itself can be forced.
+    if (quickbooksPaymentsOn() && targets.some((s) => s.driver_type === "DESI"))
+      throw new PayrollError(409, "A Desi driver's payment is recorded with QuickBooks, so it cannot be marked paid by force here. Use Pay to drivers on the Desi tab.");
+    if (targets.some((s) => toCents(s.net) < 0))
+      throw new PayrollError(409, "A selected statement is below zero, so it cannot be marked paid.");
+  } else if (
     targets.some((s) =>
       blockersFor({ statement: s, runStatus: run.status }).some(
         (b) => b.severity === "blocking",
@@ -220,25 +260,26 @@ export const recordRunPayment = async (db, admin, runId, request, { viaQuickbook
       "A selected payment is processing, unconfirmed or needs review. Resolve it before marking these drivers paid.",
     );
   // The type rules are checked here too, not only on the screen: a driver with no type is never paid, and the method must suit the type.
-  if (targets.some((s) => typeBlockers(s.driver_type).length > 0))
+  if (!force && targets.some((s) => typeBlockers(s.driver_type).length > 0))
     throw new PayrollError(
       409,
       "Some selected drivers have no driver type. Set Local or Desi for them on the Drivers page, then pay.",
     );
   // A Local driver who has not finished Everee onboarding cannot be paid by any method. The whole selection is refused, never a part of it, and the
   // drivers and their links are share-locked, so nothing changes between this check and the record below.
-  const held = await blockedDriverIds(db, targets.map((s) => s.driver_id), { lock: true });
+  const held = force ? new Set() : await blockedDriverIds(db, targets.map((s) => s.driver_id), { lock: true });
   if (held.size > 0) throw Object.assign(new PayrollError(409, ONBOARDING_REQUIRED.message), { code: ONBOARDING_REQUIRED.code });
   // Recording by hand is Cash in Hand or a check (Everee has its own route), and the type must allow it.
-  if ((request.method !== CASH && request.method !== CHECK) || targets.some((s) => !methodAllowed(s.driver_type, request.method)))
+  if (!force && ((request.method !== CASH && request.method !== CHECK) || targets.some((s) => !methodAllowed(s.driver_type, request.method))))
     throw new PayrollError(409, "This payment method is not allowed for a selected driver.");
   // With QuickBooks payments on, a Desi driver's payment must be recorded in QuickBooks (it is their 1099 record), never by hand as cash.
-  if (quickbooksPaymentsOn() && !viaQuickbooks && targets.some((s) => s.driver_type === "DESI"))
+  if (!force && quickbooksPaymentsOn() && !viaQuickbooks && targets.some((s) => s.driver_type === "DESI"))
     throw new PayrollError(409, "Desi cash payments are recorded with QuickBooks. Use Pay to drivers on the Desi tab, so the payment also reaches QuickBooks for the 1099.");
   const ids = targets.map((s) => s.id);
   // Lock source rows before derived pay rows, matching the upload's lock order.
   const earnings = await lockApprovedEarnings(db, ids);
-  if (invalidWork(targets, earnings).size)
+  const changedWork = invalidWork(targets, earnings);
+  if (changedWork.size && !force)
     throw new PayrollError(
       409,
       "Some included earnings changed or are already marked paid. Review this run before recording payment.",
@@ -265,7 +306,9 @@ export const recordRunPayment = async (db, admin, runId, request, { viaQuickbook
     SELECT $1,s.id,s.net,s.driver_id,d.driver_type FROM pay_statements s JOIN drivers d ON d.id=s.driver_id WHERE s.id=ANY($2::bigint[])`,
     [inserted.id, ids],
   );
-  await settlePaidStatements(db, { statementIds: ids, earnings, paidOn: request.paidOn, reference: request.reference });
+  // A forced mark never touches source earnings that changed or were already marked paid; the statement itself is still marked paid.
+  const settleEarnings = force ? earnings.filter((e) => !changedWork.has(String(e.statement_id))) : earnings;
+  await settlePaidStatements(db, { statementIds: ids, earnings: settleEarnings, paidOn: request.paidOn, reference: request.reference });
   const driverNames = (
     await db.query("SELECT name FROM drivers WHERE id=ANY($1::int[])", [
       targets.map((s) => s.driver_id),
@@ -324,8 +367,9 @@ const providerPaymentsFor = async (db, admin, runId) => {
   if (!installed.yes) return new Map();
   const { rows } = await db.query(
     `SELECT i.pay_statement_id, i.id AS item_id, i.batch_id, b.environment, i.status, i.everee_payment_id, to_char(i.everee_pay_date,'YYYY-MM-DD') AS pay_date,
-            i.paid_at, a.name AS requested_by_name, b.created_at AS initiated_at, i.last_checked_at, i.deposit_returned, i.check_note, i.error_message
-       FROM everee_payment_items i JOIN everee_payment_batches b ON b.id=i.batch_id LEFT JOIN admin a ON a.id=b.created_by
+            i.paid_at, a.name AS requested_by_name, b.created_at AS initiated_at, i.last_checked_at, i.deposit_returned, i.check_note, i.error_message,
+            (i.status<>'paid' AND s.payout_status='paid') AS marked_paid_by_admin
+       FROM everee_payment_items i JOIN everee_payment_batches b ON b.id=i.batch_id JOIN pay_statements s ON s.id=i.pay_statement_id LEFT JOIN admin a ON a.id=b.created_by
       WHERE b.pay_run_id=$1 ORDER BY i.id`,
     [runId],
   );
@@ -347,7 +391,8 @@ const providerPaymentsFor = async (db, admin, runId) => {
         initiatedAt: r.initiated_at,
         lastCheckedAt: r.last_checked_at,
         returned: r.deposit_returned,
-        needsReview: r.deposit_returned || r.status === "unconfirmed" || r.status === "failed",
+        ...(r.marked_paid_by_admin && { markedPaidByAdmin: true }),
+        needsReview: !r.marked_paid_by_admin && (r.deposit_returned || r.status === "unconfirmed" || r.status === "failed"),
         note: r.status === "paid" ? r.check_note : (r.error_message ?? r.check_note),
       } : {
         provider: "everee",
@@ -356,7 +401,8 @@ const providerPaymentsFor = async (db, admin, runId) => {
         status: r.status,
         paidOn: r.pay_date,
         returned: r.deposit_returned,
-        needsReview: r.deposit_returned || r.status === "unconfirmed" || r.status === "failed",
+        ...(r.marked_paid_by_admin && { markedPaidByAdmin: true }),
+        needsReview: !r.marked_paid_by_admin && (r.deposit_returned || r.status === "unconfirmed" || r.status === "failed"),
       },
     ]),
   );

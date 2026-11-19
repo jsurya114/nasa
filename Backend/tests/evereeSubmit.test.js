@@ -292,7 +292,10 @@ test('everee submit: reserve, send, payout request, replay, partial failure, ret
       const retry = makeEveree();
       const view = await retryBatch(db, sup2, batch.batch.id, deps(retry.client));
       assert.deepEqual(retry.state.creates, [], 'the paid-by-hand statement and the worker who left are not sent');
-      assert.equal(view.counts.failed, 2);
+      // The statement an admin paid by hand is closed: shown as marked by an admin and no longer counted as failed or retried; the worker who left stays failed.
+      assert.equal(view.counts.failed, 1);
+      assert.deepEqual(view.items.map((i) => [i.driverId === dA ? 'A' : 'B', i.status, i.markedPaidByAdmin ?? false]).sort(), [['A', 'failed', true], ['B', 'failed', false]]);
+      assert.equal(view.canRetry, true, 'the other driver can still be retried');
       await db.query("UPDATE everee_workers SET terminated = false WHERE driver_id = $1 AND environment = 'sandbox'", [dB]);
       await assert.rejects(retryBatch(db, cityAdmin, batch.batch.id, deps(retry.client)), { status: 403 });
       await assert.rejects(retryBatch(db, sup2, batch.batch.id, deps(retry.client, { env: SANDBOX })), { status: 409, message: /switched off/ });

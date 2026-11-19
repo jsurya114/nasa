@@ -20,6 +20,7 @@ import QuickbooksSummary from "./quickbooks/QuickbooksSummary.jsx";
 import QuickbooksResult from "./quickbooks/QuickbooksResult.jsx";
 import useQuickbooksPaymentsAvailable from "./quickbooks/useQuickbooksPaymentsAvailable.js";
 import DriverTypeTabs from "./DriverTypeTabs.jsx";
+import ForcePaymentPanel from "./ForcePaymentPanel.jsx";
 import { typeOf } from "./driverTypes.js";
 
 // Names for the methods of saved receipts (a receipt made before "Bank transfer (Everee)" existed says "Bank transfer").
@@ -128,6 +129,13 @@ export default function RecordPaymentDialog({
       });
     return () => controller.abort();
   }, [runId, version, readOnly]);
+
+  // A driver marked paid by force: the review and the Everee results are read again, and the cards behind the dialog are told.
+  const afterForce = () => {
+    setVersion((v) => v + 1);
+    setResultsKey((k) => k + 1);
+    onRecorded?.();
+  };
 
   const drivers = review.data?.drivers ?? [];
   const allPaid = drivers.length > 0 && drivers.every(paid);
@@ -599,6 +607,9 @@ export default function RecordPaymentDialog({
                           )}
                           {d.providerPayment && (
                             <ProviderPaymentLine payment={d.providerPayment} />
+                          )}
+                          {!readOnly && !paid(d) && !(quickbooksAvailable && typeOf(d) === "DESI") && (
+                            <ForcePaymentPanel runId={runId} driver={d} onDone={afterForce} />
                           )}
                         </li>
                       ))}

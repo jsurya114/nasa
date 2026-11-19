@@ -14,7 +14,7 @@ const when = (value) => (value ? new Date(value).toLocaleString() : null);
 // from Everee's own records; it is not an admin's manual receipt, and it is never called paid until Everee confirmed the deposit.
 export default function ProviderPaymentLine({ payment }) {
   const returned = Boolean(payment.returned);
-  const statusText = returned ? ITEM_STATUS.returned.label : (STATUS_TEXT[payment.status] ?? "Everee payment");
+  const statusText = payment.markedPaidByAdmin ? "Marked paid by an admin (Everee had not confirmed it)" : returned ? ITEM_STATUS.returned.label : (STATUS_TEXT[payment.status] ?? "Everee payment");
   const verificationText = returned ? "original deposit verified by the system" : "verified by the system";
   const details = [
     payment.providerReference && `Reference ${payment.providerReference}`,

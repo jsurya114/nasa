@@ -6,6 +6,7 @@ import {
   listPaymentRuns,
   parsePaymentRecord,
   paymentId,
+  parseForcePayment,
   recordRunPayment,
   reviewRunPayments,
 } from "../../services/payroll/payRuns/paymentRecords.js";
@@ -85,6 +86,25 @@ export const postPaymentRecord = async (req, res) => {
       receiptId: result.receipt?.id,
       replay: result.replay,
     });
+    return res.json(result);
+  } catch (error) {
+    return fail(res, error);
+  }
+};
+
+// "Force mark as paid" (super admin, checked again against the database in the service): marks the chosen statements paid although the system cannot
+// confirm them, with a written reason and an explicit confirmation. Nothing is sent to Everee or QuickBooks.
+export const postForcePayment = async (req, res) => {
+  const runId = paymentId(req.params.runId);
+  const parsed = parseForcePayment(req.body);
+  if (!runId || parsed.errors)
+    return res.status(400).json({ message: "Check the highlighted fields.", errors: parsed.errors ?? { runId: "Choose a valid pay run." } });
+  try {
+    const { driverNames, ...result } = await withTransaction(pool, (db) =>
+      recordRunPayment(db, req.admin, runId, parsed.request, { force: true }),
+    );
+    for (const name of driverNames) notifyDriverPaid(name);
+    logger.warn("Payment marked paid by force", { runId, adminId: req.admin.id, receiptId: result.receipt?.id, replay: result.replay, drivers: driverNames.length });
     return res.json(result);
   } catch (error) {
     return fail(res, error);

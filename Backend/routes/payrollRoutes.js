@@ -11,7 +11,7 @@ import {
   getPayrollSettings, getPayRun, getPayRuns, postDiscard, postFinalize, postPayRun, postVoid, putRecoveryLimit,
 } from '../controllers/payroll/payRunController.js';
 import { getBatchReview } from '../controllers/payroll/payBatchController.js';
-import { getPaymentRuns, getPaymentReview, postPaymentRecord } from '../controllers/payroll/paymentRecordController.js';
+import { getPaymentRuns, getPaymentReview, postForcePayment, postPaymentRecord } from '../controllers/payroll/paymentRecordController.js';
 import { getEvereePreview } from '../controllers/payroll/evereeBatchController.js';
 import { getBatch as getEvereeBatch, getRunBatches as getEvereeRunBatches, getSettings as getEvereeCitySettings, postBatch as postEvereeBatch, postRetry as postEvereeBatchRetry, postCheck as postEvereeBatchCheck, putSettings as putEvereeCitySettings } from '../controllers/payroll/evereePaymentController.js';
 import { getStatus as getEvereeStatus, postCheck as postEvereeCheck } from '../controllers/payroll/evereeController.js';
@@ -92,6 +92,8 @@ router.get('/runs/:runId/batch-review', getBatchReview);
 router.get('/payments/runs', getPaymentRuns);
 router.get('/payments/runs/:runId', getPaymentReview);
 router.post('/payments/runs/:runId/record', postPaymentRecord);
+// Force mark as paid (super admin, a written reason and a confirmation): for a driver the system cannot confirm as paid. Sends nothing to Everee or QuickBooks.
+router.post('/payments/runs/:runId/force-paid', postForcePayment);
 // What paying this run through Everee would do (#31): who, how much, the total, what blocks anyone, and a fingerprint for the confirm step.
 // Read-only; super admin only, checked in the service.
 router.get('/runs/:runId/everee-preview', getEvereePreview);
