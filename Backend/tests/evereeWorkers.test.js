@@ -161,13 +161,13 @@ test('everee workers: lookup by email or phone only, link only from one exact ma
       await assert.rejects(lookupDriver(db, superAdmin, { cityId: city, driverId: elsewhere }, deps()), { status: 404 }); // not a driver of this city
     });
 
-    await t.test('refresh reads what Everee says now; a worker who is not onboarded, failed the tax check or left is not ready', async () => {
+    await t.test('refresh reads what Everee says now; a worker who is not onboarded or left is not ready (a failed tax check is recorded, and holds payment only when the block is on)', async () => {
       everee.state.details['W-ALICE'] = { id: 'W-ALICE', onboardingComplete: false, tinVerificationStatus: 'SENT_FOR_VERIFICATION' };
       let { link } = await refreshWorker(db, superAdmin, { cityId: city, driverId: match }, deps());
       assert.deepEqual([link.onboardingComplete, link.ready], [false, false]);
       everee.state.details['W-ALICE'] = { id: 'W-ALICE', onboardingComplete: true, tinVerificationStatus: 'VERIFICATION_FAILED' };
       ({ link } = await refreshWorker(db, superAdmin, { cityId: city, driverId: match }, deps()));
-      assert.deepEqual([link.tinStatus, link.ready], ['VERIFICATION_FAILED', false]);
+      assert.deepEqual([link.tinStatus, link.ready], ['VERIFICATION_FAILED', true], 'a failed tax ID does not hold payment by default');
       everee.state.details['W-ALICE'] = { id: 'W-ALICE', onboardingComplete: true, tinVerificationStatus: 'VERIFIED', terminationDate: '2026-11-01' };
       ({ link } = await refreshWorker(db, superAdmin, { cityId: city, driverId: match }, deps()));
       assert.deepEqual([link.terminated, link.ready], [true, false]);

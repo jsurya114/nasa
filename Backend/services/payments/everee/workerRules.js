@@ -91,5 +91,10 @@ export const matchWorkers = ({ email, phone }, found, { truncated = false } = {}
 
 export const linkSourceOf = (matchedOn) => (matchedOn.includes('email') && matchedOn.includes('phone') ? 'matched_email_and_phone' : matchedOn.includes('email') ? 'matched_email' : 'matched_phone');
 
-// The worker is ready to be paid once Everee says onboarding is complete, the tax ID did not fail, and they are not separated.
-export const readyToPay = ({ onboardingComplete, tinStatus, terminated }) => Boolean(onboardingComplete) && !terminated && tinStatus !== 'VERIFICATION_FAILED';
+// A failed tax ID check in Everee does NOT hold a payment by default: Everee decides what it does with it (it may still pay the worker, as it did before), so the
+// payment screen shows a warning to read before paying. Set EVEREE_BLOCK_ON_TAX_ID_FAILURE=true on the server to hold such workers again (the previous behaviour).
+export const blocksOnTaxIdFailure = (env = process.env) => String(env?.EVEREE_BLOCK_ON_TAX_ID_FAILURE ?? '').trim().toLowerCase() === 'true';
+
+// The worker is ready to be paid once Everee says onboarding is complete and they are not separated (and, only when the block above is switched on, the tax ID did not fail).
+export const readyToPay = ({ onboardingComplete, tinStatus, terminated }, env = process.env) =>
+  Boolean(onboardingComplete) && !terminated && !(tinStatus === 'VERIFICATION_FAILED' && blocksOnTaxIdFailure(env));
