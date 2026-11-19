@@ -3,6 +3,7 @@
 // nothing it did not: a field the server leaves out (for example `notStored` for a city admin) is not shown.
 
 import RevenueResult from "./RevenueResult.jsx";
+import MissingDriversResult from "./MissingDriversResult.jsx";
 
 const plural = (n, one, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 
@@ -72,6 +73,7 @@ export default function UploadResultSummary({ result }) {
   return (
     <>
     <RevenueResult revenue={result.revenue} />
+    <MissingDriversResult missing={result.missingDrivers} />
     <section className="card-surface mb-4 p-6" aria-label="What this upload also kept">
       <h2 className="mb-3 text-base font-semibold text-ink">Claims in this file</h2>
       <ClaimsPart claims={result.claims} />

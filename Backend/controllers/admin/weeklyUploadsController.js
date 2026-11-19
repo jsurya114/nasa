@@ -321,6 +321,7 @@ import { unlink } from "fs";
 import { recordWorkbookHistory } from "../../services/excel/assignmentHistory/recordWorkbookHistory.js";
 import { recordWorkbookClaims } from "../../services/payroll/claims/recordWorkbookClaims.js";
 import { reviewImport, stageImport } from "../../services/finance/gofoStatement/weeklyImport.js";
+import { findMissingDrivers } from "../../services/admin/weeklyMissingDrivers.js";
 
 
 export const getWeeklyTempData=async(req,res)=>{
@@ -799,6 +800,12 @@ async function processExcelFromBuffer(buffer, client, startTime, user, fileName)
     // Check on the same connection after committing staging. A failed or late check cannot undo the upload.
     const revenue = await reviewImport(client, staged.id, buffer, user, staged.reason);
 
+    // Who is on the city's driver list but not in this file (a warning only; never changes what was stored).
+    const missingDrivers = await findMissingDrivers(client, {
+      driverCodes: dataArray.map((entry) => entry.driver_id),
+      routeCodes: [...new Set(dataArray.map((entry) => entry.del_route))],
+    });
+
     return {
       success: true,
       recordsProcessed: totalProcessed,
@@ -808,7 +815,8 @@ async function processExcelFromBuffer(buffer, client, startTime, user, fileName)
       numberOfBatches: Math.ceil(dataArray.length / BATCH_SIZE),
       assignmentHistory,
       claims,
-      revenue
+      revenue,
+      missingDrivers
     };
 
   } catch (dbError) {
