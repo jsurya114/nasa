@@ -44,11 +44,16 @@ test('the stored states map to the words the screens use', () => {
   assert.equal(view({ link: link() }).required, true);
 });
 
-test('complete means Everee said so; payment readiness is separate (a failed tax ID is complete but not ready)', () => {
+test('complete means Everee said so; payment readiness is separate (a failed tax ID is complete, and ready unless the block is switched on)', () => {
   const done = view({ link: link({ onboarding_complete: true }), row: { verified_at: '2026-11-07T00:00:00Z' } });
   assert.deepEqual([done.state, done.required, done.paymentReady, done.verifiedAt], [STATES.COMPLETE, false, true, '2026-11-07T00:00:00Z']);
   const failedTin = view({ link: link({ onboarding_complete: true, tin_status: 'VERIFICATION_FAILED' }) });
-  assert.deepEqual([failedTin.state, failedTin.paymentReady], [STATES.COMPLETE, false]);
+  assert.deepEqual([failedTin.state, failedTin.paymentReady], [STATES.COMPLETE, true], 'a failed tax ID does not hold payment by default');
+  const keep = process.env.EVEREE_BLOCK_ON_TAX_ID_FAILURE;
+  process.env.EVEREE_BLOCK_ON_TAX_ID_FAILURE = 'true';
+  try {
+    assert.deepEqual([view({ link: link({ onboarding_complete: true, tin_status: 'VERIFICATION_FAILED' }) }).state, view({ link: link({ onboarding_complete: true, tin_status: 'VERIFICATION_FAILED' }) }).paymentReady], [STATES.COMPLETE, false]);
+  } finally { if (keep === undefined) delete process.env.EVEREE_BLOCK_ON_TAX_ID_FAILURE; else process.env.EVEREE_BLOCK_ON_TAX_ID_FAILURE = keep; }
 });
 
 test('an unlinked driver goes to review, not back to onboarding on their own', () => {
