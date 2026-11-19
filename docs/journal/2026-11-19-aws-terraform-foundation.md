@@ -4,7 +4,7 @@
 |---|---|
 | Date | 2026-11-19 |
 | Author | Jasil, with Claude Code (Claude Sonnet 5.5) |
-| Issue / PR | none / not opened |
+| Issue / PR | none / [PR #304](https://github.com/jsurya114/nasa/pull/304) |
 | Branch | `infra/aws-terraform-foundation` (from `develop`) |
 | Type / scope | `chore(repo)` |
 | Files touched | New only: `docs/infra/terraform/` (VPC, NACLs, security groups, optional NAT and ALB, launch template, Auto Scaling group, IAM, release bucket, alarms, budget, `bootstrap/`, `tests/`), `docs/infra/scripts/package-backend.sh`, `docs/infra/loadtest/` (script, mock, k6 version, README), `docs/infra/AWS_NETWORK_PLAN.md`, `docs/infra/AWS_COST_OPTIMISATION.md`, this entry. |
