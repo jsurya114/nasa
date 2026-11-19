@@ -1,6 +1,7 @@
 import { PayrollError, assertCityAllowed, isSuperAdmin } from '../../payroll/payRuns/payRunStore.js';
 import { readEvereeConfig } from './evereeConfig.js';
 import { enforcement } from './onboardingGate.js';
+import { blocksOnTaxIdFailure } from './workerRules.js';
 
 const STATES = ['not-started', 'creating', 'in-progress', 'verifying', 'complete', 'needs-review', 'classification-required', 'not-required', 'service-unavailable'];
 // "Open work" is a rough count: unclosed rows of the last OPEN_WORK_DAYS days only, so old rows that were never closed do not inflate it.
@@ -54,7 +55,7 @@ export const onboardingReadiness = async (db, admin, input, { env = process.env 
       CASE WHEN contact_changed_at IS NOT NULL AND link_id IS NULL THEN driver_email END AS "contactEmail", CASE WHEN contact_changed_at IS NOT NULL AND link_id IS NULL THEN driver_phone END AS "contactPhone", "openWork", "outstandingPayment",
       CASE WHEN state = 'needs-review' THEN CASE WHEN link_id IS NOT NULL THEN 'link_not_verified_for_tenant' WHEN unlinked THEN 'previously_unlinked' WHEN contact_changed_at IS NOT NULL THEN 'contact_changed' ELSE review_reason END
            WHEN NOT "agreementSigned" AND "driverType" = 'LOCAL' THEN 'agreement_required' ELSE NULL END AS reason,
-      (state = 'complete' AND NOT COALESCE(terminated, false) AND COALESCE(tin_status, '') <> 'VERIFICATION_FAILED') AS "paymentReady"
+      (state = 'complete' AND NOT COALESCE(terminated, false) AND ($8::boolean IS NOT TRUE OR COALESCE(tin_status, '') <> 'VERIFICATION_FAILED')) AS "paymentReady"
     FROM classified WHERE $5 = '' OR state = $5 ORDER BY lower(name), "driverId" LIMIT 50 OFFSET $6
   ) SELECT
     (SELECT jsonb_build_object('activeDrivers', count(*), 'localDrivers', count(*) FILTER (WHERE "driverType" = 'LOCAL'),
@@ -64,7 +65,7 @@ export const onboardingReadiness = async (db, admin, input, { env = process.env 
       'openWorkRoutes', (SELECT count(DISTINCT pd.route_id) FROM payment_dashboard pd JOIN drivers d ON d.id = pd.driver_id WHERE d.enabled AND d.city_id = $1 AND NOT COALESCE(pd.closed, false) AND pd.journey_date >= current_date - $7::int)) FROM classified) AS summary,
     (SELECT count(*)::int FROM classified WHERE $5 = '' OR state = $5) AS total,
     COALESCE((SELECT jsonb_agg(v) FROM visible v), '[]'::jsonb) AS drivers`,
-  [cityId, config.environment, config.tenantId, config.configured, state, (page - 1) * 50, OPEN_WORK_DAYS]);
+  [cityId, config.environment, config.tenantId, config.configured, state, (page - 1) * 50, OPEN_WORK_DAYS, blocksOnTaxIdFailure(env)]);
   return { ...result, cityId, page, pageSize: 50, environment: config.environment, configured: config.configured,
     onboardingEnabled: String(env.EVEREE_DRIVER_ONBOARDING_ENABLED ?? '').trim().toLowerCase() === 'true',
     enforced: enforcement(env).enforced, checkedAt: new Date().toISOString() };

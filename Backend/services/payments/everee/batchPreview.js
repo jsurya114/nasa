@@ -4,7 +4,7 @@ import { PayrollError, isSuperAdmin } from '../../payroll/payRuns/payRunStore.js
 import { reviewRunAsBatch } from '../../payroll/payRuns/payBatchReview.js';
 import { paymentsGate, readEvereeConfig } from './evereeConfig.js';
 import { DEFAULT_TIME_ZONE } from './payableRules.js';
-import { driverIssues, readyToPay } from './workerRules.js';
+import { blocksOnTaxIdFailure, driverIssues, readyToPay } from './workerRules.js';
 import { evereeTypeBlockers } from '../../payroll/payRuns/driverPaymentRules.js';
 
 // The preview of paying a finalized pay run through Everee (issue #31, part 3). READ-ONLY: it calls nothing at Everee, writes nothing and
@@ -26,6 +26,7 @@ export const EVEREE_BLOCKERS = Object.freeze({
   nothing_to_pay: { severity: 'blocking', message: 'the statement is $0.00; there is nothing to pay' },
   no_everee_worker: { severity: 'blocking', message: 'this driver is not linked to an Everee worker' },
   worker_not_ready: { severity: 'blocking', message: 'the Everee worker cannot be paid yet' },
+  tax_id_check_failed: { severity: 'disclose', message: 'the worker\'s tax ID check failed in Everee; the payment is still sent, and Everee decides how it handles it. Ask Everee to fix the check' },
   in_everee_batch: { severity: 'blocking', message: 'this statement is already in an Everee payment batch; follow it there (a failed one is retried from its batch)' },
 });
 
@@ -102,9 +103,11 @@ export const computePreview = async (db, admin, runId, { env = process.env, stat
       add('no_everee_worker', { hint: issues.length > 0 ? 'fix_driver_data' : 'link_worker' });
     } else {
       const problems = workerProblems(link);
-      const ready = readyToPay({ onboardingComplete: link.onboarding_complete, tinStatus: link.tin_status, terminated: link.terminated });
+      const ready = readyToPay({ onboardingComplete: link.onboarding_complete, tinStatus: link.tin_status, terminated: link.terminated }, env);
       worker = { linked: true, ready, problems, driverDataIssues: [] };
       if (!ready) add('worker_not_ready', { problems: problems.map((code) => ({ code, message: WORKER_PROBLEMS[code] })) });
+      // A failed tax ID that does not hold the payment is still shown, to read before paying.
+      else if (link.tin_status === 'VERIFICATION_FAILED' && !blocksOnTaxIdFailure(env)) add('tax_id_check_failed');
     }
     return {
       statementId: d.statementId, driverId: d.driverId, driverName: d.driverName, driverType: d.driverType, amount: d.amounts.net, amounts: d.amounts,
