@@ -1,6 +1,6 @@
 # NASA AWS infrastructure (Terraform)
 
-Plan and reasoning: [`docs/infra/AWS_NETWORK_PLAN.md`](../../docs/infra/AWS_NETWORK_PLAN.md). Costs and the database: [`docs/infra/AWS_COST_OPTIMISATION.md`](../../docs/infra/AWS_COST_OPTIMISATION.md). Load test: [`loadtest/`](../../loadtest/README.md).
+Plan and reasoning: [`docs/infra/AWS_NETWORK_PLAN.md`](../AWS_NETWORK_PLAN.md). Costs and the database: [`docs/infra/AWS_COST_OPTIMISATION.md`](../AWS_COST_OPTIMISATION.md). Load test: [`docs/infra/loadtest/`](../../docs/infra/loadtest/README.md).
 
 **Status: validated, never applied.** `terraform validate` passes and `terraform test` (three plans of both modes on a mocked AWS provider) passes. Nothing here has run against a real AWS account, and the instance bootstrap (`user_data.sh.tpl`) has never booted.
 
@@ -15,7 +15,7 @@ VPC (public, app, data subnets in 2 AZs), route tables, network ACLs, security g
 aws login                                  # or your SSO profile; export AWS_PROFILE=<nasa profile>
 
 # 1. State bucket, once
-cd infra/terraform/bootstrap && terraform init && terraform apply
+cd docs/infra/terraform/bootstrap && terraform init && terraform apply
 
 # 2. Main stack
 cd .. && cp backend.hcl.example backend.hcl && cp terraform.tfvars.example terraform.tfvars   # edit both
@@ -27,7 +27,7 @@ terraform apply nasa.tfplan
 aws ssm put-parameter --name /nasa/prod/DB_HOST --type SecureString --value '...'     # repeat for every name in Backend/.env.example
 
 # 4. Release, then roll the instance
-infra/scripts/package-backend.sh "$(terraform output -raw artifact_bucket)"
+docs/infra/scripts/package-backend.sh "$(terraform output -raw artifact_bucket)"
 aws autoscaling start-instance-refresh --auto-scaling-group-name "$(terraform output -raw asg_name)"
 ```
 

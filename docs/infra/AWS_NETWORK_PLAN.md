@@ -1,6 +1,6 @@
 # NASA AWS network plan
 
-Status: **proposal, nothing applied.** Code: `infra/terraform/`. Written 2026-11-19.
+Status: **proposal, nothing applied.** Code: `docs/infra/terraform/`. Written 2026-11-19.
 Today: one `t3.micro` in the **default VPC**, deployed by hand (git pull, pm2, nginx + certbot). Frontend on Vercel. Redis is an external hosted service. Where the PostgreSQL database runs is **not confirmed** (see section 9).
 
 ## 1. Goals and limits
@@ -103,7 +103,7 @@ Outbound from the public and app tiers is left open on purpose: the backend talk
 
 ## 8. Migration plan (no big bang)
 
-1. **Prepare (no user impact).** Apply `infra/terraform/bootstrap`, then the main stack in direct mode in a test AWS account or with a different `api_domain` such as `api-new.nasaroutes.com`. Put the backend settings in SSM Parameter Store. Upload a release with `infra/scripts/package-backend.sh`.
+1. **Prepare (no user impact).** Apply `docs/infra/terraform/bootstrap`, then the main stack in direct mode in a test AWS account or with a different `api_domain` such as `api-new.nasaroutes.com`. Put the backend settings in SSM Parameter Store. Upload a release with `docs/infra/scripts/package-backend.sh`.
 2. **Prove it.** Run the load test against this new instance (staging data or a copy). Compare with the current t3.micro. Decide the final instance type.
 3. **Database first, only if it is on the instance.** If PostgreSQL runs on the t3.micro, move it **before** the app: dump and restore to the managed database, test, and keep the old one read-only for a rollback window. If it is already an external or managed database, the network change does not touch it.
 4. **Cut over DNS** for `api.nasaroutes.com` to the Elastic IP (low TTL set a day before). Watch errors and CPU for a day. Keep the old server running, untouched, for rollback.

@@ -1,6 +1,6 @@
 // k6 version of driver-day.mjs (use it if you prefer k6's reports or want to run from k6 Cloud).
-//   k6 run -e BASE=https://staging-api.example.com -e VUS=300 loadtest/k6-driver-day.js
-// Users: loadtest/users.json  [{"email": "...", "password": "..."}]. NEVER point this at production.
+//   k6 run -e BASE=https://staging-api.example.com -e VUS=300 docs/infra/loadtest/k6-driver-day.js
+// Users: docs/infra/loadtest/users.json  [{"email": "...", "password": "..."}]. NEVER point this at production.
 import http from 'k6/http';
 import { check, sleep } from 'k6';
 import { SharedArray } from 'k6/data';

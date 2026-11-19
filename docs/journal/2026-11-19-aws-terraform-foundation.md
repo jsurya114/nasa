@@ -6,8 +6,8 @@
 | Author | Jasil, with Claude Code (Claude Sonnet 5.5) |
 | Issue / PR | none / not opened |
 | Branch | `infra/aws-terraform-foundation` (from `develop`) |
-| Type / scope | `chore(infra)` |
-| Files touched | New only: `infra/terraform/` (VPC, NACLs, security groups, optional NAT and ALB, launch template, Auto Scaling group, IAM, release bucket, alarms, budget, `bootstrap/`, `tests/`), `infra/scripts/package-backend.sh`, `loadtest/` (script, mock, k6 version, README), `docs/infra/AWS_NETWORK_PLAN.md`, `docs/infra/AWS_COST_OPTIMISATION.md`, this entry. |
+| Type / scope | `chore(repo)` |
+| Files touched | New only: `docs/infra/terraform/` (VPC, NACLs, security groups, optional NAT and ALB, launch template, Auto Scaling group, IAM, release bucket, alarms, budget, `bootstrap/`, `tests/`), `docs/infra/scripts/package-backend.sh`, `docs/infra/loadtest/` (script, mock, k6 version, README), `docs/infra/AWS_NETWORK_PLAN.md`, `docs/infra/AWS_COST_OPTIMISATION.md`, this entry. |
 | Reserved files touched | None. No existing file was edited. |
 
 **What and why.** The backend runs on one hand-deployed `t3.micro` in the default VPC. This adds a reviewable plan and Terraform to move it into its own VPC with an Auto Scaling group (1 instance), with the load balancer and NAT gateway written but **switched off** to keep the cost near $30 a month, plus a load test for 300 concurrent users and a cost and database plan.

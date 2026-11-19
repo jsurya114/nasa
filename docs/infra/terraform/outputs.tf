@@ -36,7 +36,7 @@ output "acm_validation_records" {
 }
 
 output "artifact_bucket" {
-  description = "Upload releases to s3://<bucket>/releases/backend-latest.tgz (see infra/scripts/package-backend.sh)."
+  description = "Upload releases to s3://<bucket>/releases/backend-latest.tgz (see docs/infra/scripts/package-backend.sh)."
   value       = aws_s3_bucket.artifacts.bucket
 }
 

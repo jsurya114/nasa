@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // A tiny fake of the driver API, used ONLY to check that driver-day.mjs itself works (percentiles, ramp-up, verdict).
-// It says nothing about the real backend's capacity. Run: node loadtest/mock-server.mjs 4999
+// It says nothing about the real backend's capacity. Run: node docs/infra/loadtest/mock-server.mjs 4999
 import http from 'node:http';
 
 const port = Number(process.argv[2] || 4999);

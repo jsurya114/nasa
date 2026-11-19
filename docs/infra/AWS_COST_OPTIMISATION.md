@@ -28,7 +28,7 @@ Why ALB mode costs about three times direct mode: the ALB itself is about $16, b
 
 ## 2. Safe steps, from lowest to highest risk
 
-Every step is reversible, and each one is checked against the load test (`loadtest/README.md`) before and after.
+Every step is reversible, and each one is checked against the load test (`docs/infra/loadtest/README.md`) before and after.
 
 1. **Make the spend visible.** Terraform creates a monthly budget with email alerts and tags everything `Project=nasa`. Turn on Cost Explorer and group by tag. No user impact.
 2. **Remove waste.** Find and delete unattached EBS volumes, old snapshots and AMIs, and Elastic IPs that are not attached (each idle public IPv4 costs about $3.65). Look before deleting; snapshot anything unsure.

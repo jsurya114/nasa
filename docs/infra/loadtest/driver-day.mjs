@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Load test: a day of driver-app traffic. Zero dependencies (Node 20+).
 //
-//   node loadtest/driver-day.mjs --base https://staging-api.example.com --users loadtest/users.json \
+//   node docs/infra/loadtest/driver-day.mjs --base https://staging-api.example.com --users docs/infra/loadtest/users.json \
 //        --vus 300 --ramp 120 --duration 600 --out report.json
 //
 // Safety: refuses to run against the production host. Run it against staging (or a copy of production data) only,

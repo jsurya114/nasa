@@ -11,7 +11,7 @@ Only the script itself: it was run against `mock-server.mjs` (a fake that answer
 ## Before the first real run
 
 1. **A staging target.** The new EC2 stack in direct mode with a different host name (for example `api-staging.nasaroutes.com`), and a **copy** of the database (never the live one). Use `TRUST_PROXY=1`, the same settings as production otherwise.
-2. **300 test driver accounts** (`loadtest/users.json`, not committed): agreement signed, enabled, a few months of deliveries and some pay statements each, so the queries have real work to do. Fewer accounts work but repeat logins more than real life.
+2. **300 test driver accounts** (`docs/infra/loadtest/users.json`, not committed): agreement signed, enabled, a few months of deliveries and some pay statements each, so the queries have real work to do. Fewer accounts work but repeat logins more than real life.
 3. **The global rate limit must be raised on staging.** `Backend/app.js` line 64 limits every IP to **1000 requests per 15 minutes** (in memory). One load generator is one IP: at 40 requests per second it hits that limit in about 25 seconds and every later request is `429`. A small change makes it configurable (for example `RATE_LIMIT_MAX`, default 1000); that file is Jayasoorya's area, so ask first. Login limits are separate and do not matter for the test because a successful login clears them.
 4. **A separate load generator**, a `t4g.small` or `c7g.large` in the same region and a different AZ, so the test machine is not the bottleneck. Do not run it from a laptop over home Wi-Fi.
 5. **Detailed monitoring on** for the instance (`monitoring { enabled = true }` in the launch template, or the console) so CPU and credit metrics are per minute.
