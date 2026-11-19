@@ -1,6 +1,7 @@
 import pool from "../../config/db.js";
+import { effectiveInsuranceSql } from "../payroll/insuranceSql.js";
 
-const fetchDeliverySummary = async (driverId, fromDate, toDate) => {
+const fetchDeliverySummary = async (driverId, fromDate, toDate, db = pool) => {
     let query = `
         SELECT 
             pd.id,
@@ -18,7 +19,7 @@ const fetchDeliverySummary = async (driverId, fromDate, toDate) => {
             pd.ds AS double_stop,
             pd.delivered,
             pd.driver_payment AS earning,
-            pd.insurance_deduction,
+            ${effectiveInsuranceSql("pd")} AS insurance_deduction,
             pd.start_seq,
             pd.end_seq,
             pd.closed,
@@ -47,7 +48,7 @@ const fetchDeliverySummary = async (driverId, fromDate, toDate) => {
     
     query += ` ORDER BY pd.journey_date DESC`;
     
-    const { rows } = await pool.query(query, params);
+    const { rows } = await db.query(query, params);
     return rows;
 };
 

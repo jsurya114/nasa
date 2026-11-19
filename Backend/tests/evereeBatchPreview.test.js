@@ -57,7 +57,7 @@ test('everee batch preview: who can be paid and why not, one hash for what would
 
     // A draft run: one good driver, one whose insurance is more than the pay.
     await earn(draftCity, dN1, '2026-11-02', '100.00', '0.00');
-    await earn(draftCity, dN2, '2026-11-02', '1.00', '1.92');
+    await earn(draftCity, dN2, '2026-11-02', '5.00', '5.76'); // pay of $5 (not under the minimum): insurance is taken and is more than the pay
     const draft = (await generateRun(db, sup1, { requestId: randomUUID(), cityId: draftCity.city, periodStart: '2026-11-01', periodEnd: '2026-11-07', dataType: 'daily' })).run;
 
     // A finalized run with a driver in every state.
@@ -66,7 +66,7 @@ test('everee batch preview: who can be paid and why not, one hash for what would
     await earn(mainCity, dB, '2026-11-02', '50.00', '0.00'); // linked, onboarding not finished
     await earn(mainCity, dC, '2026-11-02', '40.00', '0.00'); // not linked, data fine
     await earn(mainCity, dD, '2026-11-02', '30.00', '0.00'); // not linked, one-word name
-    await earn(mainCity, dF, '2026-11-02', '1.92', '1.92'); // net exactly zero
+    await earn(mainCity, dF, '2026-11-02', '5.00', '5.00'); // net exactly zero (pay of $5, not under the minimum)
     await earn(mainCity, dG, '2026-11-02', '60.00', '0.00'); // linked and ready, but a payment is already submitted
     await link(dA, 'W-A');
     await link(dH, 'W-H');

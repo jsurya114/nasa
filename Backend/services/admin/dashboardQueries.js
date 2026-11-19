@@ -1,6 +1,7 @@
 import pool from "../../config/db.js";
 import { closeOnlyRowSql, protectedPayRowSql } from "../finance/payGuards.js";
 import { companyEarningsSql } from "../finance/companyRates.js";
+import { effectiveInsuranceSql } from "../payroll/insuranceSql.js";
 
 
 // One implementation for "all dates" and "one date". $1 date (or null), $2 allowed jobs (or null).
@@ -119,7 +120,7 @@ export const AdminDashboardQueries = {
           COALESCE(SUM(pd.ds), 0) AS total_ds,
           COALESCE(SUM(pd.delivered), 0) AS total_delivered,
           COALESCE(SUM(pd.driver_payment), 0) AS total_driver_payment,
-          COALESCE(SUM(pd.insurance_deduction), 0) AS total_insurance_deduction${ownerColumns}
+          COALESCE(SUM(${effectiveInsuranceSql("pd")}), 0) AS total_insurance_deduction${ownerColumns}
         FROM payment_dashboard pd
         JOIN drivers d ON d.id = pd.driver_id
         LEFT JOIN routes r ON pd.route_id = r.id
@@ -304,7 +305,7 @@ export const AdminDashboardQueries = {
   },
 
   // Modified: Join via route's job for historical driver data and apply city_type rules
-  getPaymentDashboardPaginated: async (filters = {}, id, role, limit = 10, offset = 0) => {
+  getPaymentDashboardPaginated: async (filters = {}, id, role, limit = 10, offset = 0, db = pool) => {
     try {
       // Conditionally include company_earnings based on role
       const companyEarningsField = role === "superadmin" ? "pd.company_earnings," : "";
@@ -329,7 +330,7 @@ export const AdminDashboardQueries = {
           pd.payment_date,
           pd.driver_payment, 
           ${companyEarningsField}
-          pd.insurance_deduction,
+          ${effectiveInsuranceSql("pd")} AS insurance_deduction,
           pd.paid,
           pd.start_seq,
           pd.end_seq, 
@@ -424,7 +425,7 @@ export const AdminDashboardQueries = {
 
       queryParams.push(limit, offset);
 
-      const result = await pool.query(finalQuery, queryParams);
+      const result = await db.query(finalQuery, queryParams);
       return result.rows;
     } catch (error) {
       console.error("Error in getPaymentDashboardPaginated:", error);
@@ -433,7 +434,7 @@ export const AdminDashboardQueries = {
   },
 
   // Modified: Join via route's job for historical driver data and apply city_type rules
-  PaymentDashboardTable: async (filters = {}, id, role) => {
+  PaymentDashboardTable: async (filters = {}, id, role, db = pool) => {
     try {
       // Conditionally include company_earnings based on role
       const companyEarningsField = role === "superadmin" ? "pd.company_earnings," : "";
@@ -458,7 +459,7 @@ export const AdminDashboardQueries = {
           pd.payment_date,
           pd.driver_payment,
           ${companyEarningsField}
-          pd.insurance_deduction,
+          ${effectiveInsuranceSql("pd")} AS insurance_deduction,
           pd.paid,
           pd.start_seq,
           pd.end_seq, 
@@ -550,7 +551,7 @@ export const AdminDashboardQueries = {
 
       finalQuery += " ORDER BY r.name, pd.journey_date DESC, pd.start_seq;";
 
-      const result = await pool.query(finalQuery, queryParams);
+      const result = await db.query(finalQuery, queryParams);
       return result.rows;
     } catch (error) {
       console.error("Error in PaymentDashboardTable:", error);

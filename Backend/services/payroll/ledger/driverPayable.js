@@ -3,9 +3,13 @@
 // a penalty or advance bigger than this must say how it is repaid, on the next payday or by instalments.
 // db is the pool or a transaction client. Returns a "12.34" string.
 
+import { MIN_PAY_FOR_INSURANCE_CENTS } from '../payRuns/payCalculator.js';
+
 export const driverPayable = async (db, driverId, cityId) => {
   const { rows } = await db.query(
-    `SELECT COALESCE(SUM(COALESCE(pd.driver_payment, 0) - COALESCE(pd.insurance_deduction, 0)), 0)::numeric(12,2)::text AS payable
+    // Pay under the minimum pays no insurance (payCalculator), so the amount owed is the pay itself.
+    `SELECT (CASE WHEN COALESCE(SUM(COALESCE(pd.driver_payment, 0)), 0) * 100 < ${MIN_PAY_FOR_INSURANCE_CENTS} THEN COALESCE(SUM(COALESCE(pd.driver_payment, 0)), 0)
+                  ELSE COALESCE(SUM(COALESCE(pd.driver_payment, 0) - COALESCE(pd.insurance_deduction, 0)), 0) END)::numeric(12,2)::text AS payable
        FROM payment_dashboard pd
        JOIN routes r ON r.id = pd.route_id
        JOIN city c ON c.job = r.job
