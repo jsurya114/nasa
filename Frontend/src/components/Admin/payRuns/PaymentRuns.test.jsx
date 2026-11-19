@@ -4,6 +4,7 @@ import {
   fireEvent,
   render,
   screen,
+  waitFor,
   within,
 } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
@@ -24,11 +25,14 @@ const setup = async ({
   blocked = false,
   history = false,
   lostReply = false,
+  desi = false,
+  quickbooks = false,
 } = {}) => {
   const drivers = [
     driver(1, "Dee Test", "40.00"),
     driver(2, "Eli Test", "190.00"),
   ];
+  if (desi) drivers[1].driverType = "DESI";
   if (blocked) {
     drivers[0].eligible = false;
     drivers[0].payoutStatus = "submitted";
@@ -40,7 +44,7 @@ const setup = async ({
       },
     ];
   }
-  const state = { posts: [], receipts: new Map(), lostReply };
+  const state = { posts: [], forced: [], receipts: new Map(), lostReply };
   const run = {
     id: 17,
     city_id: 3,
@@ -100,6 +104,18 @@ const setup = async ({
         },
       };
     }
+    if (config.url.endsWith("/force-paid")) {
+      const body = JSON.parse(config.data);
+      state.forced.push(body);
+      drivers
+        .filter((d) => body.statementIds.includes(d.statementId))
+        .forEach((d) => {
+          d.payoutStatus = "paid";
+          d.eligible = false;
+          d.payment = { ...receipt, method: "other", reference: `Forced: ${body.reason}`, paid_on: body.paidOn };
+        });
+      return { status: 200, data: { receipt: { ...receipt, method: "other" }, replay: false } };
+    }
     if (config.url.endsWith("/record")) {
       const body = JSON.parse(config.data);
       state.posts.push(body);
@@ -142,6 +158,9 @@ const setup = async ({
       },
     };
   });
+  // The page asks the server whether QuickBooks payments are on through this hook; the test decides the answer.
+  vi.resetModules();
+  vi.doMock("./quickbooks/useQuickbooksPaymentsAvailable.js", () => ({ default: () => quickbooks }));
   const { default: PaymentRuns } = await import("./PaymentRuns.jsx");
   const recorded = vi.fn();
   render(
@@ -180,6 +199,7 @@ beforeEach(async () => {
 });
 afterEach(() => {
   cleanup();
+  vi.doUnmock("./quickbooks/useQuickbooksPaymentsAvailable.js");
   vi.unstubAllGlobals();
 });
 
@@ -351,4 +371,50 @@ it("keeps payment details when going back but requires confirmation again if the
   );
   fireEvent.click(screen.getByRole("button", { name: "Pay" }));
   expect(s.posts).toHaveLength(0);
+});
+
+it("a driver the system cannot pay (processing, unconfirmed, needs review) can be marked paid by force, from Pay to drivers only; the history never offers it", async () => {
+  const s = await setup({ blocked: true });
+  fireEvent.click(await screen.findByRole("button", { name: "Pay to drivers" }));
+  const dialog = await screen.findByRole("dialog");
+  // Every driver that is not paid has the option, including the one whose payment is processing (no checkbox, no way to pay it the normal way).
+  expect(await within(dialog).findAllByRole("button", { name: "Force mark as paid" })).toHaveLength(2);
+  expect(within(dialog).queryByRole("checkbox", { name: /Dee Test/ })).toBeNull();
+  fireEvent.click(within(dialog).getAllByRole("button", { name: "Force mark as paid" })[0]); // Dee Test, the processing one
+  fireEvent.change(within(dialog).getByLabelText("Reason"), { target: { value: "Paid in cash outside the system" } });
+  fireEvent.click(within(dialog).getByRole("checkbox", { name: /I confirm that Dee Test is paid \$40\.00/ }));
+  fireEvent.click(within(dialog).getByRole("button", { name: "Mark as paid" }));
+  await waitFor(() => expect(s.forced).toHaveLength(1));
+  expect(s.forced[0]).toMatchObject({ statementIds: [1], reason: "Paid in cash outside the system", confirmed: true });
+  expect(s.posts).toHaveLength(0); // nothing went through the normal recording
+  expect(s.recorded).toHaveBeenCalled();
+  // The review is read again: Dee is paid now and the option is left only on the other driver.
+  await waitFor(() => expect(within(screen.getByRole("dialog")).getAllByRole("button", { name: "Force mark as paid" })).toHaveLength(1));
+});
+
+it("the payment history, which only shows what was recorded, never offers to force a payment", async () => {
+  await setup({ history: true });
+  fireEvent.click(screen.getByRole("button", { name: "Payment history" }));
+  fireEvent.click(await screen.findByRole("button", { name: "View payment records" }));
+  const dialog = await screen.findByRole("dialog");
+  await screen.findByRole("heading", { name: "Payment records" });
+  expect(within(dialog).queryByRole("button", { name: "Force mark as paid" })).toBeNull();
+});
+
+it("with QuickBooks payments on, a Desi driver is not offered the forced mark (the server refuses it), while a Local driver is; with them off a Desi driver is offered it", async () => {
+  await setup({ blocked: true, desi: true, quickbooks: true });
+  fireEvent.click(await screen.findByRole("button", { name: "Pay to drivers" }));
+  const dialog = await screen.findByRole("dialog");
+  await within(dialog).findByText("Eli Test"); // the Desi tab opens first: Eli is the Desi driver
+  expect(within(dialog).queryByRole("button", { name: "Force mark as paid" })).toBeNull();
+  fireEvent.click(within(dialog).getByRole("tab", { name: /Local drivers/ }));
+  expect(await within(dialog).findAllByRole("button", { name: "Force mark as paid" })).toHaveLength(1);
+});
+
+it("with QuickBooks payments off, a Desi driver is offered the forced mark", async () => {
+  await setup({ blocked: true, desi: true, quickbooks: false });
+  fireEvent.click(await screen.findByRole("button", { name: "Pay to drivers" }));
+  const dialog = await screen.findByRole("dialog");
+  await within(dialog).findByText("Eli Test");
+  expect(within(dialog).getAllByRole("button", { name: "Force mark as paid" })).toHaveLength(1);
 });
