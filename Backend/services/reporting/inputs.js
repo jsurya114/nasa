@@ -53,6 +53,14 @@ export function parseLimit(limit, { fallback = 10, max = 50 } = {}) {
   return limit;
 }
 
+export const MAX_ACTIVE_DAYS = 31;
+
+export function parseMinActiveDays(value, fallback) {
+  if (value === undefined) return fallback;
+  if (!Number.isInteger(value) || value < 1 || value > MAX_ACTIVE_DAYS) throw new InputError(`min_active_days must be a whole number from 1 to ${MAX_ACTIVE_DAYS}`);
+  return value;
+}
+
 export const SOURCES = Object.freeze(['daily', 'weekly']);
 
 // The record source: 'daily' or 'weekly', or left out for both. Anything else is refused.

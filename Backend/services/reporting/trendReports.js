@@ -20,6 +20,30 @@ const bucketEnd = (interval, start) => (interval === 'day' ? start : interval ==
 const daysBetween = (a, b) => Math.round((Date.parse(`${b}T00:00:00Z`) - Date.parse(`${a}T00:00:00Z`)) / 86400000) + 1;
 const hundredths = (numerator, denominator) => (denominator > 0n ? centsToText((numerator * 200n + denominator) / (denominator * 2n)) : null);
 
+// Weekday totals and averages over the days that have records. A busiest weekday is named only when some weekday has a completed
+// delivery: a period whose records all show zero deliveries has no busiest weekday, rather than a "busiest" one with an average of 0.
+export function weekdayProfile(weekdayRows) {
+  const weekdays = WEEKDAYS.map((name, i) => {
+    const row = weekdayRows.find((r) => r.dow === i + 1);
+    const total = row ? BigInt(row.deliveries) : 0n;
+    const days = row ? row.days : 0;
+    return { weekday: name, totalDeliveries: Number(total), daysWithRecords: days, averageDeliveriesPerDayWithRecords: days > 0 ? hundredths(total, BigInt(days)) : null };
+  });
+  const anyDeliveries = weekdays.some((w) => w.totalDeliveries > 0);
+  const ranked = anyDeliveries
+    ? weekdays.filter((w) => w.daysWithRecords > 0)
+      .sort((a, b) => Number(b.averageDeliveriesPerDayWithRecords) - Number(a.averageDeliveriesPerDayWithRecords) || WEEKDAYS.indexOf(a.weekday) - WEEKDAYS.indexOf(b.weekday))
+    : [];
+  ranked.forEach((w, i) => { w.rank = i + 1; });
+  weekdays.forEach((w) => { if (w.rank === undefined) w.rank = null; });
+  return { weekdays, busiestWeekday: ranked[0]?.weekday ?? null };
+}
+
+// The days with the most deliveries (rows arrive highest first). A day with records but no completed delivery is not a peak.
+export const peakDatesFrom = (peakRows) => peakRows
+  .filter((r) => Number(r.deliveries) > 0)
+  .map((r) => ({ date: r.d, weekday: WEEKDAYS[r.dow - 1], deliveries: Number(r.deliveries) }));
+
 export async function deliveryTrends(db, { period, cityIds, interval }) {
   if (!INTERVALS.includes(interval)) throw new InputError(`interval must be one of: ${INTERVALS.join(', ')}`);
   if (interval === 'day' && period.days > MAX_DAY_BUCKETS) throw new InputError(`A daily trend can cover at most ${MAX_DAY_BUCKETS} days; use interval week or month for longer periods.`);
@@ -84,16 +108,8 @@ export async function deliveryTrends(db, { period, cityIds, interval }) {
     };
   });
 
-  const weekdays = WEEKDAYS.map((name, i) => {
-    const row = weekdayRows.find((r) => r.dow === i + 1);
-    const total = row ? BigInt(row.deliveries) : 0n;
-    const days = row ? row.days : 0;
-    return { weekday: name, totalDeliveries: Number(total), daysWithRecords: days, averageDeliveriesPerDayWithRecords: days > 0 ? hundredths(total, BigInt(days)) : null };
-  });
-  const ranked = [...weekdays].filter((w) => w.daysWithRecords > 0)
-    .sort((a, b) => Number(b.averageDeliveriesPerDayWithRecords) - Number(a.averageDeliveriesPerDayWithRecords) || WEEKDAYS.indexOf(a.weekday) - WEEKDAYS.indexOf(b.weekday));
-  ranked.forEach((w, i) => { w.rank = i + 1; });
-  weekdays.forEach((w) => { if (w.rank === undefined) w.rank = null; });
+  const { weekdays, busiestWeekday } = weekdayProfile(weekdayRows);
+  const peakDates = peakDatesFrom(peakRows);
 
   const warnings = [];
   if (series.length === 0) {
@@ -109,6 +125,7 @@ export async function deliveryTrends(db, { period, cityIds, interval }) {
     if (open > 0) warnings.push(`${open} record${open === 1 ? ' has' : 's have'} no stored amounts yet: revenue and margin leave them out, deliveries include them.`);
     const estimated = points.filter((p) => p.revenueIsEstimated).length;
     if (estimated > 0) warnings.push(`${estimated} ${interval}${estimated === 1 ? '' : 's'} include weekly records in a week with no verified carrier statement: their revenue and margin are ESTIMATES from the route price fields, not what the carrier billed.`);
+    if (!weekdays.some((w) => w.totalDeliveries > 0)) warnings.push('Records exist in this period but none shows a completed delivery yet (they may still be importing), so there is no busiest weekday and no peak date.');
     warnings.push('Weekday averages are over days that have records, so a weekday NASA does not work shows no average rather than zero.');
   }
   return {
@@ -118,8 +135,8 @@ export async function deliveryTrends(db, { period, cityIds, interval }) {
       cities: cityIds ?? 'all',
       series: points,
       weekdays,
-      busiestWeekday: ranked[0]?.weekday ?? null,
-      peakDates: peakRows.map((r) => ({ date: r.d, weekday: WEEKDAYS[r.dow - 1], deliveries: Number(r.deliveries) })),
+      busiestWeekday,
+      peakDates,
     },
     scope: { description: `Delivery records dated ${period.startDate} to ${period.endDate} by ${interval}, ${cityIds ? `cities ${cityIds.join(', ')}` : 'all cities'}.`, startDate: period.startDate, endDate: period.endDate },
     coverage: [{ source: 'Dashboard delivery records (daily and weekly)', firstDate, lastDate, buckets: points.length }],

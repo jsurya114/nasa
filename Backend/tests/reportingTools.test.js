@@ -378,7 +378,10 @@ test('over HTTP the tools list only with a reporting login, validate input, and 
         ['get_business_summary', { start_date: '2020-01-01', end_date: '2026-10-01' }, /most one question can cover/],
         ['get_business_summary', { start_date: '2026-10-01', end_date: '2026-10-31', city_ids: [2147483000] }, /Unknown city_id/],
         ['rank_cities', { start_date: '2026-10-01', end_date: '2026-10-31', rank_by: 'profit' }, /rank_by|Invalid/i],
-        ['rank_cities', { start_date: '2026-10-01', end_date: '2026-10-31', rank_by: 'revenue', limit: 500 }, /limit|Too big|Invalid/i],
+        ['rank_cities', { start_date: '2026-10-01', end_date: '2026-10-31', rank_by: 'revenue', limit: 500 }, /limit must be a whole number from 1 to 50/],
+        ['rank_drivers', { start_date: '2026-10-01', end_date: '2026-10-31', limit: 500 }, /limit must be a whole number from 1 to 50/],
+        ['rank_drivers', { start_date: '2026-10-01', end_date: '2026-10-31', min_active_days: 99 }, /min_active_days must be a whole number from 1 to 31/],
+        ['forecast_deliveries', { days: 60 }, /days must be a whole number from 1 to 28/],
         ['rank_cities', { start_date: '2026-10-01', end_date: '2026-10-31', rank_by: 'revenue', sql: 'select 1' }, /sql|Unrecognized|Invalid/i],
         ['list_reporting_cities', { anything: true }, /Unrecognized|Invalid/i],
       ];

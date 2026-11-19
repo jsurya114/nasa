@@ -1,7 +1,7 @@
 import * as z from 'zod/v4';
 import { MCP_SCOPE } from '../config.js';
 import { CURRENCY } from '../../reporting/metricDefinitions.js';
-import { parseCityIds, parseLimit, parseRange, parseRankBy } from '../../reporting/inputs.js';
+import { parseCityIds, parseLimit, parseMinActiveDays, parseRange, parseRankBy } from '../../reporting/inputs.js';
 import { businessSummary, listReportingCities, rankCities } from '../../reporting/deliveryReports.js';
 import { InputError, parseBusinessDate } from '../../reporting/inputs.js';
 import { deliveryTrends, rankDrivers } from '../../reporting/trendReports.js';
@@ -48,7 +48,7 @@ export const getBusinessSummaryTool = {
   inputSchema: z.strictObject({
     start_date: dateArg('First day of the period'),
     end_date: dateArg('Last day of the period (inclusive)'),
-    city_ids: z.array(z.number().int()).max(50).optional().describe('Only these cities (ids from list_reporting_cities). Leave out for all cities.'),
+    city_ids: z.array(z.number().int()).optional().describe('Only these cities (ids from list_reporting_cities, at most 50). Leave out for all cities.'),
     compare_previous_period: z.boolean().optional().describe('Also compare with the immediately preceding period of the same length'),
   }),
   dataSchema: z.object({
@@ -99,7 +99,7 @@ export const rankCitiesTool = {
     start_date: dateArg('First day of the period'),
     end_date: dateArg('Last day of the period (inclusive)'),
     rank_by: z.enum(['deliveries', 'revenue', 'gross_margin']).describe('What to rank by'),
-    limit: z.number().int().min(1).max(50).optional().describe('How many cities to return (default 10)'),
+    limit: z.number().int().optional().describe('How many cities to return, 1 to 50 (default 10)'),
   }),
   dataSchema: z.object({
     period,
@@ -124,7 +124,7 @@ export const rankCitiesTool = {
 // ---------------------------------------------------------------------------------------------------------------------
 // Trends, drivers, claims, payments and the forecast.
 
-const idList = z.array(z.number().int()).max(50).optional().describe('Only these cities (ids from list_reporting_cities). Leave out for all cities.');
+const idList = z.array(z.number().int()).optional().describe('Only these cities (ids from list_reporting_cities, at most 50). Leave out for all cities.');
 const citiesField = z.union([z.literal('all'), z.array(z.number().int())]);
 const nullableString = z.string().nullable();
 
@@ -173,8 +173,8 @@ export const rankDriversTool = {
     start_date: dateArg('First day of the period'),
     end_date: dateArg('Last day of the period (inclusive)'),
     rank_by: z.enum(['deliveries', 'deliveries_per_active_day']).optional().describe('Default deliveries'),
-    limit: z.number().int().min(1).max(50).optional().describe('How many drivers to return (default 10)'),
-    min_active_days: z.number().int().min(1).max(31).optional().describe('Only for deliveries_per_active_day: the fewest active days a driver needs (default 3)'),
+    limit: z.number().int().optional().describe('How many drivers to return, 1 to 50 (default 10)'),
+    min_active_days: z.number().int().optional().describe('Only for deliveries_per_active_day: the fewest active days a driver needs, 1 to 31 (default 3)'),
     city_ids: idList,
   }),
   dataSchema: z.object({
@@ -195,7 +195,7 @@ export const rankDriversTool = {
     const rankBy = args.rank_by ?? 'deliveries';
     const input = {
       period: parseRange(args), cityIds: parseCityIds(args.city_ids), rankBy, limit: parseLimit(args.limit),
-      minActiveDays: args.min_active_days ?? (rankBy === 'deliveries_per_active_day' ? 3 : 1),
+      minActiveDays: parseMinActiveDays(args.min_active_days, rankBy === 'deliveries_per_active_day' ? 3 : 1),
     };
     const report = await reporting.run((db) => rankDrivers(db, input), { signal });
     return { ...report, units };
@@ -270,7 +270,7 @@ export const forecastDeliveriesTool = {
   description: 'An ESTIMATE of completed deliveries for the coming days (1 to 28, default 7) from past weekday patterns, tested on past weeks without using future data. Returns the method, training period, historical error and a prediction range when justified, or insufficient_data when history cannot support it. It starts after the last complete week of data. Not a promise: it ignores holidays and changes. Read-only.',
   needsReporting: true,
   inputSchema: z.strictObject({
-    days: z.number().int().min(1).max(MAX_FORECAST_DAYS).optional().describe('How many days to estimate (default 7)'),
+    days: z.number().int().optional().describe(`How many days to estimate, 1 to ${MAX_FORECAST_DAYS} (default 7)`),
     start_date: z.string().optional().describe('First day to estimate (YYYY-MM-DD). Default: the first day after the last complete week of data.'),
     city_ids: idList,
   }),
