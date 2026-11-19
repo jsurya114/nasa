@@ -182,8 +182,11 @@ test('pay runs: today\'s totals, exactly-once rows and deductions, frozen histor
       const d2only = (await one("INSERT INTO city (job, city_code, city_type) VALUES ('Test Pay Neg', 'TSTNEG', 'DAILY') RETURNING id")).id;
       const r2 = (await one(`INSERT INTO routes (name, job, company_route_price, driver_route_price, company_doublestop_price, driver_doublestop_price, route_code_in_string)
         VALUES ('TN 1', 'Test Pay Neg', 2, 1.6, 0.5, 0.25, 'TN-1') RETURNING id`)).id;
-      const dd = (await one("INSERT INTO dashboard_data (driver_id, route_id, start_seq, end_seq, journey_date, packages) VALUES ($1,$2,9000,9009,'2026-11-02',10) RETURNING id", [d2, r2])).id;
-      await db.query("UPDATE payment_dashboard SET closed = true, paid = false, driver_payment = 1, insurance_deduction = 1.92 WHERE dashboard_data_id = $1", [dd]);
+      // Three days of $1.70 is $5.10 of pay (not under the $5 minimum, so insurance is taken) against $5.76 of insurance: below zero.
+      for (const [day, from] of [['2026-11-02', 9000], ['2026-11-03', 9010], ['2026-11-04', 9020]]) {
+        const dd = (await one("INSERT INTO dashboard_data (driver_id, route_id, start_seq, end_seq, journey_date, packages) VALUES ($1,$2,$3,$4,$5,10) RETURNING id", [d2, r2, from, from + 9, day])).id;
+        await db.query("UPDATE payment_dashboard SET closed = true, paid = false, driver_payment = 1.70, insurance_deduction = 1.92 WHERE dashboard_data_id = $1", [dd]);
+      }
       const neg = (await generateRun(db, superAdmin, { requestId: randomUUID(), cityId: d2only, ...{ periodStart: '2026-11-01', periodEnd: '2026-11-07', dataType: 'daily' } })).run;
       await assert.rejects(finalizeRun(db, superAdmin, neg.id), { status: 409, message: /below zero/ });
     });

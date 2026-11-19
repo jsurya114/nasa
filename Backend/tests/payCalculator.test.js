@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { calculateStatement, fromCents, recoveryCap, toCents } from '../services/payroll/payRuns/payCalculator.js';
+import { calculateStatement, fromCents, MIN_PAY_FOR_INSURANCE_CENTS, recoveryCap, toCents } from '../services/payroll/payRuns/payCalculator.js';
 
 // Made-up amounts only. Earnings rows look like today's pay rows: gross driver payment and insurance per day.
 const day = (n, gross = '100.00', insurance = '1.92') => ({ paymentId: n, journeyDate: `2026-11-0${n}`, routeId: 1, gross, insurance });
@@ -113,10 +113,40 @@ test('repayments made outside payroll lower the oldest debts first', () => {
   assert.deepEqual(lines.filter((l) => l.type === 'recovery').map((l) => [l.entryId, l.amount]), [[2, '-30.00']]);
 });
 
-test('insurance larger than the pay is flagged and nothing is recovered', () => {
-  const { totals, flags } = calculateStatement(base({ earnings: [day(1, '1.00', '1.92')], recoveryLimit: FULL, debits: [{ entryId: 1, effectiveDate: '2026-11-01', plan: 'full_next_payday', outstanding: '10.00' }] }));
-  assert.deepEqual([totals.net, totals.recoveries], ['-0.92', '0.00']);
+test('insurance larger than the pay (pay of $5 or more) is flagged and nothing is recovered', () => {
+  // five days of $1.00 is $5.00 of pay against $9.60 of insurance
+  const week = [1, 2, 3, 4, 5].map((n) => day(n, '1.00', '1.92'));
+  const { totals, flags } = calculateStatement(base({ earnings: week, recoveryLimit: FULL, debits: [{ entryId: 1, effectiveDate: '2026-11-01', plan: 'full_next_payday', outstanding: '10.00' }] }));
+  assert.deepEqual([totals.gross, totals.insurance, totals.net, totals.recoveries], ['5.00', '9.60', '-4.60', '0.00']);
   assert.ok(flags.some((f) => f.code === 'negative_before_recovery'));
+});
+
+test('pay under $5 in the run pays no insurance: no insurance line, the net is the pay, and the flag says why', () => {
+  assert.equal(MIN_PAY_FOR_INSURANCE_CENTS, 500);
+  const { totals, lines, flags } = calculateStatement(base({ earnings: [day(1, '0.25', '1.92')] }));
+  assert.deepEqual(totals, { gross: '0.25', insurance: '0.00', reimbursements: '0.00', claimDeductions: '0.00', recoveries: '0.00', net: '0.25', carriedForward: '0.00' });
+  assert.equal(lines.filter((l) => l.type === 'insurance').length, 0);
+  assert.equal(lines.filter((l) => l.type === 'earning').length, 1);
+  assert.deepEqual(flags.map((f) => f.code), ['insurance_waived']);
+  assert.match(flags[0].message, /pay under \$5\.00 for this run, so no insurance \(\$1\.92\) was taken/);
+  assert.ok(!flags.some((f) => f.code === 'negative_before_recovery'));
+});
+
+test('the minimum is on the pay of the whole run: several small days that add up to $5 or more still pay insurance on every day', () => {
+  const days = (gross) => [1, 2, 3].map((n) => day(n, gross, '1.92'));
+  const under = calculateStatement(base({ earnings: days('1.66') })); // 4.98
+  assert.deepEqual([under.totals.gross, under.totals.insurance, under.totals.net], ['4.98', '0.00', '4.98']);
+  const exactly = calculateStatement(base({ earnings: [day(1, '2.50', '1.92'), day(2, '2.50', '1.92')] })); // exactly 5.00
+  assert.deepEqual([exactly.totals.gross, exactly.totals.insurance, exactly.totals.net], ['5.00', '3.84', '1.16']);
+  assert.equal(exactly.lines.filter((l) => l.type === 'insurance').length, 2);
+  assert.ok(!exactly.flags.some((f) => f.code === 'insurance_waived'));
+});
+
+test('a driver with no pay rows, or whose rows carry no insurance, gets no waiver flag; reimbursements do not count as pay for the minimum', () => {
+  assert.deepEqual(calculateStatement(base({ earnings: [] })).flags, []);
+  assert.deepEqual(calculateStatement(base({ earnings: [day(1, '1.00', '0.00')] })).flags, []);
+  const withCredit = calculateStatement(base({ earnings: [day(1, '1.00', '1.92')], reimbursements: [{ entryId: 1, amount: '50.00' }] }));
+  assert.deepEqual([withCredit.totals.insurance, withCredit.totals.net], ['0.00', '51.00']);
 });
 
 test('the same input always gives the same statement (a retry recalculates identically)', () => {
