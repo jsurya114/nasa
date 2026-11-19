@@ -35,7 +35,7 @@ export default function EvereeBatchResults({ view, busy, onCheck, onRetry }) {
       )}
       <ul className="mt-3 divide-y divide-line">
         {items.map((i) => {
-          const s = ITEM_STATUS[i.everee?.depositReturned ? "returned" : i.status] ?? ITEM_STATUS.not_submitted;
+          const s = ITEM_STATUS[i.markedPaidByAdmin ? "marked_paid" : i.everee?.depositReturned ? "returned" : i.status] ?? ITEM_STATUS.not_submitted;
           return (
             <li key={i.itemId} className="flex flex-wrap items-start justify-between gap-2 py-2 text-sm">
               <div>
