@@ -14,8 +14,12 @@ terraform {
   backend "s3" {}
 }
 
+# The account guard: Terraform stops before touching anything if the profile's credentials belong to any other
+# account (for example another project's profile on the same computer). There is no default for either value.
 provider "aws" {
-  region = var.region
+  region              = var.region
+  profile             = var.aws_profile
+  allowed_account_ids = [var.aws_account_id]
 
   default_tags {
     tags = merge({

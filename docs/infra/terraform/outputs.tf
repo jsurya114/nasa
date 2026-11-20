@@ -51,3 +51,18 @@ output "asg_name" {
 output "alerts_topic_arn" {
   value = aws_sns_topic.alerts.arn
 }
+
+output "node_heap_mb" {
+  description = "The Node heap limit the instances use (chosen from the instance size unless node_heap_mb is set)."
+  value       = local.node_heap_mb
+}
+
+output "staging" {
+  description = "Staging load-test helpers (null in prod)."
+  value = local.staging ? {
+    test_db_endpoint   = local.test_database ? aws_db_instance.test[0].address : null
+    test_db_secret_arn = local.test_database ? aws_db_instance.test[0].master_user_secret[0].secret_arn : null
+    load_generator_id  = local.load_generator ? aws_instance.load_generator[0].id : null
+    load_generator_ip  = local.load_generator ? aws_instance.load_generator[0].private_ip : null
+  } : null
+}

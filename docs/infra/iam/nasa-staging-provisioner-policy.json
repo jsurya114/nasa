@@ -1,0 +1,91 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "StagingStackServices",
+      "Effect": "Allow",
+      "Action": [
+        "ec2:*",
+        "autoscaling:*",
+        "rds:*",
+        "cloudwatch:*",
+        "logs:*",
+        "sns:*",
+        "ssm:*",
+        "ssmmessages:*",
+        "ec2messages:*",
+        "budgets:*",
+        "secretsmanager:DescribeSecret",
+        "secretsmanager:GetSecretValue",
+        "secretsmanager:ListSecrets",
+        "secretsmanager:CreateSecret",
+        "secretsmanager:DeleteSecret",
+        "secretsmanager:TagResource",
+        "secretsmanager:RotateSecret",
+        "secretsmanager:PutSecretValue",
+        "kms:DescribeKey",
+        "kms:ListAliases",
+        "kms:CreateGrant",
+        "kms:Decrypt",
+        "kms:GenerateDataKey",
+        "sts:GetCallerIdentity"
+      ],
+      "Resource": "*",
+      "Condition": { "StringEquals": { "aws:RequestedRegion": "us-east-1" } }
+    },
+    {
+      "Sid": "GlobalReadsTerraformNeeds",
+      "Effect": "Allow",
+      "Action": ["iam:Get*", "iam:List*", "budgets:ViewBudget", "ce:Get*", "ce:Describe*", "ce:List*", "pricing:*", "s3:ListAllMyBuckets", "s3:GetBucketLocation"],
+      "Resource": "*"
+    },
+    {
+      "Sid": "OnlyNasaStagingRoles",
+      "Effect": "Allow",
+      "Action": [
+        "iam:CreateRole", "iam:DeleteRole", "iam:TagRole", "iam:UntagRole", "iam:UpdateAssumeRolePolicy",
+        "iam:PutRolePolicy", "iam:DeleteRolePolicy", "iam:AttachRolePolicy", "iam:DetachRolePolicy",
+        "iam:CreateInstanceProfile", "iam:DeleteInstanceProfile", "iam:AddRoleToInstanceProfile",
+        "iam:RemoveRoleFromInstanceProfile", "iam:TagInstanceProfile", "iam:PassRole"
+      ],
+      "Resource": [
+        "arn:aws:iam::*:role/nasa-staging-*",
+        "arn:aws:iam::*:instance-profile/nasa-staging-*"
+      ]
+    },
+    {
+      "Sid": "AttachOnlySsmCore",
+      "Effect": "Deny",
+      "Action": "iam:AttachRolePolicy",
+      "Resource": "*",
+      "Condition": { "ArnNotEquals": { "iam:PolicyARN": "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore" } }
+    },
+    {
+      "Sid": "RdsServiceLinkedRole",
+      "Effect": "Allow",
+      "Action": "iam:CreateServiceLinkedRole",
+      "Resource": "*",
+      "Condition": { "StringLike": { "iam:AWSServiceName": ["rds.amazonaws.com", "autoscaling.amazonaws.com"] } }
+    },
+    {
+      "Sid": "OnlyNasaStagingBuckets",
+      "Effect": "Allow",
+      "Action": "s3:*",
+      "Resource": [
+        "arn:aws:s3:::nasa-staging-*",
+        "arn:aws:s3:::nasa-staging-*/*"
+      ]
+    },
+    {
+      "Sid": "NeverTouchProductionTaggedResources",
+      "Effect": "Deny",
+      "Action": [
+        "ec2:TerminateInstances", "ec2:StopInstances", "ec2:DisassociateAddress", "ec2:ReleaseAddress",
+        "ec2:DeleteSecurityGroup", "ec2:ModifyVolume", "ec2:DeleteVolume",
+        "rds:ModifyDBInstance", "rds:DeleteDBInstance", "rds:RebootDBInstance", "rds:StopDBInstance"
+      ],
+      "Resource": "*",
+      "Condition": { "StringNotEquals": { "aws:ResourceTag/Environment": "staging" } }
+    }
+  ]
+}

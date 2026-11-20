@@ -1,0 +1,5 @@
+# Real test account lists and run output never go into the repository.
+drivers.json
+admins.json
+results/
+*.xlsx

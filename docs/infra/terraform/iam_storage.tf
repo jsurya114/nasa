@@ -77,6 +77,16 @@ data "aws_iam_policy_document" "app" {
     resources = ["arn:aws:ssm:${var.region}:${data.aws_caller_identity.current.account_id}:parameter${var.ssm_parameter_path}", "arn:aws:ssm:${var.region}:${data.aws_caller_identity.current.account_id}:parameter${var.ssm_parameter_path}/*"]
   }
 
+  # Staging only: the password of its own throwaway test database, kept by RDS in Secrets Manager.
+  dynamic "statement" {
+    for_each = local.test_database ? [1] : []
+    content {
+      sid       = "ReadTestDatabasePassword"
+      actions   = ["secretsmanager:GetSecretValue"]
+      resources = [aws_db_instance.test[0].master_user_secret[0].secret_arn]
+    }
+  }
+
   dynamic "statement" {
     for_each = local.direct ? [1] : []
     content {

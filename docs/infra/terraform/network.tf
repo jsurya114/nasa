@@ -5,10 +5,13 @@ data "aws_availability_zones" "available" {
 data "aws_caller_identity" "current" {}
 
 locals {
-  name        = "${var.project}-${var.environment}"
-  azs         = slice(data.aws_availability_zones.available.names, 0, var.az_count)
-  nat_enabled = var.enable_nat_gateway || var.enable_alb
-  direct      = !var.enable_alb
+  name           = "${var.project}-${var.environment}"
+  azs            = slice(data.aws_availability_zones.available.names, 0, var.az_count)
+  nat_enabled    = var.enable_nat_gateway || var.enable_alb
+  direct         = !var.enable_alb
+  staging        = var.environment == "staging"
+  test_database  = local.staging && var.create_test_database
+  load_generator = local.staging && var.create_load_generator
 
   # Address plan (see docs/infra/AWS_NETWORK_PLAN.md). Index = AZ number.
   public_cidrs = [for i in range(var.az_count) : cidrsubnet(var.vpc_cidr, 8, i)]      # 10.20.0.0/24, 10.20.1.0/24, 10.20.2.0/24
@@ -63,6 +66,11 @@ resource "aws_subnet" "data" {
   availability_zone = local.azs[count.index]
   cidr_block        = local.data_cidrs[count.index]
   tags              = { Name = "${local.name}-data-${local.azs[count.index]}", Tier = "data" }
+}
+
+# Where the backend instances run: public subnets in direct mode (Elastic IP, no NAT), app subnets behind an ALB.
+locals {
+  backend_subnets = local.direct ? aws_subnet.public[*].id : aws_subnet.app[*].id
 }
 
 ############################################

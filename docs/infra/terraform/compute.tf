@@ -10,18 +10,32 @@ resource "aws_eip" "direct" {
 }
 
 locals {
+  # About 40% of memory for the Node heap: room for the OS, Caddy, the rest of Node's memory and (staging) Redis.
+  heap_by_type = { "t4g.nano" = 192, "t4g.micro" = 384, "t3.micro" = 384, "t4g.small" = 768, "t3.small" = 768, "t4g.medium" = 1536, "t3.medium" = 1536 }
+  node_heap_mb = coalesce(var.node_heap_mb, lookup(local.heap_by_type, var.instance_type, 1536))
+
   user_data = templatefile("${path.module}/user_data.sh.tpl", {
     region            = var.region
+    environment       = var.environment
     artifact_bucket   = aws_s3_bucket.artifacts.bucket
     ssm_path          = var.ssm_parameter_path
     app_port          = var.app_port
     direct            = local.direct ? "true" : "false"
     api_domain        = var.api_domain
+    tls_mode          = var.tls_mode
     node_major        = var.node_major
-    node_heap_mb      = var.node_heap_mb
+    node_heap_mb      = local.node_heap_mb
+    swap_mb           = var.swap_mb
     caddy_version     = var.caddy_version
     acme_email        = var.acme_email
     eip_allocation_id = local.direct ? aws_eip.direct[0].id : ""
+    local_redis       = local.staging && var.install_local_redis ? "true" : "false"
+    test_db_host      = local.test_database ? aws_db_instance.test[0].address : ""
+    test_db_port      = local.test_database ? aws_db_instance.test[0].port : 0
+    test_db_name      = local.test_database ? aws_db_instance.test[0].db_name : ""
+    test_db_user      = local.test_database ? aws_db_instance.test[0].username : ""
+    test_db_secret    = local.test_database ? aws_db_instance.test[0].master_user_secret[0].secret_arn : ""
+    rate_limit_max    = var.staging_rate_limit_max
   })
 }
 
@@ -67,7 +81,7 @@ resource "aws_launch_template" "app" {
   }
 
   monitoring {
-    enabled = false # basic (5-minute) metrics are free; turn on for the load test
+    enabled = var.detailed_monitoring # basic (5-minute) metrics are free; 1-minute metrics for a load test
   }
 
   tag_specifications {
@@ -89,7 +103,7 @@ resource "aws_autoscaling_group" "app" {
   min_size                  = var.asg_min
   desired_capacity          = var.asg_desired
   max_size                  = var.asg_max
-  vpc_zone_identifier       = local.direct ? aws_subnet.public[*].id : aws_subnet.app[*].id
+  vpc_zone_identifier       = var.app_single_az ? [local.backend_subnets[0]] : local.backend_subnets
   health_check_type         = var.enable_alb ? "ELB" : "EC2"
   health_check_grace_period = 300
   target_group_arns         = var.enable_alb ? [aws_lb_target_group.app[0].arn] : []
@@ -104,12 +118,14 @@ resource "aws_autoscaling_group" "app" {
     version = "$Latest"
   }
 
-  # Replace instances launch-before-terminate, so a new version never means downtime.
+  # Terminate-then-launch while there is one instance. The backend runs scheduled jobs (availability reset, Everee
+  # checks) inside the web process, so two overlapping instances would run them twice; a refresh therefore costs a few
+  # minutes of downtime. Overlap (min 100 / max 200) is only allowed once those jobs take a single-runner lock.
   instance_refresh {
     strategy = "Rolling"
     preferences {
-      min_healthy_percentage = 100
-      max_healthy_percentage = 200
+      min_healthy_percentage = var.asg_max > 1 ? 100 : 0
+      max_healthy_percentage = var.asg_max > 1 ? 200 : 100
       instance_warmup        = 180
     }
   }
