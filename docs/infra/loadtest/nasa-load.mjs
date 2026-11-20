@@ -93,10 +93,14 @@ async function user(role, index, count, account) {
   if (login.outcome !== 'ok') return null;
   successfulLogins++;
   const ctx = { token: login.body.accessToken, driverId: login.body.driver?.id };
+  // A city admin cannot open super-admin pages (Insights, pay runs), exactly as in the UI; only the super admin calls them.
+  let tokenRole = null;
+  try { tokenRole = JSON.parse(Buffer.from(ctx.token.split('.')[1], 'base64url').toString()).role ?? null; } catch {}
+  const endpoints = spec.endpoints.filter((e) => !e.superadminOnly || tokenRole === 'superadmin');
   active[role]++;
   // Every endpoint once first, so a broken endpoint is always seen even in a short run.
-  for (const e of spec.endpoints) await call(e.name, fill(e.path, ctx), e.validator, { token: ctx.token });
-  const pick = picker(spec.endpoints);
+  for (const e of endpoints) await call(e.name, fill(e.path, ctx), e.validator, { token: ctx.token });
+  const pick = picker(endpoints);
   while (Date.now() < endAt) {
     await sleep(rnd(...spec.thinkSeconds) * 1000);
     if (Date.now() >= endAt) break;
@@ -113,9 +117,21 @@ async function uploadOnce(account) {
   if (login.outcome !== 'ok') return;
   successfulLogins++;
   const form = new FormData();
-  form.append('file', new Blob([readFileSync(args.upload)]), basename(args.upload));
-  await call('POST weekly upload', args['upload-path'] || '/admin/doubleStop/weekly-upload', 'object', { method: 'POST', token: login.body.accessToken, form });
+  const type = args.upload.endsWith('.csv') ? 'text/csv' : 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'; // what a browser sends
+  form.append('file', new Blob([readFileSync(args.upload)], { type }), basename(args.upload));
+  const t0 = performance.now();
+  const res = await call('POST weekly upload', args['upload-path'] || '/admin/doubleStop/weekly-upload', 'object', { method: 'POST', token: login.body.accessToken, form });
+  if (args['upload-expect']) {
+    // The upload must report exactly the totals the fixture was built with, or the run fails.
+    const expected = JSON.parse(readFileSync(args['upload-expect'], 'utf8'));
+    const got = res.body?.data ?? {};
+    const keys = ['recordsProcessed', 'recordsSkipped', 'recordsInserted'];
+    uploadCheck = Object.fromEntries(keys.map((k) => [k, { expected: expected[k], got: got[k] ?? null }]));
+    const match = res.outcome === 'ok' && keys.every((k) => got[k] === expected[k]);
+    recorder.record('upload totals match fixture', performance.now() - t0, match ? 200 : 0, match ? 'ok' : 'invalid_body');
+  }
 }
+let uploadCheck = null;
 
 let interrupted = false;
 process.on('SIGINT', () => { interrupted = true; console.error('Interrupted: the run will be reported as failed.'); });
@@ -143,6 +159,7 @@ const plannedEndpoints = [
   ...(ADMIN_VUS ? workload.admin.endpoints : []),
 ].map((e) => ({ name: e.name, p95Ms: e.p95Ms, minOk: 1 }));
 if (args.upload) plannedEndpoints.push({ name: 'POST weekly upload', p95Ms: null, minOk: 1 });
+if (args.upload && args['upload-expect']) plannedEndpoints.push({ name: 'upload totals match fixture', p95Ms: null, minOk: 1 });
 const ideal = expectedRequests({ users: DRIVER_VUS, durationS: DURATION_S, thinkMinS: workload.driver.thinkSeconds[0], thinkMaxS: workload.driver.thinkSeconds[1] })
   + expectedRequests({ users: ADMIN_VUS, durationS: DURATION_S, thinkMinS: workload.admin.thinkSeconds[0], thinkMaxS: workload.admin.thinkSeconds[1] });
 const plan = {
@@ -163,7 +180,7 @@ if (args.out) {
   writeFileSync(args.out, JSON.stringify({
     stage: args.stage || null, startedAt: new Date(startAt).toISOString(), elapsedS: +elapsedS.toFixed(1),
     config: { base: BASE, driverVus: DRIVER_VUS, adminVus: ADMIN_VUS, rampS: RAMP_S, durationS: DURATION_S, timeoutMs: TIMEOUT_MS, minShare: MIN_SHARE, upload: args.upload ? basename(args.upload) : null, thinkSeconds: { driver: workload.driver.thinkSeconds, admin: workload.admin.thinkSeconds } },
-    plan, verdict: result, okPerSecond: +(summary.totals.ok / elapsedS).toFixed(2), rows: summary.rows,
+    plan, verdict: result, uploadCheck, okPerSecond: +(summary.totals.ok / elapsedS).toFixed(2), rows: summary.rows,
   }, null, 2));
 }
 process.exit(result.pass ? 0 : 1);

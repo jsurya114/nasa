@@ -17,8 +17,9 @@ writeFileSync(join(dir, 'drivers.json'), JSON.stringify(accounts(3, 'driver')));
 writeFileSync(join(dir, 'admins.json'), JSON.stringify(accounts(2, 'admin')));
 writeFileSync(join(dir, 'dupes.json'), JSON.stringify([...accounts(1, 'x'), ...accounts(1, 'x')]));
 writeFileSync(join(dir, 'weekly.xlsx'), 'not a real workbook');
+writeFileSync(join(dir, 'expect.json'), JSON.stringify({ recordsProcessed: 10, recordsSkipped: 0, recordsInserted: 2 }));
 
-const TOKEN = 'fixture-token-'.padEnd(40, 'x');
+const TOKEN = `x.${Buffer.from(JSON.stringify({ role: 'superadmin' })).toString('base64url')}.fixture-signature-padding`;
 const GOOD = {
   '/driver/login': { accessToken: TOKEN, driver: { id: 7 } },
   '/admin/login': { accessToken: TOKEN },
@@ -32,7 +33,7 @@ const GOOD = {
   '/admin/insights/overview': { data: {} },
   '/admin/insights/trends': { data: [] },
   '/admin/payroll/runs': { runs: [] },
-  '/admin/doubleStop/weekly-upload': { success: true },
+  '/admin/doubleStop/weekly-upload': { success: true, data: { recordsProcessed: 10, recordsSkipped: 0, recordsInserted: 2 } },
   '/healthz': { status: 'ok' },
 };
 
@@ -175,4 +176,14 @@ test('production guard: only the one staging name is allowed', () => {
   assert.equal(assertNotProduction('https://api-staging.nasaroutes.com'), 'api-staging.nasaroutes.com');
   assert.equal(assertNotProduction('https://10.0.0.5'), '10.0.0.5');
   assert.throws(() => checkAccounts([{ email: 'a@x', password: '' }], 1, 'd'), /email and a password/);
+});
+
+test('the upload must report exactly the fixture totals', async () => {
+  const extra = ['--upload', join(dir, 'weekly.xlsx'), '--upload-expect', join(dir, 'expect.json')];
+  const ok = await withServer(undefined, extra);
+  assert.equal(ok.code, 0, reasons(ok));
+  assert.equal(ok.report.uploadCheck.recordsInserted.got, 2);
+  const wrong = await withServer((p) => (p === '/admin/doubleStop/weekly-upload' ? { body: { success: true, data: { recordsProcessed: 10, recordsSkipped: 1, recordsInserted: 2 } } } : undefined), extra);
+  assert.equal(wrong.code, 1);
+  assert.match(reasons(wrong), /upload totals match fixture: 0 successful/);
 });
