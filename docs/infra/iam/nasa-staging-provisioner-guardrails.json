@@ -2,6 +2,46 @@
   "Version": "2012-10-17",
   "Statement": [
     {
+      "Sid": "NeverChangeOwnPermissions",
+      "Effect": "Deny",
+      "Action": [
+        "iam:Attach*",
+        "iam:Detach*",
+        "iam:Put*",
+        "iam:Delete*",
+        "iam:Update*",
+        "iam:Tag*",
+        "iam:Untag*",
+        "iam:Remove*",
+        "iam:Add*"
+      ],
+      "Resource": [
+        "${aws:PrincipalArn}"
+      ]
+    },
+    {
+      "Sid": "NeverDetachTheseGuardrails",
+      "Effect": "Deny",
+      "Action": [
+        "iam:DetachRolePolicy",
+        "iam:DetachUserPolicy",
+        "iam:DetachGroupPolicy",
+        "iam:DeletePolicy",
+        "iam:CreatePolicyVersion",
+        "iam:SetDefaultPolicyVersion",
+        "iam:DeletePolicyVersion"
+      ],
+      "Resource": "*",
+      "Condition": {
+        "ArnLike": {
+          "iam:PolicyARN": [
+            "arn:aws:iam::*:policy/nasa-staging-provisioner-*",
+            "arn:aws:iam::*:policy/nasa-staging-role-boundary"
+          ]
+        }
+      }
+    },
+    {
       "Sid": "NeverRemoveOrChangeTheBoundaryOrTrust",
       "Effect": "Deny",
       "Action": [
