@@ -82,9 +82,18 @@ data "aws_iam_policy_document" "app" {
   dynamic "statement" {
     for_each = local.staging ? [1] : []
     content {
-      sid       = "StagingLoadtestFiles"
-      actions   = ["s3:GetObject", "s3:PutObject"]
-      resources = ["${aws_s3_bucket.artifacts.arn}/loadtest/*"]
+      sid       = "StagingLoadtestFilesOut"
+      actions   = ["s3:PutObject"]
+      resources = ["${aws_s3_bucket.artifacts.arn}/loadtest/from-app/*"]
+    }
+  }
+
+  dynamic "statement" {
+    for_each = local.staging ? [1] : []
+    content {
+      sid       = "StagingLoadtestFilesIn"
+      actions   = ["s3:GetObject"]
+      resources = ["${aws_s3_bucket.artifacts.arn}/loadtest/to-app/*"]
     }
   }
 

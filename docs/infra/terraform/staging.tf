@@ -80,7 +80,7 @@ resource "aws_iam_role_policy_attachment" "load_generator_ssm" {
   policy_arn = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
 }
 
-# Reads the runner bundle and writes results, under loadtest/ in the staging artifacts bucket. Nothing else.
+# Reads the runner (loadtest/runner/, which the backend cannot write) and writes results (loadtest/results/). Nothing else.
 resource "aws_iam_role_policy" "load_generator" {
   count = local.load_generator ? 1 : 0
   name  = "loadtest-bucket"
@@ -88,7 +88,7 @@ resource "aws_iam_role_policy" "load_generator" {
   policy = jsonencode({
     Version = "2012-10-17"
     Statement = [
-      { Effect = "Allow", Action = ["s3:GetObject"], Resource = "${aws_s3_bucket.artifacts.arn}/loadtest/*" },
+      { Effect = "Allow", Action = ["s3:GetObject"], Resource = "${aws_s3_bucket.artifacts.arn}/loadtest/runner/*" },
       { Effect = "Allow", Action = ["s3:PutObject"], Resource = "${aws_s3_bucket.artifacts.arn}/loadtest/results/*" },
     ]
   })
