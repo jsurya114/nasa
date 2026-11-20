@@ -5,42 +5,73 @@
       "Sid": "SessionManagerAgent",
       "Effect": "Allow",
       "Action": [
-        "ssm:UpdateInstanceInformation", "ssm:ListAssociations", "ssm:ListInstanceAssociations", "ssm:DescribeAssociation",
-        "ssm:GetDocument", "ssm:DescribeDocument", "ssm:UpdateAssociationStatus", "ssm:UpdateInstanceAssociationStatus",
-        "ssm:PutInventory", "ssm:PutComplianceItems", "ssm:GetManifest", "ssm:GetDeployablePatchSnapshotForInstance",
-        "ssm:PutConfigurePackageResult", "ssmmessages:*", "ec2messages:*"
+        "ssm:UpdateInstanceInformation",
+        "ssm:ListAssociations",
+        "ssm:ListInstanceAssociations",
+        "ssm:DescribeAssociation",
+        "ssm:GetDocument",
+        "ssm:DescribeDocument",
+        "ssm:UpdateAssociationStatus",
+        "ssm:UpdateInstanceAssociationStatus",
+        "ssm:PutInventory",
+        "ssm:PutComplianceItems",
+        "ssm:GetManifest",
+        "ssm:GetDeployablePatchSnapshotForInstance",
+        "ssm:PutConfigurePackageResult",
+        "ssmmessages:*",
+        "ec2messages:*"
       ],
       "Resource": "*"
     },
     {
       "Sid": "StagingSettingsOnly",
       "Effect": "Allow",
-      "Action": ["ssm:GetParameter", "ssm:GetParameters", "ssm:GetParametersByPath"],
+      "Action": [
+        "ssm:GetParameter",
+        "ssm:GetParameters",
+        "ssm:GetParametersByPath"
+      ],
       "Resource": "arn:aws:ssm:us-east-1:*:parameter/nasa/staging*"
     },
     {
       "Sid": "StagingBucketsOnly",
       "Effect": "Allow",
-      "Action": ["s3:GetObject", "s3:PutObject"],
+      "Action": [
+        "s3:GetObject",
+        "s3:PutObject"
+      ],
       "Resource": "arn:aws:s3:::nasa-staging-*/*"
     },
     {
       "Sid": "TestDatabasePasswordOnly",
       "Effect": "Allow",
       "Action": "secretsmanager:GetSecretValue",
-      "Resource": "arn:aws:secretsmanager:us-east-1:*:secret:rds!*"
+      "Resource": "arn:aws:secretsmanager:us-east-1:*:secret:rds!*",
+      "Condition": {
+        "StringLike": {
+          "secretsmanager:ResourceTag/aws:rds:primaryDBInstanceArn": "arn:aws:rds:us-east-1:*:db:nasa-staging-*"
+        }
+      }
     },
     {
       "Sid": "AttachOwnElasticIp",
       "Effect": "Allow",
       "Action": "ec2:AssociateAddress",
       "Resource": "*",
-      "Condition": { "StringEquals": { "aws:ResourceTag/Environment": "staging" } }
+      "Condition": {
+        "StringEquals": {
+          "aws:ResourceTag/Environment": "staging"
+        }
+      }
     },
     {
       "Sid": "VpcFlowLogs",
       "Effect": "Allow",
-      "Action": ["logs:CreateLogStream", "logs:PutLogEvents", "logs:DescribeLogStreams"],
+      "Action": [
+        "logs:CreateLogStream",
+        "logs:PutLogEvents",
+        "logs:DescribeLogStreams"
+      ],
       "Resource": "arn:aws:logs:us-east-1:*:log-group:/nasa/staging/*"
     }
   ]
