@@ -78,6 +78,16 @@ data "aws_iam_policy_document" "app" {
     resources = ["arn:aws:ssm:${var.region}:${data.aws_caller_identity.current.account_id}:parameter${var.ssm_parameter_path}", "arn:aws:ssm:${var.region}:${data.aws_caller_identity.current.account_id}:parameter${var.ssm_parameter_path}/*"]
   }
 
+  # Staging only: hand load-test files (schema dump, seed output, sampler logs) to the operator through the bucket.
+  dynamic "statement" {
+    for_each = local.staging ? [1] : []
+    content {
+      sid       = "StagingLoadtestFiles"
+      actions   = ["s3:GetObject", "s3:PutObject"]
+      resources = ["${aws_s3_bucket.artifacts.arn}/loadtest/*"]
+    }
+  }
+
   # Staging only: the password of its own throwaway test database, kept by RDS in Secrets Manager.
   dynamic "statement" {
     for_each = local.test_database ? [1] : []
