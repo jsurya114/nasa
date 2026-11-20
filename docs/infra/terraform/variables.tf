@@ -285,14 +285,15 @@ variable "create_test_database" {
 }
 
 variable "test_db_engine_version" {
-  description = "PostgreSQL version of the test database. Set it to the production RDS version found during discovery."
+  description = "PostgreSQL version of the test database: the production RDS major version (17, confirmed 2026-11-20; production runs 17.9)."
   type        = string
-  default     = "16"
+  default     = "17"
 }
 
 variable "test_db_instance_class" {
-  type    = string
-  default = "db.t4g.micro"
+  description = "Same class as production (db.t3.micro, confirmed 2026-11-20), so the test measures the database NASA really has."
+  type        = string
+  default     = "db.t3.micro"
 }
 
 variable "create_load_generator" {

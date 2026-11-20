@@ -86,7 +86,7 @@ ENV_FILE=/opt/nasa/Backend/.env
   if grep -vE "$ALLOWED" "$ENV_FILE" | grep -q .; then echo "FATAL: staging settings outside the allow-list"; exit 1; fi
   grep -qx "DB_HOST=${test_db_host}" "$ENV_FILE" && [ -n "${test_db_host}" ] || { echo "FATAL: staging must use its own test database"; exit 1; }
   # Tools to load the schema and the synthetic data into the test database (staging only).
-  dnf install -y postgresql16 || dnf install -y postgresql15
+  dnf install -y postgresql17 || dnf install -y postgresql16
 %{ endif ~}
 chown -R ec2-user:ec2-user /opt/nasa
 
