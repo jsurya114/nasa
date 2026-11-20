@@ -80,15 +80,38 @@ ENV_FILE=/opt/nasa/Backend/.env
     echo "JWT_SECRET=$(openssl rand -hex 48)"
     echo "REFRESH_TOKEN_SECRET=$(openssl rand -hex 48)"
   } > "$ENV_FILE"
-  unset DB_PASSWORD
+  # Insights reads through a separate read-only reporting login (as in production), never the application login.
+  # TLS is verified against the official RDS certificate bundle for the region.
+  curl -fsSL "https://truststore.pki.rds.amazonaws.com/$REGION/$REGION-bundle.pem" -o /opt/nasa/rds-ca.pem
+  REPORTING_PASSWORD=$(openssl rand -hex 24)
+  {
+    echo "REPORTING_DB_HOST=${test_db_host}"
+    echo "REPORTING_DB_PORT=${test_db_port}"
+    echo "REPORTING_DB_NAME=${test_db_name}"
+    echo "REPORTING_DB_USER=nasa_staging_reporting"
+    echo "REPORTING_DB_PASSWORD=$REPORTING_PASSWORD"
+    echo "REPORTING_DB_SSL=true"
+    echo "REPORTING_DB_SSL_CA=$(jq -Rs . < /opt/nasa/rds-ca.pem)"
+  } >> "$ENV_FILE"
+  dnf install -y postgresql17 || dnf install -y postgresql16
+  PGPASSWORD="$DB_PASSWORD" psql "host=${test_db_host} port=${test_db_port} dbname=${test_db_name} user=${test_db_user} sslmode=require" \
+    -v ON_ERROR_STOP=1 -v pw="'$REPORTING_PASSWORD'" <<'SQL'
+DO $do$ BEGIN
+  IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'nasa_reporting_reader') THEN CREATE ROLE nasa_reporting_reader NOLOGIN NOINHERIT; END IF;
+  IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'nasa_staging_reporting') THEN CREATE ROLE nasa_staging_reporting LOGIN; END IF;
+END $do$;
+ALTER ROLE nasa_staging_reporting PASSWORD :pw;
+GRANT nasa_reporting_reader TO nasa_staging_reporting;
+SQL
+  unset DB_PASSWORD REPORTING_PASSWORD
   # Refuse to start if anything outside the allow-list is present, or the database is not the staging one.
-  ALLOWED='^(NODE_ENV|PORT|TRUST_PROXY|NASA_ENVIRONMENT|STAGING_GLOBAL_RATE_LIMIT_MAX|FRONTEND_URL|LOG_LEVEL|DB_HOST|DB_PORT|DB_NAME|DB_USER|DB_PASSWORD|DB_SSL|REDIS_HOST|REDIS_PORT|JWT_SECRET|REFRESH_TOKEN_SECRET)='
+  ALLOWED='^(NODE_ENV|PORT|TRUST_PROXY|NASA_ENVIRONMENT|STAGING_GLOBAL_RATE_LIMIT_MAX|FRONTEND_URL|LOG_LEVEL|DB_HOST|DB_PORT|DB_NAME|DB_USER|DB_PASSWORD|DB_SSL|REDIS_HOST|REDIS_PORT|JWT_SECRET|REFRESH_TOKEN_SECRET|REPORTING_DB_HOST|REPORTING_DB_PORT|REPORTING_DB_NAME|REPORTING_DB_USER|REPORTING_DB_PASSWORD|REPORTING_DB_SSL|REPORTING_DB_SSL_CA)='
   if grep -vE "$ALLOWED" "$ENV_FILE" | grep -q .; then echo "FATAL: staging settings outside the allow-list"; exit 1; fi
   grep -qx "DB_HOST=${test_db_host}" "$ENV_FILE" && [ -n "${test_db_host}" ] || { echo "FATAL: staging must use its own test database"; exit 1; }
-  # Tools to load the schema and the synthetic data into the test database (staging only).
-  dnf install -y postgresql17 || dnf install -y postgresql16
 %{ endif ~}
 chown -R ec2-user:ec2-user /opt/nasa
+chmod 600 "$ENV_FILE"
+umask 022 # only the settings file is private; Caddy, systemd units and logs need normal permissions
 
 # 4. Service
 cat > /etc/systemd/system/nasa-backend.service <<UNIT
@@ -140,6 +163,7 @@ $DOMAIN {
   reverse_proxy 127.0.0.1:$APP_PORT
 }
 CADDY
+  chmod 644 /etc/caddy/Caddyfile
   cat > /etc/systemd/system/caddy.service <<UNIT
 [Unit]
 Description=Caddy

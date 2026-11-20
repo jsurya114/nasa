@@ -164,7 +164,10 @@
             "CreateNetworkAcl",
             "CreateVpcEndpoint",
             "CreateNatGateway",
-            "CreateFlowLogs"
+            "CreateFlowLogs",
+            "AuthorizeSecurityGroupIngress",
+            "AuthorizeSecurityGroupEgress",
+            "CreateNetworkInterface"
           ]
         }
       }

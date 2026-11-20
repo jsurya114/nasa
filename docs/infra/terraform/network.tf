@@ -36,6 +36,7 @@ resource "aws_internet_gateway" "main" {
 
 # The default security group is emptied so nothing can use it by accident.
 resource "aws_default_security_group" "default" {
+  count  = local.staging ? 0 : 1 # staging's deployer may not retag an existing AWS-made resource, and nothing uses it
   vpc_id = aws_vpc.main.id
   tags   = { Name = "${local.name}-default-unused" }
 }
