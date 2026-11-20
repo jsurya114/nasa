@@ -65,8 +65,9 @@ resource "aws_vpc_security_group_egress_rule" "load_generator_all" {
 }
 
 resource "aws_iam_role" "load_generator" {
-  count = local.load_generator ? 1 : 0
-  name  = "${local.name}-load-generator"
+  count                = local.load_generator ? 1 : 0
+  name                 = "${local.name}-load-generator"
+  permissions_boundary = var.role_permissions_boundary_arn
   assume_role_policy = jsonencode({
     Version   = "2012-10-17"
     Statement = [{ Effect = "Allow", Principal = { Service = "ec2.amazonaws.com" }, Action = "sts:AssumeRole" }]

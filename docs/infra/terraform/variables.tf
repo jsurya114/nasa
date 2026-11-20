@@ -315,3 +315,9 @@ variable "staging_rate_limit_max" {
   type        = number
   default     = 100000
 }
+
+variable "role_permissions_boundary_arn" {
+  description = "IAM permissions boundary put on every role this stack creates. Required by docs/infra/iam/nasa-staging-provisioner-policy.json (create docs/infra/iam/nasa-staging-role-boundary.json as policy nasa-staging-role-boundary first). null = none."
+  type        = string
+  default     = null
+}

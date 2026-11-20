@@ -86,11 +86,16 @@ resource "aws_launch_template" "app" {
 
   tag_specifications {
     resource_type = "instance"
-    tags          = { Name = "${local.name}-app" }
+    tags          = { Name = "${local.name}-app", Environment = var.environment, Project = var.project }
   }
   tag_specifications {
     resource_type = "volume"
-    tags          = { Name = "${local.name}-app" }
+    tags          = { Name = "${local.name}-app", Environment = var.environment, Project = var.project }
+  }
+  # Tagged too, so a staging role limited to Environment=staging resources can attach the Elastic IP.
+  tag_specifications {
+    resource_type = "network-interface"
+    tags          = { Name = "${local.name}-app", Environment = var.environment, Project = var.project }
   }
 
   lifecycle {

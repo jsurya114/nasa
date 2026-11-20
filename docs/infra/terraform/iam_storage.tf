@@ -48,7 +48,8 @@ resource "aws_s3_bucket_lifecycle_configuration" "artifacts" {
 # Instance role: SSM Session Manager (no SSH), read releases, read settings, attach its Elastic IP
 ############################################
 resource "aws_iam_role" "app" {
-  name = "${local.name}-app"
+  name                 = "${local.name}-app"
+  permissions_boundary = var.role_permissions_boundary_arn
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
     Statement = [{
