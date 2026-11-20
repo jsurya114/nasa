@@ -2,7 +2,7 @@
   "Version": "2012-10-17",
   "Statement": [
     {
-      "Sid": "NeverChangeOwnPermissions",
+      "Sid": "NeverChangeTheDeployerRoleItself",
       "Effect": "Deny",
       "Action": [
         "iam:Attach*",
@@ -16,7 +16,7 @@
         "iam:Add*"
       ],
       "Resource": [
-        "${aws:PrincipalArn}"
+        "arn:aws:iam::*:role/nasa-staging-deployer-role"
       ]
     },
     {

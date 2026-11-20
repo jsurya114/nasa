@@ -5,3 +5,5 @@ terraform.tfvars
 backend.hcl
 crash.log
 *.tfplan
+*.tfvars
+!*.tfvars.example
