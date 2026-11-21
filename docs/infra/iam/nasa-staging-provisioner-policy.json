@@ -2,15 +2,19 @@
   "Version": "2012-10-17",
   "Statement": [
     {
-      "Sid": "StagingStackServices",
+      "Sid": "StagingStackReadsAndIdentity",
       "Effect": "Allow",
       "Action": [
-        "ec2:*",
-        "autoscaling:*",
-        "cloudwatch:*",
-        "logs:*",
-        "sns:*",
-        "budgets:*",
+        "ec2:Describe*",
+        "ec2:GetDefaultCreditSpecification",
+        "ec2:GetEbsEncryptionByDefault",
+        "autoscaling:Describe*",
+        "cloudwatch:DescribeAlarms",
+        "cloudwatch:GetMetricData",
+        "cloudwatch:GetMetricStatistics",
+        "cloudwatch:ListMetrics",
+        "logs:DescribeLogGroups",
+        "sns:ListTopics",
         "sts:GetCallerIdentity"
       ],
       "Resource": "*",
@@ -21,6 +25,77 @@
           ]
         }
       }
+    },
+    {
+      "Sid": "Ec2CreateOnlyWithTheStagingTag",
+      "Effect": "Allow",
+      "Action": [
+        "ec2:Create*",
+        "ec2:RunInstances",
+        "ec2:AllocateAddress"
+      ],
+      "Resource": "*",
+      "Condition": {
+        "StringEquals": {
+          "aws:RequestedRegion": [
+            "us-east-1"
+          ],
+          "aws:RequestTag/Environment": "staging"
+        }
+      }
+    },
+    {
+      "Sid": "Ec2ChangeOnlyStagingTaggedResources",
+      "Effect": "Allow",
+      "Action": "ec2:*",
+      "Resource": "*",
+      "Condition": {
+        "StringEquals": {
+          "aws:RequestedRegion": [
+            "us-east-1"
+          ],
+          "aws:ResourceTag/Environment": "staging"
+        }
+      }
+    },
+    {
+      "Sid": "Ec2LaunchFromPublicImages",
+      "Effect": "Allow",
+      "Action": "ec2:RunInstances",
+      "Resource": "arn:aws:ec2:us-east-1::image/*"
+    },
+    {
+      "Sid": "AutoScalingOnlyStagingGroups",
+      "Effect": "Allow",
+      "Action": "autoscaling:*",
+      "Resource": "arn:aws:autoscaling:us-east-1:*:autoScalingGroup:*:autoScalingGroupName/nasa-staging-*"
+    },
+    {
+      "Sid": "AlarmsOnlyStagingNames",
+      "Effect": "Allow",
+      "Action": "cloudwatch:*",
+      "Resource": "arn:aws:cloudwatch:us-east-1:*:alarm:nasa-staging-*"
+    },
+    {
+      "Sid": "LogGroupsOnlyStagingNames",
+      "Effect": "Allow",
+      "Action": "logs:*",
+      "Resource": [
+        "arn:aws:logs:us-east-1:*:log-group:/nasa/staging/*",
+        "arn:aws:logs:us-east-1:*:log-group:/nasa/staging/*:*"
+      ]
+    },
+    {
+      "Sid": "AlertTopicOnlyStagingNames",
+      "Effect": "Allow",
+      "Action": "sns:*",
+      "Resource": "arn:aws:sns:us-east-1:*:nasa-staging-*"
+    },
+    {
+      "Sid": "BudgetOnlyStagingName",
+      "Effect": "Allow",
+      "Action": "budgets:*",
+      "Resource": "arn:aws:budgets::*:budget/nasa-staging-*"
     },
     {
       "Sid": "RdsReads",
