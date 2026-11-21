@@ -50,13 +50,20 @@ cd /opt/nasa/Backend && npm ci --omit=dev
 umask 077
 ENV_FILE=/opt/nasa/Backend/.env
 %{ if environment == "prod" ~}
-{
-    echo "NODE_ENV=production"
-    echo "PORT=$APP_PORT"
-    echo "TRUST_PROXY=1"
-    aws ssm get-parameters-by-path --region "$REGION" --path "$SSM_PATH" --with-decryption --recursive --output json \
-      | jq -r '.Parameters[] | ((.Name | split("/") | last) + "=" + (.Value | @json))'
-} > "$ENV_FILE"
+# Every value must reach the app exactly as stored, including line breaks, backslashes and quotes. render-env.cjs
+# quotes each value so this release's own dotenv reads it back unchanged, checks that, and stops here (naming the
+# setting, never its value) if one would not survive.
+cat > /opt/nasa/render-env.cjs <<'RENDER_ENV'
+${render_env_js}
+RENDER_ENV
+SSM_JSON=$(mktemp)
+aws ssm get-parameters-by-path --region "$REGION" --path "$SSM_PATH" --with-decryption --recursive --output json > "$SSM_JSON"
+if ! "$NODE_BIN" /opt/nasa/render-env.cjs "$SSM_JSON" "$APP_PORT" > "$ENV_FILE"; then
+  rm -f "$SSM_JSON" "$ENV_FILE"
+  echo "FATAL: backend settings could not be written safely (see render-env above)"
+  exit 1
+fi
+rm -f "$SSM_JSON"
 %{ else ~}
   # Staging: an ALLOW-LIST. Everee, QuickBooks, push, Cloudinary, the AI connector and every other integration
   # setting are absent, so each one stays switched off (they all need an explicit "true" and credentials).
