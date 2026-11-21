@@ -29,7 +29,8 @@ Other rules:
     the scheduled jobs. Turn it on at cutover (see the migration steps).
   * An existing parameter is never replaced unless you add --overwrite.
   * Empty values are skipped (an unset switch must stay unset). Line breaks are allowed (they are marked in the list
-    so you can check them against the old file); values over 4 KB are refused.
+    so you can check them against the old file). A value over 4 KB (up to 8 KB, for example a certificate chain) is
+    stored in SSM's advanced tier (about $0.05 a month each) and marked in the list; over 8 KB is refused.
 """
 import argparse
 import json
@@ -43,7 +44,8 @@ from pathlib import Path
 SKIP = {"NODE_ENV", "PORT", "TRUST_PROXY"}
 FORCED = {"SCHEDULED_JOBS_ENABLED": "false"}
 NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
-MAX_BYTES = 4096  # standard parameter size limit
+MAX_STANDARD = 4096  # standard-tier parameter size limit
+MAX_ADVANCED = 8192  # advanced-tier parameter size limit
 DEFAULT_BACKEND_DIR = Path(__file__).resolve().parents[3] / "Backend"
 RENDER_ENV = Path(__file__).resolve().parents[1] / "terraform" / "render-env.cjs"
 
@@ -99,6 +101,8 @@ def put(name, value, overwrite, region):
     # so it does not show in the process list.
     body = {"Name": name, "Value": value, "Type": "SecureString", "Overwrite": overwrite,
             "Description": "NASA backend setting copied from the old server's .env"}
+    if len(value.encode()) > MAX_STANDARD:
+        body["Tier"] = "Advanced"  # needed above 4 KB; costs about $0.05 a month for this parameter
     handle, path = tempfile.mkstemp(prefix="nasa-ssm-", suffix=".json")  # created with mode 0600
     try:
         with os.fdopen(handle, "w", encoding="utf-8") as out:
@@ -135,7 +139,7 @@ def main():
         value = FORCED.get(key, value)
         if value == "":
             continue
-        if len(value.encode()) > MAX_BYTES:
+        if len(value.encode()) > MAX_ADVANCED:
             too_big.append(key)
             continue
         plan[key] = value
@@ -156,6 +160,8 @@ def main():
             marks.append("forced")
         if "\n" in plan[key] or "\r" in plan[key]:
             marks.append("has line breaks: check it against the old file")
+        if len(plan[key].encode()) > MAX_STANDARD:
+            marks.append("over 4 KB: advanced tier, about $0.05 a month")
         print(f"  {prefix}/{key}  [{len(plan[key])} characters]" + (f"  ({'; '.join(marks)})" if marks else ""))
     if SKIP & settings.keys():
         print("skipped (the bootstrap sets them):", ", ".join(sorted(SKIP & settings.keys())))
@@ -164,7 +170,7 @@ def main():
     if changed:
         print("REFUSED, the value would arrive on the new server changed (round trip failed):", ", ".join(changed))
     if too_big:
-        print("REFUSED, over 4 KB:", ", ".join(sorted(too_big)))
+        print("REFUSED, over 8 KB:", ", ".join(sorted(too_big)))
 
     refused = bool(changed or too_big)
     if not args.apply:
