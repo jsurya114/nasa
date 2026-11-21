@@ -2,6 +2,9 @@
 *.tfstate
 *.tfstate.*
 terraform.tfvars
-backend.hcl
+backend*.hcl
+!backend.hcl.example
 crash.log
 *.tfplan
+*.tfvars
+!*.tfvars.example

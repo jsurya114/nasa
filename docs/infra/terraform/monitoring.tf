@@ -81,6 +81,13 @@ resource "aws_budgets_budget" "monthly" {
   limit_unit   = "USD"
   time_unit    = "MONTHLY"
 
+  # Counts only this environment's resources once the Environment tag is activated as a cost allocation tag
+  # (Billing > Cost allocation tags; it takes up to 24 hours). Until then this budget reports nothing.
+  cost_filter {
+    name   = "TagKeyValue"
+    values = ["user:Environment$${var.environment}"]
+  }
+
   dynamic "notification" {
     for_each = var.alert_email == "" ? [] : [
       { threshold = 80, type = "ACTUAL" },

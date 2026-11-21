@@ -4,8 +4,9 @@
 # the security groups and the absence of inbound rules are what protect it.
 
 locals {
-  eph_from = 1024
-  eph_to   = 65535
+  backend_cidrs = local.direct ? local.public_cidrs : local.app_cidrs
+  eph_from      = 1024
+  eph_to        = 65535
 
   # protocol "6" = TCP, "-1" = all
   nacl_rules = merge(
@@ -26,9 +27,10 @@ locals {
       "app-out-100" = { nacl = "app", egress = true, num = 100, proto = "-1", cidr = "0.0.0.0/0", from = 0, to = 0 }
     },
 
-    # ---------- data tier (future database / cache) ----------
-    { for i, c in local.app_cidrs : "data-in-${100 + i}" => { nacl = "data", egress = false, num = 100 + i, proto = "6", cidr = c, from = var.db_port, to = var.db_port } },
-    { for i, c in local.app_cidrs : "data-out-${100 + i}" => { nacl = "data", egress = true, num = 100 + i, proto = "6", cidr = c, from = local.eph_from, to = local.eph_to } },
+    # ---------- data tier (database) ----------
+    # From wherever the backend runs: the app subnets behind an ALB, the public subnets in direct mode.
+    { for i, c in local.backend_cidrs : "data-in-${100 + i}" => { nacl = "data", egress = false, num = 100 + i, proto = "6", cidr = c, from = var.db_port, to = var.db_port } },
+    { for i, c in local.backend_cidrs : "data-out-${100 + i}" => { nacl = "data", egress = true, num = 100 + i, proto = "6", cidr = c, from = local.eph_from, to = local.eph_to } },
   )
 }
 
