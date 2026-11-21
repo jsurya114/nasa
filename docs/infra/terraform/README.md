@@ -26,6 +26,7 @@ terraform plan -out nasa.tfplan            # read it
 terraform apply nasa.tfplan
 
 # 3. Settings (one SecureString per setting; values never go through Terraform)
+#    easiest: docs/infra/scripts/copy-env-to-ssm.py <copy of the old .env> (dry run first, then --apply)
 aws ssm put-parameter --name /nasa/prod/DB_HOST --type SecureString --value '...'     # repeat for every name in Backend/.env.example
 
 # 4. Release, then roll the instance
