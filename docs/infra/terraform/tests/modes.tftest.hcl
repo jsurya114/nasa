@@ -287,3 +287,15 @@ run "peering_without_a_database_security_group_is_refused" {
 
   expect_failures = [aws_vpc_peering_connection.default]
 }
+
+run "peering_with_a_range_inside_the_default_vpc_is_refused" {
+  command = plan
+
+  variables {
+    peer_default_vpc          = true
+    peer_db_security_group_id = "sg-0123456789abcdef0"
+    vpc_cidr                  = "172.31.0.0/20"
+  }
+
+  expect_failures = [aws_vpc_peering_connection.default]
+}

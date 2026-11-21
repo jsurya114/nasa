@@ -5,6 +5,16 @@
 
 locals {
   peer = var.peer_default_vpc ? 1 : 0
+
+  # Do the two ranges overlap? (Terraform has no built-in for it.) They do when both network addresses fall in the same
+  # block of the SHORTER prefix, which covers equal ranges and one range sitting inside the other.
+  default_cidr   = try(data.aws_vpc.default[0].cidr_block, var.vpc_cidr)
+  net_a          = [for o in split(".", cidrhost(var.vpc_cidr, 0)) : tonumber(o)]
+  net_b          = [for o in split(".", cidrhost(local.default_cidr, 0)) : tonumber(o)]
+  num_a          = local.net_a[0] * 16777216 + local.net_a[1] * 65536 + local.net_a[2] * 256 + local.net_a[3]
+  num_b          = local.net_b[0] * 16777216 + local.net_b[1] * 65536 + local.net_b[2] * 256 + local.net_b[3]
+  block_size     = pow(2, 32 - min(tonumber(split("/", var.vpc_cidr)[1]), tonumber(split("/", local.default_cidr)[1])))
+  ranges_overlap = floor(local.num_a / local.block_size) == floor(local.num_b / local.block_size)
 }
 
 data "aws_vpc" "default" {
@@ -37,8 +47,8 @@ resource "aws_vpc_peering_connection" "default" {
 
   lifecycle {
     precondition {
-      condition     = var.vpc_cidr != data.aws_vpc.default[0].cidr_block
-      error_message = "vpc_cidr overlaps the default VPC. Peering needs two different ranges."
+      condition     = !local.ranges_overlap
+      error_message = "vpc_cidr overlaps the default VPC range. Peering needs two ranges that do not overlap."
     }
     precondition {
       condition     = var.peer_db_security_group_id != ""
@@ -47,7 +57,7 @@ resource "aws_vpc_peering_connection" "default" {
   }
 }
 
-# Lets the database's public host name resolve to its private address from this VPC, and the other way round.
+# Harmless and kept on both sides: lets a name from the other VPC (for example the database's endpoint) resolve to its private address.
 resource "aws_vpc_peering_connection_options" "default" {
   count                     = local.peer
   vpc_peering_connection_id = aws_vpc_peering_connection.default[0].id
