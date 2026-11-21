@@ -1,5 +1,5 @@
 // Checks the load-test RUNNER against a fake server: every way a run can go wrong must fail, and only a clean run passes.
-// A pass here says nothing about NASA's capacity. Run: node --test docs/infra/loadtest/test/
+// A pass here says nothing about NASA's capacity. Run: node --test docs/infra/loadtest/test/runner.test.mjs
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import http from 'node:http';

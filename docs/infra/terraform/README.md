@@ -2,7 +2,9 @@
 
 Plan and reasoning: [`docs/infra/AWS_NETWORK_PLAN.md`](../AWS_NETWORK_PLAN.md). Costs and the database: [`docs/infra/AWS_COST_OPTIMISATION.md`](../AWS_COST_OPTIMISATION.md). Load test: [`docs/infra/loadtest/`](../../docs/infra/loadtest/README.md).
 
-**Status: validated, never applied.** `terraform validate` passes and `terraform test` (three plans of both modes on a mocked AWS provider) passes. Nothing here has run against a real AWS account, and the instance bootstrap (`user_data.sh.tpl`) has never booted.
+**Status: applied in staging only, production never applied.** On 2026-11-20 the stack ran in the NASA account as `environment = "staging"` (direct mode, `t4g.micro`, its own test database), the bootstrap booted on a real instance, the load test ran ([results](../loadtest/README.md#results)), and everything was destroyed again. `terraform validate` and `terraform test` (`tests/modes.tftest.hcl`, mocked provider) pass.
+
+**Account lock.** `aws_profile` and `aws_account_id` have no defaults, and the provider sets `allowed_account_ids`, so Terraform refuses to run against any other account. Both go in your local `terraform.tfvars` and `backend.hcl` (both git-ignored). The account ID never goes in the repository.
 
 ## What it creates
 
@@ -35,15 +37,24 @@ Then point DNS at `terraform output api_ip_for_dns` (direct mode). Parameter val
 
 ## Switching to the load balancer later
 
-1. Add `GET /healthz` to the backend (200, no auth, no database call) and deploy it.
+1. Make sure the deployed backend has `GET /healthz` (200, no sign-in, no database call). It is added on this branch, and the bootstrap already waits for it.
 2. `enable_alb = true` (the NAT gateway turns on automatically), optionally `route53_zone_id` or an existing `acm_certificate_arn`.
 3. `terraform apply`; if DNS is not in Route 53, create the records from `terraform output acm_validation_records`.
-4. Move the `api_domain` record to `alb_dns_name`. Cost goes from about $30 to about $86 a month (see the cost document).
+4. Move the `api_domain` record to `alb_dns_name`. This adds about $50 to $60 a month: the load balancer, the NAT gateway and their public addresses (see the cost document).
+
+## Staging (load tests only)
+
+`environment = "staging"` with a separate state key, a separate tfvars file and the deployer role in [`docs/infra/iam/`](../iam/). The staging-only switches `install_local_redis`, `create_test_database` and `create_load_generator` are refused by validation when `environment = "prod"`. In staging the backend gets an allow-list of settings, with no Everee, QuickBooks, email, push, Cloudinary or AI connector settings, so it cannot reach real people or real money. Destroy the stack after each session. Running cost while it exists is about $0.07 an hour.
+
+```bash
+terraform init -reconfigure -backend-config=backend-staging.hcl
+terraform plan -var-file=staging.tfvars -out staging.tfplan
+terraform test -var-file=staging.tfvars
+```
 
 ## Known gaps (on purpose, not forgotten)
 
-- `asg_max = 1` until the cron jobs in `Backend` can run on one instance only. The scaling policy is ready.
-- No database in this stack. The `data` subnets and security group are reserved for it; see the database section of the cost document.
+- `asg_max = 1` until the scheduled jobs in `Backend` can run on one instance only. The scaling policy is ready.
+- No production database in this stack. Production stays on the existing RDS in the default VPC, reached over VPC peering. The `data` subnets and security group are reserved for a later move.
 - No WAF, no CloudFront, no multi-region.
-- `user_data` assumes Amazon Linux 2023 has the `nodejs22` package and that the Caddy release URL for the pinned version exists: check on a throwaway instance.
-- The state backend and any account IDs are never committed (`backend.hcl`, `terraform.tfvars` are ignored).
+- The state backend and any account IDs are never committed (`backend.hcl`, `terraform.tfvars`, `*.tfvars` are ignored).

@@ -1,6 +1,39 @@
 # NASA AWS cost optimisation: safe steps, sizing and the database
 
-Written 2026-11-19. **Prices below come from third-party price sites and one AWS table, not from the live AWS price list. They are for comparing options. Confirm every figure in the AWS Pricing Calculator before deciding.** Hours per month = 730.
+Written 2026-11-19, updated 2026-11-21. **Section 0 holds confirmed figures:** the AWS Price List API, the account's real bill, and the load test. Sections 1 to 5 are the original research from third-party price sites, kept for comparing options. Hours per month = 730.
+
+## 0. Confirmed (2026-11-21)
+
+**Today's bill.** About $41 a month including tax (August to October 2026: $41.31, $40.46, $41.31). October before tax was $38.75:
+
+| Line (October 2026, 744 hours) | Cost |
+|---|---|
+| RDS `db.t3.micro` (PostgreSQL 17.9, single-AZ) | $14.27 |
+| RDS storage, 100 GB gp3 (about 0.6 GB used) | $12.26 |
+| EC2 `t3.micro` | $8.25 |
+| Public IPv4 address (Elastic IP) | $3.97 |
+| EBS root volume, 30 GB gp3 | $2.56 |
+
+**The database is already on RDS,** in the default VPC. It stays there; the new VPC reaches it over VPC peering.
+
+**Chosen setup:** `t4g.micro`, `cpu_credits = "unlimited"`, direct mode (no load balancer, no NAT), one instance in the database's zone. This was decided from the [load test](loadtest/README.md#results).
+
+| Item (us-east-1 on-demand, Price List API) | Rate | Per month |
+|---|---|---|
+| EC2 `t4g.micro` | $0.0084/h | $6.13 |
+| EBS gp3, 20 GB | $0.08/GB | $1.60 |
+| Public IPv4 (Elastic IP) | $0.005/h | $3.65 |
+| RDS `db.t3.micro` (unchanged) | $0.018/h | $13.14 |
+| RDS gp3 storage, 100 GB (unchanged) | $0.115/GB | $11.50 |
+| VPC peering, alarms, budget, SSM, S3 endpoint | free tier, or no hourly charge | about $0 |
+| CPU surplus credits (`t4g`, only beyond earned credits) | $0.04/vCPU-hour | expected $0 |
+| **Total before tax** | | **about $36.10** (today about $38.75) |
+
+For comparison: `t4g.small` is $0.0168/h ($12.26 a month, about $42 in total), and `t4g.medium` is $0.0336/h ($24.53, about $54).
+
+**The biggest remaining saving is the database storage:** 100 GB down to 20 GB would save about $9.20 a month. RDS cannot shrink storage in place, so it needs a move to a new instance, planned separately. `db.t3.micro` to `db.t4g.micro` would save about $1.50.
+
+**One-off cost of the move:** about $3.50 for keeping the old server for one week as a rollback.
 
 ## 1. What the options cost (us-east-1, on-demand, Linux)
 
@@ -20,7 +53,7 @@ Written 2026-11-19. **Prices below come from third-party price sites and one AWS
 | Setup | Items | About |
 |---|---|---|
 | Today | `t3.micro` + one public IP + disk | $12 to $14 |
-| **Proposed start (direct mode)** | `t4g.medium` + one Elastic IP + 20 GB disk | **about $30** (`t4g.small`: about $18) |
+| **Chosen (direct mode)** | `t4g.micro` + one Elastic IP + 20 GB disk | **about $11.40** (see section 0) |
 | ALB mode | `t4g.medium` + disk + ALB + 2 ALB public IPs + NAT + NAT public IP | **about $86**, plus ALB usage and NAT data |
 | Database inside AWS (future) | not included | see section 5 |
 
@@ -40,7 +73,7 @@ Every step is reversible, and each one is checked against the load test (`docs/i
 
 **Not recommended:** Spot instances for a single production backend (a reclaim is an outage); shrinking the database or instance without a rollback plan; buying a Savings Plan before the load test; turning on multi-AZ NAT or a second instance "for safety" before there is a measured reason.
 
-**Burstable (`t`) instances:** the baseline is a fraction of a CPU. In `unlimited` mode (the Terraform default) extra CPU is billed as surplus credits rather than throttled. The surplus rate was not found in this research: look it up before relying on `unlimited` for a sustained load. If the load test shows CPU above the baseline for most of the run, a fixed-performance type (`c7g.large`, `m7g.large`) will be cheaper than a larger burstable one.
+**Burstable (`t`) instances:** the baseline is a fraction of a CPU. In `unlimited` mode (the Terraform default) extra CPU is billed as surplus credits rather than throttled. The surplus rate for `t4g` is $0.04 per vCPU-hour (Price List API). The load test measured about 3.4% average CPU at 100 drivers at once, against a 10% baseline, so no surplus is expected. If the load test shows CPU above the baseline for most of the run, a fixed-performance type (`c7g.large`, `m7g.large`) will be cheaper than a larger burstable one.
 
 ## 3. Findings from the code that change the cost picture
 
@@ -48,13 +81,13 @@ Every step is reversible, and each one is checked against the load test (`docs/i
 - **Global rate limit.** `Backend/app.js` allows 1,000 requests per IP per 15 minutes, counted in memory. Drivers sharing one public IP (a depot or office Wi-Fi) share that budget. Worth checking the logs for `429` from real traffic.
 - **No health route.** The ALB needs `GET /healthz`. Without it an enabled ALB marks the instance unhealthy and replaces it in a loop.
 - **Redis.** The backend uses an external hosted Redis (login limits and token blacklist). Jayasoorya saw "Redis did not answer in time" in the log; login limits then fall back to memory. If that Redis is far from the new region or on a free tier, it will show in login latency. Check its plan and region.
-- **Uploads in memory.** Excel files are read in memory (limit 50 MB; the real weekly file is 1.3 MB). A 4 GiB instance with `--max-old-space-size=1536` is a safe fit; lowering the limit to about 10 MB would remove the worst case at no cost.
+- **Uploads in memory.** Excel files are read in memory (limit 50 MB; the real weekly file is 1.3 MB). On a `t4g.micro` (heap 384 MB) the 64,540-row weekly upload peaked at 383 MB of Node memory alone and 438 MB during 100 drivers' traffic, within the 1 GiB instance; lowering the limit to about 10 MB would remove the worst case at no cost.
 
 ## 4. The three things to decide first
 
-1. Is PostgreSQL on the `t3.micro` itself, on RDS, or at an outside provider? (Section 5 is a decision tree on it.)
-2. Region, and where `nasaroutes.com` DNS lives.
-3. Whether a few minutes of downtime on a quiet night is acceptable for the cutover.
+1. ~~Where PostgreSQL runs~~: RDS `db.t3.micro` in the default VPC (confirmed 2026-11-20).
+2. ~~Region~~: us-east-1. **Still open:** where `nasaroutes.com` DNS lives.
+3. Whether a few minutes of downtime on a quiet night is acceptable for the cutover (the plan assumes yes).
 
 ## 5. Database cost reduction (safe order)
 
