@@ -17,10 +17,11 @@ Safe by default: with no --apply it only PRINTS the setting NAMES it would creat
 Values are read with the backend's own parser (dotenv from Backend/node_modules), so each one is exactly what the
 old server's app sees: quotes, "\\n" inside double quotes and inline "# comments" are handled as the app handles them.
 
-Before anything is written, every setting goes through a round trip: the script renders the line the server's
-bootstrap will write (NAME=<value as JSON>), parses it with the same dotenv, and REFUSES any setting whose value
-would come back different (for example a value containing a backslash or a double quote). Refused settings are listed
-by name only. Fix them in the file or in the bootstrap first.
+Before anything is written, every setting goes through the server's own renderer: the script runs
+terraform/render-env.cjs (the code the bootstrap runs at boot) with the backend's dotenv, and REFUSES any setting it
+cannot carry unchanged (a carriage return, a trailing backslash, a value holding all three quote characters, a name
+that is not a valid setting name). Refused settings are listed by name only. With --apply nothing is written while any
+is refused, so the copy is complete or absent. This check and the real boot can never disagree.
 
 Other rules:
   * NODE_ENV, PORT and TRUST_PROXY are skipped: the server's bootstrap writes them itself.
@@ -44,6 +45,18 @@ FORCED = {"SCHEDULED_JOBS_ENABLED": "false"}
 NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 MAX_BYTES = 4096  # standard parameter size limit
 DEFAULT_BACKEND_DIR = Path(__file__).resolve().parents[3] / "Backend"
+RENDER_ENV = Path(__file__).resolve().parents[1] / "terraform" / "render-env.cjs"
+
+# Reads {parameters, port} on standard input and prints the names render-env.cjs would refuse, as JSON. It calls the
+# same settingsFrom and render the bootstrap uses, with the backend's own dotenv.
+RENDER_CHECK_JS = (
+    "const {createRequire}=require('module');const r=require(process.argv[1]);"
+    "const dotenv=createRequire(process.cwd()+'/package.json')('dotenv');"
+    "let s='';process.stdin.setEncoding('utf8');"
+    "process.stdin.on('data',d=>s+=d).on('end',()=>{const q=JSON.parse(s);"
+    "const {settings}=r.settingsFrom(q.parameters,q.port);"
+    "process.stdout.write(JSON.stringify(r.render(settings,dotenv.parse).bad))})"
+)
 
 # Reads the text on standard input and prints what the backend's dotenv makes of it, as JSON.
 DOTENV_PARSE_JS = (
@@ -62,6 +75,22 @@ def dotenv_parse(text, backend_dir):
     if result.returncode != 0:
         sys.exit(f"could not run dotenv from {backend_dir} (run 'npm ci' in Backend first): "
                  f"{result.stderr.strip()[:200]}")
+    return json.loads(result.stdout)
+
+
+def renderer_refuses(plan, backend_dir):
+    """Names of the settings the server's bootstrap would stop on, using its own renderer (render-env.cjs) and the
+    backend's dotenv, so this check and the real boot can never disagree."""
+    if not RENDER_ENV.is_file():
+        sys.exit(f"{RENDER_ENV} not found: run this from a checkout that has the bootstrap renderer (develop or main).")
+    request = {"parameters": [{"Name": f"/x/{key}", "Value": value} for key, value in plan.items()], "port": "3251"}
+    try:
+        result = subprocess.run(["node", "-e", RENDER_CHECK_JS, str(RENDER_ENV)], input=json.dumps(request),
+                                cwd=backend_dir, capture_output=True, text=True)
+    except FileNotFoundError:
+        sys.exit("node was not found. Install Node, or run this on a machine that has it.")
+    if result.returncode != 0:
+        sys.exit(f"could not run the renderer check (run 'npm ci' in Backend first): {result.stderr.strip()[:200]}")
     return json.loads(result.stdout)
 
 
@@ -113,10 +142,9 @@ def main():
     for key, value in FORCED.items():
         plan.setdefault(key, value)
 
-    # Round trip: what the bootstrap writes (NAME=<JSON>) must parse back to exactly the same value.
-    lines = [f"{key}={json.dumps(value, ensure_ascii=False)}" for key, value in plan.items()]
-    echoed = dotenv_parse("\n".join(lines), args.backend_dir)
-    changed = sorted(key for key, value in plan.items() if echoed.get(key) != value)
+    # Round trip with the SAME code the server's bootstrap runs (terraform/render-env.cjs): every setting must come
+    # back from dotenv exactly as stored, or it is refused by name.
+    changed = sorted(renderer_refuses(plan, args.backend_dir))
 
     print(f"{'WRITING' if args.apply else 'DRY RUN (nothing is written)'}: "
           f"{len(plan) - len(changed)} settings under {prefix}/")
