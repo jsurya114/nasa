@@ -12,6 +12,17 @@ mock_provider "aws" {
       account_id = "123456789012"
     }
   }
+  mock_data "aws_vpc" {
+    defaults = {
+      id         = "vpc-0123456789abcdef0"
+      cidr_block = "172.31.0.0/16"
+    }
+  }
+  mock_data "aws_route_table" {
+    defaults = {
+      id = "rtb-0123456789abcdef0"
+    }
+  }
   mock_data "aws_ssm_parameter" {
     defaults = {
       value = "ami-0123456789abcdef0"
@@ -226,4 +237,65 @@ run "account_id_must_be_twelve_digits" {
   }
 
   expect_failures = [var.aws_account_id]
+}
+
+run "peering_is_off_by_default_and_adds_nothing" {
+  command = plan
+
+  assert {
+    condition     = length(aws_vpc_peering_connection.default) == 0 && length(aws_route.peer_from_public) == 0 && length(aws_route.peer_from_app) == 0 && length(aws_route.peer_to_new_vpc) == 0 && length(aws_vpc_security_group_ingress_rule.db_from_new_vpc_app) == 0
+    error_message = "With peer_default_vpc false nothing about peering may be planned."
+  }
+}
+
+run "peering_on_adds_one_connection_one_route_per_side_and_one_database_rule" {
+  command = plan
+
+  variables {
+    peer_default_vpc          = true
+    peer_db_security_group_id = "sg-0123456789abcdef0"
+  }
+
+  assert {
+    condition     = length(aws_vpc_peering_connection.default) == 1 && aws_vpc_peering_connection.default[0].auto_accept
+    error_message = "One peering connection, accepted automatically (same account and region)."
+  }
+  assert {
+    condition     = aws_vpc_peering_connection_options.default[0].requester[0].allow_remote_vpc_dns_resolution && aws_vpc_peering_connection_options.default[0].accepter[0].allow_remote_vpc_dns_resolution
+    error_message = "DNS resolution over the peering must be on for both sides."
+  }
+  assert {
+    condition     = aws_route.peer_from_public[0].destination_cidr_block == "172.31.0.0/16" && length(aws_route.peer_from_app) == 2
+    error_message = "The new VPC's public table and each app table route the default VPC range to the peering."
+  }
+  assert {
+    condition     = aws_route.peer_to_new_vpc[0].destination_cidr_block == "10.20.0.0/16" && aws_route.peer_to_new_vpc[0].route_table_id == "rtb-0123456789abcdef0"
+    error_message = "The default VPC's database table gets exactly one route back to the new range."
+  }
+  assert {
+    condition     = aws_vpc_security_group_ingress_rule.db_from_new_vpc_app[0].security_group_id == "sg-0123456789abcdef0" && aws_vpc_security_group_ingress_rule.db_from_new_vpc_app[0].from_port == 5432 && aws_vpc_security_group_ingress_rule.db_from_new_vpc_app[0].to_port == 5432 && aws_vpc_security_group_ingress_rule.db_from_new_vpc_app[0].description == "NASA new VPC backend"
+    error_message = "One rule on the existing database group: port 5432 from the new app group."
+  }
+}
+
+run "peering_without_a_database_security_group_is_refused" {
+  command = plan
+
+  variables {
+    peer_default_vpc = true
+  }
+
+  expect_failures = [aws_vpc_peering_connection.default]
+}
+
+run "peering_with_a_range_inside_the_default_vpc_is_refused" {
+  command = plan
+
+  variables {
+    peer_default_vpc          = true
+    peer_db_security_group_id = "sg-0123456789abcdef0"
+    vpc_cidr                  = "172.31.0.0/20"
+  }
+
+  expect_failures = [aws_vpc_peering_connection.default]
 }

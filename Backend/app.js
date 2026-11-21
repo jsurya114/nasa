@@ -67,9 +67,17 @@ app.use(sanitizeMiddleware);
 // Global rate limit (per IP): 1,000 requests per 15 minutes. Only a staging server may raise it (see globalRateLimit.js).
 app.use(rateLimit(globalRateLimitOptions()));
 
-initializeAvailabilityResetCron()
-initializeEvereeStatusJob()
-initializeEvereeOnboardingJob()
+// The three scheduled jobs have no lock across servers. "false" (any case, spaces ignored) turns them off; an unset
+// variable keeps today's behaviour. Used while two servers share one database (the move to the new VPC).
+const jobsEnabled = (process.env.SCHEDULED_JOBS_ENABLED ?? '').trim().toLowerCase() !== 'false'
+if (jobsEnabled) {
+  initializeAvailabilityResetCron()
+  initializeEvereeStatusJob()
+  initializeEvereeOnboardingJob()
+  logger.info('Scheduled jobs are on')
+} else {
+  logger.info('Scheduled jobs are off (SCHEDULED_JOBS_ENABLED=false)')
+}
 
 // Before /admin so payroll requests are handled here and checked once.
 app.use('/admin/payroll', (req, _, next) => {
