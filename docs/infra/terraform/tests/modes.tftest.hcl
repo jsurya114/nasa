@@ -153,6 +153,14 @@ run "prod_default_keeps_production_settings" {
     condition     = strcontains(local.user_data, "Elastic IP was NOT moved") && strcontains(local.user_data, "--allow-reassociation")
     error_message = "Bootstrap waits for /healthz before it moves the Elastic IP."
   }
+  assert {
+    condition     = strcontains(local.user_data, "function quote(value)") && strcontains(local.user_data, "render-env.cjs \"$SSM_JSON\"") && !strcontains(local.user_data, "@json))")
+    error_message = "Production settings are written by render-env.cjs (checked with dotenv), not as raw JSON strings."
+  }
+  assert {
+    condition     = length(local.user_data) < 16384
+    error_message = "EC2 user data must stay under 16 KB."
+  }
 }
 
 run "staging_micro_with_test_database_and_load_generator" {

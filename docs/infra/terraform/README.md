@@ -34,7 +34,9 @@ docs/infra/scripts/package-backend.sh "$(terraform output -raw artifact_bucket)"
 aws autoscaling start-instance-refresh --auto-scaling-group-name "$(terraform output -raw asg_name)"
 ```
 
-Then point DNS at `terraform output api_ip_for_dns` (direct mode). Parameter values must not contain newlines.
+Then point DNS at `terraform output api_ip_for_dns` (direct mode).
+
+The bootstrap writes the settings with `render-env.cjs`. It quotes each value so the release's own dotenv reads it back exactly, including line breaks (for example a PEM certificate), backslashes and quotes, and it checks that before the app starts. A value it can't carry stops the bootstrap with the setting's name, never its value: a carriage return, a trailing backslash, or all three quote characters. Test: `node --test docs/infra/terraform/tests/render-env.test.cjs`.
 
 ## Peering to the default VPC (database stays where it is)
 

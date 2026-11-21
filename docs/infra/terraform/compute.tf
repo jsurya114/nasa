@@ -36,6 +36,7 @@ locals {
     test_db_user      = local.test_database ? aws_db_instance.test[0].username : ""
     test_db_secret    = local.test_database ? aws_db_instance.test[0].master_user_secret[0].secret_arn : ""
     rate_limit_max    = var.staging_rate_limit_max
+    render_env_js     = file("${path.module}/render-env.cjs")
   })
 }
 
