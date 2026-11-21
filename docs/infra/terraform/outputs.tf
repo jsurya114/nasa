@@ -66,3 +66,8 @@ output "staging" {
     load_generator_ip  = local.load_generator ? aws_instance.load_generator[0].private_ip : null
   } : null
 }
+
+output "peering_connection_id" {
+  description = "VPC peering connection to the default VPC (null when peer_default_vpc is false)."
+  value       = var.peer_default_vpc ? aws_vpc_peering_connection.default[0].id : null
+}

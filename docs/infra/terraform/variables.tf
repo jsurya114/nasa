@@ -322,3 +322,24 @@ variable "role_permissions_boundary_arn" {
   type        = string
   default     = null
 }
+
+############################################
+# Peering to the default VPC (production database stays there)
+############################################
+variable "peer_default_vpc" {
+  description = "Peer this VPC with the account's default VPC, where the production RDS lives, so the backend here can reach it. Adds ONLY: the peering connection, one route in each VPC and one database-port rule on the database security group. Nothing existing is imported or changed."
+  type        = bool
+  default     = false
+}
+
+variable "peer_db_security_group_id" {
+  description = "ID of the existing database security group (sg-...) in the default VPC that receives the new rule. Required when peer_default_vpc is true. Set it in terraform.tfvars, not in the repo."
+  type        = string
+  default     = ""
+}
+
+variable "peer_db_route_table_id" {
+  description = "Route table used by the database's subnets in the default VPC. Leave empty to use the default VPC's main route table (the usual case); set it if the database subnets use a custom table."
+  type        = string
+  default     = ""
+}

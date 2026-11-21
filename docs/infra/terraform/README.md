@@ -35,6 +35,12 @@ aws autoscaling start-instance-refresh --auto-scaling-group-name "$(terraform ou
 
 Then point DNS at `terraform output api_ip_for_dns` (direct mode). Parameter values must not contain newlines.
 
+## Peering to the default VPC (database stays where it is)
+
+`peer_default_vpc = true` plus `peer_db_security_group_id = "sg-..."` (existing database group, in `terraform.tfvars`). It adds one peering connection, one route in each VPC and one 5432 rule on that group, nothing else. The existing route table and group are read with data sources only, never managed. If the database's subnets use a custom route table, also set `peer_db_route_table_id`. In `terraform plan` every one of these must show as `create`, and nothing in the default VPC as change, replace or destroy.
+
+`SCHEDULED_JOBS_ENABLED=false` in the backend settings keeps the three scheduled jobs off on a server that shares the database with another one. Set it to `true` only after the other server is stopped.
+
 ## Switching to the load balancer later
 
 1. Make sure the deployed backend has `GET /healthz` (200, no sign-in, no database call). It is added on this branch, and the bootstrap already waits for it.
