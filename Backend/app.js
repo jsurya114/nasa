@@ -16,6 +16,7 @@ import cookieParser from 'cookie-parser';
 import sanitizeMiddleware from './middlewares/sanitize.js';
 import { notFound, errorHandler } from './middlewares/errorHandler.js';
 import rateLimit from './middlewares/rateLimit.js';
+import { globalRateLimitOptions } from './middlewares/globalRateLimit.js';
 import { trustProxyHops, assertTrustProxyConfigured } from './middlewares/loginRateLimit.js';
 import { initializeAvailabilityResetCron } from './utils/availabilityCronJob.js';
 import { initializeEvereeOnboardingJob } from './utils/evereeOnboardingJob.js';
@@ -49,6 +50,9 @@ app.use(cors({
 // Gzip JSON responses over 1 KB. Excel downloads and other already-compressed types are skipped by default.
 app.use(compression({ threshold: 1024 }));
 
+// Liveness for the instance bootstrap and a future load balancer: no sign-in, no database call, before the rate limit.
+app.get('/healthz', (_, res) => res.status(200).json({ status: 'ok' }));
+
 // Everee's webhook: the body stays raw bytes (its signature covers them exactly), so it is mounted before the JSON parser below.
 app.use('/webhooks/everee', express.raw({ type: () => true, limit: '256kb' }), evereeWebhookRoutes);
 
@@ -60,12 +64,20 @@ app.use(cookieParser());
 app.use('/uploads', express.static('uploads'));
 // Global input sanitization for all requests
 app.use(sanitizeMiddleware);
-// Global rate limit (per IP per base path)
-app.use(rateLimit({ windowMs: 15 * 60 * 1000, max: 1000 }));
+// Global rate limit (per IP): 1,000 requests per 15 minutes. Only a staging server may raise it (see globalRateLimit.js).
+app.use(rateLimit(globalRateLimitOptions()));
 
-initializeAvailabilityResetCron()
-initializeEvereeStatusJob()
-initializeEvereeOnboardingJob()
+// The three scheduled jobs have no lock across servers. "false" (any case, spaces ignored) turns them off; an unset
+// variable keeps today's behaviour. Used while two servers share one database (the move to the new VPC).
+const jobsEnabled = (process.env.SCHEDULED_JOBS_ENABLED ?? '').trim().toLowerCase() !== 'false'
+if (jobsEnabled) {
+  initializeAvailabilityResetCron()
+  initializeEvereeStatusJob()
+  initializeEvereeOnboardingJob()
+  logger.info('Scheduled jobs are on')
+} else {
+  logger.info('Scheduled jobs are off (SCHEDULED_JOBS_ENABLED=false)')
+}
 
 // Before /admin so payroll requests are handled here and checked once.
 app.use('/admin/payroll', (req, _, next) => {

@@ -1,0 +1,323 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "StagingStackReadsAndIdentity",
+      "Effect": "Allow",
+      "Action": [
+        "ec2:Describe*",
+        "ec2:GetDefaultCreditSpecification",
+        "ec2:GetEbsEncryptionByDefault",
+        "autoscaling:Describe*",
+        "cloudwatch:DescribeAlarms",
+        "cloudwatch:GetMetricData",
+        "cloudwatch:GetMetricStatistics",
+        "cloudwatch:ListMetrics",
+        "logs:DescribeLogGroups",
+        "sns:ListTopics",
+        "sts:GetCallerIdentity"
+      ],
+      "Resource": "*",
+      "Condition": {
+        "StringEquals": {
+          "aws:RequestedRegion": [
+            "us-east-1"
+          ]
+        }
+      }
+    },
+    {
+      "Sid": "Ec2CreateOnlyWithTheStagingTag",
+      "Effect": "Allow",
+      "Action": [
+        "ec2:Create*",
+        "ec2:RunInstances",
+        "ec2:AllocateAddress"
+      ],
+      "Resource": "*",
+      "Condition": {
+        "StringEquals": {
+          "aws:RequestedRegion": [
+            "us-east-1"
+          ],
+          "aws:RequestTag/Environment": "staging"
+        }
+      }
+    },
+    {
+      "Sid": "Ec2ChangeOnlyStagingTaggedResources",
+      "Effect": "Allow",
+      "Action": "ec2:*",
+      "Resource": "*",
+      "Condition": {
+        "StringEquals": {
+          "aws:RequestedRegion": [
+            "us-east-1"
+          ],
+          "aws:ResourceTag/Environment": "staging"
+        }
+      }
+    },
+    {
+      "Sid": "Ec2LaunchFromPublicImages",
+      "Effect": "Allow",
+      "Action": "ec2:RunInstances",
+      "Resource": "arn:aws:ec2:us-east-1::image/*"
+    },
+    {
+      "Sid": "AutoScalingOnlyStagingGroups",
+      "Effect": "Allow",
+      "Action": "autoscaling:*",
+      "Resource": "arn:aws:autoscaling:us-east-1:*:autoScalingGroup:*:autoScalingGroupName/nasa-staging-*"
+    },
+    {
+      "Sid": "AlarmsOnlyStagingNames",
+      "Effect": "Allow",
+      "Action": "cloudwatch:*",
+      "Resource": "arn:aws:cloudwatch:us-east-1:*:alarm:nasa-staging-*"
+    },
+    {
+      "Sid": "LogGroupsOnlyStagingNames",
+      "Effect": "Allow",
+      "Action": "logs:*",
+      "Resource": [
+        "arn:aws:logs:us-east-1:*:log-group:/nasa/staging/*",
+        "arn:aws:logs:us-east-1:*:log-group:/nasa/staging/*:*"
+      ]
+    },
+    {
+      "Sid": "AlertTopicOnlyStagingNames",
+      "Effect": "Allow",
+      "Action": "sns:*",
+      "Resource": "arn:aws:sns:us-east-1:*:nasa-staging-*"
+    },
+    {
+      "Sid": "BudgetOnlyStagingName",
+      "Effect": "Allow",
+      "Action": "budgets:*",
+      "Resource": "arn:aws:budgets::*:budget/nasa-staging-*"
+    },
+    {
+      "Sid": "RdsReads",
+      "Effect": "Allow",
+      "Action": [
+        "rds:Describe*",
+        "rds:ListTagsForResource"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "RdsOnlyWhatTerraformNeedsOnStagingNames",
+      "Effect": "Allow",
+      "Action": [
+        "rds:CreateDBInstance",
+        "rds:ModifyDBInstance",
+        "rds:DeleteDBInstance",
+        "rds:StartDBInstance",
+        "rds:StopDBInstance",
+        "rds:AddTagsToResource",
+        "rds:RemoveTagsFromResource",
+        "rds:CreateDBSubnetGroup",
+        "rds:ModifyDBSubnetGroup",
+        "rds:DeleteDBSubnetGroup"
+      ],
+      "Resource": [
+        "arn:aws:rds:us-east-1:*:db:nasa-staging-*",
+        "arn:aws:rds:us-east-1:*:subgrp:nasa-staging-*",
+        "arn:aws:rds:us-east-1:*:og:default*",
+        "arn:aws:rds:us-east-1:*:pg:default*",
+        "arn:aws:rds:us-east-1:*:secgrp:*"
+      ]
+    },
+    {
+      "Sid": "GlobalReadsTerraformNeeds",
+      "Effect": "Allow",
+      "Action": [
+        "iam:Get*",
+        "iam:List*",
+        "budgets:ViewBudget",
+        "ce:Get*",
+        "ce:Describe*",
+        "ce:List*",
+        "pricing:*",
+        "s3:ListAllMyBuckets",
+        "s3:GetBucketLocation",
+        "ssm:Describe*",
+        "ssm:List*",
+        "ssm:GetCommandInvocation"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "SsmParametersStagingAndPublicAmiOnly",
+      "Effect": "Allow",
+      "Action": [
+        "ssm:GetParameter",
+        "ssm:GetParameters",
+        "ssm:GetParametersByPath"
+      ],
+      "Resource": [
+        "arn:aws:ssm:us-east-1::parameter/aws/service/*",
+        "arn:aws:ssm:us-east-1:*:parameter/nasa/staging*"
+      ]
+    },
+    {
+      "Sid": "SsmParameterWritesStagingOnly",
+      "Effect": "Allow",
+      "Action": [
+        "ssm:PutParameter",
+        "ssm:DeleteParameter",
+        "ssm:AddTagsToResource"
+      ],
+      "Resource": "arn:aws:ssm:us-east-1:*:parameter/nasa/staging*"
+    },
+    {
+      "Sid": "SessionsAndCommandsOnStagingInstancesOnly",
+      "Effect": "Allow",
+      "Action": [
+        "ssm:StartSession",
+        "ssm:SendCommand"
+      ],
+      "Resource": "arn:aws:ec2:us-east-1:*:instance/*",
+      "Condition": {
+        "StringEquals": {
+          "ssm:resourceTag/Environment": "staging"
+        }
+      }
+    },
+    {
+      "Sid": "SessionAndCommandDocuments",
+      "Effect": "Allow",
+      "Action": [
+        "ssm:StartSession",
+        "ssm:SendCommand"
+      ],
+      "Resource": [
+        "arn:aws:ssm:us-east-1::document/AWS-RunShellScript",
+        "arn:aws:ssm:us-east-1:*:document/SSM-SessionManagerRunShell"
+      ]
+    },
+    {
+      "Sid": "OwnSessions",
+      "Effect": "Allow",
+      "Action": [
+        "ssm:TerminateSession",
+        "ssm:ResumeSession"
+      ],
+      "Resource": "arn:aws:ssm:*:*:session/${aws:userid}-*"
+    },
+    {
+      "Sid": "RdsManagedPasswordSecretNoRead",
+      "Effect": "Allow",
+      "Action": [
+        "secretsmanager:CreateSecret"
+      ],
+      "Resource": "arn:aws:secretsmanager:us-east-1:*:secret:rds!*"
+    },
+    {
+      "Sid": "ManageOnlyStagingDatabaseSecrets",
+      "Effect": "Allow",
+      "Action": [
+        "secretsmanager:TagResource",
+        "secretsmanager:DescribeSecret",
+        "secretsmanager:DeleteSecret",
+        "secretsmanager:RotateSecret"
+      ],
+      "Resource": "arn:aws:secretsmanager:us-east-1:*:secret:rds!*",
+      "Condition": {
+        "StringLike": {
+          "secretsmanager:ResourceTag/aws:rds:primaryDBInstanceArn": "arn:aws:rds:us-east-1:*:db:nasa-staging-*"
+        }
+      }
+    },
+    {
+      "Sid": "KmsOnlyThroughTheseServices",
+      "Effect": "Allow",
+      "Action": [
+        "kms:DescribeKey",
+        "kms:CreateGrant",
+        "kms:GenerateDataKey",
+        "kms:Decrypt"
+      ],
+      "Resource": "*",
+      "Condition": {
+        "StringEquals": {
+          "kms:ViaService": [
+            "rds.us-east-1.amazonaws.com",
+            "secretsmanager.us-east-1.amazonaws.com",
+            "ec2.us-east-1.amazonaws.com"
+          ]
+        }
+      }
+    },
+    {
+      "Sid": "CreateNasaStagingRolesOnlyWithTheBoundary",
+      "Effect": "Allow",
+      "Action": [
+        "iam:CreateRole",
+        "iam:PutRolePolicy",
+        "iam:AttachRolePolicy"
+      ],
+      "Resource": "arn:aws:iam::*:role/nasa-staging-*",
+      "Condition": {
+        "StringEquals": {
+          "iam:PermissionsBoundary": "arn:aws:iam::ACCOUNT_ID:policy/nasa-staging-role-boundary"
+        }
+      }
+    },
+    {
+      "Sid": "ManageNasaStagingRoles",
+      "Effect": "Allow",
+      "Action": [
+        "iam:DeleteRole",
+        "iam:TagRole",
+        "iam:UntagRole",
+        "iam:DeleteRolePolicy",
+        "iam:DetachRolePolicy",
+        "iam:CreateInstanceProfile",
+        "iam:DeleteInstanceProfile",
+        "iam:AddRoleToInstanceProfile",
+        "iam:RemoveRoleFromInstanceProfile",
+        "iam:TagInstanceProfile"
+      ],
+      "Resource": [
+        "arn:aws:iam::*:role/nasa-staging-*",
+        "arn:aws:iam::*:instance-profile/nasa-staging-*"
+      ]
+    },
+    {
+      "Sid": "PassNasaStagingRolesToEc2Only",
+      "Effect": "Allow",
+      "Action": "iam:PassRole",
+      "Resource": "arn:aws:iam::*:role/nasa-staging-*",
+      "Condition": {
+        "StringEquals": {
+          "iam:PassedToService": "ec2.amazonaws.com"
+        }
+      }
+    },
+    {
+      "Sid": "ServiceLinkedRoles",
+      "Effect": "Allow",
+      "Action": "iam:CreateServiceLinkedRole",
+      "Resource": "*",
+      "Condition": {
+        "StringLike": {
+          "iam:AWSServiceName": [
+            "rds.amazonaws.com",
+            "autoscaling.amazonaws.com"
+          ]
+        }
+      }
+    },
+    {
+      "Sid": "OnlyNasaStagingBuckets",
+      "Effect": "Allow",
+      "Action": "s3:*",
+      "Resource": [
+        "arn:aws:s3:::nasa-staging-*",
+        "arn:aws:s3:::nasa-staging-*/*"
+      ]
+    }
+  ]
+}

@@ -1,7 +1,9 @@
 # NASA AWS network plan
 
-Status: **proposal, nothing applied.** Code: `docs/infra/terraform/`. Written 2026-11-19.
-Today: one `t3.micro` in the **default VPC**, deployed by hand (git pull, pm2, nginx + certbot). Frontend on Vercel. Redis is an external hosted service. Where the PostgreSQL database runs is **not confirmed** (see section 9).
+Status: **production not applied; tested in staging.** Code: `docs/infra/terraform/`. Written 2026-11-19, updated 2026-11-21.
+Today: one `t3.micro` in the **default VPC**, deployed by hand (git pull, pm2, nginx + certbot). Frontend on Vercel. Redis is an external hosted service. PostgreSQL is **RDS `db.t3.micro` in the default VPC** (private, port 5432 open only to the server's security group).
+
+2026-11-20/21: the stack ran in the NASA account as staging, and the bootstrap booted on a real `t4g.micro`. A load test sized the instance (section 7). Everything was destroyed again. VPC peering to the default VPC is in PR #309.
 
 ## 1. Goals and limits
 
@@ -57,7 +59,7 @@ Unused ranges (`10.20.30.0/24` onward) are kept free for a staging environment o
 | NAT gateway | off | **on** (forced) |
 | Instance inbound | 80, 443 from the internet | app port 3251 from the ALB security group only |
 | Extra monthly cost | about $4 (one public IPv4) | about $16 (ALB) + about $33 (NAT) + data, see cost table |
-| Needs before use | the Terraform apply and a release in S3 | the same, **plus** a `GET /healthz` route in the backend (it has none today) |
+| Needs before use | the Terraform apply, a release in S3, and VPC peering to the database | the same (`GET /healthz` now exists on the infra branch) |
 
 Moving between the modes is a variable change and an apply. The Auto Scaling group replaces the instance launch-before-terminate (instance refresh at 100 to 200 percent), so the switch does not need a gap.
 
@@ -94,18 +96,22 @@ Security groups (stateful) carry the real rules. Network ACLs (stateless) are a 
 
 Outbound from the public and app tiers is left open on purpose: the backend talks to services whose addresses change. Because NACLs are stateless, a missing ephemeral-port rule shows up as hanging connections, not as a clear error: the first thing to check if a connection stalls after a change.
 
-## 7. Sizing and capacity (to be confirmed by load test)
+## 7. Sizing and capacity (measured)
 
-- 1,000 users, about 300 at once. The driver app is mostly short JSON calls (profile, availability, deliveries, pay statements); the heavy work is admin Excel upload and reporting.
-- Starting instance: `t4g.medium` (2 vCPU, 4 GiB, Graviton). Reasons: 4 GiB leaves room for Excel parsing next to the Node process; Graviton is cheaper per unit than `t3`. `t4g.small` is the fall-back if the load test shows headroom.
-- Burstable (`t`) instances throttle when CPU credits run out, or bill surplus credits in unlimited mode. If the load test shows sustained CPU above the baseline, a fixed-performance type (`c7g.large` or `m7g.large`) is the right choice instead of a bigger `t`.
-- The database connection pool defaults to 10 per process (no setting in `Backend/config/db.js`). 300 concurrent users must not mean 300 database connections; the load test watches this.
+- **Instance: `t4g.micro` (2 vCPU, 1 GiB), `cpu_credits = "unlimited"`.**
+  - On a real micro, 50 drivers at once passed with driver p95 7–14 ms and 2.9% CPU.
+  - On a local copy with the micro's limits, 100 drivers plus the weekly upload passed, peaking at 438 MB of the 670 MB left for the app.
+  - Details: [`loadtest/README.md#results`](loadtest/README.md#results).
+- **Unlimited credits are required.** In `standard` mode, a micro whose credits run out is slowed to 10% of each CPU. The weekly upload then times out and other requests stall for 20 to 45 seconds. In `unlimited` mode that never happens, and surplus CPU costs $0.04 per vCPU-hour. Normal use (about 3.4% CPU at 100 drivers) earns more credits than it spends.
+- **The weekly upload blocks Node's event loop** for about 16 s on a micro (other requests waited up to 6.3 s). A larger instance does not fix this. The fix is moving the parsing to a worker thread.
+- **The database connection pool** stayed at 3 connections at 50 drivers. The pool default of 10 per process is enough for one instance.
+- **When to move to `t4g.small`:** only if memory grows a lot, for example much larger uploads. A fixed-performance type (`c7g`, `m7g`) only makes sense if CPU stays above 10% for most of the day.
 
 ## 8. Migration plan (no big bang)
 
-1. **Prepare (no user impact).** Apply `docs/infra/terraform/bootstrap`, then the main stack in direct mode in a test AWS account or with a different `api_domain` such as `api-new.nasaroutes.com`. Put the backend settings in SSM Parameter Store. Upload a release with `docs/infra/scripts/package-backend.sh`.
-2. **Prove it.** Run the load test against this new instance (staging data or a copy). Compare with the current t3.micro. Decide the final instance type.
-3. **Database first, only if it is on the instance.** If PostgreSQL runs on the t3.micro, move it **before** the app: dump and restore to the managed database, test, and keep the old one read-only for a rollback window. If it is already an external or managed database, the network change does not touch it.
+1. **Prepare (no user impact).** Apply `docs/infra/terraform/bootstrap`, then the main stack in direct mode with `peer_default_vpc = true` and a different `api_domain` such as `api-new.nasaroutes.com`. Keep `SCHEDULED_JOBS_ENABLED=false` until cutover, because both servers share the database. Put the backend settings in SSM Parameter Store. Upload a release with `docs/infra/scripts/package-backend.sh`.
+2. **Prove it.** Done in staging (section 7). On the new production instance, only read-only checks: it already uses the live database.
+3. **Database: no move.** It is already RDS. The new VPC reaches it over peering: one peering connection, a route in each VPC, and one 5432 rule on its security group, all additions.
 4. **Cut over DNS** for `api.nasaroutes.com` to the Elastic IP (low TTL set a day before). Watch errors and CPU for a day. Keep the old server running, untouched, for rollback.
 5. **Switch off the old server** after a quiet week (stop first, delete later; snapshot the volume).
 6. **Turn on the ALB** when traffic or availability needs it: add `GET /healthz`, set `enable_alb = true`, apply, move the DNS record to the ALB.
@@ -113,9 +119,9 @@ Outbound from the public and app tiers is left open on purpose: the backend talk
 
 ## 9. Open questions (answers change the plan)
 
-1. Region of the current server (the plan assumes `us-east-1`).
-2. Where PostgreSQL runs: on the t3.micro, RDS, or an outside provider. Size and monthly bill.
+1. ~~Region~~: `us-east-1` (confirmed).
+2. ~~Where PostgreSQL runs~~: RDS `db.t3.micro` in the default VPC, 100 GB gp3 storage, about $26 a month (confirmed).
 3. Where `nasaroutes.com` DNS lives (Route 53, Vercel or a registrar): decides who creates the validation and A records.
-4. Which AWS account to build in: the only local AWS profile belongs to a different project, so a NASA profile is needed before any apply.
+4. ~~Which AWS account~~: the NASA account, enforced by `aws_account_id` and `allowed_account_ids` (confirmed).
 5. Acceptable downtime for the cutover and for a database move (a quiet window, for example Sunday night).
-6. Who owns `app.js`: the `/healthz` route lives in Jayasoorya's area.
+6. `app.js` is Jayasoorya's area: `/healthz`, the staging rate-limit switch and `SCHEDULED_JOBS_ENABLED` need their review.
