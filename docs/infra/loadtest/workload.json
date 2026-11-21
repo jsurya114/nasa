@@ -1,0 +1,94 @@
+{
+  "_note": "Request mix per role. Weights are relative. Replace the weights with the shares seen in real access logs before the main run and record where they came from in the results. Paths: {driverId}, {from}, {to} (the last 28 days, America/Chicago) are filled in by the runner. superadminOnly endpoints are called only by admins whose token role is superadmin (the app refuses city admins, as the UI does).",
+  "driver": {
+    "loginPath": "/driver/login",
+    "thinkSeconds": [
+      3,
+      12
+    ],
+    "endpoints": [
+      {
+        "name": "GET /driver/availability",
+        "path": "/driver/availability",
+        "weight": 30,
+        "validator": "successData",
+        "p95Ms": 800
+      },
+      {
+        "name": "GET /driver/profile",
+        "path": "/driver/profile",
+        "weight": 20,
+        "validator": "successProfile",
+        "p95Ms": 800
+      },
+      {
+        "name": "GET /driver/deliveries/:id",
+        "path": "/driver/deliveries/{driverId}?from_date={from}&to_date={to}",
+        "weight": 20,
+        "validator": "array",
+        "p95Ms": 800
+      },
+      {
+        "name": "GET /driver/payroll/statements",
+        "path": "/driver/payroll/statements",
+        "weight": 15,
+        "validator": "statements",
+        "p95Ms": 800
+      },
+      {
+        "name": "GET /driver/payroll/balances",
+        "path": "/driver/payroll/balances",
+        "weight": 15,
+        "validator": "object",
+        "p95Ms": 800
+      }
+    ]
+  },
+  "admin": {
+    "loginPath": "/admin/login",
+    "thinkSeconds": [
+      10,
+      30
+    ],
+    "endpoints": [
+      {
+        "name": "GET /admin/dashboard/summary",
+        "path": "/admin/dashboard/summary?startDate={from}&endDate={to}",
+        "weight": 30,
+        "validator": "successData",
+        "p95Ms": 2000
+      },
+      {
+        "name": "GET /admin/analytics",
+        "path": "/admin/analytics?viewType=weekly&date={to}",
+        "weight": 15,
+        "validator": "object",
+        "p95Ms": 2000
+      },
+      {
+        "name": "GET /admin/insights/overview",
+        "path": "/admin/insights/overview?start_date={from}&end_date={to}",
+        "weight": 20,
+        "validator": "object",
+        "p95Ms": 3000,
+        "superadminOnly": true
+      },
+      {
+        "name": "GET /admin/insights/trends",
+        "path": "/admin/insights/trends?start_date={from}&end_date={to}&interval=week",
+        "weight": 15,
+        "validator": "object",
+        "p95Ms": 3000,
+        "superadminOnly": true
+      },
+      {
+        "name": "GET /admin/payroll/runs",
+        "path": "/admin/payroll/runs",
+        "weight": 20,
+        "validator": "object",
+        "p95Ms": 2000,
+        "superadminOnly": true
+      }
+    ]
+  }
+}

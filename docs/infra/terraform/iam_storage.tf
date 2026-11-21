@@ -48,7 +48,8 @@ resource "aws_s3_bucket_lifecycle_configuration" "artifacts" {
 # Instance role: SSM Session Manager (no SSH), read releases, read settings, attach its Elastic IP
 ############################################
 resource "aws_iam_role" "app" {
-  name = "${local.name}-app"
+  name                 = "${local.name}-app"
+  permissions_boundary = var.role_permissions_boundary_arn
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
     Statement = [{
@@ -75,6 +76,35 @@ data "aws_iam_policy_document" "app" {
     sid       = "ReadBackendSettings"
     actions   = ["ssm:GetParametersByPath", "ssm:GetParameters", "ssm:GetParameter"]
     resources = ["arn:aws:ssm:${var.region}:${data.aws_caller_identity.current.account_id}:parameter${var.ssm_parameter_path}", "arn:aws:ssm:${var.region}:${data.aws_caller_identity.current.account_id}:parameter${var.ssm_parameter_path}/*"]
+  }
+
+  # Staging only: hand load-test files (schema dump, seed output, sampler logs) to the operator through the bucket.
+  dynamic "statement" {
+    for_each = local.staging ? [1] : []
+    content {
+      sid       = "StagingLoadtestFilesOut"
+      actions   = ["s3:PutObject"]
+      resources = ["${aws_s3_bucket.artifacts.arn}/loadtest/from-app/*"]
+    }
+  }
+
+  dynamic "statement" {
+    for_each = local.staging ? [1] : []
+    content {
+      sid       = "StagingLoadtestFilesIn"
+      actions   = ["s3:GetObject"]
+      resources = ["${aws_s3_bucket.artifacts.arn}/loadtest/to-app/*"]
+    }
+  }
+
+  # Staging only: the password of its own throwaway test database, kept by RDS in Secrets Manager.
+  dynamic "statement" {
+    for_each = local.test_database ? [1] : []
+    content {
+      sid       = "ReadTestDatabasePassword"
+      actions   = ["secretsmanager:GetSecretValue"]
+      resources = [aws_db_instance.test[0].master_user_secret[0].secret_arn]
+    }
   }
 
   dynamic "statement" {

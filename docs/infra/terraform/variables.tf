@@ -7,8 +7,27 @@ variable "project" {
 }
 
 variable "environment" {
-  type    = string
-  default = "prod"
+  description = "prod or staging. Staging-only resources (test database, load generator) refuse to exist in prod."
+  type        = string
+  default     = "prod"
+  validation {
+    condition     = contains(["prod", "staging"], var.environment)
+    error_message = "environment must be prod or staging."
+  }
+}
+
+variable "aws_profile" {
+  description = "Named AWS CLI profile for the NASA account. No default, so another project's profile is never used by accident."
+  type        = string
+}
+
+variable "aws_account_id" {
+  description = "The NASA AWS account ID (12 digits). The provider refuses credentials from any other account."
+  type        = string
+  validation {
+    condition     = can(regex("^[0-9]{12}$", var.aws_account_id))
+    error_message = "aws_account_id must be the 12-digit NASA account ID."
+  }
 }
 
 variable "region" {
@@ -118,7 +137,7 @@ variable "architecture" {
 }
 
 variable "instance_type" {
-  description = "Must match architecture. Starting point: t4g.medium (2 vCPU, 4 GiB). Confirm with the load test before committing to a size or a Savings Plan."
+  description = "Must match architecture. Being tested: t4g.micro (2 vCPU, 1 GiB), then t4g.small (2 GiB) if micro lacks headroom. Confirm with the load test before committing to a size or a Savings Plan."
   type        = string
   default     = "t4g.medium"
 }
@@ -151,14 +170,52 @@ variable "node_major" {
 }
 
 variable "node_heap_mb" {
-  description = "Node old-space limit (--max-old-space-size), about 40% of the instance memory so Excel parsing cannot take the whole machine. 1536 suits 4 GiB; use 700 for 2 GiB."
+  description = "Node old-space limit (--max-old-space-size). null = chosen from the instance size (about 40% of its memory: 384 on 1 GiB, 768 on 2 GiB, 1536 on 4 GiB), so a production-sized heap is never put on a small machine."
   type        = number
-  default     = 1536
+  default     = null
+  validation {
+    condition     = var.node_heap_mb == null ? true : (var.node_heap_mb >= 128 && var.node_heap_mb <= 16384)
+    error_message = "node_heap_mb must be null or between 128 and 16384."
+  }
+}
+
+variable "swap_mb" {
+  description = "Swap file size on the instance (0 = none, the default). Only add swap if a load test shows it is needed; it hides memory pressure as slowness."
+  type        = number
+  default     = 0
 }
 
 variable "caddy_version" {
   type    = string
   default = "2.10.0"
+}
+
+variable "public_ingress_cidrs" {
+  description = "Direct mode: who may reach ports 80 and 443 on the instance. Production: the whole internet. Staging: empty, so only the load generator (by security group) can connect."
+  type        = list(string)
+  default     = ["0.0.0.0/0"]
+}
+
+variable "tls_mode" {
+  description = "Direct mode: acme = a public Let's Encrypt certificate for api_domain (needs DNS pointing at the Elastic IP). internal = Caddy's own private certificate authority, for a staging host that has no public DNS name; HTTPS is still measured."
+  type        = string
+  default     = "acme"
+  validation {
+    condition     = contains(["acme", "internal"], var.tls_mode)
+    error_message = "tls_mode must be acme or internal."
+  }
+}
+
+variable "detailed_monitoring" {
+  description = "1-minute EC2 metrics (a small charge per instance). Off in production; on for a load test."
+  type        = bool
+  default     = false
+}
+
+variable "app_single_az" {
+  description = "Keep the backend in the first AZ only. Staging uses it so the load generator (second AZ) never shares a zone with it."
+  type        = bool
+  default     = false
 }
 
 variable "asg_min" {
@@ -202,4 +259,66 @@ variable "alert_email" {
 variable "monthly_budget_usd" {
   type    = number
   default = 100
+}
+
+############################################
+# Staging only: load test helpers. All refuse to exist when environment = "prod".
+############################################
+variable "install_local_redis" {
+  description = "Staging only: run a small Redis on the instance (127.0.0.1 only) instead of the hosted production Redis."
+  type        = bool
+  default     = false
+  validation {
+    condition     = !(var.install_local_redis && var.environment == "prod")
+    error_message = "install_local_redis is for staging only; it cannot be set when environment = \"prod\"."
+  }
+}
+
+variable "create_test_database" {
+  description = "Staging only: an isolated PostgreSQL RDS instance in the data subnets for synthetic test data. Never a copy of production unless an anonymised snapshot is approved."
+  type        = bool
+  default     = false
+  validation {
+    condition     = !(var.create_test_database && var.environment == "prod")
+    error_message = "create_test_database is for staging only; it cannot be set when environment = \"prod\"."
+  }
+}
+
+variable "test_db_engine_version" {
+  description = "PostgreSQL version of the test database: the production RDS major version (17, confirmed 2026-11-20; production runs 17.9)."
+  type        = string
+  default     = "17"
+}
+
+variable "test_db_instance_class" {
+  description = "Same class as production (db.t3.micro, confirmed 2026-11-20), so the test measures the database NASA really has."
+  type        = string
+  default     = "db.t3.micro"
+}
+
+variable "create_load_generator" {
+  description = "Staging only: a separate instance (second AZ) that runs the load test, so its CPU never counts against the backend."
+  type        = bool
+  default     = false
+  validation {
+    condition     = !(var.create_load_generator && var.environment == "prod")
+    error_message = "create_load_generator is for staging only; it cannot be set when environment = \"prod\"."
+  }
+}
+
+variable "load_generator_instance_type" {
+  type    = string
+  default = "t4g.small"
+}
+
+variable "staging_rate_limit_max" {
+  description = "Staging only: requests per 15 minutes the single load generator address may make (STAGING_GLOBAL_RATE_LIMIT_MAX, 1000 to 100000)."
+  type        = number
+  default     = 100000
+}
+
+variable "role_permissions_boundary_arn" {
+  description = "IAM permissions boundary put on every role this stack creates. Required by docs/infra/iam/nasa-staging-provisioner-policy.json (create docs/infra/iam/nasa-staging-role-boundary.json as policy nasa-staging-role-boundary first). null = none."
+  type        = string
+  default     = null
 }

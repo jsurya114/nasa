@@ -1,16 +1,22 @@
-# Copy to terraform.tfvars (not committed). Nothing here is secret.
-region        = "us-east-1"          # CONFIRM: the region where the current server runs
-api_domain    = "api.nasaroutes.com"
-acme_email    = "ops@example.com"    # Let's Encrypt contact (direct mode)
-alert_email   = "ops@example.com"
+# Copy to terraform.tfvars (not committed). Nothing here is secret, but the account ID stays out of the repository.
+environment    = "prod"
+aws_profile    = "<your NASA AWS CLI profile>"
+aws_account_id = "<12-digit NASA account ID>" # Terraform refuses to run against any other account
+region         = "us-east-1"
 
-# Cost-first starting point
+api_domain  = "api-new.nasaroutes.com" # test name first; api.nasaroutes.com at cutover
+acme_email  = "<Let's Encrypt contact>"
+alert_email = "<receives alarms and the budget alert>"
+
+# Sized by the load test (docs/infra/loadtest/README.md#results)
 enable_alb         = false
 enable_nat_gateway = false
 architecture       = "arm64"
-instance_type      = "t4g.medium"
+instance_type      = "t4g.micro"
+cpu_credits        = "unlimited" # keep: in standard mode a micro with no credits left is too slow for the weekly upload
+app_single_az      = true        # same Availability Zone as the database
 asg_min            = 1
 asg_desired        = 1
 asg_max            = 1
 
-monthly_budget_usd = 100
+monthly_budget_usd = 50
