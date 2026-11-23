@@ -25,6 +25,12 @@ NEW_INSTANCE=$(aws autoscaling describe-auto-scaling-groups --auto-scaling-group
 NEW_ALLOC=$(aws ec2 describe-addresses --filters Name=instance-id,Values="$NEW_INSTANCE" --query 'Addresses[0].AllocationId' --output text)
 NEW_IP=$(aws ec2 describe-addresses --allocation-ids "$NEW_ALLOC" --query 'Addresses[0].PublicIp' --output text)
 echo "old: $OLD_INSTANCE $OLD_ALLOC $OLD_IP"; echo "new: $NEW_INSTANCE $NEW_ALLOC $NEW_IP"
+[[ "$OLD_IP" =~ ^[0-9.]+$ ]] || echo "STOP: api.nasaroutes.com did not resolve to a plain IP address"
+
+# Save the IDs in a private file OUTSIDE the repository (instance IDs and addresses are not secrets, but keep them private).
+umask 077
+printf 'OLD_IP=%s\nOLD_ALLOC=%s\nOLD_INSTANCE=%s\nASG=%s\nNEW_INSTANCE=%s\nNEW_ALLOC=%s\nNEW_IP=%s\n' \
+  "$OLD_IP" "$OLD_ALLOC" "$OLD_INSTANCE" "$ASG" "$NEW_INSTANCE" "$NEW_ALLOC" "$NEW_IP" > ~/cutover-ids.env
 
 # Run a script on the new server through SSM (no SSH). The script is base64-encoded so quotes and brackets survive.
 run_on_new() {
@@ -37,6 +43,8 @@ run_on_new() {
     --query '[Status,StandardOutputContent,StandardErrorContent]' --output text
 }
 ```
+
+**Run the lookup lines once, before step 2. Never run them again after step 2.** After the move they return the new server as "old", and a rollback would move the address to the server it is meant to leave. In a new terminal (for example after `aws login`), load the saved IDs instead: `source ~/cutover-ids.env`, and paste the `run_on_new` function again. Delete `~/cutover-ids.env` when the cutover is finished.
 
 Check: `OLD_INSTANCE` is the old server (`t3.micro`), `NEW_INSTANCE` is the `t4g.micro` in the group, and no value prints as `None`. Write the four IDs and the two IPs into your own notes, not into the chat or the repository.
 
@@ -54,20 +62,28 @@ Check: `OLD_INSTANCE` is the old server (`t3.micro`), `NEW_INSTANCE` is the `t4g
    nc -vz -w 5 "$NEW_IP" 80; nc -vz -w 5 "$NEW_IP" 443
    ```
    Expect `0.0.0.0/0` for both ports and both `nc` calls succeed.
-3. **A fresh database snapshot** (about 10 minutes; wait for `available`):
+3. **No setting still names the test host** (`api-new`), which would break the Insights connector, the QuickBooks sign-in or CORS right after the cutover. Nothing prints a value:
+   ```bash
+   run_on_new 'grep -c "api-new" /opt/nasa/Backend/.env || true'        # must print 0
+   aws ssm get-parameters-by-path --path /nasa/prod --recursive --with-decryption \
+     --query 'Parameters[?contains(Value, `api-new`)].Name' --output text   # must print nothing
+   aws ssm get-parameter --name /nasa/prod/SCHEDULED_JOBS_ENABLED --query 'Parameter.[Type,Value]' --output text   # SecureString  false
+   ```
+   If a setting names the test host, correct it in SSM and in the `.env` and restart the new server with the jobs still off, before the window. If the type is not `SecureString`, change the `put-parameter` type in step 7 and the rollback to match. These SSM values were written by the copy script and are not Terraform resources, so a Terraform `apply` does not reset them.
+4. **A fresh database snapshot** (about 10 minutes; wait for `available`):
    ```bash
    SNAP=nasa-pre-cutover-2026-11-24
    aws rds create-db-snapshot --db-instance-identifier database-1 --db-snapshot-identifier "$SNAP" --query 'DBSnapshot.Status' --output text
    aws rds wait db-snapshot-available --db-snapshot-identifier "$SNAP" && echo snapshot-ready
    ```
-4. **Permission check, nothing changes:**
+5. **Permission check, nothing changes:**
    ```bash
    aws ec2 associate-address --dry-run --allocation-id "$OLD_ALLOC" --instance-id "$NEW_INSTANCE" --allow-reassociation 2>&1 | tail -1
    ```
    Expect `DryRunOperation` (it means "would have succeeded").
-5. **Information, not a gate** (rollback no longer depends on the old server keeping an address, because the IP is moved back from the console first): does the old instance get its own public address? `aws ec2 describe-subnets --subnet-ids $(aws ec2 describe-instances --instance-ids "$OLD_INSTANCE" --query 'Reservations[0].Instances[0].SubnetId' --output text) --query 'Subnets[0].MapPublicIpOnLaunch'`.
-6. **Quiet check.** On the old server: `pm2 logs nasa-backend --lines 40 --nostream`. Few requests, no upload or payment run in progress (the weekly GOFO upload and the Everee runs are the ones to avoid). Jasil and Jayasoorya agree it is quiet.
-7. **Go / no-go** in the Slack thread: snapshot ready, both servers well, ports open, quiet. No-go: stop here, nothing has changed.
+6. **Information, not a gate** (rollback no longer depends on the old server keeping an address, because the IP is moved back from the console first): does the old instance get its own public address? `aws ec2 describe-subnets --subnet-ids $(aws ec2 describe-instances --instance-ids "$OLD_INSTANCE" --query 'Reservations[0].Instances[0].SubnetId' --output text) --query 'Subnets[0].MapPublicIpOnLaunch'`.
+7. **Quiet check.** On the old server: `pm2 logs nasa-backend --lines 40 --nostream`. Few requests, no upload or payment run in progress (the weekly GOFO upload and the Everee runs are the ones to avoid). Jasil and Jayasoorya agree it is quiet.
+8. **Go / no-go** in the Slack thread: snapshot ready, both servers well, ports open, quiet. No-go: stop here, nothing has changed.
 
 ## 2. Cutover (about 5 minutes)
 
@@ -85,13 +101,13 @@ aws ec2 associate-address --allocation-id "$OLD_ALLOC" --instance-id "$NEW_INSTA
 aws ec2 describe-addresses --allocation-ids "$OLD_ALLOC" --query 'Addresses[0].[InstanceId,PublicIp]' --output text   # new instance, same IP as before
 aws ec2 describe-addresses --allocation-ids "$NEW_ALLOC" --query 'Addresses[0].[InstanceId,PublicIp]' --output text   # the spare is now unattached
 ```
-The new server keeps a public address (the moved IP), so SSM keeps working. If the spare is still attached, stop and ask before going on.
+The new server keeps a public address (the moved IP), so SSM keeps working. If the spare is still attached, stop and ask before going on. **From now on use only the saved IDs (`source ~/cutover-ids.env`). Do not run the section 0 lookups again.**
 
 **Step 3. Make Caddy serve the real name.** Until now the new server's Caddy answers for the test name; change it to `api.nasaroutes.com` and reload (Caddy then asks Let's Encrypt for a certificate, normally within a minute):
 ```bash
 run_on_new 'grep -n "^api" /etc/caddy/Caddyfile; sed -i "s/^api-new\.nasaroutes\.com {/api.nasaroutes.com {/" /etc/caddy/Caddyfile; /usr/local/bin/caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile 2>&1 | tail -1; systemctl reload caddy; sleep 20; journalctl -u caddy --since "-2min" --no-pager | grep -iE "certificate obtained|error" | tail -5'
 ```
-Expect "Valid configuration" and "certificate obtained successfully". If the first line did not start with `api-new.nasaroutes.com {`, stop and read the Caddyfile before editing.
+Expect "Valid configuration" and "certificate obtained successfully". Read the first line of the output **before** step 4: if it did not show `api-new.nasaroutes.com {`, the `sed` changed nothing, so stop and read the Caddyfile.
 
 **Step 4. Check the new server answers as `api.nasaroutes.com`** (laptop):
 ```bash
@@ -104,6 +120,13 @@ Expect `{"status":"ok"}` and `HTTP/2 200`. This route exists only on the new ser
 
 **Step 6. Decide.** All of step 5 good: carry on to step 7. Anything wrong that is not a one-minute fix: roll back now (section 4).
 
+**Step 6b. Stop the group replacing the instance by itself until the Terraform follow-up.** A replacement instance would start from the old startup script: it would take the spare address and serve the test name, and `api.nasaroutes.com` would be down. The existing alarms (error and CPU) still email the alerts address.
+```bash
+aws autoscaling suspend-processes --auto-scaling-group-name "$ASG" --scaling-processes ReplaceUnhealthy
+aws autoscaling describe-auto-scaling-groups --auto-scaling-group-names "$ASG" --query 'AutoScalingGroups[0].SuspendedProcesses[].ProcessName' --output text
+```
+Resume it in the follow-up (`aws autoscaling resume-processes ... --scaling-processes ReplaceUnhealthy`), after the plan has been applied.
+
 **Step 7. Turn the scheduled jobs on for the new server** (the old server is stopped, so there is exactly one runner):
 ```bash
 aws ssm put-parameter --name /nasa/prod/SCHEDULED_JOBS_ENABLED --type SecureString --value true --overwrite --query Version --output text
@@ -113,6 +136,7 @@ Expect `1`, `active`, "Scheduled jobs are on". Then `curl -sS https://api.nasaro
 
 ## 3. Watch (the rest of the day)
 
+- **Skipped job runs.** No job runs between step 1 (old app stopped) and step 7 (jobs on): about 5 to 15 minutes. The availability reset acts only at Sunday 12:00 local time per time zone, so a Tuesday gap skips nothing. The Everee status check (every 15 minutes) and the onboarding sync (every 5 minutes) look at the current state of unfinished payments and workers each run, so the next run picks up what the gap left. Confirm it by finding the first run of each in the log after step 7; if one does not appear within 20 minutes, tell Jasil.
 - Application log on the new server for errors; the next Everee status run and onboarding run appear in it (they run on the clock, so watch for them at the next hour mark).
 - CloudWatch alarms and the CPU credit balance on the new instance (it starts low and must not fall to zero; unlimited mode bills any extra by the vCPU hour).
 - Jasil and Jayasoorya check the dashboard and a driver sign-in again after 1 hour and after 24 hours.
@@ -120,7 +144,7 @@ Expect `1`, `active`, "Scheduled jobs are on". Then `curl -sS https://api.nasaro
 
 ## 4. Rollback (use Jasil's order)
 
-Use it if step 4 or 5 fails, or at any time in the first week. The order matters: the app reads `SCHEDULED_JOBS_ENABLED` once at start-up, so the new server must be **stopped** before the old one starts, or both would run the jobs.
+**Use the saved IDs (`source ~/cutover-ids.env`). Never re-run the section 0 lookups after step 2: they would name the new server as the old one.** Use this rollback if step 4 or 5 fails, or at any time in the first week. The order matters: the app reads `SCHEDULED_JOBS_ENABLED` once at start-up, so the new server must be **stopped** before the old one starts, or both would run the jobs.
 
 1. **Set the jobs off for good on the new server** and stop it (laptop):
    ```bash
@@ -140,9 +164,17 @@ Use it if step 4 or 5 fails, or at any time in the first week. The order matters
 
 If the database or data is wrong (not just the server): do not restore the snapshot on your own. Stop and talk first: restoring replaces the data written since it was taken.
 
-## 5. After the cutover (not in the window)
+## 5. If the instance was replaced before the follow-up
 
-1. **Terraform follow-up, as a plan Jasil and Jayasoorya both read before applying:** import the old Elastic IP into Terraform and drop the spare; set `api_domain = "api.nasaroutes.com"` in the local `terraform.tfvars`. Changing `api_domain` changes the instance's startup script, which makes the group replace the instance (a few minutes down, the jobs run on one server only). So apply it in another quiet window, and expect the new instance to take the Elastic IP by itself at the end of its start-up. Until then the hand edit to the Caddyfile (step 3) is the only difference between the server and the code. Do not apply before then.
+Signs: the alarm email, `api.nasaroutes.com` not answering, or `$NEW_INSTANCE` no longer in the group. The replacement takes the spare address and serves the test name. Recover with the saved IDs (the new instance ID comes from the group, as in section 0, and the old address allocation from the file):
+1. `NEW_INSTANCE=$(aws autoscaling describe-auto-scaling-groups --auto-scaling-group-names "$ASG" --query 'AutoScalingGroups[0].Instances[0].InstanceId' --output text)`; wait until its start-up is done (`run_on_new 'tail -3 /var/log/cloud-init-output.log'` shows "bootstrap finished").
+2. Move the old address to it: `aws ec2 associate-address --allocation-id "$OLD_ALLOC" --instance-id "$NEW_INSTANCE" --allow-reassociation`.
+3. Redo step 3 (the Caddyfile), then check the settings as in pre-check 3. The jobs: the SSM value is `true`, so the new instance starts them. That is right while the old app stays stopped; confirm with the log.
+4. Check `https://api.nasaroutes.com/healthz`, and say what happened in the thread.
+
+## 6. After the cutover (not in the window)
+
+1. **Terraform follow-up, as a plan Jasil and Jayasoorya both read before applying:** import the old Elastic IP into Terraform and drop the spare; set `api_domain = "api.nasaroutes.com"` in the local `terraform.tfvars`. Changing `api_domain` changes the instance's startup script, which makes the group replace the instance (a few minutes down, the jobs run on one server only). So apply it in another quiet window, and expect the new instance to take the Elastic IP by itself at the end of its start-up. Until then the hand edit to the Caddyfile (step 3) is the only difference between the server and the code. Do not apply before then. Also resume the group's `ReplaceUnhealthy` process (step 6b) once it is applied.
 2. **Release the spare Elastic IP** (the new one, unattached) once Terraform owns the old one. An idle address is billed.
 3. **Keep the old server stopped, not terminated, for a few days.** Then take a final snapshot of its disk, terminate it, delete its security group (this closes the open SSH port) and the old snapshots.
 4. **Rotate secrets** once stable: Everee token and webhook key, QuickBooks secret and key, database password, Redis password, Cloudinary secret, JWT secrets. Replace the temporary AdministratorAccess group with a narrower policy, and give Jasil his own sign-in with MFA.
