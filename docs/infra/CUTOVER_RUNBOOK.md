@@ -52,9 +52,9 @@ Check: `OLD_INSTANCE` is the old server (`t3.micro`), `NEW_INSTANCE` is the `t4g
 
 1. **Both servers are well.** New server, through SSM:
    ```bash
-   run_on_new 'systemctl is-active nasa-backend caddy; P=$(grep "^PORT=" /opt/nasa/Backend/.env | cut -d= -f2); curl -s http://127.0.0.1:$P/healthz; echo; journalctl -u nasa-backend --since "-30min" --no-pager | grep -E "Scheduled jobs|Database connected" | tail -3'
+   run_on_new 'systemctl is-active nasa-backend caddy; P=$(grep "^PORT=" /opt/nasa/Backend/.env | cut -d= -f2 | tr -d "\047"); curl -s http://127.0.0.1:$P/healthz; echo; journalctl -u nasa-backend --no-pager | grep "Scheduled jobs" | tail -1 | cut -c1-120'
    ```
-   Expect `active active`, `{"status":"ok"}` and "Scheduled jobs are off". Old server (SSH as before): `pm2 status` shows `nasa-backend` online.
+   Expect `active active`, `{"status":"ok"}` and the last start-up line "Scheduled jobs are off" (the app logs it only at start-up, so do not limit the time). Old server (SSH as before): `pm2 status` shows `nasa-backend` online.
 2. **Ports 80 and 443 are open to everyone on the new server** (needed for the certificate the moment the IP lands):
    ```bash
    SG=$(aws ec2 describe-instances --instance-ids "$NEW_INSTANCE" --query 'Reservations[0].Instances[0].SecurityGroups[0].GroupId' --output text)
