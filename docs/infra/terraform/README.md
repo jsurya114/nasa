@@ -1,8 +1,8 @@
 # NASA AWS infrastructure (Terraform)
 
-Plan and reasoning: [`docs/infra/AWS_NETWORK_PLAN.md`](../AWS_NETWORK_PLAN.md). Costs and the database: [`docs/infra/AWS_COST_OPTIMISATION.md`](../AWS_COST_OPTIMISATION.md). Load test: [`docs/infra/loadtest/`](../../docs/infra/loadtest/README.md).
+Migration write-up: [`docs/infra/VPC_MIGRATION.md`](../VPC_MIGRATION.md). Plan and reasoning: [`docs/infra/AWS_NETWORK_PLAN.md`](../AWS_NETWORK_PLAN.md). Costs and the database: [`docs/infra/AWS_COST_OPTIMISATION.md`](../AWS_COST_OPTIMISATION.md). Load test: [`docs/infra/loadtest/`](../../docs/infra/loadtest/README.md).
 
-**Status: applied in staging only, production never applied.** On 2026-11-20 the stack ran in the NASA account as `environment = "staging"` (direct mode, `t4g.micro`, its own test database), the bootstrap booted on a real instance, the load test ran ([results](../loadtest/README.md#results)), and everything was destroyed again. `terraform validate` and `terraform test` (`tests/modes.tftest.hcl`, mocked provider) pass.
+**Status: applied in production on 2026-11-21; production traffic moved to it on 2026-11-24.** The full story (old and new setup, the reasons, the cutover, the rollback, what is next and how to operate it) is in [`docs/infra/VPC_MIGRATION.md`](../VPC_MIGRATION.md). Before that, on 2026-11-20 the stack ran in the NASA account as `environment = "staging"` (direct mode, `t4g.micro`, its own test database), the bootstrap booted on a real instance, the load test ran ([results](../loadtest/README.md#results)), and everything was destroyed again. `terraform validate` and `terraform test` (`tests/modes.tftest.hcl`, mocked provider) pass.
 
 **Account lock.** `aws_profile` and `aws_account_id` have no defaults, and the provider sets `allowed_account_ids`, so Terraform refuses to run against any other account. Both go in your local `terraform.tfvars` and `backend.hcl` (both git-ignored). The account ID never goes in the repository.
 
@@ -41,6 +41,10 @@ The bootstrap writes the settings with `render-env.cjs`. It quotes each value so
 ## Peering to the default VPC (database stays where it is)
 
 `peer_default_vpc = true` plus `peer_db_security_group_id = "sg-..."` (existing database group, in `terraform.tfvars`). It adds one peering connection, one route in each VPC and one 5432 rule on that group, nothing else. The existing route table and group are read with data sources only, never managed. If the database's subnets use a custom route table, also set `peer_db_route_table_id`. In `terraform plan` every one of these must show as `create`, and nothing in the default VPC as change, replace or destroy.
+
+## Adopting an existing Elastic IP (production)
+
+Production's `api.nasaroutes.com` already points at an Elastic IP that was created by hand before this stack, and the cutover moved it onto the new server. Set `existing_eip_allocation_id` (local `terraform.tfvars` only) to its allocation ID and Terraform imports and manages that address (`aws_eip.api`, with `prevent_destroy`) instead of creating one, and releases the address it had created. The boot script, the instance's permission to attach it and the `api_ip_for_dns` output all read the adopted address. Empty (the default) creates a new one, as staging does. Steps and the reviewed plan: `docs/journal/2026-11-24-adopt-api-elastic-ip.md`. Production applied it on 24 November 2026 and the `import` block was then removed (the address is in the state). Keep the variable set in `terraform.tfvars`: if it is dropped, `prevent_destroy` makes the plan fail instead of releasing the address.
 
 `SCHEDULED_JOBS_ENABLED=false` in the backend settings keeps the three scheduled jobs off on a server that shares the database with another one. Set it to `true` only after the other server is stopped.
 

@@ -112,7 +112,7 @@ data "aws_iam_policy_document" "app" {
     content {
       sid       = "AttachOwnElasticIp"
       actions   = ["ec2:AssociateAddress"]
-      resources = [aws_eip.direct[0].arn, "arn:aws:ec2:${var.region}:${data.aws_caller_identity.current.account_id}:instance/*"]
+      resources = [local.api_eip.arn, "arn:aws:ec2:${var.region}:${data.aws_caller_identity.current.account_id}:instance/*"]
     }
   }
 }

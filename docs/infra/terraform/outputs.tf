@@ -16,7 +16,7 @@ output "mode" {
 
 output "api_ip_for_dns" {
   description = "Direct mode: point the api_domain A record here."
-  value       = local.direct ? aws_eip.direct[0].public_ip : null
+  value       = local.direct ? local.api_eip.public_ip : null
 }
 
 output "alb_dns_name" {

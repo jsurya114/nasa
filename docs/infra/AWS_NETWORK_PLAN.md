@@ -1,6 +1,6 @@
 # NASA AWS network plan
 
-Status: **production not applied; tested in staging.** Code: `docs/infra/terraform/`. Written 2026-11-19, updated 2026-11-21.
+Status: **applied in production on 2026-11-21; traffic moved on 2026-11-24.** What happened, in order, is in [`VPC_MIGRATION.md`](VPC_MIGRATION.md); this page is the original design and stays as written. Code: `docs/infra/terraform/`. Written 2026-11-19, updated 2026-11-21.
 Today: one `t3.micro` in the **default VPC**, deployed by hand (git pull, pm2, nginx + certbot). Frontend on Vercel. Redis is an external hosted service. PostgreSQL is **RDS `db.t3.micro` in the default VPC** (private, port 5432 open only to the server's security group).
 
 2026-11-20/21: the stack ran in the NASA account as staging, and the bootstrap booted on a real `t4g.micro`. A load test sized the instance (section 7). Everything was destroyed again. VPC peering to the default VPC is in PR #309.

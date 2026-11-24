@@ -4,15 +4,16 @@ Written 2026-11-19, updated 2026-11-21. **Section 0 holds confirmed figures:** t
 
 ## 0. Confirmed (2026-11-21)
 
-**Today's bill.** About $41 a month including tax (August to October 2026: $41.31, $40.46, $41.31). October before tax was $38.75:
+**Today's bill.** About $41 a month including tax (August to October 2026: $41.31, $40.46, $41.31). October was $41.31 with tax and **$38.75 before tax**. The lines below are from the bill and **include tax**: each is about 6.6% above the on-demand rate for 744 hours. Compare the before-tax total, $38.75, with the before-tax rates in the next table.
 
-| Line (October 2026, 744 hours) | Cost |
+| Line (October 2026, 744 hours, including tax) | Cost |
 |---|---|
 | RDS `db.t3.micro` (PostgreSQL 17.9, single-AZ) | $14.27 |
 | RDS storage, 100 GB gp3 (about 0.6 GB used) | $12.26 |
 | EC2 `t3.micro` | $8.25 |
 | Public IPv4 address (Elastic IP) | $3.97 |
 | EBS root volume, 30 GB gp3 | $2.56 |
+| **Total including tax** (before tax: $38.75) | **$41.31** |
 
 **The database is already on RDS,** in the default VPC. It stays there; the new VPC reaches it over VPC peering.
 
