@@ -100,7 +100,7 @@ variable "api_domain" {
 }
 
 variable "existing_eip_allocation_id" {
-  description = "Direct mode: the allocation ID of an Elastic IP that already exists and that api_domain already points at (for example the one moved to the new server at the production cutover). Terraform then adopts it (an import block) and manages it, instead of creating a new one, and the new one it created earlier is released. Empty (the default) creates a new Elastic IP. Set it only in your local terraform.tfvars: it is not secret, but IDs stay out of the repository."
+  description = "Direct mode: the allocation ID of an Elastic IP that already exists and that api_domain already points at (for example the one moved to the new server at the production cutover). Terraform manages it (it was imported once, in the production follow-up of 24 November 2026) instead of creating a new one. Dropping this variable makes the plan fail on purpose (prevent_destroy), so keep it set. Empty (the default) creates a new Elastic IP. Set it only in your local terraform.tfvars: it is not secret, but IDs stay out of the repository."
   type        = string
   default     = ""
 
