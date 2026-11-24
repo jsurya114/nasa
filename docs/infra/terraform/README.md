@@ -42,6 +42,10 @@ The bootstrap writes the settings with `render-env.cjs`. It quotes each value so
 
 `peer_default_vpc = true` plus `peer_db_security_group_id = "sg-..."` (existing database group, in `terraform.tfvars`). It adds one peering connection, one route in each VPC and one 5432 rule on that group, nothing else. The existing route table and group are read with data sources only, never managed. If the database's subnets use a custom route table, also set `peer_db_route_table_id`. In `terraform plan` every one of these must show as `create`, and nothing in the default VPC as change, replace or destroy.
 
+## Adopting an existing Elastic IP (production)
+
+Production's `api.nasaroutes.com` already points at an Elastic IP that was created by hand before this stack, and the cutover moved it onto the new server. Set `existing_eip_allocation_id` (local `terraform.tfvars` only) to its allocation ID and Terraform imports and manages that address (`aws_eip.api`, with `prevent_destroy`) instead of creating one, and releases the address it had created. The boot script, the instance's permission to attach it and the `api_ip_for_dns` output all read the adopted address. Empty (the default) creates a new one, as staging does. Steps and the reviewed plan: `docs/journal/2026-11-24-adopt-api-elastic-ip.md`.
+
 `SCHEDULED_JOBS_ENABLED=false` in the backend settings keeps the three scheduled jobs off on a server that shares the database with another one. Set it to `true` only after the other server is stopped.
 
 ## Switching to the load balancer later
