@@ -213,7 +213,7 @@ All commands use the NASA AWS profile (`export AWS_PROFILE=nasa AWS_REGION=us-ea
 
 Instead of typing the value into the server, `scripts/rerender-env.sh` can re-render the `.env` from SSM and restart the service (see the secret rotation runbook; its dry run is tested, `--apply` is not yet). A future replaced instance then renders the same value from SSM. If the two disagree, the next boot wins with the SSM value.
 
-**Deploy a new release.** Build and upload: `docs/infra/scripts/package-backend.sh <release-bucket>` (the bucket name is `terraform output artifact_bucket`). Then:
+**Deploy a new release.** The full steps, checks and rollback are in [`DEPLOY_RUNBOOK.md`](DEPLOY_RUNBOOK.md) (a proposal to read first). In short: build and upload: `docs/infra/scripts/package-backend.sh <release-bucket>` (the bucket name is `terraform output artifact_bucket`). Then:
 - *After item 2 of section 6 is applied:* `aws autoscaling start-instance-refresh --auto-scaling-group-name <group>`. The group replaces the instance with one that starts from the new release (a few minutes down, because it is one instance).
 - *The follow-up is applied, but a replacement instance has not been tried yet.* Start the first refresh in a quiet window and watch it (it is the recovery drill), or use the interim route below for an urgent fix. It follows what the bootstrap does, but never unpack over the running folder, because files that the new release removed would stay behind:
   1. Download `backend-latest.tgz` from the release bucket and unpack it into a **new** folder (the archive holds a `Backend` folder), for example `/opt/nasa/release-<date>/`.
