@@ -2,16 +2,16 @@
 
 Status: **proposal, to be read by both owners before any step is run.** Written 2026-11-25. Nothing in this file changes anything until a person runs it.
 
-**Why.** The old server's `.env` was once pasted into a chat, so every value in it must be treated as exposed. This runbook replaces them one at a time, in quiet windows, without anyone seeing a value.
+**Why.** Routine rotation after the move to the new server: each production secret is replaced once, so that every copy made before the move (the old server's file, old snapshots, laptops) stops working. This runbook replaces them one at a time, in quiet windows, without anyone seeing a value.
 
-**Not before the old server is gone.** The old (stopped) server still holds the old values, and it is the rollback copy until about 7 clean days after the cutover. Rotate after `VPC_MIGRATION.md` section 6 item 3 is done, or the rollback would start with passwords that no longer work.
+**After the old server is gone.** The old (stopped) server is the rollback copy until about 7 clean days after the cutover, and it holds the previous values. Rotate once `VPC_MIGRATION.md` section 6 item 3 is done, so that a rollback never starts with passwords that no longer work.
 
 ## 1. Rules
 
 1. **No value is ever typed in a chat, a pull request, a log, a command saved in shell history, or this repository.** Values are either generated straight into SSM or pasted into a hidden prompt (`read -rs`). Claude never sees or handles a value; it runs only the commands that contain none.
 2. **One secret per window, and both owners say "go"** (same as the cutover and the Terraform apply). Write a journal entry after each one with the time, the setting *name* and the result, never the value.
 3. **Back up first** where the section says so. Check `/healthz`, both alarms and the scheduled-job timing (start just after an Everee check, at :15 or :45) before every change.
-4. **A secret is not rotated until the old one is revoked** at the provider. Changing SSM alone leaves the exposed value working.
+4. **A secret is not rotated until the old one is revoked** at the provider. Changing SSM alone leaves the old value working.
 
 ## 2. The order and what each one costs
 
@@ -51,20 +51,22 @@ aws ssm get-parameter --name /nasa/prod/$NAME --query 'Parameter.Version' --outp
 **C. Put it into SSM without showing it.** Either paste the provider's value into a hidden prompt:
 
 ```bash
-read -rs VALUE
-aws ssm put-parameter --name /nasa/prod/$NAME --type SecureString --value "$VALUE" --overwrite
-unset VALUE
+umask 077; F=$(mktemp)
+read -rs VALUE; printf '%s' "$VALUE" > "$F"; unset VALUE
+aws ssm put-parameter --name /nasa/prod/$NAME --type SecureString --value "file://$F" --overwrite
+rm -f "$F"
 ```
 
 or, for a value you generate yourself (the JWT secrets and the QuickBooks token key), generate it straight into SSM so nobody sees it:
 
 ```bash
-VALUE=$(node -e "console.log(require('crypto').randomBytes(48).toString('hex'))")   # token key: VALUE=$(openssl rand -hex 32)
-aws ssm put-parameter --name /nasa/prod/$NAME --type SecureString --value "$VALUE" --overwrite
-unset VALUE
+umask 077; F=$(mktemp)
+node -e "process.stdout.write(require('crypto').randomBytes(48).toString('hex'))" > "$F"   # token key: openssl rand -hex 32 | tr -d '\n' > "$F"
+aws ssm put-parameter --name /nasa/prod/$NAME --type SecureString --value "file://$F" --overwrite
+rm -f "$F"
 ```
 
-Never run `get-parameter --with-decryption` or print the variable. For setting 6 the client secret comes from Intuit, so it uses the hidden-prompt form; the token key is generated.
+The value goes through a mode-600 temporary file (`--value file://`), not the command line, so it never shows in the process list or in shell history; the file has no trailing newline (tested). Never run `get-parameter --with-decryption` to print it. For setting 6 the client secret comes from Intuit, so it uses the hidden-prompt form; the token key is generated.
 
 **D. Re-render the server's `.env` from SSM and restart.** The script `docs/infra/scripts/rerender-env.sh` uses the same tool as the boot script, so no value is typed on the server. First a dry run: it must name only the setting you just changed.
 
@@ -89,8 +91,9 @@ aws ssm send-command --instance-ids "$NEW_INSTANCE" --document-name AWS-RunShell
 **F. If it goes wrong.** Put the old value back and re-render. If the old value was in the provider only, keep the provider's old key until the checks pass. If the app does not come back, the script prints the exact command that restores the previous `.env`. The previous SSM value is read from the version you noted, without printing it:
 
 ```bash
-VALUE=$(aws ssm get-parameter --name /nasa/prod/$NAME:<old version> --with-decryption --query Parameter.Value --output text)
-aws ssm put-parameter --name /nasa/prod/$NAME --type SecureString --value "$VALUE" --overwrite; unset VALUE
+umask 077; F=$(mktemp)
+aws ssm get-parameter --name /nasa/prod/$NAME:<old version> --with-decryption --query Parameter.Value --output text | tr -d '\n' > "$F"
+aws ssm put-parameter --name /nasa/prod/$NAME --type SecureString --value "file://$F" --overwrite; rm -f "$F"
 ```
 
 then run D again.

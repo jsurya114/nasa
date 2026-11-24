@@ -16,7 +16,12 @@ REGION=${AWS_REGION:-us-east-1}
 cd "$APP"
 
 NODE_BIN=$(command -v node)
-APP_PORT=$(grep -E '^PORT=' .env | head -1 | tr -d "'\"")
+PORT_LINE=$(grep -E '^PORT=' .env | head -1 || true)
+if [ -z "$PORT_LINE" ]; then
+  echo "ERROR: no PORT= line in $APP/.env (or no .env). Nothing was changed." >&2
+  exit 1
+fi
+APP_PORT=$(printf '%s' "$PORT_LINE" | tr -d "'\"")
 APP_PORT=${APP_PORT#PORT=}
 
 WORK=$(mktemp -d)
