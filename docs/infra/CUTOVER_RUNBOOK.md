@@ -103,9 +103,9 @@ aws ec2 describe-addresses --allocation-ids "$NEW_ALLOC" --query 'Addresses[0].[
 ```
 The new server keeps a public address (the moved IP), so SSM keeps working. If the spare is still attached, stop and ask before going on. **From now on use only the saved IDs (`source ~/cutover-ids.env`). Do not run the section 0 lookups again.**
 
-**Step 3. Make Caddy serve the real name.** Until now the new server's Caddy answers for the test name; change it to `api.nasaroutes.com` and reload (Caddy then asks Let's Encrypt for a certificate, normally within a minute):
+**Step 3. Make Caddy serve the real name.** Until now the new server's Caddy answers for the test name; change it to `api.nasaroutes.com` and **restart** Caddy (Caddy then asks Let's Encrypt for a certificate, normally within a minute). Use `restart`: on this server `systemctl reload caddy` fails with "Job type reload is not applicable for unit caddy.service" (the unit has no reload command; found in the real cutover):
 ```bash
-run_on_new 'grep -n "^api" /etc/caddy/Caddyfile; sed -i "s/^api-new\.nasaroutes\.com {/api.nasaroutes.com {/" /etc/caddy/Caddyfile; /usr/local/bin/caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile 2>&1 | tail -1; systemctl reload caddy; sleep 20; journalctl -u caddy --since "-2min" --no-pager | grep -iE "certificate obtained|error" | tail -5'
+run_on_new 'grep -n "^api" /etc/caddy/Caddyfile; sed -i "s/^api-new\.nasaroutes\.com {/api.nasaroutes.com {/" /etc/caddy/Caddyfile; /usr/local/bin/caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile 2>&1 | tail -1; systemctl restart caddy; sleep 25; journalctl -u caddy --since "-2min" --no-pager | grep -iE "certificate obtained|error" | tail -5'
 ```
 Expect "Valid configuration" and "certificate obtained successfully". Read the first line of the output **before** step 4: if it did not show `api-new.nasaroutes.com {`, the `sed` changed nothing, so stop and read the Caddyfile.
 
@@ -136,15 +136,15 @@ Expect `1`, `active`, "Scheduled jobs are on". Then `curl -sS https://api.nasaro
 
 ## 3. Watch (the rest of the day)
 
-- **Skipped job runs.** No job runs between step 1 (old app stopped) and step 7 (jobs on): about 5 to 15 minutes. The availability reset acts only at Sunday 12:00 local time per time zone, so a Tuesday gap skips nothing. The Everee status check (every 15 minutes) and the onboarding sync (every 5 minutes) look at the current state of unfinished payments and workers each run, so the next run picks up what the gap left. Confirm it by finding the first run of each in the log after step 7; if one does not appear within 20 minutes, tell Jasil.
-- Application log on the new server for errors; the next Everee status run and onboarding run appear in it (they run on the clock, so watch for them at the next hour mark).
+- **Skipped job runs.** No job runs between step 1 (old app stopped) and step 7 (jobs on): about 5 to 15 minutes. The availability reset acts only at Sunday 12:00 local time per time zone, so a Tuesday gap skips nothing. The Everee status check (every 15 minutes) and the onboarding sync (every 5 minutes) look at the current state of unfinished payments and workers each run, so the next run picks up what the gap left. Confirm it by finding "Everee payments checked" in the log after step 7 (within about 30 minutes while payments are pending); a quiet onboarding sync leaves no line. If no payment line appears within 40 minutes and payments are pending, or any `ERROR` appears, tell Jasil.
+- Application log on the new server for errors. A job writes a line only when it found something to do: "Everee payments checked" appears when a payment was due for a re-check (the job runs every 15 minutes, but an item is re-checked only when its last check is more than 15 minutes old, so with pending payments the line shows about every 30 minutes), and "Everee onboarding checked" only when workers are in onboarding. No line and no error from a quiet run is fine.
 - CloudWatch alarms and the CPU credit balance on the new instance (it starts low and must not fall to zero; unlimited mode bills any extra by the vCPU hour).
 - Jasil and Jayasoorya check the dashboard and a driver sign-in again after 1 hour and after 24 hours.
 - Note the cutover end time in the thread and write the journal entry.
 
 ## 4. Rollback (use Jasil's order)
 
-**Use the saved IDs (`source ~/cutover-ids.env`). Never re-run the section 0 lookups after step 2: they would name the new server as the old one.** Use this rollback if step 4 or 5 fails, or at any time in the first week. The order matters: the app reads `SCHEDULED_JOBS_ENABLED` once at start-up, so the new server must be **stopped** before the old one starts, or both would run the jobs.
+**Use the saved IDs (`source ~/cutover-ids.env`). Never re-run the section 0 lookups after step 2: they would name the new server as the old one.** Use this rollback if step 4 or 5 fails, or at any time in the first week. After the cutover the old instance is *stopped* (not terminated), so the order is: new server off, start the old instance, move the Elastic IP, start the old app. The order matters: the app reads `SCHEDULED_JOBS_ENABLED` once at start-up, so the new server must be **stopped** before the old one starts, or both would run the jobs.
 
 1. **Set the jobs off for good on the new server** and stop it (laptop):
    ```bash
@@ -153,12 +153,19 @@ Expect `1`, `active`, "Scheduled jobs are on". Then `curl -sS https://api.nasaro
    ```
    Expect `inactive` and no new log lines after the stop.
    *If the new server cannot be reached through SSM:* stop it from AWS instead. `aws autoscaling suspend-processes --auto-scaling-group-name "$ASG" --scaling-processes ReplaceUnhealthy Launch`, then `aws ec2 stop-instances --instance-ids "$NEW_INSTANCE"` and wait for `stopped` (`aws ec2 wait instance-stopped --instance-ids "$NEW_INSTANCE"`). Resume the processes later.
-2. **Move the Elastic IP back to the old server first** (no access to the old server is needed):
+2. **Start the old instance and wait for its status checks** (it was stopped after the cutover, with termination protection on; it is a normal start from AWS):
+   ```bash
+   aws ec2 start-instances --instance-ids "$OLD_INSTANCE" --query 'StartingInstances[0].CurrentState.Name' --output text
+   aws ec2 wait instance-running --instance-ids "$OLD_INSTANCE"
+   aws ec2 wait instance-status-ok --instance-ids "$OLD_INSTANCE" && echo old-instance-ready
+   ```
+   PM2 is enabled at boot on the old server, so it may start the app by itself. That is why step 1 (new server stopped and confirmed inactive) comes first. The old instance gets a new automatic public address on start; the Elastic IP is not on it yet.
+3. **Move the Elastic IP back to the old server, then make sure its app is running:**
    ```bash
    aws ec2 associate-address --allocation-id "$OLD_ALLOC" --instance-id "$OLD_INSTANCE" --allow-reassociation
    aws ec2 describe-addresses --allocation-ids "$OLD_ALLOC" --query 'Addresses[0].[InstanceId,PublicIp]' --output text
    ```
-3. **Start the old app:** `ssh ubuntu@api.nasaroutes.com`, then `pm2 start nasa-backend && pm2 status && pm2 logs nasa-backend --lines 20 --nostream`. Expect online and "Database connected".
+   Then `ssh ubuntu@api.nasaroutes.com` and run `pm2 status`; if `nasa-backend` is not online, `pm2 start nasa-backend`; then `pm2 logs nasa-backend --lines 20 --nostream`. Expect online and "Database connected". (If SSH to the name does not answer yet, use the instance's automatic public DNS name from `aws ec2 describe-instances`.)
 4. Check `https://api.nasaroutes.com` from the app (admin and driver sign-in). The old server's own certificate (nginx and certbot) is unchanged.
 5. Later, put the spare address back on the new server so it has a public address again: `aws ec2 associate-address --allocation-id "$NEW_ALLOC" --instance-id "$NEW_INSTANCE"` (and resume the group processes if they were suspended). Say what happened in the thread and write a journal entry.
 
@@ -176,6 +183,6 @@ Signs: the alarm email, `api.nasaroutes.com` not answering, or `$NEW_INSTANCE` n
 
 1. **Terraform follow-up, as a plan Jasil and Jayasoorya both read before applying:** import the old Elastic IP into Terraform and drop the spare; set `api_domain = "api.nasaroutes.com"` in the local `terraform.tfvars`. Changing `api_domain` changes the instance's startup script, which makes the group replace the instance (a few minutes down, the jobs run on one server only). So apply it in another quiet window, and expect the new instance to take the Elastic IP by itself at the end of its start-up. Until then the hand edit to the Caddyfile (step 3) is the only difference between the server and the code. Do not apply before then. Also resume the group's `ReplaceUnhealthy` process (step 6b) once it is applied.
 2. **Release the spare Elastic IP** (the new one, unattached) once Terraform owns the old one. An idle address is billed.
-3. **Keep the old server stopped, not terminated, for a few days.** Then take a final snapshot of its disk, terminate it, delete its security group (this closes the open SSH port) and the old snapshots.
+3. **The old instance is stopped, not terminated** (done after the cutover, with termination protection on and a snapshot of its root disk taken first). Delete it only when all of these are true: the new server has run cleanly for about 7 days (including a weekly Excel upload, a pay run and the Sunday availability reset); the Terraform follow-up (item 1) is applied; nothing on the old disk still matters (it had no `uploads` folder, no cron jobs, and only the `api` nginx site; its old `.env` stays private). Then take a final disk snapshot (or an image) and keep it about 30 days, terminate the instance, and afterwards remove the old 5432 rule ("Allow EC2 backend") from the database security group and the old server's security group (this closes the open SSH port). The security group change is a production change: post the exact change for the other owner to read first.
 4. **Rotate secrets** once stable: Everee token and webhook key, QuickBooks secret and key, database password, Redis password, Cloudinary secret, JWT secrets. Replace the temporary AdministratorAccess group with a narrower policy, and give Jasil his own sign-in with MFA.
 5. Write the cutover journal entry: times, what was checked, what differed from this runbook.
