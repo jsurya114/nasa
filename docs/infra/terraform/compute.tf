@@ -26,12 +26,6 @@ resource "aws_eip" "api" {
   }
 }
 
-import {
-  for_each = local.adopt_eip ? toset(["api"]) : toset([])
-  to       = aws_eip.api[each.key]
-  id       = var.existing_eip_allocation_id
-}
-
 locals {
   # The one Elastic IP of direct mode, whichever way it came to be (null when there is none).
   api_eip = one(concat(values(aws_eip.api), aws_eip.direct))

@@ -5,7 +5,7 @@ aws_account_id = "<12-digit NASA account ID>" # Terraform refuses to run against
 region         = "us-east-1"
 
 api_domain  = "api.nasaroutes.com" # the default. A test name such as api-new.nasaroutes.com is only for a trial before cutover
-# existing_eip_allocation_id = "eipalloc-..." # adopt the Elastic IP that api_domain already points at (see docs/infra/VPC_MIGRATION.md)
+# existing_eip_allocation_id = "eipalloc-..." # adopt the Elastic IP that api_domain already points at (see docs/journal/2026-11-24-adopt-api-elastic-ip.md). Once adopted, keep it set: dropping it makes the plan fail on purpose
 acme_email  = "<Let's Encrypt contact>"
 alert_email = "<receives alarms and the budget alert>"
 

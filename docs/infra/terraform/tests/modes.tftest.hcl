@@ -317,9 +317,11 @@ run "an_existing_elastic_ip_is_adopted_instead_of_created" {
     existing_eip_allocation_id = "eipalloc-0abc1234def567890"
   }
 
-  # The mock provider cannot run an import, so the imported address is given directly.
+  # The address is already in the state in production; here the mock provider is given its values
+  # at plan time, so the checks below can read them.
   override_resource {
-    target = aws_eip.api["api"]
+    target          = aws_eip.api["api"]
+    override_during = plan
     values = {
       id        = "eipalloc-0abc1234def567890"
       public_ip = "198.51.100.20"
