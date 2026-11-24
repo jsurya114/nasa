@@ -115,7 +115,7 @@ Before: about **$38.75 a month before tax** (October 2026, from the account's bi
 | CPU surplus credits (only beyond earned credits) | expected $0 |
 | **Total before tax** | **about $36** |
 
-Short-term extras until the cleanup in section 6: the idle spare Elastic IP (about $3.65 a month), the stopped old instance's 30 GB disk (about $2.50), and snapshots of the old disk and the database (small). The biggest later saving is the database storage: 100 GB down to 20 GB would save about $9.20 a month, but RDS cannot shrink storage in place, so it needs a planned move.
+Short-term extras until the cleanup in section 6: the stopped old instance's 30 GB disk (about $2.50), and snapshots of the old disk and the database (small). The biggest later saving is the database storage: 100 GB down to 20 GB would save about $9.20 a month, but RDS cannot shrink storage in place, so it needs a planned move.
 
 ## 4. How it was done, in order
 
@@ -170,7 +170,7 @@ Short-term extras until the cleanup in section 6: the idle spare Elastic IP (abo
 1. Set `/nasa/prod/SCHEDULED_JOBS_ENABLED` to `false` in SSM, set it to `false` in the new server's `.env`, run `systemctl stop nasa-backend` and confirm it is `inactive` with no new log lines. (If SSM cannot reach it: suspend the group's `ReplaceUnhealthy` and `Launch` processes and stop the instance from AWS.)
 2. Start the old instance and wait for its status checks. It gets a new automatic public address.
 3. Move the Elastic IP back to the old instance (from the console or CLI; no access to the old server is needed), then SSH in and run `pm2 start nasa-backend` if it is not already online. Expect "Database connected".
-4. Check the site (admin and driver sign-in). Later, put the spare IP back on the new server so it has a public address.
+4. Check the site (admin and driver sign-in). The spare IP no longer exists (released by the Terraform follow-up). If the new server has no public address once the old one has the Elastic IP, allocate a new Elastic IP for it (see `CUTOVER_RUNBOOK.md` section 4, step 5).
 
 Exact commands: [`CUTOVER_RUNBOOK.md`](CUTOVER_RUNBOOK.md) section 4. If the *data* is wrong (not just the server), do not restore a snapshot on your own: stop and talk first, because a restore loses what was written since it was taken.
 
@@ -188,7 +188,7 @@ Owners are proposals; change them as the two of you agree. "Read" means both rea
 | # | Item | Owner | Notes |
 |---|---|---|---|
 | 1 | **Rollback-week monitoring** | Both | Watch errors, CPU and CPU credits daily. Cover one full week's cycle: the weekly Excel upload, a pay run and the Sunday availability reset. Check Everee's webhook delivery log for failures around 12:21 to 12:22 on 24 Nov and resend any. |
-| 2 | **Terraform follow-up** (one plan, in a quiet window, both read it) | Jayasoorya writes, both read | Import the old Elastic IP into Terraform, release the spare one, set `api_domain = "api.nasaroutes.com"`, apply, then resume `ReplaceUnhealthy`. Until then: the new server's Caddyfile has one hand edit, `ReplaceUnhealthy` is suspended, and **a replaced instance would start with the old startup script: it would take the spare IP and serve the test name, so `api.nasaroutes.com` would be down.** Do not apply anything else meanwhile. Changing `api_domain` changes the startup script, so the group replaces the instance (a few minutes down); the jobs still run on one server only. |
+| 2 | **Terraform follow-up** (done) | Jayasoorya wrote, both read | Applied on 24 November 2026 at 23:46 IST, after both read the plan: the old Elastic IP is imported (`aws_eip.api`, protected from deletion), the spare released, `api_domain` is the default `api.nasaroutes.com`, `ReplaceUnhealthy` resumed. No instance refresh started and the second plan said "No changes". Keep `existing_eip_allocation_id` in the local `terraform.tfvars`. Still unproven: that a *replaced* instance comes up correctly (a recovery drill, to be decided, in its own quiet window). |
 | 3 | **Delete the old instance and the old 5432 rule** | Jayasoorya, Jasil reads the security group change | Only when: the new server has run cleanly for about 7 days (including the cycle in item 1); item 2 is applied; nothing on the old disk matters (checked on 24 Nov: no `uploads` folder, no cron jobs, only the `api` nginx site; the old `.env` stays private). Then: snapshot its disk (or an image) and keep it about 30 days, turn off termination protection, terminate, then remove the old rule ("Allow EC2 backend") from the database security group and delete the old server's security group (closes the open SSH port). |
 | 4 | **Dedicated database user for the app, and rotate `JWT_SECRET`** | Jayasoorya | The app connects as the database master user today. Rotating `JWT_SECRET` signs everyone out, so do it in a quiet window. Also rotate the other secrets after the move, as planned: the Everee token and webhook key, the QuickBooks secret and key, the database and Redis passwords, and the Cloudinary secret. |
 | 5 | **GoDaddy access** | Jayasoorya | Find whose account holds `nasaroutes.com` (registered with privacy protection) and get a sign-in or delegate access. Needed for renewals and any future DNS change. Not needed for operating the setup. |
@@ -215,7 +215,7 @@ A future replaced instance then renders the same value from SSM. If the two disa
 
 **Deploy a new release.** Build and upload: `docs/infra/scripts/package-backend.sh <release-bucket>` (the bucket name is `terraform output artifact_bucket`). Then:
 - *After item 2 of section 6 is applied:* `aws autoscaling start-instance-refresh --auto-scaling-group-name <group>`. The group replaces the instance with one that starts from the new release (a few minutes down, because it is one instance).
-- *Until then, do not start an instance refresh* (a replacement would take the spare Elastic IP and serve the test name). Better still, apply the Terraform follow-up before the first deploy, and use the interim route below only for an urgent fix. It follows what the bootstrap does, but never unpack over the running folder, because files that the new release removed would stay behind:
+- *The follow-up is applied, but a replacement instance has not been tried yet.* Start the first refresh in a quiet window and watch it (it is the recovery drill), or use the interim route below for an urgent fix. It follows what the bootstrap does, but never unpack over the running folder, because files that the new release removed would stay behind:
   1. Download `backend-latest.tgz` from the release bucket and unpack it into a **new** folder (the archive holds a `Backend` folder), for example `/opt/nasa/release-<date>/`.
   2. In that new `Backend` folder run `npm ci --omit=dev`.
   3. Copy the current `.env` into it (mode 600) and make the folder belong to the service user (`ec2-user`).
@@ -230,11 +230,11 @@ A future replaced instance then renders the same value from SSM. If the two disa
 | Alarm | Fires when | What to do |
 |---|---|---|
 | `nasa-prod-cpu-high` | CPU above 80% for 15 minutes | Check the log for a stuck job or upload, and the CPU credit balance (`CPUCreditBalance`; it was 288 and stable on 24 Nov; unlimited mode bills any surplus). If a weekly upload is running, it usually clears. |
-| `nasa-prod-no-instances` | Fewer than 1 healthy instance for 5 minutes | The site is down. Check the instance state and `systemctl is-active nasa-backend caddy` through SSM. While `ReplaceUnhealthy` is suspended the group will **not** replace an unhealthy instance by itself: follow `CUTOVER_RUNBOOK.md` section 5 (recovery), or restart the service. |
-| Budget (80% actual, 100% forecast of $50) | Spend rising | Look for surplus CPU credits, an unplanned instance or load balancer, and the idle spare Elastic IP. |
+| `nasa-prod-no-instances` | Fewer than 1 healthy instance for 5 minutes | The site is down. Check the instance state and `systemctl is-active nasa-backend caddy` through SSM. `ReplaceUnhealthy` is on again, so the group may replace an instance it marks unhealthy; check that the new one came up (`CUTOVER_RUNBOOK.md` section 5), or restart the service if only the app is stuck. |
+| Budget (80% actual, 100% forecast of $50) | Spend rising | Look for surplus CPU credits, an unplanned instance or load balancer. |
 | `alb-5xx`, `alb-unhealthy-hosts` | Only exist when `enable_alb = true` | Not used today. |
 
-**Health checks.** `curl -sS https://api.nasaroutes.com/healthz` returns `{"status":"ok"}` only from the new server (the old one has no such route). Status of the group: `aws autoscaling describe-auto-scaling-groups`. Which processes are suspended: the same call, `SuspendedProcesses` (today only `ReplaceUnhealthy`).
+**Health checks.** `curl -sS https://api.nasaroutes.com/healthz` returns `{"status":"ok"}` only from the new server (the old one has no such route). Status of the group: `aws autoscaling describe-auto-scaling-groups`. Which processes are suspended: the same call, `SuspendedProcesses` (today none).
 
 ## 8. Technologies used
 
@@ -258,7 +258,7 @@ What each one is used for, and its version where it matters. Versions are the on
 | Route tables, network ACLs, security groups | Routing, a coarse stateless layer, and the real rules (ports 80 and 443 from the internet to the instance; no SSH anywhere). |
 | VPC peering | Connects the new VPC to the default VPC so the app reaches the existing database over private addresses. One route in each VPC and one 5432 rule on the database's group. |
 | S3 gateway endpoint | Free, private path to S3 for the release download. |
-| Elastic IP | The fixed public address for `api.nasaroutes.com`. Old: the same address on the old server. New: the same address, moved to the new server. |
+| Elastic IP | The fixed public address for `api.nasaroutes.com`. Old: the same address on the old server. New: the same address, moved to the new server; Terraform owns it since 24 November (`aws_eip.api`, protected from deletion). |
 | Internet gateway | The public subnet's way to the internet. |
 | Built but switched off | Application Load Balancer and NAT gateway (`enable_alb`, `enable_nat_gateway`), VPC flow logs (`enable_flow_logs`, default off). |
 
@@ -267,7 +267,7 @@ What each one is used for, and its version where it matters. Versions are the on
 | Technology | Used for | Old | New |
 |---|---|---|---|
 | EC2 | The backend server. | `t3.micro` (x86_64), built by hand | `t4g.micro` (Graviton, arm64), `cpu_credits = "unlimited"` |
-| Launch template and Auto Scaling group | Describe the instance and keep exactly one running (`1/1/1`); a replacement starts from the startup script. `ReplaceUnhealthy` is suspended for now (section 6). | none | yes |
+| Launch template and Auto Scaling group | Describe the instance and keep exactly one running (`1/1/1`); a replacement starts from the startup script. `ReplaceUnhealthy` is on again (resumed by the Terraform follow-up). | none | yes |
 | IMDSv2 | The instance metadata service requires a session token. | not recorded | required |
 | EBS gp3 | The root disk. | 30 GB | 20 GB, encrypted |
 | Operating system | | Ubuntu 24.04 LTS | Amazon Linux 2023 (the newest image is looked up from AWS's public SSM parameter when an instance starts) |
