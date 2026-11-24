@@ -6,7 +6,7 @@ Related files: the Terraform code and how to apply it ([`terraform/README.md`](t
 
 This repository is public, so this page has no account number, IP address, or instance, volume or snapshot ID. It uses names and roles. The real values are looked up with commands (see the runbook) and kept in the private AWS account.
 
-**Contents:** 1 Old setup · 2 New setup · 3 Why · 4 How it was done · 5 Rollback · 6 What is next · 7 Operations
+**Contents:** 1 Old setup · 2 New setup · 3 Why · 4 How it was done · 5 Rollback · 6 What is next · 7 Operations · 8 Technologies used
 
 ---
 
@@ -223,3 +223,107 @@ All commands use the NASA AWS profile (`export AWS_PROFILE=nasa AWS_REGION=us-ea
 | `alb-5xx`, `alb-unhealthy-hosts` | Only exist when `enable_alb = true` | Not used today. |
 
 **Health checks.** `curl -sS https://api.nasaroutes.com/healthz` returns `{"status":"ok"}` only from the new server (the old one has no such route). Status of the group: `aws autoscaling describe-auto-scaling-groups`. Which processes are suspended: the same call, `SuspendedProcesses` (today only `ReplaceUnhealthy`).
+
+## 8. Technologies used
+
+What each one is used for, and its version where it matters. Versions are the ones in use on 24 November 2026, read from the code, the lock file or the running server. "Old" is what the move replaced. "Not recorded" means nobody wrote it down before the old server was stopped.
+
+**Infrastructure as code**
+
+| Technology | Used for | Version and notes |
+|---|---|---|
+| Terraform | Builds and changes the whole AWS setup from `docs/infra/terraform/`. Nothing in the new stack is made by hand. | Needs 1.10 or newer (`required_version`); applied with 1.17.2. |
+| Terraform AWS provider | Talks to AWS. | `~> 6.0` in the code, 6.73.0 in the lock file. The provider is locked to the NASA account (`allowed_account_ids`), so Terraform refuses to run against any other account. |
+| S3 state backend and its bootstrap | Holds Terraform's state: a versioned, encrypted S3 bucket with public access blocked and `prevent_destroy`, using S3's own locking (no DynamoDB table). The bucket is made once by `docs/infra/terraform/bootstrap` with local state, then the main stack uses it. | Local `backend.hcl` and `terraform.tfvars` are git-ignored. |
+| `terraform test` | Plans both modes (direct and load-balancer) against a *mocked* provider, with no credentials and nothing created, and checks that the switches do what the README says and that the startup script stays under 16 KB. | `tests/modes.tftest.hcl`. |
+| `node --test` | Tests the settings renderer `render-env.cjs`. | `tests/render-env.test.cjs`. |
+
+**AWS networking**
+
+| Technology | Used for |
+|---|---|
+| VPC `10.20.0.0/16` with public, app and data subnets in 2 zones | The new network. In direct mode only the public subnet holds the instance; the app and data subnets are built and empty. |
+| Route tables, network ACLs, security groups | Routing, a coarse stateless layer, and the real rules (ports 80 and 443 from the internet to the instance; no SSH anywhere). |
+| VPC peering | Connects the new VPC to the default VPC so the app reaches the existing database over private addresses. One route in each VPC and one 5432 rule on the database's group. |
+| S3 gateway endpoint | Free, private path to S3 for the release download. |
+| Elastic IP | The fixed public address for `api.nasaroutes.com`. Old: the same address on the old server. New: the same address, moved to the new server. |
+| Internet gateway | The public subnet's way to the internet. |
+| Built but switched off | Application Load Balancer and NAT gateway (`enable_alb`, `enable_nat_gateway`), VPC flow logs (`enable_flow_logs`, default off). |
+
+**AWS compute**
+
+| Technology | Used for | Old | New |
+|---|---|---|---|
+| EC2 | The backend server. | `t3.micro` (x86_64), built by hand | `t4g.micro` (Graviton, arm64), `cpu_credits = "unlimited"` |
+| Launch template and Auto Scaling group | Describe the instance and keep exactly one running (`1/1/1`); a replacement starts from the startup script. `ReplaceUnhealthy` is suspended for now (section 6). | none | yes |
+| IMDSv2 | The instance metadata service requires a session token. | not recorded | required |
+| EBS gp3 | The root disk. | 30 GB | 20 GB, encrypted |
+| Operating system | | Ubuntu 24.04 LTS | Amazon Linux 2023 (the newest image is looked up from AWS's public SSM parameter when an instance starts) |
+
+**AWS settings, access and security**
+
+| Technology | Used for |
+|---|---|
+| SSM Parameter Store | The backend's 44 settings, one SecureString each under `/nasa/prod/`. 43 use the standard tier and one (the database certificate chain, over 4 KB) the advanced tier. The values never go through Terraform or the repository. Old: one `.env` file on the server. |
+| SSM Session Manager and Run Command | Access to the server and one-off commands, instead of SSH. Needs the instance's role and a public address (there are no VPC endpoints). Old: SSH with an open port 22. |
+| IAM | The instance role (SSM core, read of the release bucket's `releases/` and of `/nasa/prod`, and attaching its own Elastic IP). Also the staging provisioner's policies in `docs/infra/iam/` (permissions, guardrails and a boundary, so a staging run cannot touch production). People use one IAM user in a temporary administrator group, to be replaced (section 6). |
+| Encryption | SecureString parameters and the EBS disk use AWS's managed keys (no customer key is set in our code). The release and state buckets use S3's own encryption (AES-256). |
+| CloudTrail | Not configured by us. The account's event history was used to read the exact time the Elastic IP moved. |
+
+**AWS monitoring and cost**
+
+| Technology | Used for |
+|---|---|
+| CloudWatch alarms and metrics | Alarms on CPU (above 80% for 15 minutes) and on fewer than one healthy instance (5 minutes). The CPU credit balance is watched by hand, not by an alarm. |
+| SNS | Emails the alert address when an alarm fires. |
+| AWS Budgets | A $50 monthly budget with alerts at 80% actual and 100% forecast. |
+
+**Database**
+
+| Technology | Used for |
+|---|---|
+| RDS PostgreSQL 17.9, `db.t3.micro`, 100 GB gp3, in the default VPC | The production database, unchanged and not moved. Reached over the peering. |
+| RDS snapshots | Backups before each risky step: `nasa-pre-vpc-move-2026-11-21` and `nasa-pre-cutover-2026-11-24`. |
+| EBS snapshot | A snapshot of the old server's root disk, taken before it was stopped. |
+
+**On the server**
+
+| Technology | Used for | Old | New |
+|---|---|---|---|
+| Node.js and npm | Runs the backend. | not recorded | Node.js 22, npm 10 (CI also uses Node 22 from `.nvmrc`) |
+| Process manager | Starts and restarts the app. | PM2 (enabled at boot) | `systemd` (the `nasa-backend` service) |
+| HTTPS and reverse proxy | Ends HTTPS and passes requests to the app on port 3251. | nginx with certbot | Caddy 2.10, with certificates from Let's Encrypt that it gets and renews by itself |
+| `dotenv` 17 | The app's own reader of the `.env` file. | same | same |
+| `render-env.cjs` | Writes the `.env` from SSM at boot, quoting each value so `dotenv` reads it back exactly, and stops naming the setting (never the value) if one cannot survive. | none | yes |
+| Startup script `user_data.sh.tpl` | Installs everything, downloads the release, renders the settings, starts the app, waits for `/healthz`, starts Caddy, then takes the Elastic IP. | by hand | yes |
+
+**Our tooling**
+
+| Technology | Used for |
+|---|---|
+| `scripts/copy-env-to-ssm.py` | Copies a `.env` into SSM (Python 3, standard library only, calls the AWS CLI; a dry run by default that prints names and lengths, never values). Used once, for the move. |
+| `scripts/package-backend.sh` and the release bucket | Builds `backend-<commit>.tgz` and `backend-latest.tgz` from a git ref and uploads them to the encrypted release bucket, which the instance downloads at boot. |
+| AWS CLI v2 | Every command in the runbook and in this page. |
+| Load-test runner | `docs/infra/loadtest/nasa-load.mjs` (Node) drives simulated drivers and admins; `collect-metrics.py` collects server numbers. |
+
+**Testing**
+
+| Technology | Used for |
+|---|---|
+| Staging load test on a real `t4g.micro` | 20 to 21 Nov 2026: its own test database with fake data of production's size, 10, 25 and 50 drivers at once. Destroyed afterwards (about $0.20). |
+| A local copy in Docker | At the micro's limits (2 CPUs, 670 MB for the app) with PostgreSQL 17: 100 drivers, and 100 drivers plus the weekly upload. The load-test README names OrbStack as an example of the Docker setup. |
+
+**Outside AWS**
+
+| Technology | Used for |
+|---|---|
+| GoDaddy | Registration and DNS for `nasaroutes.com`. The `api` record is an A record on the Elastic IP; it did not change. |
+| Vercel | The frontend (the site and the admin app). |
+| Redis Cloud (hosted Redis) | Login limits; the app falls back to memory when it does not answer. |
+| Everee | Worker onboarding and payments (the scheduled jobs and webhooks). |
+| QuickBooks (Intuit) | The bookkeeping record for 1099 contractors. |
+| Cloudinary and Expo push | Images and mobile notifications. |
+| Let's Encrypt | The HTTPS certificate. |
+| GitHub and GitHub Actions | Pull requests into `develop`, reviewed and merged by the other owner. CI runs on those pull requests (commit messages, frontend, mobile and backend, see `.github/workflows/ci.yml`) with a read-only token, no secrets and no deploy steps. There is no branch protection, so the team rule is never to merge with failing checks. |
+| Claude Code | The AI assistant used by both owners for the Terraform, the scripts and these documents. The rules in `AGENTS.md` and `docs/ENGINEERING_STANDARD.md` bind it: pull requests only into `develop`, never into `main` without the owner's written sentence, no secrets in the repository, a journal entry for every change, and a person reads every line before it is merged. |
+| Slack | Where the two owners agreed each step and where the cutover was recorded (no secrets or values are posted there). |
