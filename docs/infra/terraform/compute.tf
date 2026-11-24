@@ -3,10 +3,32 @@ data "aws_ssm_parameter" "ami" {
 }
 
 # Stable public address for direct mode. In ALB mode there is none (the ALB's DNS name or a CNAME is used).
+# Two ways to have one: create it here (the default), or adopt an address that already exists and that DNS already points
+# at (existing_eip_allocation_id). Adopting keeps DNS as it is. The address that was created here is then released.
+locals {
+  adopt_eip = local.direct && var.existing_eip_allocation_id != ""
+}
+
 resource "aws_eip" "direct" {
-  count  = local.direct ? 1 : 0
+  count  = local.direct && !local.adopt_eip ? 1 : 0
   domain = "vpc"
   tags   = { Name = "${local.name}-direct" }
+}
+
+# The adopted address. prevent_destroy: this is the address in DNS, so a destroy must never release it by accident.
+resource "aws_eip" "api" {
+  for_each = local.adopt_eip ? toset(["api"]) : toset([])
+  domain   = "vpc"
+  tags     = { Name = "${local.name}-direct" }
+
+  lifecycle {
+    prevent_destroy = true
+  }
+}
+
+locals {
+  # The one Elastic IP of direct mode, whichever way it came to be (null when there is none).
+  api_eip = one(concat(values(aws_eip.api), aws_eip.direct))
 }
 
 locals {
@@ -28,7 +50,7 @@ locals {
     swap_mb           = var.swap_mb
     caddy_version     = var.caddy_version
     acme_email        = var.acme_email
-    eip_allocation_id = local.direct ? aws_eip.direct[0].id : ""
+    eip_allocation_id = local.direct ? local.api_eip.id : ""
     local_redis       = local.staging && var.install_local_redis ? "true" : "false"
     test_db_host      = local.test_database ? aws_db_instance.test[0].address : ""
     test_db_port      = local.test_database ? aws_db_instance.test[0].port : 0

@@ -307,3 +307,44 @@ run "peering_with_a_range_inside_the_default_vpc_is_refused" {
 
   expect_failures = [aws_vpc_peering_connection.default]
 }
+
+# Adopting an existing Elastic IP (the production follow-up): the one that exists is imported and managed, none is created
+# beside it, and everything that needs "the" address (the boot script, the instance's permission) reads the adopted one.
+run "an_existing_elastic_ip_is_adopted_instead_of_created" {
+  command = plan
+
+  variables {
+    existing_eip_allocation_id = "eipalloc-0abc1234def567890"
+  }
+
+  # The address is already in the state in production; here the mock provider is given its values
+  # at plan time, so the checks below can read them.
+  override_resource {
+    target          = aws_eip.api["api"]
+    override_during = plan
+    values = {
+      id        = "eipalloc-0abc1234def567890"
+      public_ip = "198.51.100.20"
+      arn       = "arn:aws:ec2:us-east-1:123456789012:elastic-ip/eipalloc-0abc1234def567890"
+    }
+  }
+
+  assert {
+    condition     = length(aws_eip.api) == 1 && length(aws_eip.direct) == 0
+    error_message = "Adopting must manage exactly the existing address and create no second one."
+  }
+  assert {
+    condition     = output.api_ip_for_dns == "198.51.100.20"
+    error_message = "The address handed out for DNS must be the adopted one."
+  }
+}
+
+run "a_malformed_elastic_ip_id_is_refused" {
+  command = plan
+
+  variables {
+    existing_eip_allocation_id = "not-an-allocation-id"
+  }
+
+  expect_failures = [var.existing_eip_allocation_id]
+}

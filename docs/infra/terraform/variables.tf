@@ -99,6 +99,17 @@ variable "api_domain" {
   default     = "api.nasaroutes.com"
 }
 
+variable "existing_eip_allocation_id" {
+  description = "Direct mode: the allocation ID of an Elastic IP that already exists and that api_domain already points at (for example the one moved to the new server at the production cutover). Terraform manages it (it was imported once, in the production follow-up of 24 November 2026) instead of creating a new one. Dropping this variable makes the plan fail on purpose (prevent_destroy), so keep it set. Empty (the default) creates a new Elastic IP. Set it only in your local terraform.tfvars: it is not secret, but IDs stay out of the repository."
+  type        = string
+  default     = ""
+
+  validation {
+    condition     = var.existing_eip_allocation_id == "" || can(regex("^eipalloc-[0-9a-f]{8,17}$", var.existing_eip_allocation_id))
+    error_message = "existing_eip_allocation_id must be empty or look like eipalloc-0123456789abcdef0."
+  }
+}
+
 variable "acm_certificate_arn" {
   description = "Existing ACM certificate for api_domain (ALB mode). Leave empty to have Terraform request one (DNS validation)."
   type        = string
