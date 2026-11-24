@@ -1,8 +1,8 @@
 # NASA AWS infrastructure (Terraform)
 
-Plan and reasoning: [`docs/infra/AWS_NETWORK_PLAN.md`](../AWS_NETWORK_PLAN.md). Costs and the database: [`docs/infra/AWS_COST_OPTIMISATION.md`](../AWS_COST_OPTIMISATION.md). Load test: [`docs/infra/loadtest/`](../../docs/infra/loadtest/README.md).
+Migration write-up: [`docs/infra/VPC_MIGRATION.md`](../VPC_MIGRATION.md). Plan and reasoning: [`docs/infra/AWS_NETWORK_PLAN.md`](../AWS_NETWORK_PLAN.md). Costs and the database: [`docs/infra/AWS_COST_OPTIMISATION.md`](../AWS_COST_OPTIMISATION.md). Load test: [`docs/infra/loadtest/`](../../docs/infra/loadtest/README.md).
 
-**Status: applied in staging only, production never applied.** On 2026-11-20 the stack ran in the NASA account as `environment = "staging"` (direct mode, `t4g.micro`, its own test database), the bootstrap booted on a real instance, the load test ran ([results](../loadtest/README.md#results)), and everything was destroyed again. `terraform validate` and `terraform test` (`tests/modes.tftest.hcl`, mocked provider) pass.
+**Status: applied in production on 2026-11-21; production traffic moved to it on 2026-11-24.** The full story (old and new setup, the reasons, the cutover, the rollback, what is next and how to operate it) is in [`docs/infra/VPC_MIGRATION.md`](../VPC_MIGRATION.md). Before that, on 2026-11-20 the stack ran in the NASA account as `environment = "staging"` (direct mode, `t4g.micro`, its own test database), the bootstrap booted on a real instance, the load test ran ([results](../loadtest/README.md#results)), and everything was destroyed again. `terraform validate` and `terraform test` (`tests/modes.tftest.hcl`, mocked provider) pass.
 
 **Account lock.** `aws_profile` and `aws_account_id` have no defaults, and the provider sets `allowed_account_ids`, so Terraform refuses to run against any other account. Both go in your local `terraform.tfvars` and `backend.hcl` (both git-ignored). The account ID never goes in the repository.
 
