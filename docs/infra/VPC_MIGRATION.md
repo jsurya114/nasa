@@ -190,7 +190,7 @@ Owners are proposals; change them as the two of you agree. "Read" means both rea
 | 1 | **Rollback-week monitoring** | Both | Watch errors, CPU and CPU credits daily. Cover one full week's cycle: the weekly Excel upload, a pay run and the Sunday availability reset. Check Everee's webhook delivery log for failures around 12:21 to 12:22 on 24 Nov and resend any. |
 | 2 | **Terraform follow-up** (one plan, in a quiet window, both read it) | Jayasoorya writes, both read | Import the old Elastic IP into Terraform, release the spare one, set `api_domain = "api.nasaroutes.com"`, apply, then resume `ReplaceUnhealthy`. Until then: the new server's Caddyfile has one hand edit, `ReplaceUnhealthy` is suspended, and **a replaced instance would start with the old startup script: it would take the spare IP and serve the test name, so `api.nasaroutes.com` would be down.** Do not apply anything else meanwhile. Changing `api_domain` changes the startup script, so the group replaces the instance (a few minutes down); the jobs still run on one server only. |
 | 3 | **Delete the old instance and the old 5432 rule** | Jayasoorya, Jasil reads the security group change | Only when: the new server has run cleanly for about 7 days (including the cycle in item 1); item 2 is applied; nothing on the old disk matters (checked on 24 Nov: no `uploads` folder, no cron jobs, only the `api` nginx site; the old `.env` stays private). Then: snapshot its disk (or an image) and keep it about 30 days, turn off termination protection, terminate, then remove the old rule ("Allow EC2 backend") from the database security group and delete the old server's security group (closes the open SSH port). |
-| 4 | **Dedicated database user for the app, and rotate `JWT_SECRET`** | Jayasoorya | The app connects as the database master user today. Rotating `JWT_SECRET` signs everyone out, so do it in a quiet window. Also rotate the secrets that were exposed while copying settings (Everee token and webhook key, QuickBooks secret and key, database and Redis passwords, Cloudinary secret). |
+| 4 | **Dedicated database user for the app, and rotate `JWT_SECRET`** | Jayasoorya | The app connects as the database master user today. Rotating `JWT_SECRET` signs everyone out, so do it in a quiet window. Also rotate the other secrets after the move, as planned: the Everee token and webhook key, the QuickBooks secret and key, the database and Redis passwords, and the Cloudinary secret. |
 | 5 | **GoDaddy access** | Jayasoorya | Find whose account holds `nasaroutes.com` (registered with privacy protection) and get a sign-in or delegate access. Needed for renewals and any future DNS change. Not needed for operating the setup. |
 | 6 | **A single-runner lock for the jobs** | Jayasoorya (code), Jasil reads | Before ever raising `asg_max` above 1 (database advisory lock or a flag). |
 | 7 | **Move the Excel upload to a background worker** | Jasil (reserved files) | The weekly upload blocks Node's event loop for about 16 seconds on a micro. A bigger instance does not fix it. |
@@ -207,11 +207,23 @@ All commands use the NASA AWS profile (`export AWS_PROFILE=nasa AWS_REGION=us-ea
 - HTTPS: `journalctl -u caddy --no-pager | tail -50`.
 - First boot: `/var/log/nasa-bootstrap.log` (ends with "bootstrap finished").
 
-**Change a setting.** The `.env` is rendered from SSM only at boot. So (1) change the value in SSM: `aws ssm put-parameter --name /nasa/prod/<NAME> --type SecureString --value '...' --overwrite` (use the same type as before; check with `get-parameter`, never print the value), and (2) while the instance is not rebuilt, make the same edit in `/opt/nasa/Backend/.env` and run `systemctl restart nasa-backend`. A future replaced instance then renders the same value from SSM. If both disagree, the next boot wins with the SSM value.
+**Change a setting.** The `.env` is rendered from SSM only at boot. So:
+1. Change the value in SSM without leaving it in the shell history: run `read -rs VALUE` (type or paste the value; nothing is shown or saved), then `aws ssm put-parameter --name /nasa/prod/<NAME> --type SecureString --value "$VALUE" --overwrite`, then `unset VALUE`. (Or pass `--value file://<temporary file>` and delete the file straight away.) Use the same type as before, and check with `get-parameter` without `--with-decryption`; never print a value. A value over 4 KB, such as the database certificate chain, must be written with `--tier Advanced`, otherwise the write fails.
+2. While the instance is not rebuilt, make the same change in `/opt/nasa/Backend/.env` by opening it in an editor in a Session Manager shell (not with a command that contains the value), keep it at mode 600, and run `systemctl restart nasa-backend`.
+
+A future replaced instance then renders the same value from SSM. If the two disagree, the next boot wins with the SSM value.
 
 **Deploy a new release.** Build and upload: `docs/infra/scripts/package-backend.sh <release-bucket>` (the bucket name is `terraform output artifact_bucket`). Then:
 - *After item 2 of section 6 is applied:* `aws autoscaling start-instance-refresh --auto-scaling-group-name <group>`. The group replaces the instance with one that starts from the new release (a few minutes down, because it is one instance).
-- *Until then, do not start an instance refresh* (a replacement would take the spare Elastic IP and serve the test name). The interim in-place route is the steps the bootstrap itself performs: download `backend-latest.tgz` from the release bucket, unpack it over `/opt/nasa/Backend` without touching `.env`, `npm ci --omit=dev`, `systemctl restart nasa-backend`. **This route has not been used yet. Agree the first use with the other owner and check `/healthz` and the log straight after.**
+- *Until then, do not start an instance refresh* (a replacement would take the spare Elastic IP and serve the test name). Better still, apply the Terraform follow-up before the first deploy, and use the interim route below only for an urgent fix. It follows what the bootstrap does, but never unpack over the running folder, because files that the new release removed would stay behind:
+  1. Download `backend-latest.tgz` from the release bucket and unpack it into a **new** folder (the archive holds a `Backend` folder), for example `/opt/nasa/release-<date>/`.
+  2. In that new `Backend` folder run `npm ci --omit=dev`.
+  3. Copy the current `.env` into it (mode 600) and make the folder belong to the service user (`ec2-user`).
+  4. Swap the folders: move the running `Backend` to `Backend.prev`, then move the new one into place.
+  5. `systemctl restart nasa-backend`, then check `/healthz` and the log straight away.
+  6. Keep `Backend.prev` for a quick revert (swap back and restart); delete it after a few days.
+
+  **This route has not been used yet. Agree the first use with the other owner.**
 
 **Alarms (emailed to the alert address through SNS).**
 
