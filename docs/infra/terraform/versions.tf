@@ -1,5 +1,5 @@
 terraform {
-  required_version = ">= 1.10"
+  required_version = ">= 1.11" # 1.10 for the S3 state lock, 1.11 for override_during in tests/modes.tftest.hcl
 
   required_providers {
     aws = {

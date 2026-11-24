@@ -244,7 +244,7 @@ What each one is used for, and its version where it matters. Versions are the on
 
 | Technology | Used for | Version and notes |
 |---|---|---|
-| Terraform | Builds and changes the whole AWS setup from `docs/infra/terraform/`. Nothing in the new stack is made by hand. | Needs 1.10 or newer (`required_version`); applied with 1.17.2. |
+| Terraform | Builds and changes the whole AWS setup from `docs/infra/terraform/`. Nothing in the new stack is made by hand. | Needs 1.11 or newer (`required_version`: 1.10 for the S3 state lock, 1.11 for `override_during` in the tests); applied with 1.17.2. |
 | Terraform AWS provider | Talks to AWS. | `~> 6.0` in the code, 6.73.0 in the lock file. The provider is locked to the NASA account (`allowed_account_ids`), so Terraform refuses to run against any other account. |
 | S3 state backend and its bootstrap | Holds Terraform's state: a versioned, encrypted S3 bucket with public access blocked and `prevent_destroy`, using S3's own locking (no DynamoDB table). The bucket is made once by `docs/infra/terraform/bootstrap` with local state, then the main stack uses it. | Local `backend.hcl` and `terraform.tfvars` are git-ignored. |
 | `terraform test` | Plans both modes (direct and load-balancer) against a *mocked* provider, with no credentials and nothing created, and checks that the switches do what the README says and that the startup script stays under 16 KB. | `tests/modes.tftest.hcl`. |
