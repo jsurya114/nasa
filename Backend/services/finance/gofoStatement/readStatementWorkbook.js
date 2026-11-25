@@ -18,10 +18,9 @@ const plain = (value) => {
 const MAX_SHEETS = 20;
 const MAX_ROWS = 200000; // a week of one fleet is about 16,000 lines
 
-export const readStatementWorkbook = async (buffer) => {
-  assertSafeWorkbook(buffer);
-  const workbook = new ExcelJS.Workbook();
-  try { await workbook.xlsx.load(buffer); } catch { throw new StatementError('The file could not be read as an Excel (.xlsx) workbook.'); }
+// The same rows from a workbook that is already open, so a caller that opened it for its own work does not open the file a second time.
+// Keeps the sheet and row limits. The caller is responsible for having run assertSafeWorkbook on the bytes before opening them.
+export const sheetsFromWorkbook = (workbook) => {
   if (workbook.worksheets.length > MAX_SHEETS) throw new StatementError(`The workbook has ${workbook.worksheets.length} sheets; a statement has about nine.`);
   const sheets = {};
   for (const worksheet of workbook.worksheets) {
@@ -31,4 +30,11 @@ export const readStatementWorkbook = async (buffer) => {
     sheets[worksheet.name] = Array.from(rows, (row) => row ?? []);
   }
   return sheets;
+};
+
+export const readStatementWorkbook = async (buffer) => {
+  assertSafeWorkbook(buffer);
+  const workbook = new ExcelJS.Workbook();
+  try { await workbook.xlsx.load(buffer); } catch { throw new StatementError('The file could not be read as an Excel (.xlsx) workbook.'); }
+  return sheetsFromWorkbook(workbook);
 };
