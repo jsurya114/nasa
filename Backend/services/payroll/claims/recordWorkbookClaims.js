@@ -12,7 +12,7 @@ import XLSX from 'xlsx';
 import logger from '../../../utils/logger.js';
 import { CLAIMS_SHEET, parseClaimsWorkbook } from './claimsParser.js';
 import { adjustmentsReady, applyKnownAdjustments, importClaims, rematchAllOpenClaims, retireRefundedClaims, saveAdjustments } from './claimsStore.js';
-import { FEES_SHEET, parseFeeNames } from './courierNames.js';
+import { FEES_SHEET, parseFeeNameRows, parseFeeNames } from './courierNames.js';
 import { getAllowedJobs, isCityLimited } from '../../admin/adminCityAccess.js';
 
 const SAVEPOINT = 'weekly_claims';
@@ -29,6 +29,13 @@ const readSheetWorkbook = (buffer, title) => {
   return XLSX.read(buffer, { type: 'buffer', sheets: name });
 };
 const readClaimsWorkbook = (buffer) => readSheetWorkbook(buffer, CLAIMS_SHEET);
+
+// The driver names in Details of Delivery Fees. When the upload has already read the workbook (sheets: its rows), they come from those rows,
+// so the biggest sheet is not read a second time; otherwise that one sheet is read from the file's bytes, as before.
+const feeNamesFrom = (buffer, sheets) => {
+  const rows = Object.entries(sheets ?? {}).find(([name]) => sheetKey(name) === sheetKey(FEES_SHEET))?.[1];
+  return rows ? { found: true, ...parseFeeNameRows(rows) } : parseFeeNames(readSheetWorkbook(buffer, FEES_SHEET));
+};
 
 // Finds the drivers a claim's name points to: every Delivery ID seen with that name in Details of Delivery Fees is a driver code.
 // A Delivery ID with no NASA driver comes back with driverId null (the claim then waits: "not linked to a NASA driver"). The city
@@ -68,8 +75,9 @@ const cityOfRoutes = async (client, routeCodes) => {
 const notStored = (found, parsed, reason) => ({ found, stored: false, reason, inFile: parsed.claims.length, problems: parsed.problems.length, problemRows: parsed.problems.slice(0, MAX_PROBLEMS_SHOWN) });
 
 // routeCodes: the Region/route values of the report (from the history step). user: req.user.
+// sheets (optional): the rows of the workbook the upload already opened (sheetsFromWorkbook); used for the driver names instead of reading that sheet again.
 // Call inside the caller's open transaction. Never throws for a claims problem: the pay upload must still succeed.
-export const recordWorkbookClaims = async (client, { buffer, fileName, user, routeCodes }) => {
+export const recordWorkbookClaims = async (client, { buffer, fileName, user, routeCodes, sheets }) => {
   let parsed;
   try {
     parsed = parseClaimsWorkbook(readClaimsWorkbook(buffer), { courier: COURIER });
@@ -129,7 +137,7 @@ export const recordWorkbookClaims = async (client, { buffer, fileName, user, rou
       ? await retireRefundedClaims(client, { cityId: city.id, cancelled })
       : { retired: 0, left: 0 };
     if (empty) {
-      const fees = parseFeeNames(readSheetWorkbook(buffer, FEES_SHEET));
+      const fees = feeNamesFrom(buffer, sheets);
       const rematched = await rematchAllOpenClaims(client, nameFinderFor(client, fees.names), { cityId: city.id, by: 'name' });
       await client.query(`RELEASE SAVEPOINT ${SAVEPOINT}`);
       return {
@@ -157,7 +165,7 @@ export const recordWorkbookClaims = async (client, { buffer, fileName, user, rou
     });
     // Matching: the names in this report's Details of Delivery Fees. Every open claim of this city is looked at, so a claim an
     // earlier report could not match is matched now if its driver delivered this week. importClaims stores; it does not match.
-    const fees = parseFeeNames(readSheetWorkbook(buffer, FEES_SHEET));
+    const fees = feeNamesFrom(buffer, sheets);
     await rematchAllOpenClaims(client, nameFinderFor(client, fees.names), { cityId: city.id, by: 'name' });
 
     const touched = [...stored.inserted, ...stored.amended].map((c) => c.claimId);

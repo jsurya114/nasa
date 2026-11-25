@@ -24,10 +24,11 @@ const cityToken = (value) => String(value ?? '').trim().split(/[\s-]+/)[0].toUpp
 const rejected = (reasons, extra = {}) => ({ status: 'rejected', reasons: reasons.slice(0, MAX_REASONS), ...extra });
 
 // Step 1: the workbook on its own. Returns { statement, reconciliation, week } or a rejection.
-export const readAndReconcile = async (buffer) => {
+// sheets: the rows of a workbook the caller has already opened and checked (sheetsFromWorkbook); without it the bytes are checked and opened here.
+export const readAndReconcile = async (buffer, { sheets } = {}) => {
   let statement;
   try {
-    statement = parseStatement(await readStatementWorkbook(buffer));
+    statement = parseStatement(sheets ?? await readStatementWorkbook(buffer));
   } catch (error) {
     if (error instanceof StatementError) return rejected([error.message]);
     throw error;
@@ -110,8 +111,8 @@ const outcomeOf = (existing, fingerprint) => {
 };
 
 // Read-only: everything publishing would check, and what it would do. Stores nothing.
-export const previewStatement = async (db, buffer) => {
-  const reviewed = await readAndReconcile(buffer);
+export const previewStatement = async (db, buffer, { sheets } = {}) => {
+  const reviewed = await readAndReconcile(buffer, { sheets });
   if (reviewed.status !== 'ok') return reviewed;
   const plan = await planStatement(db, reviewed);
   if (plan.status !== 'ready') return plan;
