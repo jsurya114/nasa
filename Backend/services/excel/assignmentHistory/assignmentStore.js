@@ -59,20 +59,39 @@ const knownRoutes = async (db, routeCodes) => {
   return new Map(rows.map((row) => [row.code, row.job]));
 };
 
+// Stores new facts already resolved, with the same rule refreshOpenAssignments uses (the Delivery ID against NASA's
+// driver codes, the Region/route against NASA's route codes and their city). Doing it in the insert means a new
+// fact is written once, not written and then updated, which is most of the time of a big file. refreshOpenAssignments
+// still resolves facts stored earlier. Returns how many facts were stored, and how many of them got a driver and a route now.
 const insertAssignments = async (db, facts, importId) => {
-  let recorded = 0;
+  const stored = { recorded: 0, drivers: 0, routes: 0 };
   for (const batch of chunks(facts, BATCH_SIZE)) {
-    const { rowCount } = await db.query(
-      `INSERT INTO carrier_package_assignments
-         (carrier, identity_hash, waybill, waybill_key, external_delivery_id, id_form, route_code, signed_at, signed_on,
-          driver_state, route_state, first_import_id)
-       SELECT $1, t.hash, t.waybill, t.key, t.delivery_id, t.form, t.route, t.signed_at, t.signed_on,
-              CASE WHEN t.form = 'canonical' THEN 'unknown_driver' ELSE 'unusable_id' END,
-              CASE WHEN t.route IS NULL THEN 'no_route' ELSE 'unknown_route' END,
-              $2
-         FROM unnest($3::text[], $4::text[], $5::text[], $6::text[], $7::text[], $8::text[], $9::timestamp[], $10::date[])
-              AS t(hash, waybill, key, delivery_id, form, route, signed_at, signed_on)
-       ON CONFLICT (identity_hash) DO NOTHING`,
+    const { rows } = await db.query(
+      `WITH inserted AS (
+         INSERT INTO carrier_package_assignments
+           (carrier, identity_hash, waybill, waybill_key, external_delivery_id, id_form, route_code, signed_at, signed_on,
+            driver_state, driver_id, driver_resolved_at, route_state, route_id, city_id, route_resolved_at, first_import_id)
+         SELECT $1, t.hash, t.waybill, t.key, t.delivery_id, t.form, t.route, t.signed_at, t.signed_on,
+                CASE WHEN t.form <> 'canonical' THEN 'unusable_id' WHEN d.id IS NULL THEN 'unknown_driver' ELSE 'resolved' END,
+                d.id,
+                CASE WHEN d.id IS NOT NULL THEN now() END,
+                CASE WHEN t.route IS NULL THEN 'no_route' WHEN rc.route_id IS NULL THEN 'unknown_route' ELSE 'resolved' END,
+                rc.route_id,
+                rc.city_id,
+                CASE WHEN rc.route_id IS NOT NULL THEN now() END,
+                $2
+           FROM unnest($3::text[], $4::text[], $5::text[], $6::text[], $7::text[], $8::text[], $9::timestamp[], $10::date[])
+                AS t(hash, waybill, key, delivery_id, form, route, signed_at, signed_on)
+           LEFT JOIN drivers d ON t.form = 'canonical' AND d.driver_code::text = t.delivery_id
+           LEFT JOIN (SELECT r.route_code_in_string AS code, r.id AS route_id, c.id AS city_id
+                        FROM routes r JOIN city c ON c.job = r.job) rc ON t.route IS NOT NULL AND rc.code = t.route
+         ON CONFLICT (identity_hash) DO NOTHING
+         RETURNING driver_state, route_state
+       )
+       SELECT count(*)::int AS recorded,
+              (count(*) FILTER (WHERE driver_state = 'resolved'))::int AS drivers,
+              (count(*) FILTER (WHERE route_state = 'resolved'))::int AS routes
+         FROM inserted`,
       [
         CARRIER, importId,
         batch.map((f) => f.identityHash), batch.map((f) => f.waybill), batch.map((f) => f.waybillKey),
@@ -80,9 +99,11 @@ const insertAssignments = async (db, facts, importId) => {
         batch.map((f) => f.signedAt), batch.map((f) => f.signedOn),
       ]
     );
-    recorded += rowCount;
+    stored.recorded += rows[0].recorded;
+    stored.drivers += rows[0].drivers;
+    stored.routes += rows[0].routes;
   }
-  return recorded;
+  return stored;
 };
 
 // How many of these facts are already stored but no longer stand (every report that held them was voided). A report
@@ -176,12 +197,14 @@ export const recordReport = async (db, report, source) => {
 
   const facts = [...new Map(rows.map((r) => [r.identityHash, r])).values()];
   const revived = await countRevived(db, facts);
-  const recorded = await insertAssignments(db, facts, importId);
+  const { recorded, drivers: newDrivers, routes: newRoutes } = await insertAssignments(db, facts, importId);
   await insertSightings(db, rows, importId);
   const known = facts.length - recorded;
   await db.query('UPDATE carrier_assignment_imports SET recorded_rows = $2, known_rows = $3 WHERE id = $1', [importId, recorded, known]);
 
-  const resolved = await refreshOpenAssignments(db);
+  // Facts stored earlier that can be resolved now, plus the new facts that were resolved as they were stored.
+  const refreshed = await refreshOpenAssignments(db);
+  const resolved = { drivers: refreshed.drivers + newDrivers, routes: refreshed.routes + newRoutes };
   return { importId, alreadyRecorded: false, voided: false, recorded, known, revived, skipped, problems: report.problemCount, resolved };
 };
 
