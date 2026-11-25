@@ -65,12 +65,13 @@ const navLinks = (isSuperAdmin) => {
   return [...document.querySelectorAll("a")].map((a) => a.getAttribute("href"));
 };
 
-it("the menu lists Payroll, Pay runs and Insights for the super admin only", () => {
+it("the menu lists Payroll, Pay runs, Insights and Statements for the super admin only", () => {
   const forAdmin = navLinks(false);
   expect(forAdmin).toContain("/admin/dashboard");
   expect(forAdmin).not.toContain("/admin/payroll");
   expect(forAdmin).not.toContain("/admin/pay-runs");
   expect(forAdmin).not.toContain("/admin/insights");
+  expect(forAdmin).not.toContain("/admin/carrier-statements");
   expect(forAdmin, "Claims is for every admin").toContain("/admin/claims");
   cleanup();
   const forSuper = navLinks(true);
@@ -78,4 +79,5 @@ it("the menu lists Payroll, Pay runs and Insights for the super admin only", () 
   expect(forSuper).toContain("/admin/payroll");
   expect(forSuper).toContain("/admin/pay-runs");
   expect(forSuper).toContain("/admin/insights");
+  expect(forSuper).toContain("/admin/carrier-statements");
 });

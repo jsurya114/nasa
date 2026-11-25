@@ -7,7 +7,8 @@ import { configureStore } from "@reduxjs/toolkit";
 
 afterEach(cleanup);
 
-// The top-level Statements tab is gone (#252): the weekly upload carries the statement. The owner still has Insights, which links to the import history.
+// The Statements tab was taken out when the weekly upload started to carry the statement (#252, #262). It is back for the super admin only, because the
+// upload's own link is easy to miss when a week stays "estimated" and the statement has to be reviewed by hand.
 vi.mock("./GlassTabBar.jsx", () => ({ default: ({ items }) => <ul>{items.map((i) => <li key={i.to} data-to={i.to}>{i.label}</li>)}</ul> }));
 
 const links = async (isSuperAdmin) => {
@@ -18,15 +19,14 @@ const links = async (isSuperAdmin) => {
 };
 
 describe("the admin menu", () => {
-  it("has no Statements tab for the owner, and still has File Upload and Insights", async () => {
+  it("has a Statements tab for the owner, next to File Upload and Insights", async () => {
     const owner = await links(true);
-    expect(owner.some(([label]) => label === "Statements")).toBe(false);
-    expect(owner.some(([, to]) => to === "/admin/carrier-statements")).toBe(false);
+    expect(owner).toContainEqual(["Statements", "/admin/carrier-statements"]);
     expect(owner).toContainEqual(["File Upload", "/admin/double-stop"]);
     expect(owner).toContainEqual(["Insights", "/admin/insights"]);
   });
 
-  it("has none for a city admin either, and no owner-only tabs", async () => {
+  it("has no Statements or Insights tab for a city admin", async () => {
     const city = await links(false);
     expect(city.some(([label]) => label === "Statements" || label === "Insights")).toBe(false);
   });
