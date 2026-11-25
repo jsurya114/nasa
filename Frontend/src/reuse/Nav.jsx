@@ -14,6 +14,7 @@ import {
   BarChart3,
   ReceiptText,
   FileWarning,
+  FileCheck,
 } from "lucide-react";
 import GlassTabBar from "./GlassTabBar.jsx";
 import useInvoiceAccess from "../components/Admin/invoice/useInvoiceAccess.js";
@@ -31,11 +32,12 @@ function Nav() {
     { to: "/admin/driver-availability", Icon: CalendarDays, label: "Availability" },
     { to: "/admin/agreements", Icon: FileText, label: "Agreements" },
     { to: "/admin/claims", Icon: FileWarning, label: "Claims" },
-    // Payroll, pay runs and Insights are for the super admin only. Invoices is also for the admins the super admin switched it on for.
+    // Payroll, pay runs, Insights and Statements are for the super admin only. Invoices is also for the admins the super admin switched it on for.
     ...(isSuperAdmin ? [
       { to: "/admin/payroll", Icon: Wallet, label: "Payroll" },
       { to: "/admin/pay-runs", Icon: Banknote, label: "Pay runs" },
       { to: "/admin/insights", Icon: BarChart3, label: "Insights" },
+      { to: "/admin/carrier-statements", Icon: FileCheck, label: "Statements" },
     ] : []),
     ...(canUseInvoices ? [{ to: "/admin/invoices", Icon: ReceiptText, label: "Invoices" }] : []),
   ];
