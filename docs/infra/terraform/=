@@ -1,0 +1,4 @@
+Terraform v1.17.2
+on darwin_arm64
++ provider registry.terraform.io/hashicorp/aws v6.73.0
+
