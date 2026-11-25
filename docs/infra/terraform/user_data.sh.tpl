@@ -31,6 +31,9 @@ if [ ! -f /swapfile ]; then
   dd if=/dev/zero of=/swapfile bs=1M count=${swap_mb} && chmod 600 /swapfile && mkswap /swapfile && swapon /swapfile
   echo '/swapfile none swap defaults 0 0' >> /etc/fstab
 fi
+# Use swap only under real memory pressure, so a big upload slows down instead of crashing.
+printf 'vm.swappiness=10\n' > /etc/sysctl.d/99-nasa-swap.conf
+sysctl -p /etc/sysctl.d/99-nasa-swap.conf
 %{ endif ~}
 
 %{ if local_redis == "true" ~}
@@ -134,6 +137,8 @@ ExecStart=$NODE_BIN app.js
 Restart=always
 RestartSec=3
 LimitNOFILE=65535
+# No core dump on a crash: writing one took about 5 minutes on a 1 GiB server, so a crash meant 5 minutes down instead of 3 seconds.
+LimitCORE=0
 Environment=NODE_OPTIONS=--max-old-space-size=${node_heap_mb}
 
 [Install]

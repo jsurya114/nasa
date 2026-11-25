@@ -393,3 +393,21 @@ run "staging_has_no_drill_log_bucket" {
     error_message = "Staging never creates the drill-log bucket."
   }
 }
+
+run "a_crash_writes_no_core_dump_and_swap_is_used_only_under_pressure" {
+  command = plan
+
+  variables {
+    swap_mb      = 2048
+    node_heap_mb = 768
+  }
+
+  assert {
+    condition     = strcontains(local.user_data, "LimitCORE=0") && strcontains(local.user_data, "--max-old-space-size=768")
+    error_message = "The service has no core dump, and the heap variable reaches the unit."
+  }
+  assert {
+    condition     = strcontains(local.user_data, "dd if=/dev/zero of=/swapfile bs=1M count=2048") && strcontains(local.user_data, "vm.swappiness=10")
+    error_message = "A 2 GiB swap file is created and used only under memory pressure."
+  }
+}

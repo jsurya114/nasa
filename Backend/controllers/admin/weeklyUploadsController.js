@@ -321,6 +321,9 @@ import { unlink } from "fs";
 import { recordWorkbookHistory } from "../../services/excel/assignmentHistory/recordWorkbookHistory.js";
 import { recordWorkbookClaims } from "../../services/payroll/claims/recordWorkbookClaims.js";
 import { reviewImport, stageImport } from "../../services/finance/gofoStatement/weeklyImport.js";
+import { sheetsFromWorkbook } from "../../services/finance/gofoStatement/readStatementWorkbook.js";
+import { assertSafeWorkbook } from "../../services/finance/gofoStatement/workbookSafety.js";
+import { StatementError } from "../../services/finance/gofoStatement/statementMoney.js";
 import { findMissingDrivers } from "../../services/admin/weeklyMissingDrivers.js";
 
 
@@ -581,14 +584,23 @@ export const weeklyExcelUpload = async (req, res) => {
 
 async function processExcelFromBuffer(buffer, client, startTime, user, fileName) {
 
-  const workbook = new ExcelJS.Workbook();
+  // The file is checked before anything opens it (a small zip can inflate to gigabytes), and is opened once: the rows the later steps need
+  // (driver names for claims, the statement check) are taken from this one opened workbook instead of reading the file again.
+  try {
+    assertSafeWorkbook(buffer);
+  } catch (error) {
+    if (error instanceof StatementError) throw new UploadFileError(`${error.message} Nothing was changed.`);
+    throw error;
+  }
+
+  let workbook = new ExcelJS.Workbook();
   try {
     await workbook.xlsx.load(buffer);
   } catch {
     throw new UploadFileError("The file could not be read. Upload the Excel (.xlsx) file as downloaded. Nothing was changed.");
   }
 
-  const worksheet = workbook.getWorksheet("Details of Delivery Fees");
+  let worksheet = workbook.getWorksheet("Details of Delivery Fees");
   if (!worksheet) {
     const availableSheets = workbook.worksheets.map(ws => ws.name);
     throw new UploadFileError(
@@ -786,9 +798,20 @@ async function processExcelFromBuffer(buffer, client, startTime, user, fileName)
     // cannot be saved, the pay data above is stored exactly as it always was.
     const { routeCodes, ...assignmentHistory } = await recordWorkbookHistory(client, workbook, { buffer, fileName, user, bestEffort: true });
 
+    // Turn the opened workbook into plain rows once, then let go of it, so the big workbook and the rows are not both held while the later steps run.
+    // If that fails (for example too many sheets), the later steps read the file from its bytes as they always did.
+    let sheets;
+    try {
+      sheets = sheetsFromWorkbook(workbook);
+    } catch {
+      sheets = undefined;
+    }
+    workbook = null;
+    worksheet = null;
+
     // Courier claims on the report's Claims Detail sheet (issue #141), stored after the history so they can be matched
     // against it. Also in a savepoint: a claims problem never changes what the pay upload stores.
-    const claims = await recordWorkbookClaims(client, { buffer, fileName, user, routeCodes });
+    const claims = await recordWorkbookClaims(client, { buffer, fileName, user, routeCodes, sheets });
 
     // The same file is also the carrier's statement (issue #252): keep it as the import tied to this staged data, in a savepoint, so a problem here never
     // changes what the pay upload stores.
@@ -798,7 +821,7 @@ async function processExcelFromBuffer(buffer, client, startTime, user, fileName)
     logger.info('Weekly upload stored', { processed: totalProcessed, skipped: totalSkipped, groups: totalInserted });
 
     // Check on the same connection after committing staging. A failed or late check cannot undo the upload.
-    const revenue = await reviewImport(client, staged.id, buffer, user, staged.reason);
+    const revenue = await reviewImport(client, staged.id, buffer, user, staged.reason, { sheets });
 
     // Who is on the city's driver list but not in this file (a warning only; never changes what was stored).
     const missingDrivers = await findMissingDrivers(client, {

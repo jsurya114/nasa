@@ -103,10 +103,11 @@ const close = async (db, id, fields, { stagedOnly = false } = {}) => {
 };
 
 // After the upload committed: check the statement without storing anything, and record what was found. Never throws.
-export const reviewImport = async (db, importId, buffer, user, stageReason = 'Revenue import is not set up in the database yet.') => {
+// sheets: the rows of the workbook the upload already opened (sheetsFromWorkbook); without it the file is opened again from the bytes.
+export const reviewImport = async (db, importId, buffer, user, stageReason = 'Revenue import is not set up in the database yet.', { sheets } = {}) => {
   if (!importId) return unavailable(stageReason);
   try {
-    const preview = await previewStatement(db, buffer);
+    const preview = await previewStatement(db, buffer, { sheets });
     const kind = preview.outcome?.kind;
     const status = kind === 'correction' ? 'needs_confirmation' : kind ?? preview.status;
     const outcome = status === 'new'

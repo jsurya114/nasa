@@ -19,5 +19,9 @@ app_single_az      = true        # same Availability Zone as the database
 asg_min            = 1
 asg_desired        = 1
 asg_max            = 1
+# The weekly upload of the biggest file needs about 640 MB of Node heap with today's code (docs/journal/2026-11-25-weekly-upload-read-once.md).
+# Swap makes a memory squeeze slow the upload down instead of crashing the service. Remove both lines once the upload no longer needs it.
+swap_mb      = 2048
+node_heap_mb = 768
 
 monthly_budget_usd = 50
