@@ -4,6 +4,7 @@ import { useSelector, useDispatch } from "react-redux";
 import { accessAdminUser } from "../../redux/slice/admin/adminSlice";
 import AuthCheckRetry from "../../native/AuthCheckRetry.jsx";
 import PushSetup from "../../native/PushSetup.jsx";
+import Loader from "../../components/Loader.jsx";
 
 const ProtectedRoutes = () => {
   const dispatch = useDispatch();
@@ -19,9 +20,11 @@ const ProtectedRoutes = () => {
     }
   }, [dispatch, isAuthenticated]);
 
-  if (loading) return null;
+  // A page-shaped "Loading" instead of nothing: while the server is busy (for example during a big upload)
+  // the sign-in check can take several seconds, and an empty screen looks like a broken page.
+  if (loading) return <Loader />;
   if (isAuthenticated === null) {
-    return authCheckFailed ? <AuthCheckRetry onRetry={() => dispatch(accessAdminUser())} /> : null;
+    return authCheckFailed ? <AuthCheckRetry onRetry={() => dispatch(accessAdminUser())} /> : <Loader />;
   }
 
   return isAuthenticated ? (
