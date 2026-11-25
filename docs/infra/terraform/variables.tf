@@ -354,3 +354,13 @@ variable "peer_db_route_table_id" {
   type        = string
   default     = ""
 }
+
+variable "drill_log_retention_days" {
+  description = "Days after upload when the logs saved before the recovery drill are deleted (the private drill-logs bucket, production only). The agreed rule is about 30 days after the old server is deleted; 35 covers a drill on 27 November and the old server gone by 1 December. Adjust when that date is fixed."
+  type        = number
+  default     = 35
+  validation {
+    condition     = var.drill_log_retention_days >= 7 && var.drill_log_retention_days <= 90
+    error_message = "Keep the saved logs between 7 and 90 days."
+  }
+}
