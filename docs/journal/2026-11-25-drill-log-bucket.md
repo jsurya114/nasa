@@ -14,6 +14,8 @@
 
 **Nothing is applied.** A real `terraform plan` against production says `5 to add, 0 to change, 0 to destroy` (the bucket, its public-access block, encryption, lifecycle rule and TLS-only policy). No existing resource changes. Applying needs both owners to have read the plan, as before.
 
+**Review changes (Jasil's review, same day).** `DRILL_LOG_SAVE.md` step D no longer asks for the literal bucket name (it contains the AWS account number and this repository is public): the drill's journal entry says "the drill-logs bucket (`terraform output drill_logs_bucket`)", and Slack gets size and sha256 only. The presign step pins `boto3[crt]==1.44.11` and forces SigV4. `[crt]` is needed because the `nasa` profile signs in with `aws login`, which boto3 cannot use without it. I ran the pinned version with dummy keys: it produced a SigV4 link valid for 900 seconds.
+
 **Database.** None. **Config and dependencies.** One new Terraform variable and one output; no application change. **Money impact.** None to pay. AWS cost: a few MB in S3 for about five weeks, well under a cent.
 
 **Tested.** `terraform fmt -check`, `terraform validate`, `terraform test` (16 passed: three new, for the bucket, the bounded retention and no bucket in staging, with the local `terraform.tfvars` moved aside), and the plan above. **Not tested:** the upload commands in `DRILL_LOG_SAVE.md` (the bucket does not exist yet), including the pre-signed link step; test it with a small dummy file right after the apply.

@@ -29,10 +29,10 @@ Write the size and the sha256 down (they go in the Slack thread). The app does n
 ```bash
 BUCKET=$(cd docs/infra/terraform && terraform output -raw drill_logs_bucket)
 KEY="drill/$(date +%F)/nasa-logs-before-drill.tgz"
-python3 -m venv /tmp/presign-venv && /tmp/presign-venv/bin/pip install -q boto3
+python3 -m venv /tmp/presign-venv && /tmp/presign-venv/bin/pip install -q 'boto3[crt]==1.44.11'   # pinned to the version tested; [crt] is needed when the profile uses `aws login`
 URL=$(/tmp/presign-venv/bin/python - "$BUCKET" "$KEY" <<'PY'
-import sys, boto3
-s3 = boto3.Session(profile_name="nasa", region_name="us-east-1").client("s3")
+import sys, boto3, botocore.config
+s3 = boto3.Session(profile_name="nasa", region_name="us-east-1").client("s3", config=botocore.config.Config(signature_version="s3v4"))
 print(s3.generate_presigned_url("put_object", Params={"Bucket": sys.argv[1], "Key": sys.argv[2]}, ExpiresIn=900, HttpMethod="PUT"))
 PY
 )
@@ -50,7 +50,7 @@ run_on_new 'shred -u /tmp/nasa-logs-before-drill.tgz 2>/dev/null || rm -f /tmp/n
 
 For a file uploaded in one piece the `ETag` is the file's md5: it must equal the `md5` from step A, and `ContentLength` must equal `size_bytes`. If either differs, upload again (new link); do not start the refresh until they match.
 
-**D. Record it.** Post the size and sha256 in the Slack thread, and write the bucket, the key and the expiry date (location only, never contents) in the drill's journal entry. Do not download the file back to a laptop except to read a specific time period, and delete that copy afterwards.
+**D. Record it.** Post the size and sha256 in the Slack thread, and write "the drill-logs bucket (`terraform output drill_logs_bucket`)", the key and the expiry date (location only, never contents) in the drill's journal entry. **Never write the literal bucket name** (it contains the AWS account number and this repository is public), and post only the size and sha256 in Slack, not the name. Do not download the file back to a laptop except to read a specific time period, and delete that copy afterwards.
 
 ## 3. After
 
@@ -59,4 +59,4 @@ For a file uploaded in one piece the `ETag` is the file's md5: it must equal the
 
 ## 4. What is tested and what is not
 
-`terraform validate`, `terraform test` (16 passed, three of them for this bucket) and a real `terraform plan` against production: 5 to add, 0 to change, 0 to destroy. **Not tested:** the commands in section 2 (the bucket does not exist yet; test the upload with a small dummy file as soon as the bucket is applied, and fix this file from what it shows), and the presign step.
+`terraform validate`, `terraform test` (16 passed, three of them for this bucket) and a real `terraform plan` against production: 5 to add, 0 to change, 0 to destroy. **Not tested:** the commands in section 2 (the bucket does not exist yet; test the upload with a small dummy file as soon as the bucket is applied, and fix this file from what it shows). The presign step was run with the pinned version against dummy keys (it gave a SigV4 link valid for 900 seconds); it was not run with the real profile or against the bucket.
