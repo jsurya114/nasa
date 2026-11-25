@@ -348,3 +348,48 @@ run "a_malformed_elastic_ip_id_is_refused" {
 
   expect_failures = [var.existing_eip_allocation_id]
 }
+
+run "prod_has_a_private_encrypted_drill_log_bucket_that_expires" {
+  command = plan
+
+  assert {
+    condition     = length(aws_s3_bucket.drill_logs) == 1 && aws_s3_bucket_public_access_block.drill_logs[0].block_public_acls && aws_s3_bucket_public_access_block.drill_logs[0].block_public_policy && aws_s3_bucket_public_access_block.drill_logs[0].ignore_public_acls && aws_s3_bucket_public_access_block.drill_logs[0].restrict_public_buckets
+    error_message = "Production gets one drill-log bucket with public access fully blocked."
+  }
+  assert {
+    condition     = one(aws_s3_bucket_lifecycle_configuration.drill_logs[0].rule).expiration[0].days == 35
+    error_message = "Saved logs expire after 35 days by default."
+  }
+}
+
+run "drill_log_retention_is_bounded" {
+  command = plan
+  variables {
+    drill_log_retention_days = 3
+  }
+  expect_failures = [var.drill_log_retention_days]
+}
+
+run "staging_has_no_drill_log_bucket" {
+  command = plan
+
+  variables {
+    environment           = "staging"
+    instance_type         = "t4g.micro"
+    public_ingress_cidrs  = []
+    tls_mode              = "internal"
+    api_domain            = "staging-api.nasa.test"
+    install_local_redis   = true
+    create_test_database  = true
+    create_load_generator = true
+    detailed_monitoring   = true
+    app_single_az         = true
+    ssm_parameter_path    = "/nasa/staging"
+    monthly_budget_usd    = 10
+  }
+
+  assert {
+    condition     = length(aws_s3_bucket.drill_logs) == 0
+    error_message = "Staging never creates the drill-log bucket."
+  }
+}

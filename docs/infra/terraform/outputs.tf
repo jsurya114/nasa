@@ -71,3 +71,8 @@ output "peering_connection_id" {
   description = "VPC peering connection to the default VPC (null when peer_default_vpc is false)."
   value       = var.peer_default_vpc ? aws_vpc_peering_connection.default[0].id : null
 }
+
+output "drill_logs_bucket" {
+  description = "Private bucket for the logs saved before the recovery drill (production only; empty in staging). Upload only through a short-lived pre-signed PUT link."
+  value       = local.staging ? "" : aws_s3_bucket.drill_logs[0].bucket
+}
