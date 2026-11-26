@@ -18,6 +18,7 @@ import { toast } from "react-toastify";
 import Analystic from "./Analystic";
 import UploadResultSummary from "./UploadResultSummary";
 import RevenueResult from "./RevenueResult";
+import DailyByNameResult from "./dailyMatching/DailyByNameResult.jsx";
 
 const DoubleStop = () => {
   const dispatch = useDispatch();
@@ -34,6 +35,8 @@ const DoubleStop = () => {
   const dailyLoading = useSelector((state) => state.excel?.daily?.loading);
   const weeklyResult = useSelector(selectWeeklyResult);
   const appliedRevenue = useSelector(selectAppliedRevenue);
+  // The daily upload's answer: with the "find drivers by name" switch on it says what happened to every row of the file.
+  const [dailyResult, setDailyResult] = useState(null);
 
   // Daily form state
   const [dailyForm, setDailyForm] = useState({
@@ -88,9 +91,11 @@ const DoubleStop = () => {
     formData.append("file", dailyForm.file);
     formData.append("uploadDate", selectedDate);
     
+    setDailyResult(null);
     dispatch(excelDailyFileUpload(formData))
       .unwrap()
-      .then(() => {
+      .then((res) => {
+        setDailyResult(res?.byName ?? null);
         toast.success("Daily file uploaded successfully");
 
         // Refresh dashboard for selected date with default pagination
@@ -309,6 +314,7 @@ const DoubleStop = () => {
             </form>
           </section>
         )}
+        {activeView === "daily" && <DailyByNameResult byName={dailyResult} />}
 
         {/* Uploaded Data - Only show for the current view */}
         {activeView === "weekly" && (
