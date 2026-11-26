@@ -53,9 +53,15 @@ const createSession = ({ storage, request }) => {
   let migration = null;
   const migrate = () => {
     migration ??= (async () => {
-      const stored = await Promise.all(AREAS.map((area) => storage.getItem(keyFor(area))));
-      if (stored.every(Boolean)) await Promise.all(AREAS.map((area) => clear(area)));
-    })().catch(() => {});
+      let stored;
+      try {
+        stored = await Promise.all(AREAS.map((area) => storage.getItem(keyFor(area))));
+      } catch {
+        // Cannot tell what the phone holds: sign out of both rather than risk keeping two people
+        stored = AREAS.map(() => true);
+      }
+      if (stored.every(Boolean)) await Promise.all(AREAS.map((area) => clear(area).catch(() => {})));
+    })();
     return migration;
   };
 
@@ -72,6 +78,8 @@ const createSession = ({ storage, request }) => {
     const attempt = (async () => {
       const refreshToken = await storage.getItem(keyFor(area));
       if (!refreshToken) throw new SessionError("no_session");
+      // Signed out (or someone else signed in) while the token was being read: do not use it
+      if (generation[area] !== started) throw new SessionError("signed_out");
 
       let reply;
       try {
@@ -85,7 +93,11 @@ const createSession = ({ storage, request }) => {
         // The rotated token is saved in order with every other change. If a sign-out or a new sign-in happened
         // meanwhile, this write is dropped, and if it was already running, the later change overwrites it.
         await enqueue(area, async () => {
-          if (generation[area] !== started) throw new SessionError("signed_out");
+          if (generation[area] !== started) {
+            // The session ended while the server was answering: revoke the new token it just issued as well
+            revokeIssued(area, reply.data);
+            throw new SessionError("signed_out");
+          }
           await storage.setItem(keyFor(area), reply.data.refreshToken);
           if (generation[area] !== started) throw new SessionError("signed_out");
           accessTokens[area] = reply.data.accessToken;
@@ -112,6 +124,11 @@ const createSession = ({ storage, request }) => {
 
     refreshing.set(area, attempt);
     return attempt;
+  };
+
+  // Background, never rejects: revokes tokens the server issued for a session that has already ended here.
+  const revokeIssued = (area, { accessToken, refreshToken }) => {
+    request(`/${area}/logout`, { token: accessToken, body: { refreshToken } }).catch(() => {});
   };
 
   // Sign out. The stored refresh token is wiped FIRST, so the session can never come back at the next start,
