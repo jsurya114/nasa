@@ -327,6 +327,7 @@ import { workbookFromRows } from "../../services/excel/workbookFromRows.js";
 import { assertSafeWorkbook } from "../../services/finance/gofoStatement/workbookSafety.js";
 import { StatementError } from "../../services/finance/gofoStatement/statementMoney.js";
 import { findMissingDrivers } from "../../services/admin/weeklyMissingDrivers.js";
+import { findUnmatchedRows } from "../../services/admin/weeklyUnmatchedRows.js";
 
 
 export const getWeeklyTempData=async(req,res)=>{
@@ -832,6 +833,10 @@ async function processExcelFromBuffer(buffer, client, startTime, user, fileName)
       routeCodes: [...new Set(dataArray.map((entry) => entry.del_route))],
     });
 
+    // Lines of this file that "Add to Dashboard" will skip (Delivery ID not a driver, driver disabled, route not in the app), and a count of every file row.
+    // A warning only; never changes what was stored.
+    const unmatched = await findUnmatchedRows(client, dataArray, { read: totalProcessed, unreadable: totalSkipped });
+
     return {
       success: true,
       recordsProcessed: totalProcessed,
@@ -842,7 +847,8 @@ async function processExcelFromBuffer(buffer, client, startTime, user, fileName)
       assignmentHistory,
       claims,
       revenue,
-      missingDrivers
+      missingDrivers,
+      unmatched
     };
 
   } catch (dbError) {
