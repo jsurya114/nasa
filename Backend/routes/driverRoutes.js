@@ -8,6 +8,7 @@ import { getAccessCodes, createAccessCode } from '../controllers/driver/accessCo
 import { getDriverRoutes } from "../controllers/admin/routeController.js";
 import getDeliverySummary from "../controllers/driver/deliveryController.js";
 import driverAuth from '../middlewares/driverAuth.js';
+import { driverDeletion } from '../controllers/accountDeletionController.js';
 import validateCityType, { attachCityType } from '../middlewares/validateCityType.js';
 import { requireSelf } from '../middlewares/requireSelf.js';
 import { createOnboardingSession, getOnboardingStatus, refreshOnboarding, startDriverOnboarding } from "../controllers/driver/evereeOnboardingController.js";
@@ -29,6 +30,11 @@ router.post('/refresh-token', driverController.RefreshToken)
 
 // Protect all routes below this line
 router.use(driverAuth)
+
+// Account deletion: see, ask for (with the password) and withdraw the driver's own request
+router.get('/account-deletion', driverDeletion.status)
+router.post('/account-deletion', driverDeletion.request)
+router.delete('/account-deletion', driverDeletion.cancel)
 
 router.get("/access-driver", driverController.getDriver)
 router.get("/city-type", jobController.getDriverCityType)
