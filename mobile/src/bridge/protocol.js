@@ -1,12 +1,16 @@
 // Rules for messages between the NASA web app and this shell (docs/MOBILE_APP_DESIGN.md, section 4).
 // Pure functions only, so they run (and are tested) without a phone.
 
+const { MAX_BASE64_LENGTH, isSharePayload } = require("../documents");
+
 const BRIDGE_VERSION = 1;
 const REPLY_EVENT = "nasa-native-reply";
 const EVENT_EVENT = "nasa-native-event";
 const AREAS = ["admin", "driver"];
 
 const MAX_MESSAGE_LENGTH = 20000;
+// Only a file.share message may be longer: it carries the file itself (documents.js limits its size and type)
+const MAX_FILE_MESSAGE_LENGTH = MAX_BASE64_LENGTH + 2000;
 const MAX_TOKEN_LENGTH = 4096;
 const MAX_URL_LENGTH = 2048;
 const MAX_REMEMBERED_IDS = 500;
@@ -56,6 +60,8 @@ const PAYLOAD_RULES = {
   "push.getToken": (p) => hasOnly(p, []),
   "push.openSettings": (p) => hasOnly(p, []),
   "push.takePendingTap": (p) => hasOnly(p, []),
+  // Shows the phone's share sheet for a PDF or CSV the page made (see src/documents.js)
+  "file.share": isSharePayload,
 };
 
 const SUPPORTED_ACTIONS = Object.keys(PAYLOAD_RULES);
@@ -82,7 +88,7 @@ class IdTracker {
 // to check against, every message is refused.
 // Returns { ok: true, message } or { ok: false, error, id? }.
 const parseMessage = (raw, tracker, nonce) => {
-  if (typeof raw !== "string" || raw.length === 0 || raw.length > MAX_MESSAGE_LENGTH) return { ok: false, error: "bad_request" };
+  if (typeof raw !== "string" || raw.length === 0 || raw.length > MAX_FILE_MESSAGE_LENGTH) return { ok: false, error: "bad_request" };
 
   let message;
   try {
@@ -97,6 +103,7 @@ const parseMessage = (raw, tracker, nonce) => {
   if (typeof id !== "string" || !ID_PATTERN.test(id)) return { ok: false, error: "bad_request" };
   if (v !== BRIDGE_VERSION) return { ok: false, error: "unsupported_version", id };
   if (typeof action !== "string" || !SUPPORTED_ACTIONS.includes(action)) return { ok: false, error: "unsupported_action", id };
+  if (action !== "file.share" && raw.length > MAX_MESSAGE_LENGTH) return { ok: false, error: "bad_request", id };
   if (!isPlainObject(payload) || !PAYLOAD_RULES[action](payload)) return { ok: false, error: "bad_request", id };
   if (!tracker.remember(id)) return { ok: false, error: "replayed_id", id };
 

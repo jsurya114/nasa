@@ -6,6 +6,8 @@ import * as Device from "expo-device";
 import * as Notifications from "expo-notifications";
 import { SafeAreaProvider, useSafeAreaInsets } from "react-native-safe-area-context";
 import * as Crypto from "expo-crypto";
+import * as Sharing from "expo-sharing";
+import { Directory, File, Paths } from "expo-file-system";
 
 import { createBridgeHost } from "./src/bridge/host";
 import { eventScript, isHttpsUrl, isTrustedOrigin, replyScript } from "./src/bridge/protocol";
@@ -16,6 +18,7 @@ import ConnectionBanner from "./src/screens/ConnectionBanner";
 import ErrorScreen from "./src/screens/ErrorScreen";
 import EvereeModal from "./src/everee/EvereeModal";
 import { createPush } from "./src/push";
+import { createDocuments } from "./src/documents";
 import { createSession } from "./src/session";
 
 const BRAND = "#4C2A85";
@@ -29,6 +32,29 @@ const SERVER_ERROR_STATUS = 500;
 // A notification that arrives while the app is open still shows as a banner, without sound or badge
 Notifications.setNotificationHandler({
   handleNotification: async () => ({ shouldShowBanner: true, shouldShowList: true, shouldPlaySound: false, shouldSetBadge: false }),
+});
+
+// Documents the page made, shown in the phone's share sheet (src/documents.js). Files live only in the app's cache.
+const documents = createDocuments({
+  files: {
+    folder: (name) => {
+      const dir = new Directory(Paths.cache, name);
+      return {
+        create: async () => dir.create({ idempotent: true, intermediates: true }),
+        delete: async () => { if (dir.exists) dir.delete(); },
+        file: (fileName) => {
+          const file = new File(dir, fileName);
+          return {
+            uri: file.uri,
+            write: async (base64) => file.write(base64, { encoding: "base64" }),
+            delete: async () => { if (file.exists) file.delete(); },
+          };
+        },
+      };
+    },
+  },
+  share: (uri, options) => Sharing.shareAsync(uri, options),
+  canShare: () => Sharing.isAvailableAsync(),
 });
 
 // Links the shell may hand to the phone: web pages, mail and phone numbers. Everything else is dropped.
@@ -46,7 +72,13 @@ function Shell() {
   // the person is filling in is not lost
   const [hasLoaded, setHasLoaded] = useState(false);
 
-  const session = useMemo(() => createSession({ storage: secureStorage, request }), []);
+  const session = useMemo(() => {
+    const store = createSession({ storage: secureStorage, request });
+    // A sign-out also removes any document copy still in the cache
+    return { ...store, clear: async (area) => { await documents.removeAll(); return store.clear(area); } };
+  }, []);
+  // Anything left from a previous run (the app was closed while the share sheet was open)
+  useEffect(() => { documents.removeAll(); }, []);
   const push = useMemo(
     () =>
       createPush({
@@ -88,6 +120,7 @@ function Shell() {
         nonce,
         push,
         everee,
+        documents,
       }),
     [session, nonce, push, everee]
   );

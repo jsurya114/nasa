@@ -55,7 +55,8 @@ test("a page from another origin gets no answer and nothing runs", async () => {
 test("unsupported actions and bad payloads are refused without running anything", async () => {
   const { send, calls } = setup();
   assert.equal((await send("shell.exec", {})).error, "unsupported_action");
-  assert.equal((await send("file.share", { path: "/etc/passwd" })).error, "unsupported_action");
+  assert.equal((await send("file.read", { path: "/etc/passwd" })).error, "unsupported_action");
+  assert.equal((await send("file.share", { name: "a.pdf", mimeType: "application/pdf", data: "JVBERi0=" })).error, "unsupported_action", "no documents in this build");
   assert.equal((await send("session.get", { area: "root" })).error, "bad_request");
   assert.equal((await send("link.openExternal", { url: "javascript:alert(1)" })).error, "bad_request");
   assert.equal(calls.length, 0);

@@ -44,7 +44,7 @@ test("refuses other bridge versions", () => {
 
 test("refuses actions that are unknown or not implemented in this shell", () => {
   const t = new IdTracker();
-  for (const action of ["shell.exec", "eval", "file.share", "media.pickImages", "", 5]) {
+  for (const action of ["shell.exec", "eval", "file.read", "media.pickImages", "", 5]) {
     assert.equal(parse(message({ action, id: `id${String(action).length}x${Math.random().toString(36).slice(2)}` }), t).error, "unsupported_action");
   }
 });
@@ -65,6 +65,11 @@ test("checks every payload", () => {
     ["push.status", { area: "admin" }],
     ["push.getToken", { token: "ExponentPushToken[x]" }],
     ["push.takePendingTap", { screen: "agreement" }],
+    ["file.share", { path: "/etc/passwd" }],
+    ["file.share", { name: "a.pdf", mimeType: "text/html", data: "PGgxPg==" }],
+    ["file.share", { name: "a.pdf", mimeType: "application/pdf", data: "abc" }],
+    ["file.share", { name: "a.pdf", mimeType: "application/pdf", data: "JVBERi0=", uri: "file:///etc/passwd" }],
+    ["file.share", { name: "", mimeType: "application/pdf", data: "JVBERi0=" }],
   ];
   cases.forEach(([action, payload], i) => {
     assert.equal(parse(message({ action, payload, id: `case${i}` }), t).error, "bad_request", `${action} ${JSON.stringify(payload)}`);
@@ -86,6 +91,7 @@ test("accepts good payloads for each implemented action", () => {
     "push.getToken": {},
     "push.openSettings": {},
     "push.takePendingTap": {},
+    "file.share": { name: "Invoice 12.pdf", mimeType: "application/pdf", data: "JVBERi0=" },
   };
   assert.deepEqual(Object.keys(good).sort(), [...SUPPORTED_ACTIONS].sort());
   Object.entries(good).forEach(([action, payload], i) => {
@@ -157,4 +163,14 @@ test("the event script carries only a version and a type, encoded so nothing can
   const hostile = eventScript('"); alert(1); ("');
   assert.equal(detailOf(hostile).type, '"); alert(1); ("');
   assert.ok(hostile.endsWith("true;"));
+});
+
+test("only a file.share message may be long, and even that is bounded", () => {
+  const { MAX_BASE64_LENGTH } = require("../documents");
+  const t = new IdTracker();
+  const big = "A".repeat(40000);
+  assert.equal(parse(message({ action: "session.get", payload: { area: "admin", pad: big }, id: "long1" }), t).error, "bad_request");
+  assert.equal(parse(message({ action: "file.share", payload: { name: "x.pdf", mimeType: "application/pdf", data: big }, id: "long2" }), t).ok, true);
+  const tooBig = "A".repeat(MAX_BASE64_LENGTH + 4);
+  assert.equal(parse(message({ action: "file.share", payload: { name: "x.pdf", mimeType: "application/pdf", data: tooBig }, id: "long3" }), t).error, "bad_request");
 });
