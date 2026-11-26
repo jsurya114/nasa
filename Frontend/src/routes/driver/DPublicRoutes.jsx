@@ -4,6 +4,7 @@ import { useEffect } from "react";
 import { useSelector, useDispatch } from "react-redux";
 import { accessDriver } from "../../redux/slice/driver/driverSlice.js";
 import AuthCheckRetry from "../../native/AuthCheckRetry.jsx";
+import Loader from "../../components/Loader.jsx";
 
 function DPublicRoutes() {
     const dispatch = useDispatch()
@@ -14,7 +15,7 @@ function DPublicRoutes() {
     }, [dispatch]);
 
     if (isAuthenticated === null) {
-        return authCheckFailed ? <AuthCheckRetry onRetry={() => dispatch(accessDriver())} /> : null;
+        return authCheckFailed ? <AuthCheckRetry onRetry={() => dispatch(accessDriver())} /> : <Loader />;
     }
 
     return isAuthenticated ? <Navigate to="/driver/dashboard" /> : <Outlet />

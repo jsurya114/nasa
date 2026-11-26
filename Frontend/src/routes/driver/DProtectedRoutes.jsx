@@ -3,6 +3,7 @@ import { useEffect } from "react";
 import { useSelector, useDispatch } from "react-redux";
 import { accessDriver } from "../../redux/slice/driver/driverSlice.js";
 import AuthCheckRetry from "../../native/AuthCheckRetry.jsx";
+import Loader from "../../components/Loader.jsx";
 import PushSetup from "../../native/PushSetup.jsx";
 import EvereeSetupProvider from "../../hooks/EvereeSetupProvider.jsx";
 import QuickbooksSetupProvider from "../../hooks/QuickbooksSetupProvider.jsx";
@@ -20,7 +21,7 @@ function DProtectRoutes() {
     }, [dispatch])
 
     if (isAuthenticated === null) {
-        return authCheckFailed ? <AuthCheckRetry onRetry={() => dispatch(accessDriver())} /> : null;
+        return authCheckFailed ? <AuthCheckRetry onRetry={() => dispatch(accessDriver())} /> : <Loader />;
     }
 
     if (!isAuthenticated) {
