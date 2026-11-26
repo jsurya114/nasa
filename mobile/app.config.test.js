@@ -2,7 +2,14 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 const { execFileSync } = require("node:child_process");
 
-const HTTPS_ORIGINS = { NASA_WEB_ORIGIN: "https://app.example.com", NASA_API_ORIGIN: "https://api.example.com" };
+const HTTPS_ORIGINS = { NASA_WEB_ORIGIN: "https://app.example.com", NASA_API_ORIGIN: "https://api.example.com", NASA_APP_ID: "com.nasatest.app" };
+
+// Stand-in "approved" artwork for production cases: Expo's images with one byte added, so they are not the placeholders
+const { mkdtempSync, copyFileSync, appendFileSync, readdirSync } = require("node:fs");
+const { join } = require("node:path");
+const ART = mkdtempSync(join(require("node:os").tmpdir(), "nasa-art-"));
+for (const f of readdirSync(join(__dirname, "assets"))) { copyFileSync(join(__dirname, "assets", f), join(ART, f)); appendFileSync(join(ART, f), "\n"); }
+const PROD = { ...{ NASA_WEB_ORIGIN: "https://app.example.com", NASA_API_ORIGIN: "https://api.example.com", NASA_APP_ID: "com.nasatest.app" }, EAS_PROJECT_ID: "00000000-0000-0000-0000-000000000000", NASA_ASSETS_DIR: ART };
 
 // app.config.js reads process.env when it loads, so each case runs it in a fresh process.
 const loadConfig = (env) =>
@@ -27,13 +34,13 @@ test("development builds allow plain http to the local network on both platforms
 
 for (const appEnv of ["preview", "production"]) {
   test(`${appEnv} builds refuse cleartext traffic on both platforms`, () => {
-    const config = loadConfig({ APP_ENV: appEnv, ...HTTPS_ORIGINS });
+    const config = loadConfig({ APP_ENV: appEnv, ...(appEnv === "production" ? PROD : HTTPS_ORIGINS) });
     assert.equal(cleartextSetting(config), false);
     assert.equal(config.ios.infoPlist.NSAppTransportSecurity, undefined);
   });
 
   test(`${appEnv} builds stop on an http origin`, () => {
-    assert.throws(() => loadConfig({ APP_ENV: appEnv, ...HTTPS_ORIGINS, NASA_WEB_ORIGIN: "http://app.example.com" }));
+    assert.throws(() => loadConfig({ APP_ENV: appEnv, ...PROD, NASA_WEB_ORIGIN: "http://app.example.com" }), /https/);
   });
 }
 
@@ -42,14 +49,14 @@ test("an unknown APP_ENV stops the build", () => {
 });
 
 test("only production is named without its environment", () => {
-  assert.equal(loadConfig({ APP_ENV: "production", ...HTTPS_ORIGINS }).name, "NASA Logistics");
+  assert.equal(loadConfig({ APP_ENV: "production", ...PROD }).name, "NASA Logistics");
   assert.equal(loadConfig({ APP_ENV: "preview", ...HTTPS_ORIGINS }).name, "NASA Logistics (preview)");
 });
 
 const pluginOptions = (config, name) => config.plugins.find((p) => Array.isArray(p) && p[0] === name)?.[1];
 
 test("iOS gets a plain camera reason, Android gets no camera permission, and unused Android permissions are blocked", () => {
-  for (const env of [{ APP_ENV: "development" }, { APP_ENV: "production", ...HTTPS_ORIGINS }]) {
+  for (const env of [{ APP_ENV: "development" }, { APP_ENV: "production", ...PROD }]) {
     const config = loadConfig(env);
     assert.equal(config.android.permissions, undefined, "no Android permission is requested by the app itself");
     assert.deepEqual(
@@ -62,7 +69,7 @@ test("iOS gets a plain camera reason, Android gets no camera permission, and unu
 });
 
 test("there is no Face ID text, because biometric unlock is out of the first release", () => {
-  for (const env of [{ APP_ENV: "development" }, { APP_ENV: "production", ...HTTPS_ORIGINS }]) {
+  for (const env of [{ APP_ENV: "development" }, { APP_ENV: "production", ...PROD }]) {
     assert.equal(pluginOptions(loadConfig(env), "expo-secure-store").faceIDPermission, false);
   }
 });
@@ -72,7 +79,7 @@ test("the development client's local-network entries are removed from preview an
   const inline = (env) => execFileSync(process.execPath, ["-e", "const p=require('./app.config.js').expo.plugins;process.stdout.write(String(p.filter((x)=>typeof x==='function').length))"], { cwd: __dirname, env: { PATH: process.env.PATH, ...env } }).toString();
   assert.equal(inline({ APP_ENV: "development" }), "0");
   assert.equal(inline({ APP_ENV: "preview", ...HTTPS_ORIGINS }), "1");
-  assert.equal(inline({ APP_ENV: "production", ...HTTPS_ORIGINS }), "1");
+  assert.equal(inline({ APP_ENV: "production", ...PROD }), "1");
 });
 
 // The config object only says what is passed in; the native template and the development client add entries of their
@@ -111,16 +118,36 @@ test("the generated development Info.plist allows local networking", { timeout: 
 
 for (const appEnv of ["preview", "production"]) {
   test(`the generated ${appEnv} Info.plist carries no local-network exception`, { timeout: 180000 }, () => {
-    const plist = generatedInfoPlist({ APP_ENV: appEnv, ...HTTPS_ORIGINS });
+    const plist = generatedInfoPlist({ APP_ENV: appEnv, ...(appEnv === "production" ? PROD : HTTPS_ORIGINS) });
     for (const key of LOCAL_NETWORK_KEYS) assert.doesNotMatch(plist, new RegExp(key), `${key} is in the ${appEnv} plist`);
     assert.match(plist, /NSAllowsArbitraryLoads<\/key>\s*<false\/>/);
   });
 }
 
 test("every generated Info.plist has only the camera reason, and no Face ID text", { timeout: 180000 }, () => {
-  for (const env of [{ APP_ENV: "development" }, { APP_ENV: "preview", ...HTTPS_ORIGINS }, { APP_ENV: "production", ...HTTPS_ORIGINS }]) {
+  for (const env of [{ APP_ENV: "development" }, { APP_ENV: "preview", ...HTTPS_ORIGINS }, { APP_ENV: "production", ...PROD }]) {
     const plist = generatedInfoPlist(env);
     const reasons = [...plist.matchAll(/<key>(NS\w+UsageDescription)<\/key>/g)].map((m) => m[1]).filter((k) => k !== "NSLocalNetworkUsageDescription");
     assert.deepEqual(reasons, ["NSCameraUsageDescription"], `${env.APP_ENV}: ${reasons.join(", ")}`);
   }
+});
+
+test("preview and production stop on the placeholder bundle ID or a malformed one", () => {
+  for (const appEnv of ["preview", "production"]) {
+    for (const bad of ["com.example.nasalogistics", "nasa", "com..x"]) {
+      assert.throws(() => loadConfig({ APP_ENV: appEnv, ...HTTPS_ORIGINS, NASA_APP_ID: bad, EAS_PROJECT_ID: "p" }), /NASA_APP_ID/);
+    }
+  }
+  assert.doesNotThrow(() => loadConfig({ APP_ENV: "development" }), "development keeps the placeholder");
+});
+
+test("production stops without the Expo project or with Expo's placeholder artwork", () => {
+  assert.throws(() => loadConfig({ APP_ENV: "production", ...HTTPS_ORIGINS }), /EAS_PROJECT_ID/);
+  assert.throws(() => loadConfig({ APP_ENV: "production", ...HTTPS_ORIGINS, EAS_PROJECT_ID: "p" }), /placeholder/);
+  assert.doesNotThrow(() => loadConfig({ APP_ENV: "preview", ...HTTPS_ORIGINS }), "preview can test before the artwork exists");
+});
+
+test("the app declares no tracking", () => {
+  const config = loadConfig({ APP_ENV: "preview", ...HTTPS_ORIGINS });
+  assert.deepEqual(config.ios.privacyManifests, { NSPrivacyTracking: false, NSPrivacyTrackingDomains: [] });
 });
