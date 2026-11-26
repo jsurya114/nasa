@@ -1,3 +1,4 @@
+import { saveProblem } from "../../../../native/documents";
 import React, { useState } from "react";
 import { useSelector } from "react-redux";
 import { FileDown } from "lucide-react";
@@ -17,8 +18,8 @@ export default function DesiPdfButton({ drivers, run, cityName }) {
     try {
       const { downloadDesiDriversPdf } = await import("./buildDesiDriversPdf.js");
       await downloadDesiDriversPdf({ drivers, run, cityName, today: toLocalDateString(new Date()) });
-    } catch {
-      setError("The PDF could not be made. Try again.");
+    } catch (failure) {
+      setError(failure?.name === "BridgeError" ? saveProblem(failure) : "The PDF could not be made. Try again.");
     } finally {
       setBusy(false);
     }
