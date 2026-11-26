@@ -8,6 +8,20 @@ export const dailyMatchByNameOn = () => process.env.DAILY_MATCH_BY_NAME === 'tru
 
 const routeOf = (r) => ({ id: r.id, code: r.route_code_in_string, job: r.job, enabled: r.enabled, fsPrice: r.driver_route_price, dsPrice: r.driver_doublestop_price });
 
+// The driver days an earlier upload of this day made from the file, on the file's routes, are removed so they are made again from the file as it
+// is now (a corrected name match then moves the parcels instead of leaving them with the old driver too). Never a day entered by hand, a paid day,
+// a day in a pay statement or a day matched to a carrier statement. Returns how many days were removed.
+export const releaseFileDays = async (db, { mainCodes, uploadDate }) => {
+  const { rowCount } = await db.query(
+    `DELETE FROM dashboard_data dd USING daily_file_days f, routes r
+      WHERE f.dashboard_data_id = dd.id AND r.id = dd.route_id AND f.journey_date = $2::date AND dd.journey_date = $2::date AND NOT dd.paid
+        AND r.deleted_at IS NULL AND (r.route_code_in_string = ANY($1::text[]) OR split_part(r.route_code_in_string, ':', 1) = ANY($1::text[]))
+        AND NOT EXISTS (SELECT 1 FROM payment_dashboard pd JOIN pay_statement_lines l ON l.payment_dashboard_id = pd.id WHERE pd.dashboard_data_id = dd.id)
+        AND NOT EXISTS (SELECT 1 FROM payment_dashboard pd JOIN carrier_statement_groups g ON g.payment_dashboard_id = pd.id WHERE pd.dashboard_data_id = dd.id)`,
+    [mainCodes, uploadDate]);
+  return rowCount;
+};
+
 // mainCodes: the main route codes in the file. uploadDate: "YYYY-MM-DD".
 export const loadDailyLookups = async (db, { mainCodes, uploadDate }) => {
   const routes = (await db.query(
@@ -65,6 +79,7 @@ export const applyDailyPlan = async (db, plan, uploadDate) => {
       dayId = (await db.query(
         `INSERT INTO dashboard_data (driver_id, route_id, start_seq, end_seq, journey_date, packages) VALUES ($1, $2, $3, $4, $5::date, $6) RETURNING id`,
         [p.driverId, p.route.id, seqs[0], seqs.at(-1), uploadDate, seqs.length])).rows[0].id;
+      await db.query('INSERT INTO daily_file_days (dashboard_data_id, journey_date) VALUES ($1, $2::date)', [dayId, uploadDate]);
       created += 1;
     } else {
       // Widening the range makes the database fill the whole new range (a trigger); those filler rows are removed again, so only the file's

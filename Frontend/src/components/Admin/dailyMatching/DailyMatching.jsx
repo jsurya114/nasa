@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useState } from "react";
+import { useLocation } from "react-router-dom";
 import Header from "../../../reuse/Header";
 import Nav from "../../../reuse/Nav";
 import { buttonClass, inputClass, primaryClass } from "../payroll/formParts.jsx";
@@ -10,11 +11,13 @@ const when = (iso) => (iso ? new Date(iso).toLocaleString() : "");
 const priceOf = (r) => `$${Number(r.fs_price).toFixed(2)} / DS $${Number(r.ds_price).toFixed(2)}`;
 
 export default function DailyMatching() {
-  const params = new URLSearchParams(window.location.search);
+  // The upload result's "Match" link hands over the city and the name in the page state, never in the address, so a driver's name is not kept in
+  // the browser history or a server log.
+  const handed = useLocation().state ?? {};
   const [cities, setCities] = useState([]);
-  const [cityId, setCityId] = useState(params.get("cityId") ?? "");
+  const [cityId, setCityId] = useState(handed.cityId ? String(handed.cityId) : "");
   const [data, setData] = useState({ status: "idle" });
-  const [name, setName] = useState({ fileName: params.get("name") ?? "", driverId: "" });
+  const [name, setName] = useState({ fileName: handed.name ?? "", driverId: "" });
   const [sub, setSub] = useState({ driverId: "", mainRouteId: "", subRouteId: "" });
   const [message, setMessage] = useState({ kind: "", text: "" });
 

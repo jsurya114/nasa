@@ -22,7 +22,7 @@ import {
 
 import { unlink } from "fs";
 import { mainRouteCodeOf, planDailyDrivers } from "../../services/admin/dailyByName/planDailyDrivers.js";
-import { applyDailyPlan, dailyMatchByNameOn, loadDailyLookups } from "../../services/admin/dailyByName/dailyByNameStore.js";
+import { applyDailyPlan, dailyMatchByNameOn, loadDailyLookups, releaseFileDays } from "../../services/admin/dailyByName/dailyByNameStore.js";
 import { summarizeDailyPlan } from "../../services/admin/dailyByName/summarizeDailyPlan.js";
 
 
@@ -177,11 +177,14 @@ export const DailyExcelUpload = async (req, res) => {
     let applied = null;
     if (byName) {
       const mainCodes = [...new Set(rows.map((row) => mainRouteCodeOf(row.Route)).filter(Boolean))];
-      plan = planDailyDrivers(rows, await loadDailyLookups(client, { mainCodes, uploadDate }));
+      // The city check runs on the file's routes before anything is removed or made (a refusal rolls everything back anyway).
+      const firstLook = planDailyDrivers(rows, await loadDailyLookups(client, { mainCodes, uploadDate }));
       if (isCityLimited(req.user.role)) {
-        assertJobsAllowed(plan.jobs, await getAllowedJobs(req.user.id, client), "This file includes deliveries for cities outside your assigned cities. Nothing was changed.");
+        assertJobsAllowed(firstLook.jobs, await getAllowedJobs(req.user.id, client), "This file includes deliveries for cities outside your assigned cities. Nothing was changed.");
       }
-      applied = await applyDailyPlan(client, plan, uploadDate);
+      const rebuilt = await releaseFileDays(client, { mainCodes, uploadDate });
+      plan = planDailyDrivers(rows, await loadDailyLookups(client, { mainCodes, uploadDate }));
+      applied = { ...(await applyDailyPlan(client, plan, uploadDate)), rebuilt };
     }
 
     await ExcelFileQueries.deleteIfTableAlreadyExists(tableName, client);

@@ -32,7 +32,7 @@ export default function DailyByNameResult({ byName }) {
       </p>
       <p className="mt-1 text-sm text-ink-muted">Driver days: {byName.days.created} new, {byName.days.extended} already there.</p>
       <List title="Names not matched to a driver" items={byName.unmatchedNames} note="These parcels were not added. Match each name once, then upload the day again."
-        render={(u) => <li key={`${u.cityId}-${u.fileName}`}>“{u.fileName}” · {u.city} · {plural(u.parcels, "parcel")} · {u.routes.join(", ")} · <Link className="font-semibold text-brand underline" to={`/admin/daily-matching?cityId=${u.cityId}&name=${encodeURIComponent(u.fileName)}`}>Match</Link></li>} />
+        render={(u) => <li key={`${u.cityId}-${u.fileName}`}>“{u.fileName}” · {u.city} · {plural(u.parcels, "parcel")} · {u.routes.join(", ")} · <Link className="font-semibold text-brand underline" to="/admin/daily-matching" state={{ cityId: u.cityId, name: u.fileName }}>Match</Link></li>} />
       <List title="Disabled drivers" items={byName.disabledDrivers} note="These parcels were not added. Enable the driver or match the name to another driver."
         render={(u) => <li key={`${u.cityId}-${u.fileName}`}>“{u.fileName}” · {plural(u.parcels, "parcel")} · {u.routes.join(", ")}</li>} />
       <List title="Paid at the main route's price" items={byName.atMainPrice} note="Their main route has a sub-route with another price. Set a sub-route for them if they should get it."

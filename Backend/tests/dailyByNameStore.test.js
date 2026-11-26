@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
-import { applyDailyPlan, loadDailyLookups } from '../services/admin/dailyByName/dailyByNameStore.js';
+import { applyDailyPlan, loadDailyLookups, releaseFileDays } from '../services/admin/dailyByName/dailyByNameStore.js';
 import { planDailyDrivers } from '../services/admin/dailyByName/planDailyDrivers.js';
 import { ChoiceError, deleteChoice, listChoices, saveNameMatch, saveSubRouteChoice } from '../services/admin/dailyByName/dailyChoices.js';
 
@@ -63,6 +63,30 @@ test('daily by name: lookups, days created from the file, re-upload, paid days a
     assert.deepEqual(byChoice.placements.map((p) => [p.driverId, p.route.code]), [[ana.id, main], [bo.id, `${main}:E`]]);
     await assert.rejects(saveSubRouteChoice(db, { cityId: city.id, mainRouteId: mainRoute.id, driverId: bo.id, subRouteId: mainRoute.id, adminId: null }), ChoiceError);
     assert.equal(await deleteChoice(db, 'names', nameId), 1);
+
+    // The bug found on the mock server: a name matched to the wrong driver, uploaded, then corrected and uploaded again. The parcels must move to the
+    // right driver and leave the wrong one; a paid day is never rebuilt.
+    const cy = await driver(`Cy ${tag}`);
+    const wrong = await saveNameMatch(db, { cityId: city.id, fileName: 'Shown Differently', driverId: bo.id, adminId: null });
+    const fileRows = [{ Route: `1106-${main}`, Sequence: 30, DriverName: 'Shown Differently' }, { Route: `1106-${main}`, Sequence: 31, DriverName: 'Shown Differently' }];
+    const day2 = '2026-11-08';
+    const upload = async () => {
+      const rebuilt = await releaseFileDays(db, { mainCodes: [main], uploadDate: day2 });
+      const p = planDailyDrivers(fileRows, await loadDailyLookups(db, { mainCodes: [main], uploadDate: day2 }));
+      return { rebuilt, ...(await applyDailyPlan(db, p, day2)), clashes: p.clashes.length };
+    };
+    assert.deepEqual(await upload(), { rebuilt: 0, created: 1, extended: 0, clashes: 0 });
+    await saveNameMatch(db, { cityId: city.id, fileName: 'Shown Differently', driverId: cy.id, adminId: null }); // corrected
+    assert.deepEqual(await upload(), { rebuilt: 1, created: 1, extended: 0, clashes: 0 });
+    const owners = (await db.query('SELECT driver_id, count(*)::int AS n FROM deliveries WHERE driver_set_date = $1 GROUP BY driver_id', [day2])).rows;
+    assert.deepEqual(owners, [{ driver_id: cy.id, n: 2 }]);
+    assert.equal((await db.query('SELECT count(*)::int AS n FROM dashboard_data WHERE journey_date = $1', [day2])).rows[0].n, 1);
+    // once paid, the day is never rebuilt, and nobody else gets its parcels
+    await db.query('UPDATE dashboard_data SET paid = true WHERE journey_date = $1', [day2]);
+    await saveNameMatch(db, { cityId: city.id, fileName: 'Shown Differently', driverId: bo.id, adminId: null });
+    const afterPaid = await upload();
+    assert.deepEqual([afterPaid.rebuilt, afterPaid.created, afterPaid.clashes], [0, 0, 1]);
+    assert.ok(wrong);
     assert.equal(await deleteChoice(db, 'subroutes', subId), 1);
   } finally {
     await db.query('ROLLBACK');

@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { cleanup, render, screen } from "@testing-library/react";
-import { MemoryRouter } from "react-router-dom";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
 import DailyByNameResult from "./DailyByNameResult";
 import { mainRoutesWithSubs } from "./dailyMatchingApi.js";
 
@@ -25,7 +25,7 @@ describe("drivers found by name, after a daily upload", () => {
   it("adds up every row and lists what needs a look, with a link to match a name", () => {
     show(RESULT);
     expect(screen.getByTestId("daily-reconciliation").textContent).toBe("10 rows in the file = 6 added to a driver + 2 name not matched + 1 driver disabled + 1 could not be read");
-    expect(screen.getByRole("link", { name: "Match" }).getAttribute("href")).toBe("/admin/daily-matching?cityId=3&name=Ana%20P.");
+    expect(screen.getByRole("link", { name: "Match" }).getAttribute("href")).toBe("/admin/daily-matching"); // the name is handed over in page state, not the address
     expect(screen.getByText(/Paid at the main route's price/)).toBeTruthy();
     expect(screen.getByText(/Bo Li · TST 001-1 · 4 parcels/)).toBeTruthy();
     expect(screen.getByText(/Di Ng · TST 001-1 → TST 001-1:A/)).toBeTruthy();
@@ -44,5 +44,17 @@ describe("main routes and their sub-routes", () => {
   it("groups each ':X' route under its main route, and leaves out routes without sub-routes", () => {
     const routes = [{ id: 1, code: "TST 001-1" }, { id: 2, code: "TST 001-1:B" }, { id: 3, code: "TST 001-1:A" }, { id: 4, code: "TST 002-1" }];
     expect(mainRoutesWithSubs(routes).map((g) => [g.main.code, g.subs.map((s) => s.code)])).toEqual([["TST 001-1", ["TST 001-1:B", "TST 001-1:A"]]]);
+  });
+});
+
+describe("the Match link", () => {
+  it("opens the Daily drivers page with the city and the name filled in, and the name not in the address", () => {
+    const Target = () => {
+      const loc = useLocation();
+      return <p data-testid="target">{`${loc.pathname}${loc.search}|${loc.state?.cityId}|${loc.state?.name}`}</p>;
+    };
+    render(<MemoryRouter><Routes><Route path="/" element={<DailyByNameResult byName={RESULT} />} /><Route path="/admin/daily-matching" element={<Target />} /></Routes></MemoryRouter>);
+    fireEvent.click(screen.getByRole("link", { name: "Match" }));
+    expect(screen.getByTestId("target").textContent).toBe("/admin/daily-matching|3|Ana P.");
   });
 });

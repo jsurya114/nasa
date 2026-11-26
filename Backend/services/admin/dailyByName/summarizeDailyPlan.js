@@ -10,7 +10,7 @@ export const summarizeDailyPlan = (plan, applied) => {
   const counted = Object.values(parts).reduce((a, b) => a + b, 0);
   return {
     rows: { inFile, ...parts, counted },
-    days: { created: applied?.created ?? 0, extended: applied?.extended ?? 0 },
+    days: { created: applied?.created ?? 0, extended: applied?.extended ?? 0, rebuilt: applied?.rebuilt ?? 0 },
     unmatchedNames: capped(plan.unmatchedNames.map(({ cityId, job, fileName, parcels, routes }) => ({ cityId, city: job, fileName, parcels, routes }))),
     disabledDrivers: capped(plan.disabledDrivers.map(({ cityId, job, fileName, driverId, parcels, routes }) => ({ cityId, city: job, fileName, driverId, parcels, routes }))),
     missingRoutes: capped(plan.missingRoutes),
