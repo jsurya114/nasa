@@ -15,8 +15,8 @@ import logoUrl from "../../../assets/invoice-logo.png?url";
 //                page repeats the column headers and is numbered, and the last page carries the subtotal, terms, contact block and signature.
 // Positions are in points from the top left of the page (the way the template was measured); `y` is always the text baseline.
 
-const PAGE = { width: 612, height: 792 };
-const COLORS = {
+export const PAGE = { width: 612, height: 792 };
+export const COLORS = {
   purple: rgb(0.333, 0.043, 0.471), // #550B78: title, bill-to name, table header
   logoPurple: rgb(0.435, 0.161, 0.573), // #6F2992: the logo panel
   orange: rgb(0.949, 0.31, 0.137), // #F24F23: side bar, job rows, icons
@@ -25,7 +25,7 @@ const COLORS = {
   white: rgb(1, 1, 1),
   ink: rgb(0.0196, 0.443, 0.827), // the signature
 };
-const MARGIN = 63.5;
+export const MARGIN = 63.5;
 const TABLE = { left: 63.5, width: 524.5, headerTop: 238.8, headerHeight: 22.7, firstRowTop: 274, rowHeight: 22.7, rowPitch: 31 };
 const COLUMNS = { job: 69.8, reHours: 233.9, overtime: 341.4, totalHours: 434.4, totalCost: 535.8 };
 const TERMS = { lineY: 558, left: MARGIN, right: 510.7, titleY: 575, bodyFirstY: 592.4, bodyLead: 9.8 };
@@ -52,20 +52,20 @@ export const loadInvoiceAssets = async () => {
 
 // ---- drawing helpers ----------------------------------------------------------------------------------------------------------------------
 
-const toPdfY = (top) => PAGE.height - top;
+export const toPdfY = (top) => PAGE.height - top;
 
 // Characters the font cannot draw are dropped, so a stray symbol in a name never stops the invoice from being made. Upper case, as the template
 // prints, unless `keepCase` (email addresses).
-const printable = (text, font, keepCase = false) => {
+export const printable = (text, font, keepCase = false) => {
   const known = new Set(font.getCharacterSet());
   const source = String(text ?? "").replace(/\s+/g, " ").trim();
   return [...(keepCase ? source : source.toUpperCase())].filter((ch) => known.has(ch.codePointAt(0))).join("").replace(/\s+/g, " ").trim();
 };
 
 // The size at which `text` is `width` points wide: used to match the template's own text widths with this font.
-const sizeForWidth = (font, text, width) => (width / font.widthOfTextAtSize(text, 1));
+export const sizeForWidth = (font, text, width) => (width / font.widthOfTextAtSize(text, 1));
 
-const fitText = (text, font, size, maxWidth, minSize = 6) => {
+export const fitText = (text, font, size, maxWidth, minSize = 6) => {
   let current = size;
   while (current > minSize && font.widthOfTextAtSize(text, current) > maxWidth) current -= 0.25;
   if (font.widthOfTextAtSize(text, current) <= maxWidth) return { text, size: current };
@@ -74,7 +74,7 @@ const fitText = (text, font, size, maxWidth, minSize = 6) => {
   return { text: `${cut.trimEnd()}...`, size: current };
 };
 
-const drawText = (page, text, { x, y, size, font, color = COLORS.black, align = "left" }) => {
+export const drawText = (page, text, { x, y, size, font, color = COLORS.black, align = "left" }) => {
   if (!text) return;
   const width = font.widthOfTextAtSize(text, size);
   const left = align === "center" ? x - width / 2 : align === "right" ? x - width : x;
@@ -82,7 +82,7 @@ const drawText = (page, text, { x, y, size, font, color = COLORS.black, align = 
 };
 
 // Greedy wrap into lines of words that fit `width`.
-const wrapWords = (text, font, size, width) => {
+export const wrapWords = (text, font, size, width) => {
   const lines = [];
   let line = [];
   for (const word of text.split(" ")) {
@@ -117,7 +117,7 @@ const drawJustified = (page, text, { x, width, y, size, lead, font, color = COLO
   return lines.length;
 };
 
-const rect = (page, { x, top, width, height, color }) => page.drawRectangle({ x, y: toPdfY(top + height), width, height, color });
+export const rect = (page, { x, top, width, height, color }) => page.drawRectangle({ x, y: toPdfY(top + height), width, height, color });
 
 // Material Design icons (Apache 2.0), 24 x 24, drawn black on the orange circle like the template's.
 const ICONS = {
