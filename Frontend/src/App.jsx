@@ -21,6 +21,7 @@ const AdminInsights = lazy(() => import("./components/Admin/Insights.jsx"));
 const AdminCarrierStatements = lazy(() => import("./components/Admin/CarrierStatements.jsx"));
 const AdminInvoices = lazy(() => import("./components/Admin/Invoices.jsx"));
 const AdminClaims = lazy(() => import("./components/Admin/Claims.jsx"));
+const DailyMatching = lazy(() => import("./components/Admin/dailyMatching/DailyMatching.jsx"));
 
 import ProtectedRoutes from "./routes/admin/ProtectedRoute.jsx";
 import AdminPublicOnlyRoute from "./routes/admin/PublicOnlyRoute.jsx";
@@ -73,6 +74,7 @@ function App() {
               <Route path="/admin/journeys" element={<AdminJourney />} />
               <Route path="/admin/driver-availability" element={<AdminDriverAvailability />} />
               <Route path="/admin/claims" element={<AdminClaims />} />
+              <Route path="/admin/daily-matching" element={<DailyMatching />} />
               <Route element={<SuperAdminRoute />}>
                 <Route path="/admin/payment-setup" element={<AdminPaymentSetupOverview />} />
                 <Route path="/admin/payroll" element={<AdminPayroll />} />

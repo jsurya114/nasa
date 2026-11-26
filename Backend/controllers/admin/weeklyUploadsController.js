@@ -298,7 +298,6 @@
 
 import pool from "../../config/db.js";
 import HttpStatus from "../../utils/statusCodes.js";
-import ExcelJS from 'exceljs';
 import moment from 'moment';
 
 import { WeeklyExcelQueries } from "../../services/admin/weeklyExcelQueries.js";
@@ -321,10 +320,14 @@ import { unlink } from "fs";
 import { recordWorkbookHistory } from "../../services/excel/assignmentHistory/recordWorkbookHistory.js";
 import { recordWorkbookClaims } from "../../services/payroll/claims/recordWorkbookClaims.js";
 import { reviewImport, stageImport } from "../../services/finance/gofoStatement/weeklyImport.js";
+import ExcelJS from "exceljs";
+import { readWorkbookRows, sheetsWithinLimits } from "../../services/excel/readWorkbookRows.js";
 import { sheetsFromWorkbook } from "../../services/finance/gofoStatement/readStatementWorkbook.js";
+import { workbookFromRows } from "../../services/excel/workbookFromRows.js";
 import { assertSafeWorkbook } from "../../services/finance/gofoStatement/workbookSafety.js";
 import { StatementError } from "../../services/finance/gofoStatement/statementMoney.js";
 import { findMissingDrivers } from "../../services/admin/weeklyMissingDrivers.js";
+import { findUnmatchedRows } from "../../services/admin/weeklyUnmatchedRows.js";
 
 
 export const getWeeklyTempData=async(req,res)=>{
@@ -593,16 +596,24 @@ async function processExcelFromBuffer(buffer, client, startTime, user, fileName)
     throw error;
   }
 
-  let workbook = new ExcelJS.Workbook();
+  // The file is read into plain rows, sheet by sheet, without ExcelJS's cell objects (they need about 500 MB for the biggest weekly file).
+  let sheets;
   try {
-    await workbook.xlsx.load(buffer);
+    sheets = readWorkbookRows(buffer, { limits: false });
   } catch {
-    throw new UploadFileError("The file could not be read. Upload the Excel (.xlsx) file as downloaded. Nothing was changed.");
+    // A file this reader does not understand goes to ExcelJS, which accepts a few more variants of the format (and needs far more memory).
+    try {
+      const workbook = new ExcelJS.Workbook();
+      await workbook.xlsx.load(buffer);
+      sheets = sheetsFromWorkbook(workbook, { limits: false });
+    } catch {
+      throw new UploadFileError("The file could not be read. Upload the Excel (.xlsx) file as downloaded. Nothing was changed.");
+    }
   }
 
-  let worksheet = workbook.getWorksheet("Details of Delivery Fees");
-  if (!worksheet) {
-    const availableSheets = workbook.worksheets.map(ws => ws.name);
+  const rows = sheets["Details of Delivery Fees"];
+  if (!rows) {
+    const availableSheets = Object.keys(sheets);
     throw new UploadFileError(
       `Sheet "Details of Delivery Fees" not found. Available sheets: ${availableSheets.join(', ')}. Nothing was changed.`
     );
@@ -617,11 +628,10 @@ async function processExcelFromBuffer(buffer, client, startTime, user, fileName)
 
   // Build header map
   const headerMap = {};
-  const headerRow = worksheet.getRow(1).values;
-
-  headerRow.forEach((header, index) => {
+  // headerMap holds 1-based column numbers, as before; rows[][] is 0-based.
+  (rows[0] ?? []).forEach((header, index) => {
     if (header) {
-      headerMap[normalize(header)] = index;
+      headerMap[normalize(header)] = index + 1;
     }
   });
 
@@ -647,7 +657,7 @@ async function processExcelFromBuffer(buffer, client, startTime, user, fileName)
   const getValue = (row, aliases) => {
     const index = resolveHeader(aliases);
     if (!index) return '';
-    return (row.values[index] || '').toString().trim();
+    return (row[index - 1] || '').toString().trim();
   };
 
   // Validate required headers
@@ -671,8 +681,9 @@ async function processExcelFromBuffer(buffer, client, startTime, user, fileName)
   let totalProcessed = 0;
   let totalSkipped = 0;
 
-  worksheet.eachRow((row, rowNumber) => {
-    if (rowNumber === 1) return;
+  rows.forEach((row, rowIndex) => {
+    if (rowIndex === 0) return;
+    if (!row.some(() => true)) return; // a row with no cell at all, which eachRow also skipped
 
     try {
       // ✅ USE HEADER-BASED ACCESS
@@ -796,22 +807,15 @@ async function processExcelFromBuffer(buffer, client, startTime, user, fileName)
 
     // Keep who carried which package (issue #140). Inside this transaction, but in a savepoint: if the history
     // cannot be saved, the pay data above is stored exactly as it always was.
-    const { routeCodes, ...assignmentHistory } = await recordWorkbookHistory(client, workbook, { buffer, fileName, user, bestEffort: true });
+    const { routeCodes, ...assignmentHistory } = await recordWorkbookHistory(client, workbookFromRows(sheets), { buffer, fileName, user, bestEffort: true });
 
-    // Turn the opened workbook into plain rows once, then let go of it, so the big workbook and the rows are not both held while the later steps run.
-    // If that fails (for example too many sheets), the later steps read the file from its bytes as they always did.
-    let sheets;
-    try {
-      sheets = sheetsFromWorkbook(workbook);
-    } catch {
-      sheets = undefined;
-    }
-    workbook = null;
-    worksheet = null;
+    // The later steps take the rows already read. A file over the sheet or row limits is read from its bytes by them, as it always was,
+    // and they refuse it there.
+    const stepSheets = sheetsWithinLimits(sheets) ? sheets : undefined;
 
     // Courier claims on the report's Claims Detail sheet (issue #141), stored after the history so they can be matched
     // against it. Also in a savepoint: a claims problem never changes what the pay upload stores.
-    const claims = await recordWorkbookClaims(client, { buffer, fileName, user, routeCodes, sheets });
+    const claims = await recordWorkbookClaims(client, { buffer, fileName, user, routeCodes, sheets: stepSheets });
 
     // The same file is also the carrier's statement (issue #252): keep it as the import tied to this staged data, in a savepoint, so a problem here never
     // changes what the pay upload stores.
@@ -821,13 +825,17 @@ async function processExcelFromBuffer(buffer, client, startTime, user, fileName)
     logger.info('Weekly upload stored', { processed: totalProcessed, skipped: totalSkipped, groups: totalInserted });
 
     // Check on the same connection after committing staging. A failed or late check cannot undo the upload.
-    const revenue = await reviewImport(client, staged.id, buffer, user, staged.reason, { sheets });
+    const revenue = await reviewImport(client, staged.id, buffer, user, staged.reason, { sheets: stepSheets });
 
     // Who is on the city's driver list but not in this file (a warning only; never changes what was stored).
     const missingDrivers = await findMissingDrivers(client, {
       driverCodes: dataArray.map((entry) => entry.driver_id),
       routeCodes: [...new Set(dataArray.map((entry) => entry.del_route))],
     });
+
+    // Lines of this file that "Add to Dashboard" will skip (Delivery ID not a driver, driver disabled, route not in the app), and a count of every file row.
+    // A warning only; never changes what was stored.
+    const unmatched = await findUnmatchedRows(client, dataArray, { read: totalProcessed, unreadable: totalSkipped });
 
     return {
       success: true,
@@ -839,7 +847,8 @@ async function processExcelFromBuffer(buffer, client, startTime, user, fileName)
       assignmentHistory,
       claims,
       revenue,
-      missingDrivers
+      missingDrivers,
+      unmatched
     };
 
   } catch (dbError) {

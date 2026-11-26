@@ -38,10 +38,10 @@ const start = async ({ drivers = DRIVERS, record } = {}) => {
   return state;
 };
 
-const mount = async () => {
+const mount = async ({ isSuperAdmin = true } = {}) => {
   const [{ configureStore }, { Provider }] = await Promise.all([import("@reduxjs/toolkit"), import("react-redux")]);
   const { default: RecordPaymentDialog } = await import("./RecordPaymentDialog.jsx");
-  const store = configureStore({ reducer: { admin: (s = { isSuperAdmin: true }) => s } });
+  const store = configureStore({ reducer: { admin: (s = { isSuperAdmin }) => s } });
   render(<Provider store={store}><MemoryRouter><RecordPaymentDialog runId={17} cityName="Test City" onClose={() => {}} onRecorded={() => {}} /></MemoryRouter></Provider>);
   await screen.findByRole("tablist", { name: "Driver type" });
 };
@@ -191,5 +191,20 @@ describe("Pay to drivers by driver type", () => {
     fireEvent.click(tab("Desi drivers"));
     expect(screen.queryByRole("checkbox", { name: /Dev/ })).toBeNull();
     expect(tab("Desi drivers").textContent).toBe("Desi drivers (1)");
+  });
+
+  it("the Desi drivers PDF button is on the Desi tab only, and only for the super admin", async () => {
+    await start();
+    await mount();
+    const pdfButton = () => screen.queryByRole("button", { name: "Download Desi drivers PDF" });
+    expect(pdfButton()).toBeNull();
+    fireEvent.click(tab("Desi drivers"));
+    expect(pdfButton()).not.toBeNull();
+    fireEvent.click(tab("Local drivers"));
+    expect(pdfButton()).toBeNull();
+    cleanup();
+    await mount({ isSuperAdmin: false });
+    fireEvent.click(tab("Desi drivers"));
+    expect(pdfButton()).toBeNull();
   });
 });

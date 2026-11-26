@@ -162,14 +162,19 @@ const setup = async ({
   vi.resetModules();
   vi.doMock("./quickbooks/useQuickbooksPaymentsAvailable.js", () => ({ default: () => quickbooks }));
   const { default: PaymentRuns } = await import("./PaymentRuns.jsx");
+  // The Desi tab reads whether this is the super admin from the store, as the app does.
+  const [{ configureStore }, { Provider }] = await Promise.all([import("@reduxjs/toolkit"), import("react-redux")]);
+  const store = configureStore({ reducer: { admin: (s = { isSuperAdmin: false }) => s } });
   const recorded = vi.fn();
   render(
-    <MemoryRouter>
-      <PaymentRuns
-        cities={[{ id: 3, job: "Synthetic City" }]}
-        onRecorded={recorded}
-      />
-    </MemoryRouter>,
+    <Provider store={store}>
+      <MemoryRouter>
+        <PaymentRuns
+          cities={[{ id: 3, job: "Synthetic City" }]}
+          onRecorded={recorded}
+        />
+      </MemoryRouter>
+    </Provider>,
   );
   return { ...state, recorded };
 };

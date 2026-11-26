@@ -10,6 +10,7 @@ import { changeStatusUser, createUsers, getUsers, updateUser } from '../controll
 import { changeDriverTypes } from '../controllers/admin/driverTypeController.js';
 import { createAccessCode, deleteAccessCode } from '../controllers/admin/accessCodeControllers.js';
 import { DailyExcelUpload, getUpdatedTempDashboardData } from '../controllers/admin/fileUploadsController.js';
+import { deleteDailyChoice, getDailyChoices, putNameMatch, putSubRouteChoice } from '../controllers/admin/dailyMatchController.js';
 import { getAccessCodes, updateAccessCode, } from '../controllers/admin/accessCodeControllers.js';
 import { changeRoleAdmin, changeStatusAdmin, createAdmins, getAdmins, updateAdmin, getAdminCities, toggleAdminInvoices } from '../controllers/admin/addAdminController.js';
 import { getPaymentDashboardData, getAllPaymentDashboardData, updatePaymentData, updateWeeklyTempDataToDashboard, payDriver, getSummaryData } from '../controllers/admin/dashboardController.js';
@@ -67,6 +68,12 @@ router.patch('/toggle-admin-invoices/:id', superAdminAuth, toggleAdminInvoices);
 router.put('/update-admin/:id', superAdminAuth, updateAdmin);
 
 router.post('/doubleStop/dailyFileUpload', upload.single('file'), DailyExcelUpload)
+
+// Remembered choices of the daily upload that finds drivers by name (admin, own cities only)
+router.get('/daily-matching', getDailyChoices);
+router.put('/daily-matching/names', putNameMatch);
+router.put('/daily-matching/subroutes', putSubRouteChoice);
+router.delete('/daily-matching/:kind/:id', deleteDailyChoice);
 
 router.get("/journeys/paginated", adminJourneyController.fetchPaginatedJourneys);
 router.get("/journeys", adminJourneyController.fetchAllJourneys)

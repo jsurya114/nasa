@@ -15,6 +15,7 @@ import {
   ReceiptText,
   FileWarning,
   FileCheck,
+  UserCheck,
 } from "lucide-react";
 import GlassTabBar from "./GlassTabBar.jsx";
 import useInvoiceAccess from "../components/Admin/invoice/useInvoiceAccess.js";
@@ -32,6 +33,7 @@ function Nav() {
     { to: "/admin/driver-availability", Icon: CalendarDays, label: "Availability" },
     { to: "/admin/agreements", Icon: FileText, label: "Agreements" },
     { to: "/admin/claims", Icon: FileWarning, label: "Claims" },
+    { to: "/admin/daily-matching", Icon: UserCheck, label: "Daily drivers" },
     // Payroll, pay runs, Insights and Statements are for the super admin only. Invoices is also for the admins the super admin switched it on for.
     ...(isSuperAdmin ? [
       { to: "/admin/payroll", Icon: Wallet, label: "Payroll" },
