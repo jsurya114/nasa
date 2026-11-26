@@ -94,7 +94,7 @@ export const buildDesiDriversPdf = async ({ drivers, run, cityName, today }, ass
         drawText(page, fitted.text, { x: 379, y: 125 + i * 10.3, size: fitted.size, font: bold });
       });
       drawText(page, "DESI DRIVERS", { x: MARGIN, y: 150, size: 16, font: bold, color: COLORS.purple });
-      drawText(page, "Desi drivers are paid by check only. They are never sent to Everee.", { x: MARGIN, y: 166, size: 8.6, font: regular });
+      drawText(page, "Desi drivers are paid by check only.", { x: MARGIN, y: 166, size: 8.6, font: regular });
       drawText(page, `${drivers.length} DRIVER${drivers.length === 1 ? "" : "S"}`, { x: MARGIN, y: 190, size: 9, font: bold });
       drawText(page, `TOTAL ${formatMoney(sumCents(drivers))}`, { x: AMOUNT_RIGHT, y: 190, size: 12, font: bold, color: COLORS.purple, align: "right" });
       page.drawLine({ start: { x: CARD.left, y: toPdfY(204) }, end: { x: CARD.left + CARD.width, y: toPdfY(204) }, thickness: 1, color: COLORS.line });
