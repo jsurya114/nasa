@@ -18,6 +18,7 @@ import { getClaims } from '../controllers/admin/claimsController.js';
 import adminJourneyController from '../controllers/admin/adminJourneyController.js';
 import adminAuth from '../middlewares/adminAuth.js';
 import superAdminAuth from '../middlewares/superAdminAuth.js';
+import { adminDeletion, deletionReview } from '../controllers/accountDeletionController.js';
 import { getAllData, getFilteredDriversByCity, getFilteredRoutesByCity } from '../controllers/admin/dashController.js';
 import { getWeeklyTempData, weeklyExcelUpload } from '../controllers/admin/weeklyUploadsController.js';
 import { getAnalyticsData } from '../controllers/admin/analyticsController.js';
@@ -30,6 +31,13 @@ router.post('/login', loginRateLimit('admin'), adminController.Login);
 router.post('/refresh-token', adminController.RefreshToken);
 
 router.use(adminAuth);
+
+// Account deletion: an admin's own request, and the super admin's list of open requests to complete
+router.get('/account-deletion', adminDeletion.status);
+router.post('/account-deletion', adminDeletion.request);
+router.delete('/account-deletion', adminDeletion.cancel);
+router.get('/account-deletions', superAdminAuth, deletionReview.list);
+router.post('/account-deletions/:id/complete', superAdminAuth, deletionReview.complete);
 
 router.post('/addjob', superAdminAuth, jobController.addJob);
 router.put('/updatejob/:id', superAdminAuth, jobController.updateJob);
