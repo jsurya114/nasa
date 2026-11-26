@@ -21,6 +21,9 @@ import {
 
 
 import { unlink } from "fs";
+import { mainRouteCodeOf, planDailyDrivers } from "../../services/admin/dailyByName/planDailyDrivers.js";
+import { applyDailyPlan, dailyMatchByNameOn, loadDailyLookups } from "../../services/admin/dailyByName/dailyByNameStore.js";
+import { summarizeDailyPlan } from "../../services/admin/dailyByName/summarizeDailyPlan.js";
 
 
 const sheetName = "result";
@@ -158,10 +161,28 @@ export const DailyExcelUpload = async (req, res) => {
       throw new UploadFileError(`Missing required column(s): ${missingColumns.join(", ")}. Nothing was changed.`);
     }
 
+    const byName = dailyMatchByNameOn();
+    if (byName && rows.length > 0 && !rows.some((row) => row.DriverName !== undefined && row.DriverName !== "")) {
+      throw new UploadFileError("Missing required column: DriverName. Nothing was changed.");
+    }
+
     const tableName = `todays_excel_data`;
 
     await client.query("BEGIN");
     await lockUploads(client);
+
+    // With the switch on, each driver's day is made from the file (the driver named on each row) instead of from routes and sequences entered by
+    // hand. The steps below then match, classify and count exactly as before.
+    let plan = null;
+    let applied = null;
+    if (byName) {
+      const mainCodes = [...new Set(rows.map((row) => mainRouteCodeOf(row.Route)).filter(Boolean))];
+      plan = planDailyDrivers(rows, await loadDailyLookups(client, { mainCodes, uploadDate }));
+      if (isCityLimited(req.user.role)) {
+        assertJobsAllowed(plan.jobs, await getAllowedJobs(req.user.id, client), "This file includes deliveries for cities outside your assigned cities. Nothing was changed.");
+      }
+      applied = await applyDailyPlan(client, plan, uploadDate);
+    }
 
     await ExcelFileQueries.deleteIfTableAlreadyExists(tableName, client);
     await ExcelFileQueries.createDailyTable(tableName, client);
@@ -169,7 +190,8 @@ export const DailyExcelUpload = async (req, res) => {
       tableName,
       rows,
       uploadDate,
-      client
+      client,
+      plan ? (row, index) => plan.codes[index] : null
     );
 
 
@@ -217,7 +239,7 @@ export const DailyExcelUpload = async (req, res) => {
 
     return res
       .status(statusCode.OK)
-      .json({ success: true, message: "Excel processed successfully", rowsRead: rows.length });
+      .json({ success: true, message: "Excel processed successfully", rowsRead: rows.length, ...(plan && { byName: summarizeDailyPlan(plan, applied) }) });
   } catch (error) {
     await client.query("ROLLBACK");
     if (error instanceof CityAccessError) {
