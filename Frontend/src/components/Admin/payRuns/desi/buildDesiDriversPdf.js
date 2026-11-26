@@ -122,7 +122,7 @@ export const buildDesiDriversPdf = async ({ drivers, run, cityName, today }, ass
 };
 
 const safePart = (text) => String(text ?? "").replace(/[^A-Za-z0-9]+/g, "-").replace(/^-|-$/g, "");
-export const fileNameOf = (cityName, run) => `Desi-drivers-${safePart(cityName) || "city"}-${run.period_start}-to-${run.period_end}.pdf`;
+export const fileNameOf = (cityName, run) => `desi-drivers-list-${safePart(cityName) || "city"}-${run.period_start}-to-${run.period_end}.pdf`;
 
 // Makes the PDF and saves it through the browser.
 export const downloadDesiDriversPdf = async ({ drivers, run, cityName, today }) => {

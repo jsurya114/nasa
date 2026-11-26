@@ -66,6 +66,6 @@ describe("the Desi drivers PDF", () => {
   });
 
   it("names the file after the city and pay period, with nothing unsafe in it", () => {
-    expect(fileNameOf("Fort Worth / TX", RUN)).toBe("Desi-drivers-Fort-Worth-TX-2026-11-09-to-2026-11-15.pdf");
+    expect(fileNameOf("Fort Worth / TX", RUN)).toBe("desi-drivers-list-Fort-Worth-TX-2026-11-09-to-2026-11-15.pdf");
   });
 });
