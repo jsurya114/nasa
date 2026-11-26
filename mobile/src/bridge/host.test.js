@@ -140,3 +140,8 @@ test("a push failure sends back only a short code", async () => {
   const broken = setup({ push: { ...fakePush([]), status: async () => { throw new Error("leaky message with a token"); } } });
   assert.deepEqual([(await broken.send("push.status", {})).error], ["native_error"]);
 });
+
+test("session.get passes on that a stored session could not be checked, and nothing else", async () => {
+  const { send } = setup({ session: { status: async () => ({ accessToken: null, offline: true }) } });
+  assert.deepEqual((await send("session.get", { area: "driver" })).data, { accessToken: null, offline: true });
+});

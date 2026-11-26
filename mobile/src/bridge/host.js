@@ -30,7 +30,8 @@ const createBridgeHost = ({ info, session, openExternal, webOrigin, nonce, push,
       case "app.hello":
         return { shellVersion: info.shellVersion, platform: info.platform, bridgeVersions: [BRIDGE_VERSION], capabilities };
       case "session.get":
-        return { accessToken: await session.get(payload.area) };
+        // { accessToken } or { accessToken: null, offline: true } when a stored session could not be checked
+        return session.status ? await session.status(payload.area) : { accessToken: await session.get(payload.area) };
       case "session.set":
         await session.set(payload.area, payload);
         return {};
