@@ -24,6 +24,8 @@ const AdminInvoices = lazy(() => import("./components/Admin/Invoices.jsx"));
 const AdminClaims = lazy(() => import("./components/Admin/Claims.jsx"));
 const DailyMatching = lazy(() => import("./components/Admin/dailyMatching/DailyMatching.jsx"));
 const Support = lazy(() => import("./components/auth/Support.jsx"));
+const DeleteAccount = lazy(() => import("./components/account/DeleteAccount.jsx"));
+const DeletionRequests = lazy(() => import("./components/account/DeletionRequests.jsx"));
 
 import ProtectedRoutes from "./routes/admin/ProtectedRoute.jsx";
 import AdminPublicOnlyRoute from "./routes/admin/PublicOnlyRoute.jsx";
@@ -80,12 +82,14 @@ function App() {
               <Route path="/admin/driver-availability" element={<AdminDriverAvailability />} />
               <Route path="/admin/claims" element={<AdminClaims />} />
               <Route path="/admin/daily-matching" element={<DailyMatching />} />
+              <Route path="/admin/delete-account" element={<DeleteAccount area="admin" />} />
               <Route element={<SuperAdminRoute />}>
                 <Route path="/admin/payment-setup" element={<AdminPaymentSetupOverview />} />
                 <Route path="/admin/payroll" element={<AdminPayroll />} />
                 <Route path="/admin/pay-runs" element={<AdminPayRuns />} />
                 <Route path="/admin/insights" element={<AdminInsights />} />
                 <Route path="/admin/carrier-statements" element={<AdminCarrierStatements />} />
+                <Route path="/admin/deletion-requests" element={<DeletionRequests />} />
               </Route>
               <Route element={<InvoiceRoute />}>
                 <Route path="/admin/invoices" element={<AdminInvoices />} />
@@ -110,6 +114,7 @@ function App() {
               <Route path="/driver/quickbooks-setup" element={<DriverQuickbooksSetup />} />
               <Route path="/driver/update-password" element={<UpdatePassword />} />
               <Route path="/driver/profile" element={<DriverProfile />} />
+              <Route path="/driver/delete-account" element={<DeleteAccount area="driver" />} />
             </Route>
 
             {/* Catch-all 404 route */}

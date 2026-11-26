@@ -108,6 +108,8 @@ describe("the way in for a driver", () => {
     await waitFor(() => expect(trail.at(-1)).toBe("/driver/payment-setup"));
     expect(screen.getByText(/same email address you use to sign in/i)).toBeTruthy();
     expect(document.querySelector("nav")).toBeNull(); // no menu to leave by
+    // Only help, privacy and account deletion stay reachable (App Store 5.1.1(v)); none of them leads into the app
+    expect([...document.querySelectorAll("[aria-label='Account'] a")].map((a) => a.getAttribute("href")).sort()).toEqual(["/driver/delete-account", "/privacy-policy", "/support"]);
   });
 
   it("without enforcement the driver is only reminded, not locked", async () => {

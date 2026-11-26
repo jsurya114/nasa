@@ -1,3 +1,4 @@
+import AccountLinks from "../../components/account/AccountLinks.jsx";
 import React, { useEffect, useState } from "react";
 import logo from "../../assets/logo.png";
 import { accessDriver, driverLogout } from "../../redux/slice/driver/driverSlice.js";
@@ -128,6 +129,8 @@ function Header() {
           </div>
         </button>
 
+        <AccountLinks area="driver" className="flex text-white [&_a]:text-white" />
+
         {/* Logout Button */}
         <button
           className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-xl font-semibold shadow-sm transition-colors"
@@ -201,6 +204,10 @@ function Header() {
                 </button>
               </li>
               
+              <li className="border-b border-black/5">
+                <AccountLinks area="driver" onNavigate={() => setMenuOpen(false)} />
+              </li>
+
               {/* Logout */}
               <li>
                 <button

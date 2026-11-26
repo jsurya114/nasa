@@ -11,6 +11,8 @@ import PaymentSetupBanner from "../../components/Drivers/everee/PaymentSetupBann
 import SetupLock from "../../components/Drivers/everee/SetupLock.jsx";
 import PaymentSetupPrompt from "../../components/Drivers/everee/PaymentSetupPrompt.jsx";
 
+const ALWAYS_OPEN = "/driver/delete-account";
+
 function DProtectRoutes() {
     const dispatch = useDispatch()
     const location = useLocation()
@@ -29,6 +31,9 @@ function DProtectRoutes() {
     }
 
     // Block access if agreement is not signed (unless they are already on the agreement page)
+    // Account deletion stays open before the agreement and payment setup are done
+    if (location.pathname === ALWAYS_OPEN) return <Outlet />;
+
     if (driver && driver.agreement_signed === false && location.pathname !== "/driver/agreement") {
         return <Navigate to="/driver/agreement" />;
     }

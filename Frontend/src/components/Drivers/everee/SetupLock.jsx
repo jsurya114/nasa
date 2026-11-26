@@ -14,6 +14,8 @@ export default function SetupLock({ children }) {
   const { pathname } = useLocation();
   const { status, data, locked } = useEvereeSetup();
   const qb = useQuickbooksSetup();
+  // Account deletion stays open while setup is unfinished
+  if (pathname === "/driver/delete-account") return children;
   if ((status === "loading" && !data) || (qb.status === "loading" && !qb.data)) return <SkeletonList rows={2} label={t("loading")} />;
   if (locked && pathname !== "/driver/payment-setup") return <Navigate to="/driver/payment-setup" replace />;
   // A Desi driver's setup is QuickBooks. A driver is Local or Desi, never both, so at most one of the two locks applies.
