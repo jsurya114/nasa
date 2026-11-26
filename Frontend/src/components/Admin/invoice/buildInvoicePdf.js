@@ -1,3 +1,5 @@
+import { isNativeShell } from "../../../native/bridge";
+import { saveDocument } from "../../../native/documents";
 import { PDFDocument, rgb } from "pdf-lib";
 import fontkit from "@pdf-lib/fontkit";
 import { ISSUER, TERMS_TEXT, TERMS_TITLE } from "./invoiceTemplate.js";
@@ -327,27 +329,19 @@ export const buildInvoicePdf = async (invoice, assets) => {
 
 // ---- download and preview -----------------------------------------------------------------------------------------------------------------
 
-const blobUrlOf = async (invoice) => {
-  const bytes = await buildInvoicePdf(invoice, await loadInvoiceAssets());
-  return URL.createObjectURL(new Blob([bytes], { type: "application/pdf" }));
-};
+const bytesOf = async (invoice) => buildInvoicePdf(invoice, await loadInvoiceAssets());
 
-// Makes the PDF of a saved invoice and saves it through the browser.
-export const downloadInvoice = async (invoice) => {
-  const url = await blobUrlOf(invoice);
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = fileNameFor(invoice.invoiceNumber);
-  document.body.appendChild(link);
-  link.click();
-  link.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 10_000);
-};
+// Makes the PDF of a saved invoice and saves it: a download in a browser, the phone's share sheet in the app.
+export const downloadInvoice = async (invoice) =>
+  saveDocument({ bytes: await bytesOf(invoice), fileName: fileNameFor(invoice.invoiceNumber), mimeType: "application/pdf" });
 
 // Shows the PDF in a tab the caller opened (opened before any waiting, so the browser does not block it as a pop-up).
+// In the app there is no tab: the share sheet shows the PDF's preview instead.
 export const previewInvoice = async (invoice, tab) => {
-  const url = await blobUrlOf(invoice);
+  if (isNativeShell()) return downloadInvoice(invoice);
+  const url = URL.createObjectURL(new Blob([await bytesOf(invoice)], { type: "application/pdf" }));
   if (tab && !tab.closed) tab.location.href = url;
   else window.open(url, "_blank", "noopener");
   setTimeout(() => URL.revokeObjectURL(url), 60_000);
+  return "previewed";
 };
