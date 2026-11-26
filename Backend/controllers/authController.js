@@ -58,6 +58,8 @@ export const makeSignIn = (deps = signInDeps) => async (req, res) => {
     }
 
     const { area: signedArea, user } = result;
+    // Read by the login limits: only this area's counters are given back on success
+    res.locals = { ...(res.locals ?? {}), signedArea };
     if (signedArea === 'admin') {
       const claims = { id: user.id, email: user.email, role: user.role, name: user.name };
       const accessToken = generateToken(claims);

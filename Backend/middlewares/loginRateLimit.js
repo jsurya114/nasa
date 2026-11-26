@@ -122,7 +122,9 @@ async function giveBack(key) {
 
 /**
  * @param {'admin'|'driver'} area  each area has its own counters
- * @param {{windowSeconds?:number}} [options]
+ * @param {{windowSeconds?:number, sharedRoute?:boolean}} [options]  sharedRoute: the route can sign in to either
+ *   area (/auth/login), so a success clears this area's counters only when the handler set
+ *   res.locals.signedArea to this area. A success in the other area never resets this one.
  */
 export function loginRateLimit(area, options = {}) {
   const windowSeconds = options.windowSeconds ?? WINDOW_SECONDS;
@@ -158,7 +160,8 @@ export function loginRateLimit(area, options = {}) {
 
     // A successful login clears the account counters and gives back the address count.
     res.on('finish', () => {
-      if (res.statusCode === HttpStatus.OK) {
+      const signedHere = !options.sharedRoute || res.locals?.signedArea === area;
+      if (res.statusCode === HttpStatus.OK && signedHere) {
         if (accountAddressKey) clear(accountAddressKey);
         if (accountKey) clear(accountKey);
         giveBack(addressKey);

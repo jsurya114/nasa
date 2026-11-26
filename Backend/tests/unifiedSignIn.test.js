@@ -32,6 +32,7 @@ const call = async (deps, body) => {
   const out = {};
   const res = { status(code) { out.status = code; return this; }, json(payload) { out.body = payload; return this; } };
   await makeSignIn(deps)({ body }, res);
+  out.locals = res.locals;
   return out;
 };
 
@@ -40,6 +41,7 @@ test('an admin, the super admin and a driver all sign in on the same route and g
 
   const admin = await call(deps, { email: ADMIN.email, password: 'admin-pass' });
   assert.equal(admin.status, 200);
+  assert.equal(admin.locals.signedArea, 'admin', 'the limits learn which area was signed in to');
   assert.equal(admin.body.area, 'admin');
   assert.equal(admin.body.next, '/admin/dashboard');
   assert.equal(admin.body.admin.password, undefined, 'the hash never leaves the server');
@@ -134,7 +136,28 @@ test('an account row without a password hash never opens and is checked like an 
 
 test('the route is limited by both existing login limits and mounted before the area routers', () => {
   const routes = readFileSync(new URL('../routes/authRoutes.js', import.meta.url), 'utf8');
-  assert.match(routes, /router\.post\('\/login', loginRateLimit\('admin'\), loginRateLimit\('driver'\), authController\.Login\)/);
+  assert.match(routes, /router\.post\('\/login', loginRateLimit\('admin', SHARED\), loginRateLimit\('driver', SHARED\), authController\.Login\)/);
   const app = readFileSync(new URL('../app.js', import.meta.url), 'utf8');
   assert.ok(app.indexOf("app.use('/auth'") > -1 && app.indexOf("app.use('/auth'") < app.indexOf("app.use('/admin', (req"));
+});
+
+// Needs a Redis server (the limiter module connects when it is imported). Run with REDIS_TEST=1 and a local Redis.
+test('on the shared route a success gives back only the signed-in area\'s counters', { skip: process.env.REDIS_TEST !== '1' && 'set REDIS_TEST=1 with a local Redis to run' }, async () => {
+  const { loginRateLimit } = await import('../middlewares/loginRateLimit.js');
+  const { EventEmitter } = await import('node:events');
+  const attempt = async (area, signedArea, status) => {
+    const res = Object.assign(new EventEmitter(), { statusCode: status, locals: {}, set() {}, status() { return this; }, json() { return this; } });
+    await loginRateLimit(area, { sharedRoute: true, windowSeconds: 60 })({ body: { email: 'limit@example.test' }, ip: '10.9.9.9' }, res, () => {});
+    res.locals.signedArea = signedArea;
+    res.emit('finish');
+  };
+  const { bump } = await import('../middlewares/loginRateLimit.js');
+  for (let i = 0; i < 3; i += 1) await attempt('admin', undefined, 401);
+  await attempt('admin', 'driver', 200); // signed in to the driver area: the admin counter is not reset
+  const after = await bump('rl:login:admin:acct:10.9.9.9:limit@example.test', 60);
+  assert.equal(after.count, 5, 'four attempts kept, plus this one');
+  const { clear } = await import('../middlewares/loginRateLimit.js');
+  await clear('rl:login:admin:acct:10.9.9.9:limit@example.test');
+  await clear('rl:login:driver:acct:10.9.9.9:limit@example.test');
+  await (await import('../config/redis.js')).default.quit();
 });
