@@ -4,11 +4,12 @@ import { adminLogout } from "../redux/slice/admin/adminSlice";
 import { useDispatch, useSelector } from "react-redux";
 import { useNavigate } from "react-router-dom";
 import { Menu, X, User } from "lucide-react";
+import AccountLinks from "../components/account/AccountLinks.jsx";
 
 function Header() {
   const dispatch = useDispatch();
   const navigate = useNavigate();
-  const { admin } = useSelector((state) => state.admin);
+  const { admin, isSuperAdmin } = useSelector((state) => state.admin);
   const [menuOpen, setMenuOpen] = useState(false);
 
   // useEffect(() => {
@@ -50,6 +51,7 @@ function Header() {
           </div>
         </div>
 
+        <AccountLinks area="admin" isSuperAdmin={isSuperAdmin} className="flex text-white [&_a]:text-white" />
         <button
           className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-xl font-semibold shadow-sm"
           onClick={handleLogout}
@@ -84,6 +86,7 @@ function Header() {
         <div className="font-semibold text-center">{admin?.name}</div>
       </div>
 
+      <AccountLinks area="admin" isSuperAdmin={isSuperAdmin} onNavigate={() => setMenuOpen(false)} />
       <button
         className="w-full bg-red-600 hover:bg-red-700 text-white px-3 py-3 rounded-xl font-semibold"
         onClick={handleLogout}
