@@ -3,6 +3,7 @@ import { useEffect } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import { accessAdminUser } from "../../redux/slice/admin/adminSlice";
 import AuthCheckRetry from "../../native/AuthCheckRetry.jsx";
+import Loader from "../../components/Loader.jsx";
 
 function AdminPublicOnlyRoute() {
   const dispatch = useDispatch();
@@ -22,7 +23,7 @@ function AdminPublicOnlyRoute() {
     }
   }, [loading, isAuthenticated, navigate]);
 
-  if (loading || isAuthenticated) return null;
+  if (loading || isAuthenticated) return <Loader />;
   if (isAuthenticated === null && authCheckFailed) return <AuthCheckRetry onRetry={() => dispatch(accessAdminUser())} />;
 
   return <Outlet />;
