@@ -169,6 +169,8 @@ test("only a file.share message may be long, and even that is bounded", () => {
   const { MAX_BASE64_LENGTH } = require("../documents");
   const t = new IdTracker();
   const big = "A".repeat(40000);
+  const forged = JSON.stringify({ v: 1, id: "long0", nonce: "wrong".repeat(8), action: "file.share", payload: { name: "x.pdf", mimeType: "application/pdf", data: big } });
+  assert.equal(parse(forged, t).ok, false, "a long message without this page's nonce is dropped before parsing");
   assert.equal(parse(message({ action: "session.get", payload: { area: "admin", pad: big }, id: "long1" }), t).error, "bad_request");
   assert.equal(parse(message({ action: "file.share", payload: { name: "x.pdf", mimeType: "application/pdf", data: big }, id: "long2" }), t).ok, true);
   const tooBig = "A".repeat(MAX_BASE64_LENGTH + 4);

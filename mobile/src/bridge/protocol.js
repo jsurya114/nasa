@@ -89,6 +89,12 @@ class IdTracker {
 // Returns { ok: true, message } or { ok: false, error, id? }.
 const parseMessage = (raw, tracker, nonce) => {
   if (typeof raw !== "string" || raw.length === 0 || raw.length > MAX_FILE_MESSAGE_LENGTH) return { ok: false, error: "bad_request" };
+  // A long message is parsed only if it already carries this page load's nonce next to the file.share action, in the
+  // order the NASA page writes them. Anything else long is dropped before the (costly) parse.
+  if (raw.length > MAX_MESSAGE_LENGTH) {
+    if (typeof nonce !== "string" || nonce.length < 16) return { ok: false, error: "untrusted_frame" };
+    if (!raw.includes(`"nonce":${JSON.stringify(nonce)},"action":"file.share","payload":`)) return { ok: false, error: "bad_request" };
+  }
 
   let message;
   try {
