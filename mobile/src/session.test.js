@@ -214,7 +214,7 @@ test("two quick sign-ins end with the newer one, however the writes finish", asy
   assert.equal(await s.get("driver"), "a-new");
 });
 
-test("one area's slow write does not hold up or disturb the other area", async () => {
+test("a sign-in to the other area while one is still being saved leaves only the later person signed in", async () => {
   const storage = controlledStorage();
   const s = createSession({ storage, request: fakeServer().request });
   const held = storage.hold("setItem");
@@ -224,7 +224,7 @@ test("one area's slow write does not hold up or disturb the other area", async (
   await settle();
   held.release();
   await Promise.all([driver, admin]);
-  assert.equal(storage.data[keyFor("driver")], "dr");
+  assert.equal(storage.data[keyFor("driver")], undefined);
   assert.equal(storage.data[keyFor("admin")], "ar");
 });
 
@@ -241,4 +241,41 @@ test("a refused-token cleanup that runs after a new sign-in is dropped", async (
   await signingIn;
   await outcome;
   assert.equal(storage.data[keyFor("driver")], "r-new");
+});
+
+test("signing in to one area signs the other out on the phone and on the server", async () => {
+  const storage = memoryStorage({ [keyFor("admin")]: "r1" });
+  const server = fakeServer();
+  const s = createSession({ storage, request: server.request });
+  await s.set("driver", { accessToken: "da", refreshToken: "dr" });
+  assert.equal(storage.data[keyFor("admin")], undefined);
+  assert.equal(storage.data[keyFor("driver")], "dr");
+  assert.equal(await s.get("admin"), null);
+  await new Promise((r) => setTimeout(r, 0));
+  assert.ok(server.log.includes("/admin/logout"), "the admin session is revoked too");
+});
+
+test("an older install holding both areas is signed out completely at the first start", async () => {
+  const storage = memoryStorage({ [keyFor("admin")]: "r1", [keyFor("driver")]: "r1" });
+  const server = fakeServer();
+  const s = createSession({ storage, request: server.request });
+  assert.equal(await s.get("driver"), null);
+  assert.equal(await s.get("admin"), null);
+  assert.deepEqual(storage.data, {});
+});
+
+test("an older install holding one area keeps it", async () => {
+  const storage = memoryStorage({ [keyFor("admin")]: "r1" });
+  const s = createSession({ storage, request: fakeServer().request });
+  assert.equal(await s.get("admin"), "a2");
+});
+
+test("status tells a stored session that could not be checked apart from no session", async () => {
+  const storage = memoryStorage({ [keyFor("driver")]: "r1" });
+  const down = createSession({ storage, request: async () => { throw new Error("offline"); } });
+  assert.deepEqual(await down.status("driver"), { accessToken: null, offline: true });
+  assert.equal(storage.data[keyFor("driver")], "r1", "kept");
+  assert.deepEqual(await down.status("admin"), { accessToken: null });
+  const sick = createSession({ storage, request: async () => ({ status: 503, data: {} }) });
+  assert.deepEqual(await sick.status("driver"), { accessToken: null, offline: true });
 });
