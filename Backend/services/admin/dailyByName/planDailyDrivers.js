@@ -103,18 +103,42 @@ export const planDailyDrivers = (rows, lookups) => {
   const atMainPrice = [];
   const paidDays = [];
   const placedRows = new Set();
+  // Parcels that already belong to a day of the upload day (entered by hand, paid, in a pay run): main route + sequence -> { driver, route }.
+  // Such a parcel is never given to a second driver, on any route of that main route.
+  const mainIdOf = (routeId) => {
+    const r = routeById.get(routeId);
+    if (!r) return null;
+    return r.code.includes(':') ? (lookups.routesByCode.get(r.code.split(':')[0])?.id ?? r.id) : r.id;
+  };
+  const held = new Map(); // `${mainId}|${seq}` -> [{ driverId, routeId }] (two drivers can each have a parcel with the same number, on different routes)
+  for (const [key, driverId] of lookups.takenSeqs) {
+    const [routeId, seq] = key.split('|').map(Number);
+    const mainId = mainIdOf(routeId);
+    if (mainId !== null) held.set(`${mainId}|${seq}`, [...(held.get(`${mainId}|${seq}`) ?? []), { driverId, routeId }]);
+  }
+  // A holder who still has that parcel in the file keeps it; only a parcel the file now gives to someone else is "held" against them.
+  const inFile = new Set(candidates.map((c) => `${c.driver.id}|${c.main.id}|${c.seq}`));
   const freeOn = (route, driverId, seqs) => [...seqs].every((s) => { const owner = taken.get(`${route.id}|${s}`); return owner === undefined || owner === driverId; });
 
   for (const g of groups.values()) {
     const seqs = new Set(g.rows.map((r) => r.seq));
+    const holders = [...seqs].flatMap((s) => (held.get(`${g.main.id}|${s}`) ?? []).map((h) => ({ ...h, seq: s })));
+    if (holders.some((h) => h.driverId !== g.driver.id && !inFile.has(`${h.driverId}|${g.main.id}|${h.seq}`))) {
+      counts.clash += g.rows.length;
+      clashes.push({ driverId: g.driver.id, driverName: g.driver.name, route: g.main.code, parcels: g.rows.length, reason: 'held' });
+      continue;
+    }
     const chosenId = lookups.choiceOf.get(`${g.cityId}|${g.main.id}|${g.driver.id}`);
     const chosen = chosenId ? routeById.get(chosenId) : null;
-    let route = chosen && chosen.enabled ? chosen : g.main;
+    // The driver's own day of the upload day keeps its route (so their parcels are never split over two routes).
+    const own = holders.find((h) => h.driverId === g.driver.id);
+    const ownRoute = own ? routeById.get(own.routeId) : null;
+    let route = ownRoute ?? (chosen && chosen.enabled ? chosen : g.main);
     if (!freeOn(route, g.driver.id, seqs)) {
-      const spare = chosen ? null : (lookups.subRoutesOf.get(g.main.id) ?? []).find((s) => s.enabled && samePrices(s, g.main) && freeOn(s, g.driver.id, seqs));
+      const spare = chosen || ownRoute ? null : (lookups.subRoutesOf.get(g.main.id) ?? []).find((s) => s.enabled && samePrices(s, g.main) && freeOn(s, g.driver.id, seqs));
       if (!spare) {
         counts.clash += g.rows.length;
-        clashes.push({ driverId: g.driver.id, driverName: g.driver.name, route: route.code, parcels: g.rows.length });
+        clashes.push({ driverId: g.driver.id, driverName: g.driver.name, route: route.code, parcels: g.rows.length, reason: 'file' });
         continue;
       }
       movedToSub.push({ driverId: g.driver.id, driverName: g.driver.name, mainRoute: g.main.code, subRoute: spare.code });

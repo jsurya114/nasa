@@ -62,12 +62,29 @@ test('two drivers with the same sequences on one route: the later one moves to a
   assert.deepEqual(plan.codes, ['1-TST 001-1', '2-TST 001-1', '1-TST 001-1:A']);
 });
 
-test('a sub-route already used that day is skipped; with no free same-price sub-route the rows are not added and are reported', () => {
-  const taken = new Map([['2|1', 999], ['3|1', 998]]);
-  const plan = planDailyDrivers([row('1106-TST 001-1', 1, 'Ana Pérez'), row('1106-TST 001-1', 1, 'Bo Li')], lookups({ takenSeqs: taken }));
-  assert.deepEqual(plan.clashes, [{ driverId: 102, driverName: 'Bo Li', route: 'TST 001-1', parcels: 1 }]);
-  assert.equal(plan.counts.clash, 1);
-  assert.equal(plan.codes[1], 'unplaced-1'); // Ana has "1-TST 001-1" now, so Bo's row gets a code that matches nothing
+test('in the file, when every same-price sub-route is taken too, the later driver is not added and is reported', () => {
+  const rows = [row('1106-TST 001-1', 1, 'Ana Pérez'), row('1106-TST 001-1', 1, 'Bo Li'), row('1106-TST 001-1', 1, 'Di Ng'), row('1106-TST 001-1', 1, 'Ed Fu')];
+  const plan = planDailyDrivers(rows, lookups({ driverByName: new Map([
+    ['9|ana pérez', { id: 101, name: 'Ana Pérez', enabled: true }], ['9|bo li', { id: 102, name: 'Bo Li', enabled: true }],
+    ['9|di ng', { id: 104, name: 'Di Ng', enabled: true }], ['9|ed fu', { id: 105, name: 'Ed Fu', enabled: true }],
+  ]) }));
+  assert.deepEqual(plan.placements.map((p) => p.route.code), ['TST 001-1', 'TST 001-1:A', 'TST 001-1:B']); // never :E, which has another price
+  assert.deepEqual(plan.clashes, [{ driverId: 105, driverName: 'Ed Fu', route: 'TST 001-1', parcels: 1, reason: 'file' }]);
+  assert.equal(plan.codes[3], 'unplaced-3'); // its old code is Ana's now
+});
+
+test('a parcel already in another driver\'s day is never given to a second driver, on any route of that main route', () => {
+  // driver 999 already has sequence 1 of TST 001-1 that day, on the sub-route :B (entered by hand, or paid, or in a pay run)
+  const plan = planDailyDrivers([row('1106-TST 001-1', 1, 'Ana Pérez'), row('1106-TST 001-1', 2, 'Bo Li')], lookups({ takenSeqs: new Map([['3|1', 999]]) }));
+  assert.deepEqual(plan.clashes, [{ driverId: 101, driverName: 'Ana Pérez', route: 'TST 001-1', parcels: 1, reason: 'held' }]);
+  assert.deepEqual(plan.placements.map((p) => [p.driverId, p.route.code]), [[102, 'TST 001-1']]);
+});
+
+test('a driver who already has a day keeps its route, even when a sub-route is remembered for them', () => {
+  const plan = planDailyDrivers([row('1106-TST 001-1', 1, 'Ana Pérez'), row('1106-TST 001-1', 2, 'Ana Pérez')], lookups({
+    takenSeqs: new Map([['2|1', 101]]), dayRows: new Map([['101|2', { id: 7, paid: false }]]), choiceOf: new Map([['9|1|101', SUB_E.id]]),
+  }));
+  assert.deepEqual(plan.placements.map((p) => [p.route.code, p.dayRow?.id, [...p.seqs]]), [['TST 001-1:A', 7, [1, 2]]]);
 });
 
 test('unmatched names, disabled drivers and unknown routes are counted and listed, never dropped', () => {
