@@ -12,7 +12,7 @@ import { createAccessCode, deleteAccessCode } from '../controllers/admin/accessC
 import { DailyExcelUpload, getUpdatedTempDashboardData } from '../controllers/admin/fileUploadsController.js';
 import { deleteDailyChoice, getDailyChoices, putNameMatch, putSubRouteChoice } from '../controllers/admin/dailyMatchController.js';
 import { getAccessCodes, updateAccessCode, } from '../controllers/admin/accessCodeControllers.js';
-import { changeRoleAdmin, changeStatusAdmin, createAdmins, getAdmins, updateAdmin, getAdminCities, toggleAdminInvoices } from '../controllers/admin/addAdminController.js';
+import { changeRoleAdmin, changeStatusAdmin, createAdmins, getAdmins, updateAdmin, getAdminCities, toggleAdminInvoices, toggleAdminPayroll } from '../controllers/admin/addAdminController.js';
 import { getPaymentDashboardData, getAllPaymentDashboardData, updatePaymentData, updateWeeklyTempDataToDashboard, payDriver, getSummaryData } from '../controllers/admin/dashboardController.js';
 import { getClaims } from '../controllers/admin/claimsController.js';
 import adminJourneyController from '../controllers/admin/adminJourneyController.js';
@@ -73,6 +73,7 @@ router.get('/get-admins', superAdminAuth, getAdmins);
 router.patch('/toggle-admin/:id', superAdminAuth, changeStatusAdmin);
 router.patch('/toggle-admin-role/:id', superAdminAuth, changeRoleAdmin);
 router.patch('/toggle-admin-invoices/:id', superAdminAuth, toggleAdminInvoices);
+router.patch('/toggle-admin-payroll/:id', superAdminAuth, toggleAdminPayroll);
 router.put('/update-admin/:id', superAdminAuth, updateAdmin);
 
 router.post('/doubleStop/dailyFileUpload', upload.single('file'), DailyExcelUpload)

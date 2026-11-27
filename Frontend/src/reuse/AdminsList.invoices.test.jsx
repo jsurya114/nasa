@@ -13,7 +13,7 @@ const mount = async (patch, ann = ANN) => {
   const state = { patches: [], bodies: [] };
   await installServer(async (config) => {
     if (config.url === "/admin/get-admins") return { status: 200, data: { admins: [ann, BOSS], page: 1, totalPages: 1 } };
-    if (config.url.startsWith("/admin/toggle-admin-invoices/")) { state.patches.push(config.url); state.bodies.push(JSON.parse(config.data)); return patch(); }
+    if (config.url.startsWith("/admin/toggle-admin-")) { state.patches.push(config.url); state.bodies.push(JSON.parse(config.data)); return patch(); }
     return { status: 200, data: {} };
   });
   const [{ configureStore }, { Provider }] = await Promise.all([import("@reduxjs/toolkit"), import("react-redux")]);
@@ -35,8 +35,19 @@ it("an ordinary admin has a switch, off at first; a super admin shows Always ins
   const ann = screen.getByRole("checkbox", { name: "Invoices for Ann Admin" });
   expect(ann.checked).toBe(false);
   const bossRow = screen.getByText("Bea Boss").closest("tr");
-  expect(within(bossRow).getByText("Always")).toBeTruthy();
-  expect(within(bossRow).queryByRole("checkbox", { name: /Invoices for/ })).toBeNull();
+  expect(within(bossRow).getAllByText("Always")).toHaveLength(2); // Invoices and Payroll
+  expect(within(bossRow).queryByRole("checkbox", { name: /Invoices for|Payroll for/ })).toBeNull();
+  expect(screen.getByRole("checkbox", { name: "Payroll for Ann Admin" }).checked).toBe(false);
+});
+
+it("the Payroll switch is saved on its own route, with the wanted state, and leaves Invoices as it was", async () => {
+  const s = await mount(() => ({ status: 200, data: { message: "Payroll switched on", data: { id: 9, can_use_payroll: true } } }));
+  fireEvent.click(screen.getByRole("checkbox", { name: "Payroll for Ann Admin" }));
+  await waitFor(() => expect(screen.getByRole("checkbox", { name: "Payroll for Ann Admin" }).checked).toBe(true));
+  expect(s.patches).toEqual(["/admin/toggle-admin-payroll/9"]);
+  expect(s.bodies).toEqual([{ enabled: true }]);
+  expect(toast.success).toHaveBeenCalledWith("Payroll switched on");
+  expect(screen.getByRole("checkbox", { name: "Invoices for Ann Admin" }).checked).toBe(false);
 });
 
 it("switching it on is saved on the server and shown as saved; a failure leaves the switch as it was and says so", async () => {

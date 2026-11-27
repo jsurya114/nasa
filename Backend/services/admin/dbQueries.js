@@ -135,12 +135,13 @@ export const dbService = {
                 a.role AS admin_role,
                 a.is_active,
                 a.can_use_invoices,
+                a.can_use_payroll,
                 COALESCE(STRING_AGG(c.job, ', '), '') AS cities
             FROM admin a
             LEFT JOIN admin_city_ref acr ON a.id = acr.admin_id
             LEFT JOIN city c ON acr.city_id = c.id
             WHERE a.id != $1
-            GROUP BY a.id, a.name, a.email, a.role, a.is_active, a.can_use_invoices
+            GROUP BY a.id, a.name, a.email, a.role, a.is_active, a.can_use_invoices, a.can_use_payroll
             ORDER BY a.id
             LIMIT $2 OFFSET $3`,
             [100, limit, offset]
@@ -281,6 +282,17 @@ export const dbService = {
             `UPDATE admin SET can_use_invoices = $2
              WHERE id = $1 AND role = 'admin'
              RETURNING id, can_use_invoices`,
+            [id, enabled === true]
+        );
+        return result.rows[0];
+    },
+
+    // Switches the Payroll page on or off for one ordinary admin, like Invoices above. A super admin already has it.
+    setPayrollAccessOfAdmin: async (id, enabled, db = pool) => {
+        const result = await db.query(
+            `UPDATE admin SET can_use_payroll = $2
+             WHERE id = $1 AND role = 'admin'
+             RETURNING id, can_use_payroll`,
             [id, enabled === true]
         );
         return result.rows[0];

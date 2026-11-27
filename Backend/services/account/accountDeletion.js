@@ -97,7 +97,7 @@ export const completeRequest = async (requestId, byAdminId, db = pool) => {
       await client.query(`SELECT id FROM admin WHERE role = 'superadmin' ORDER BY id FOR UPDATE`);
       if (target.role === 'superadmin' && (await activeSuperAdmins(client, userId)) === 0) throw fail('last_super_admin');
       await client.query(
-        `UPDATE admin SET email = $2, password = $3, is_active = false, can_use_invoices = false WHERE id = $1`,
+        `UPDATE admin SET email = $2, password = $3, is_active = false, can_use_invoices = false, can_use_payroll = false WHERE id = $1`,
         [userId, placeholderEmail('admin', userId), password],
       );
       await client.query('DELETE FROM admin_city_ref WHERE admin_id = $1', [userId]);

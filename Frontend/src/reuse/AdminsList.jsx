@@ -6,6 +6,12 @@ import Pagination from "./Pagination";
 import { toast } from "../utils/toast";
 import axios from "../redux/slice/axiosInstance";
 
+// Areas the super admin can switch on for single admins (the server checks them on every request). Payroll is for the admin's own cities only.
+const ACCESS_AREAS = {
+  invoices: { label: "Invoices", column: "can_use_invoices" },
+  payroll: { label: "Payroll", column: "can_use_payroll" },
+};
+
 function AdminsList({ onEdit }) {
   const dispatch = useDispatch();
   const { admins, loading: adminsLoad, totalPages } = useSelector((state) => state.users);
@@ -21,24 +27,48 @@ function AdminsList({ onEdit }) {
     dispatch(toggleAvailAdmin(id));
   }
 
-  // The Invoices switch of each ordinary admin. The server's answer is kept here, so the switch shows what is saved.
-  const [invoiceAccess, setInvoiceAccess] = useState({});
-  const [invoiceBusy, setInvoiceBusy] = useState(null);
-  const hasInvoices = (a) => (a.id in invoiceAccess ? invoiceAccess[a.id] : a.can_use_invoices === true);
+  // The Invoices and Payroll switches of each ordinary admin. The server's answer is kept here, so a switch shows what is saved.
+  const [access, setAccess] = useState({}); // `${area}:${adminId}` -> on
+  const [accessBusy, setAccessBusy] = useState(null);
+  const hasAccess = (area, a) => {
+    const key = `${area}:${a.id}`;
+    return key in access ? access[key] : a[ACCESS_AREAS[area].column] === true;
+  };
 
-  async function handleInvoiceToggle(a) {
-    setInvoiceBusy(a.id);
+  async function handleAccessToggle(area, a) {
+    const { label, column } = ACCESS_AREAS[area];
+    const key = `${area}:${a.id}`;
+    setAccessBusy(key);
     try {
       // The wanted state is sent, not "the opposite": a repeated request after a lost answer ends in the same state.
-      const { data } = await axios.patch(`/admin/toggle-admin-invoices/${a.id}`, { enabled: !hasInvoices(a) });
-      setInvoiceAccess((current) => ({ ...current, [a.id]: data.data.can_use_invoices === true }));
+      const { data } = await axios.patch(`/admin/toggle-admin-${area}/${a.id}`, { enabled: !hasAccess(area, a) });
+      setAccess((current) => ({ ...current, [key]: data.data[column] === true }));
       toast.success(data.message);
     } catch (error) {
-      toast.error(error.response?.data?.message || "Invoices access could not be changed.");
+      toast.error(error.response?.data?.message || `${label} access could not be changed.`);
     } finally {
-      setInvoiceBusy(null);
+      setAccessBusy(null);
     }
   }
+
+  const accessCell = (area, a) => {
+    const { label } = ACCESS_AREAS[area];
+    if (a.admin_role !== "admin") return <span className="text-xs text-gray-500">Always</span>;
+    const on = hasAccess(area, a);
+    return (
+      <label className="inline-flex min-h-11 cursor-pointer items-center gap-2" title={`Switch ${label} ${on ? "off" : "on"} for this admin`}>
+        <input
+          type="checkbox"
+          checked={on}
+          disabled={accessBusy === `${area}:${a.id}`}
+          onChange={() => handleAccessToggle(area, a)}
+          aria-label={`${label} for ${a.admin_name}`}
+          className="h-5 w-5 accent-purple-600"
+        />
+        <span className="text-xs">{on ? "On" : "Off"}</span>
+      </label>
+    );
+  };
 
   function handleEdit(admin) {
     if (!admin.is_active) {
@@ -66,7 +96,7 @@ function AdminsList({ onEdit }) {
           <table className="w-full border-collapse text-sm">
             <thead>
               <tr className="bg-gray-50 text-left">
-                {["Sl No", "Name", "Email", "Role", "Cities", "Status", "Invoices", "Actions"].map((head, i) => (
+                {["Sl No", "Name", "Email", "Role", "Cities", "Status", "Invoices", "Payroll", "Actions"].map((head, i) => (
                   <th key={i} className="px-3 py-2 border-b border-line">
                     {head}
                   </th>
@@ -75,7 +105,7 @@ function AdminsList({ onEdit }) {
             </thead>
             <tbody>
               {adminsLoad && admins.length === 0 ? (
-                <SkeletonTableRows rows={5} cols={8} label="Loading admins..." />
+                <SkeletonTableRows rows={5} cols={9} label="Loading admins..." />
               ) : admins.length > 0 ? (
                 admins.map((a, i) => (
                   <tr key={a.id} className={!a.is_active ? "bg-gray-50" : ""}>
@@ -123,26 +153,8 @@ function AdminsList({ onEdit }) {
                         </span>
                       )}
                     </td>
-                    <td className="px-3 py-2 border-b">
-                      {a.admin_role === "admin" ? (
-                        <label
-                          className="inline-flex min-h-11 cursor-pointer items-center gap-2"
-                          title={hasInvoices(a) ? "Switch Invoices off for this admin" : "Switch Invoices on for this admin"}
-                        >
-                          <input
-                            type="checkbox"
-                            checked={hasInvoices(a)}
-                            disabled={invoiceBusy === a.id}
-                            onChange={() => handleInvoiceToggle(a)}
-                            aria-label={`Invoices for ${a.admin_name}`}
-                            className="h-5 w-5 accent-purple-600"
-                          />
-                          <span className="text-xs">{hasInvoices(a) ? "On" : "Off"}</span>
-                        </label>
-                      ) : (
-                        <span className="text-xs text-gray-500">Always</span>
-                      )}
-                    </td>
+                    <td className="px-3 py-2 border-b">{accessCell("invoices", a)}</td>
+                    <td className="px-3 py-2 border-b">{accessCell("payroll", a)}</td>
                     <td className="px-3 py-2 border-b">
                       <div className="flex items-center gap-3">
                         {/* Toggle Switch */}
@@ -196,7 +208,7 @@ function AdminsList({ onEdit }) {
                 ))
               ) : (
                 <tr>
-                  <td colSpan="8" className="text-center py-8 text-gray-500">
+                  <td colSpan="9" className="text-center py-8 text-gray-500">
                     <div className="flex flex-col items-center gap-2">
                       <svg className="w-12 h-12 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />

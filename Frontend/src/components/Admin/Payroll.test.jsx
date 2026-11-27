@@ -81,7 +81,7 @@ describe("admin Payroll", () => {
     const server = await startServer();
     await mount();
     await chooseDriver();
-    const reads = server.requests.filter((r) => r.url.startsWith("/admin/payroll/"));
+    const reads = server.requests.filter((r) => r.url.startsWith("/admin/payroll/") && r.url !== "/admin/payroll/access"); // the menu asks for access
     expect(reads.every((r) => r.params?.cityId === "3")).toBe(true);
     expect(screen.getByText(/1 entry has no repayment arrangement/)).toBeTruthy();
     expect(screen.getByText("Pending")).toBeTruthy();
