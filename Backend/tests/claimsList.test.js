@@ -26,7 +26,7 @@ test('the claims list: matched and unmatched, only the admin\'s cities, only cur
   const one = async (sql, params) => (await db.query(sql, params)).rows[0];
   try {
     await db.query('BEGIN');
-    for (const m of ['2026-11-03-issue-141-courier-claims.sql', '2026-11-03-issue-142-driver-ledger.sql', '2026-11-03-issue-143-pay-runs.sql', '2026-11-04-issue-180-claim-courier-name.sql']) await db.query(migration(m));
+    for (const m of ['2026-11-03-issue-141-courier-claims.sql', '2026-11-03-issue-142-driver-ledger.sql', '2026-11-03-issue-143-pay-runs.sql', '2026-11-03-issue-166-ledger-settlements.sql', '2026-11-04-issue-180-claim-courier-name.sql']) await db.query(migration(m));
     const tag = randomBytes(3).toString('hex').toUpperCase();
     const city = async (n) => one("INSERT INTO city (job, city_code, city_type) VALUES ($1, $2, 'DAILY') RETURNING id, job", [`CL ${n} ${tag}`, `CL${n}${tag}`]);
     const [mine, other] = [await city('A'), await city('B')];
@@ -211,6 +211,40 @@ test('the claims list: matched and unmatched, only the admin\'s cities, only cur
       assert.deepEqual([p1.claims.length, p2.claims.length, p3.claims.length], [20, 6, 0]);
       assert.deepEqual([p1.total, p1.totalPages, p2.counts.unmatched], [26, 2, 26]);
       assert.equal(new Set([...p1.claims, ...p2.claims].map((c) => c.id)).size, 26, 'no claim twice, none missing');
+    });
+
+    await t.test('a claim entered by hand (a daily city has no carrier file) is listed as matched, with what was taken off pay; a voided one is not', async () => {
+      const manual = async (waybill, { exempt = false, amount = '40.00', day = '2026-11-06', d = ann, cityId = mine.id } = {}) => one(
+        `INSERT INTO driver_ledger_entries (request_id, driver_id, city_id, entry_type, direction, amount, reason, effective_date, recovery_plan, claim_type, waybill, exempt, created_by)
+         VALUES ($1, $2, $3, 'manual_claim', 'debit', $4, 'damaged parcel, entered by hand', $5, $6, 'Damaged parcel', $7, $8, $9) RETURNING id`,
+        [randomUUID(), d.id, cityId, amount, day, exempt ? null : 'full_next_payday', `${waybill}${tag}`, exempt, sup.id]);
+      const m1 = await manual('M1');
+      await manual('M2', { exempt: true, amount: '15.00', day: '2026-11-07' });
+      const gone = await manual('M3', { day: '2026-11-08' });
+      await one(`INSERT INTO driver_ledger_entries (request_id, driver_id, city_id, entry_type, direction, amount, reason, effective_date, voids_entry_id, created_by)
+        VALUES ($1, $2, $3, 'void', 'credit', 40, 'entered twice by mistake', '2026-11-08', $4, $5) RETURNING id`, [randomUUID(), ann.id, mine.id, gone.id, sup.id]);
+      await manual('M4', { d: bea, cityId: other.id });
+
+      const matched = await q({ tab: 'matched' });
+      const byHand = matched.claims.filter((c) => c.source === 'manual');
+      assert.deepEqual(byHand.map((c) => [c.waybill.replace(tag, ''), c.status, c.driverName, c.claimDate]),
+        [['M2', 'exempt', ann.name, '2026-11-07'], ['M1', 'chargeable', ann.name, '2026-11-06']], 'own city only, newest first, the voided one left out');
+      assert.ok(matched.claims.every((c) => c.source === 'file' || c.source === 'manual'));
+      assert.equal(matched.counts.matched, matched.claims.length, 'the matched count includes the hand-entered claims');
+      assert.equal((await q({ tab: 'unmatched' })).claims.some((c) => c.source === 'manual'), false, 'a hand-entered claim is never unmatched');
+      assert.deepEqual((await q({ tab: 'matched', search: `M1${tag}` })).claims.map((c) => c.source), ['manual'], 'search finds it by waybill');
+      assert.equal((await q({ tab: 'matched' }, { all: true })).claims.filter((c) => c.source === 'manual').length, 3, 'a super admin sees every city');
+
+      const m1Deduction = async () => (await q({ tab: 'matched', search: `M1${tag}` })).claims[0].deduction;
+      assert.deepEqual(await m1Deduction(), { state: 'none', applied: '0.00', paid: '0.00', refunded: '0.00', left: '40.00', payout: null });
+      const r = await run(['2026-11-08', '2026-11-14']);
+      const st = await statement(r.id, ann.id, 40);
+      await db.query(`INSERT INTO pay_statement_lines (statement_id, line_type, amount, ledger_entry_id) VALUES ($1, 'recovery', -40, $2)`, [st.id, m1.id]);
+      assert.deepEqual(await m1Deduction(), { state: 'none', applied: '0.00', paid: '0.00', refunded: '0.00', left: '0.00', payout: null }, 'a draft run holds it');
+      await finalize(r.id);
+      await db.query("UPDATE pay_statements SET payout_status = 'paid' WHERE id = $1", [st.id]);
+      assert.deepEqual(await m1Deduction(), { state: 'full', applied: '40.00', paid: '40.00', refunded: '0.00', left: '0.00', payout: 'paid' });
+      assert.equal((await q({ tab: 'matched', search: `M2${tag}` })).claims[0].deduction.left, null, 'an exempt claim has nothing to take');
     });
 
     await t.test('reading the list changes nothing', async () => {

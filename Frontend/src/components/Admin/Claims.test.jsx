@@ -86,6 +86,23 @@ it("the matched list names the driver and says when a claim was already taken of
   expect(screen.getByRole("columnheader", { name: "Driver" })).toBeTruthy();
 });
 
+it("a claim entered by hand in Payroll is listed with the matched ones, marked, with its note, even when its number is also a carrier claim's", async () => {
+  const byHand = claim(3, { source: "manual", courier: null, waybill: "SPX123", claimType: "Damaged parcel", status: "chargeable", driverName: "Fay Driver", driverCode: 4460,
+    reason: "damaged parcel, entered by hand", courierName: null, city: "Daily City", deduction: { state: "none", applied: "0.00", paid: "0.00", refunded: "0.00", left: "40.00", payout: null } });
+  await startServer({ matched: [...MATCHED, byHand] });
+  mount();
+  await screen.findByText("GF0001");
+  fireEvent.click(screen.getByRole("button", { name: /^Matched to a driver/ }));
+  const row = within(await screen.findByTestId("claim-manual-3"));
+  expect(row.getByText("Fay Driver")).toBeTruthy();
+  expect(row.getByText("Entered by hand")).toBeTruthy();
+  expect(row.getByText("damaged parcel, entered by hand")).toBeTruthy();
+  expect(row.getByText("Chargeable")).toBeTruthy();
+  // the carrier claim with the same id is still its own row
+  expect(within(screen.getByTestId("claim-3")).getByText("Ann Driver")).toBeTruthy();
+  expect(within(screen.getByTestId("claim-3")).queryByText("Entered by hand")).toBeNull();
+});
+
 it("picking a city and searching ask the server, and each starts again from the first page", async () => {
   const asked = await startServer({ totalPages: 3 });
   mount();
