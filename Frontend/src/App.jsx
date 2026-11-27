@@ -31,6 +31,7 @@ import ProtectedRoutes from "./routes/admin/ProtectedRoute.jsx";
 import AdminPublicOnlyRoute from "./routes/admin/PublicOnlyRoute.jsx";
 import SuperAdminRoute from "./routes/admin/SuperAdminRoute.jsx";
 import InvoiceRoute from "./routes/admin/InvoiceRoute.jsx";
+import PayrollRoute from "./routes/admin/PayrollRoute.jsx";
 
 // Lazy-loaded Driver pages
 const Journey = lazy(() => import("./components/Drivers/Journey.jsx"));
@@ -85,11 +86,13 @@ function App() {
               <Route path="/admin/delete-account" element={<DeleteAccount area="admin" />} />
               <Route element={<SuperAdminRoute />}>
                 <Route path="/admin/payment-setup" element={<AdminPaymentSetupOverview />} />
-                <Route path="/admin/payroll" element={<AdminPayroll />} />
                 <Route path="/admin/pay-runs" element={<AdminPayRuns />} />
                 <Route path="/admin/insights" element={<AdminInsights />} />
                 <Route path="/admin/carrier-statements" element={<AdminCarrierStatements />} />
                 <Route path="/admin/deletion-requests" element={<DeletionRequests />} />
+              </Route>
+              <Route element={<PayrollRoute />}>
+                <Route path="/admin/payroll" element={<AdminPayroll />} />
               </Route>
               <Route element={<InvoiceRoute />}>
                 <Route path="/admin/invoices" element={<AdminInvoices />} />

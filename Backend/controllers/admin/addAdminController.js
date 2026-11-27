@@ -172,17 +172,22 @@ export const changeRoleAdmin = async(req, res) => {
     }
 }
 
-// The super admin switches Invoices on or off for one ordinary admin. The request says which (`enabled`: true or false) and that value is saved, so a
-// repeated request (after a lost answer) ends in the same state. The switch is read from the database on every Invoices request. The caller must be
-// a super admin in the database now, not only in the token.
-export const toggleAdminInvoices = async (req, res) => {
+// The super admin switches Invoices or Payroll on or off for one ordinary admin. The request says which (`enabled`: true or false) and that value is
+// saved, so a repeated request (after a lost answer) ends in the same state. The switch is read from the database on every request of that area. The
+// caller must be a super admin in the database now, not only in the token.
+const ACCESS_SWITCHES = {
+    invoices: { label: 'Invoices', column: 'can_use_invoices', save: (id, enabled) => dbService.setInvoiceAccessOfAdmin(id, enabled) },
+    payroll: { label: 'Payroll', column: 'can_use_payroll', save: (id, enabled) => dbService.setPayrollAccessOfAdmin(id, enabled) },
+};
+const toggleAdminAccess = (kind) => async (req, res) => {
+    const { label, column, save } = ACCESS_SWITCHES[kind];
     try {
         const caller = await dbService.getAdminById(req.user?.id);
         if (req.user?.role !== 'superadmin' || !caller || caller.is_active !== true || caller.role !== 'superadmin') {
-            return res.status(HttpStatus.FORBIDDEN).json({ message: "Only superadmin can change Invoices access" });
+            return res.status(HttpStatus.FORBIDDEN).json({ message: `Only superadmin can change ${label} access` });
         }
         if (typeof req.body?.enabled !== 'boolean') {
-            return res.status(HttpStatus.BAD_REQUEST).json({ message: "Say whether Invoices should be switched on or off" });
+            return res.status(HttpStatus.BAD_REQUEST).json({ message: `Say whether ${label} should be switched on or off` });
         }
         const id = Number(req.params.id);
         if (!Number.isInteger(id) || id <= 0) {
@@ -193,16 +198,18 @@ export const toggleAdminInvoices = async (req, res) => {
             return res.status(HttpStatus.NOT_FOUND).json({ message: "Admin does not exist!" });
         }
         if (admin.role !== 'admin') {
-            return res.status(HttpStatus.BAD_REQUEST).json({ message: "A super admin already has access to Invoices" });
+            return res.status(HttpStatus.BAD_REQUEST).json({ message: `A super admin already has access to ${label}` });
         }
-        const data = await dbService.setInvoiceAccessOfAdmin(id, req.body.enabled);
-        logger.info('Invoices access changed', { adminId: id, canUseInvoices: data.can_use_invoices, changedBy: req.user.id });
-        return res.status(HttpStatus.OK).json({ message: data.can_use_invoices ? "Invoices switched on" : "Invoices switched off", data });
+        const data = await save(id, req.body.enabled);
+        logger.info(`${label} access changed`, { adminId: id, enabled: data[column], changedBy: req.user.id });
+        return res.status(HttpStatus.OK).json({ message: `${label} switched ${data[column] ? 'on' : 'off'}`, data });
     } catch (err) {
-        logger.error("Error changing Invoices access", err);
+        logger.error(`Error changing ${label} access`, err);
         return res.status(HttpStatus.INTERNAL_SERVER_ERROR).json({ message: "Server error" });
     }
 };
+export const toggleAdminInvoices = toggleAdminAccess('invoices');
+export const toggleAdminPayroll = toggleAdminAccess('payroll');
 
 // Add this export to addAdminController.js
 

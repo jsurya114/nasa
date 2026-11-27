@@ -1,11 +1,12 @@
-// Payroll routes (issues #138 to #145). Mounted at /admin/payroll in app.js. Super admin only, except the one
-// Dashboard summary below; each action also checks the admin's cities in its service.
+// Payroll routes (issues #138 to #145). Mounted at /admin/payroll in app.js. The Dashboard summary is for every admin; the Payroll page (ledger,
+// statements, balances) for the super admin and the admins switched on for it; everything else super admin only. Services check the cities.
 import express from 'express';
 import { postConfirmContact } from '../controllers/payroll/contactReviewController.js';
 import { getOnboardingReadiness } from '../controllers/payroll/evereeReadinessController.js';
 import { sanitizeRouterParams } from '../middlewares/sanitize.js';
 import adminAuth from '../middlewares/adminAuth.js';
 import { requireRole } from '../middlewares/requireRole.js';
+import { getPayrollAccess, requirePayrollAccess } from '../middlewares/requirePayrollAccess.js';
 import { getLedger, getLedgerHistory, postLedgerEdit, postLedgerEntry, postLedgerVoid, postSettlement, postSettlementReversal } from '../controllers/payroll/ledgerController.js';
 import {
   getPayrollSettings, getPayRun, getPayRuns, postDiscard, postFinalize, postPayRun, postVoid, putRecoveryLimit,
@@ -32,19 +33,26 @@ router.use(adminAuth);
 // still makes, because the Dashboard shows it; the service checks the admin's cities.
 router.get('/drivers/:driverId/dashboard-summary', getDriverDashboardSummary);
 
-// Everything below is for the super admin only: ledger, pay runs, payments and Everee. Keep new payroll routes below this line.
-router.use(requireRole('superadmin'));
-
+// The Payroll page: for the super admin and the admins the super admin switched Payroll on for (requirePayrollAccess reads it from the database on
+// every request). Every action checks the admin's cities in its service; waivers stay super admin only.
+router.get('/access', getPayrollAccess);
 // Manual advances, repayments, expenses, reimbursements, claims and corrections (#142).
-router.get('/ledger', getLedger);
-router.post('/ledger', postLedgerEntry);
-router.post('/ledger/:entryId/void', postLedgerVoid);
+router.get('/ledger', requirePayrollAccess, getLedger);
+router.post('/ledger', requirePayrollAccess, postLedgerEntry);
+router.post('/ledger/:entryId/void', requirePayrollAccess, postLedgerVoid);
 // Edit keeps the original and links the corrected entry; history shows every version and settlement (#166).
-router.post('/ledger/:entryId/edit', postLedgerEdit);
-router.get('/ledger/:entryId/history', getLedgerHistory);
+router.post('/ledger/:entryId/edit', requirePayrollAccess, postLedgerEdit);
+router.get('/ledger/:entryId/history', requirePayrollAccess, getLedgerHistory);
 // Repaid outside payroll or waived, in whole or in part, and its reversal (#166).
-router.post('/ledger/:entryId/settlements', postSettlement);
-router.post('/ledger/settlements/:settlementId/reverse', postSettlementReversal);
+router.post('/ledger/:entryId/settlements', requirePayrollAccess, postSettlement);
+router.post('/ledger/settlements/:settlementId/reverse', requirePayrollAccess, postSettlementReversal);
+// Read-only statements and balances for one driver of the admin's cities (#145).
+router.get('/statements/:statementId', requirePayrollAccess, getAdminStatement);
+router.get('/drivers/:driverId/statements', requirePayrollAccess, getDriverStatementList);
+router.get('/drivers/:driverId/balances', requirePayrollAccess, getDriverBalanceList);
+
+// Everything below is for the super admin only: pay runs, payments, Everee and QuickBooks. Keep new payroll routes below this line.
+router.use(requireRole('superadmin'));
 
 // Pay runs and the recovery limit (#143). Changing the setting and voiding a finalized run are super admin only,
 // checked in the service.
@@ -107,9 +115,5 @@ router.post('/everee-batches/:batchId/check', postEvereeBatchCheck);
 router.get('/everee/city-settings', getEvereeCitySettings);
 router.put('/everee/city-settings/:cityId', putEvereeCitySettings);
 
-// Read-only statements and balances for one driver of the admin's cities (#145).
-router.get('/statements/:statementId', getAdminStatement);
-router.get('/drivers/:driverId/statements', getDriverStatementList);
-router.get('/drivers/:driverId/balances', getDriverBalanceList);
 
 export default router;

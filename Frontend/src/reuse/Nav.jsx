@@ -19,10 +19,12 @@ import {
 } from "lucide-react";
 import GlassTabBar from "./GlassTabBar.jsx";
 import useInvoiceAccess from "../components/Admin/invoice/useInvoiceAccess.js";
+import usePayrollAccess from "../components/Admin/payroll/usePayrollAccess.js";
 
 function Nav() {
   const isSuperAdmin = useSelector((state) => state.admin?.isSuperAdmin === true);
   const canUseInvoices = useInvoiceAccess() === "yes";
+  const canUsePayroll = usePayrollAccess() === "yes";
   const links = [
     { to: "/admin/dashboard", Icon: LayoutDashboard, label: "Dashboard" },
     { to: "/admin/create-users", Icon: Users, label: "Users" },
@@ -34,9 +36,9 @@ function Nav() {
     { to: "/admin/agreements", Icon: FileText, label: "Agreements" },
     { to: "/admin/claims", Icon: FileWarning, label: "Claims" },
     { to: "/admin/daily-matching", Icon: UserCheck, label: "Daily drivers" },
-    // Payroll, pay runs, Insights and Statements are for the super admin only. Invoices is also for the admins the super admin switched it on for.
+    // Pay runs, Insights and Statements are for the super admin only. Payroll and Invoices are also for the admins the super admin switched them on for.
+    ...(canUsePayroll ? [{ to: "/admin/payroll", Icon: Wallet, label: "Payroll" }] : []),
     ...(isSuperAdmin ? [
-      { to: "/admin/payroll", Icon: Wallet, label: "Payroll" },
       { to: "/admin/pay-runs", Icon: Banknote, label: "Pay runs" },
       { to: "/admin/insights", Icon: BarChart3, label: "Insights" },
       { to: "/admin/carrier-statements", Icon: FileCheck, label: "Statements" },
