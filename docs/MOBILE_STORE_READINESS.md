@@ -2,9 +2,25 @@
 
 | Field | Value |
 |---|---|
-| Status | **Draft, 2 November 2026.** Nothing has been submitted. No developer account, bundle ID or signing key exists yet. |
+| Status | **Updated 27 November 2026 (App Review preparation).** Nothing has been built for a device, uploaded or submitted. No developer account, bundle ID or signing key exists yet. Sections 1 to 6 below are the 2 November checklist; section 0 supersedes them where they differ. |
 | Owner | Jasil (see [OWNERSHIP.md](OWNERSHIP.md)) |
 | Related | [MOBILE_APP_DESIGN.md](MOBILE_APP_DESIGN.md) (sections 7 to 13) |
+
+## 0. App Review preparation, 26-27 November 2026
+
+**Verdict: not ready for review.** The code work for review is in pull requests (below), but App Review needs a signed release build tested on a physical iPhone and through TestFlight, real APNs delivery, and the owner's account, identifiers, artwork and decisions. None of those exist yet.
+
+| Item | State, with evidence |
+|---|---|
+| One sign-in for every role, server decides the area; generic errors; shared-email choice; old URLs kept; "/" start screen (no 404, no login flash, Try again offline) | **Built, unit-tested** (backend `unifiedSignIn.test.js`, web `SignIn.test.jsx`). Not run on a device |
+| One person signed in on the phone; old installs with two sessions signed out; fail-closed | **Built, unit-tested** (`mobile/src/session.test.js`) |
+| Save and share invoice PDF, Desi pay-run PDF, statements CSV through the share sheet (bounded `file.share`, temp files removed) | **Built, unit-tested**. Not run on a device |
+| Account deletion in the app with super-admin completion; pay records kept | **Built**; DB-tested on a throwaway PostgreSQL. Retention and the 30-day period **need the owner** (`docs/ACCOUNT_DELETION.md`) |
+| Privacy policy updated, support page, links on every signed-out and signed-in screen | **Built**; policy wording **needs the owner's review** |
+| Placeholder bundle ID / artwork blocked from preview and production builds; no-tracking privacy manifest; SDK required-reason manifests listed | **Built, tested** (generated iOS project inspected) |
+| Submission kit: review notes, unlisted request and steps, privacy worksheet, metadata, age rating, export compliance, build and signing, test matrix | **Drafted** in `docs/app-review/` |
+| Physical iPhone, TestFlight, real APNs, archive privacy report, screenshots, VoiceOver/Dynamic Type/keyboard/safe areas | **Not done**: no Xcode, Apple account or iPhone available to this work |
+| Real admin/driver email collisions | **Needs the owner** to count them (a read-only query on production, run by a person) |
 
 Legend: **Done** is built and covered by tests or by a check of the generated project files. **Pending** is something that has to be checked and has not been. **Needs a device** is built but never run on a phone. **Needs the owner** waits on an account, an identifier or a decision. **Not started**.
 

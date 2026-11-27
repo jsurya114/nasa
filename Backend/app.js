@@ -5,6 +5,7 @@ import dotenv from 'dotenv'
 import pool from './config/db.js';
 import adminRoutes from './routes/adminRoutes.js'
 import driverRoutes from "./routes/driverRoutes.js"
+import authRoutes from "./routes/authRoutes.js"
 import payrollRoutes from "./routes/payrollRoutes.js"
 import insightsRoutes from "./routes/insightsRoutes.js"
 import invoiceRoutes from "./routes/invoiceRoutes.js"
@@ -108,6 +109,12 @@ app.use('/admin/assignment-history', (req, _, next) => {
   logger.info(`${req.method} ${req.originalUrl.split('?')[0]}`)
   next()
 }, assignmentHistoryRoutes);
+
+// The one sign-in screen for every account (drivers and admins).
+app.use('/auth', (req, _, next) => {
+  logger.info(`${req.method} ${req.originalUrl.split('?')[0]}`)
+  next()
+}, authRoutes)
 
 app.use('/admin', (req, _, next) => {
   // Log method and path only. Never the Authorization header or the query string.

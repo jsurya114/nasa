@@ -14,6 +14,9 @@ const AREAS = ["admin", "driver"];
 const SESSION_GET_TIMEOUT_MS = 5000;
 
 const memory = { admin: null, driver: null };
+// Areas whose stored session the shell could not check because of the connection (newer shells say so). The launch
+// screen then offers Try again instead of the sign-in form, so a returning person is not sent to sign in again.
+const unreachable = new Set();
 
 // A sign-out the shell could not confirm. It is remembered (not a credential) so that a reload or restart of the
 // page cannot quietly bring the old session back while the phone may still hold it.
@@ -80,14 +83,30 @@ const hydrate = () => {
         try {
           const data = await callNative("session.get", { area }, { timeoutMs: SESSION_GET_TIMEOUT_MS });
           token = typeof data?.accessToken === "string" ? data.accessToken : null;
-        } catch {
+          if (!token && data?.offline === true) unreachable.add(area);
+        } catch (error) {
           token = null;
+          if (error?.code === "timeout") unreachable.add(area);
         }
         if (generation[area] === started) memory[area] = token;
       })
     );
   }
   return hydration;
+};
+
+// App only: asks the shell again, for the launch screen's Try again.
+export const recheckSessions = () => {
+  unreachable.clear();
+  hydration = null;
+  return hydrate();
+};
+
+// The areas that hold a session on this device or in this browser, and whether a stored session could not be checked.
+export const sessionOverview = async () => {
+  const areas = [];
+  for (const area of AREAS) if (await getAccessToken(area)) areas.push(area);
+  return { areas, unreachable: areas.length === 0 && isNativeShell() && unreachable.size > 0 };
 };
 
 // Changes every time this area signs in or out. Something that started under one value and finds another when it is
@@ -121,6 +140,7 @@ export const saveSession = async (area, { accessToken, refreshToken }) => {
   refreshing.delete(area);
   await callNative("session.set", { area, accessToken, refreshToken });
   memory[area] = accessToken;
+  unreachable.clear();
   // A new sign-in replaces whatever the shell was still holding
   writePending(area, null);
 };

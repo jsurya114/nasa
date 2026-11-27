@@ -22,6 +22,8 @@ import useQuickbooksPaymentsAvailable from "./quickbooks/useQuickbooksPaymentsAv
 import DriverTypeTabs from "./DriverTypeTabs.jsx";
 import ForcePaymentPanel from "./ForcePaymentPanel.jsx";
 import { typeOf } from "./driverTypes.js";
+import { notesOf, paid, payable, processing, statusOf } from "./driverStatus.js";
+import DesiPdfButton from "./desi/DesiPdfButton.jsx";
 
 // Names for the methods of saved receipts (a receipt made before "Bank transfer (Everee)" existed says "Bank transfer").
 const METHODS = {
@@ -37,10 +39,6 @@ const QUICKBOOKS = "quickbooks";
 const QUICKBOOKS_LABEL = "Check, recorded in QuickBooks";
 const EVEREE_LABEL = "Bank transfer (Everee)";
 const EVEREE_BASE = "/admin/payroll";
-const paid = (d) => d.payoutStatus === "paid";
-// A payment already with Everee (submitted, or unconfirmed) is not left to pay: it is not selected or selectable, and it waits for Everee to confirm.
-const processing = (d) => d.payoutStatus === "submitted" || d.payoutStatus === "unconfirmed";
-const payable = (d) => !paid(d) && !processing(d);
 // Drivers are paid by type: Local (Cash in Hand or Everee), Desi (Cash in Hand only). A driver with no type cannot be paid. The server enforces the same.
 const firstTab = (drivers) => ["LOCAL", "DESI"].find((k) => drivers.some((d) => typeOf(d) === k && payable(d))) ?? "LOCAL";
 
@@ -492,6 +490,9 @@ export default function RecordPaymentDialog({
                 {!records && step === "review" && (
                   <DriverTypeTabs tab={tab} counts={counts} onChange={changeTab} disabled={busy} />
                 )}
+                {!records && step === "review" && tab === "DESI" && (
+                  <DesiPdfButton drivers={drivers.filter((d) => typeOf(d) === "DESI")} run={review.data.run} cityName={cityName} />
+                )}
                 {!records && (
                   <div className="flex flex-wrap items-center justify-between gap-3">
                     <div>
@@ -565,32 +566,18 @@ export default function RecordPaymentDialog({
                               <span
                                 className={`text-xs ${paid(d) ? "text-green-700" : processing(d) ? "font-semibold text-amber-800" : d.eligible ? "text-ink-muted" : "text-amber-800"}`}
                               >
-                                {paid(d)
-                                  ? "Paid"
-                                  : processing(d)
-                                    ? "Payment processing"
-                                    : typeOf(d) === "NONE"
-                                      ? "Needs a driver type"
-                                      : d.eligible
-                                        ? "Awaiting payment"
-                                        : "Needs review"}
+                                {statusOf(d).label}
                               </span>
                             </span>
                             <span className="font-semibold tabular-nums">
                               {formatMoney(d.amounts.net)}
                             </span>
                           </label>
-                          {payable(d) &&
-                            d.blockers
-                              .filter((b) => b.code !== "already_paid")
-                              .map((b, i) => (
-                                <p
-                                  key={`${b.code}-${i}`}
-                                  className="mt-1 text-xs text-amber-800"
-                                >
-                                  {b.message}
-                                </p>
-                              ))}
+                          {notesOf(d).map((note, i) => (
+                            <p key={i} className="mt-1 text-xs text-amber-800">
+                              {note}
+                            </p>
+                          ))}
                           {d.payment && (
                             <p className="mt-1 text-xs text-ink-muted">
                               {d.payment.paid_on} · {METHODS[d.payment.method]}{" "}

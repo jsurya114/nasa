@@ -55,7 +55,8 @@ test("a page from another origin gets no answer and nothing runs", async () => {
 test("unsupported actions and bad payloads are refused without running anything", async () => {
   const { send, calls } = setup();
   assert.equal((await send("shell.exec", {})).error, "unsupported_action");
-  assert.equal((await send("file.share", { path: "/etc/passwd" })).error, "unsupported_action");
+  assert.equal((await send("file.read", { path: "/etc/passwd" })).error, "unsupported_action");
+  assert.equal((await send("file.share", { name: "a.pdf", mimeType: "application/pdf", data: "JVBERi0=" })).error, "unsupported_action", "no documents in this build");
   assert.equal((await send("session.get", { area: "root" })).error, "bad_request");
   assert.equal((await send("link.openExternal", { url: "javascript:alert(1)" })).error, "bad_request");
   assert.equal(calls.length, 0);
@@ -139,4 +140,9 @@ test("a push failure sends back only a short code", async () => {
   assert.deepEqual([r.ok, r.error], [false, "permission_denied"]);
   const broken = setup({ push: { ...fakePush([]), status: async () => { throw new Error("leaky message with a token"); } } });
   assert.deepEqual([(await broken.send("push.status", {})).error], ["native_error"]);
+});
+
+test("session.get passes on that a stored session could not be checked, and nothing else", async () => {
+  const { send } = setup({ session: { status: async () => ({ accessToken: null, offline: true }) } });
+  assert.deepEqual((await send("session.get", { area: "driver" })).data, { accessToken: null, offline: true });
 });

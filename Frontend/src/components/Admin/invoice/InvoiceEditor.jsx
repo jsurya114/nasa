@@ -1,3 +1,5 @@
+import { isNativeShell } from "../../../native/bridge";
+import { saveProblem } from "../../../native/documents";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Download, Eye, FilePlus2, Lock, Save } from "lucide-react";
 import { Badge, ConfirmDialog, Field } from "./fields.jsx";
@@ -176,15 +178,16 @@ export default function InvoiceEditor({ vendors, vendorsProblem, invoiceId, onSa
   const fromSaved = async (action) => {
     if (!saved) return;
     // A tab opened now, before the PDF is made, so the browser does not treat it as an unwanted pop-up.
-    const tab = action === "preview" ? window.open("", "_blank") : null;
+    // In the app there are no tabs: the phone's share sheet shows the preview.
+    const tab = action === "preview" && !isNativeShell() ? window.open("", "_blank") : null;
     setBusy(true);
     try {
       const module = await pdf();
       if (action === "preview") await module.previewInvoice(saved, tab);
       else await module.downloadInvoice(saved);
-    } catch {
+    } catch (error) {
       tab?.close();
-      setNote({ tone: "error", text: "The PDF could not be made. Check your connection and try again." });
+      setNote({ tone: "error", text: error?.name === "BridgeError" ? saveProblem(error) : "The PDF could not be made. Check your connection and try again." });
     } finally {
       setBusy(false);
     }

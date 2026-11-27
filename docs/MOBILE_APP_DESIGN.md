@@ -5,7 +5,7 @@
 | Status | **Draft for review.** No mobile code exists yet. Nothing here is agreed until Jasil and the owner approve this pull request. |
 | Owner | Jayasoorya (see [OWNERSHIP.md](OWNERSHIP.md)) |
 | Reviewer | Jasil |
-| Last updated | 2 November 2026, revised after Jasil's clarification of 16:36 IST (connectivity, push, testing first) |
+| Last updated | 27 November 2026 (section 12a); earlier text from 2 November 2026 |
 | Brief | Jasil's Slack brief of 2 Nov 2026 (architecture, security, store acceptance) |
 
 One NASA app for iOS and Android. It is a thin native shell around the hosted NASA web app. The web app, the backend and every business rule stay where they are. The app must work reliably on weak or intermittent connections (section 6); offline writes and replay queues are not an agreed requirement.
@@ -273,6 +273,15 @@ Testing on real simulators and devices comes before deployment, so it leads the 
 9. **Store checklist and submission material,** after ownership is decided.
 
 Acceptance checks follow Jasil's list: role and city isolation checked on the server, session expiry, refresh, logout, restart and user change, same totals before and after, real-device keyboard, safe areas, Back and text scaling, permission denial and cancelled pickers, no connection and interrupted writes without duplicates.
+
+## 12a. Changes for App Review (26-27 November 2026)
+
+- **One sign-in.** `POST /auth/login` looks in both account tables and returns the area; the web page at `/login` (also `/admin/login`, `/driver/login`) uses it. Section 3's "one refresh token per area" is replaced: the shell holds **one** person at a time, signs the other area out at sign-in, and signs out an older install that holds both. `session.get` also answers `offline: true` when a stored session could not be checked.
+- **Start screen.** `/` sends the signed-in person to their area or to `/login`; it no longer shows the 404 page.
+- **`file.share` is built** (section 4's reserved action): PDF or CSV, at most 8 MB, capability `files`. The page still builds every file; the shell only shows the share sheet.
+- **Account deletion** is built (docs/ACCOUNT_DELETION.md), replacing section 9's open assessment.
+- **Connection bar** no longer says typed input is kept: Reload restarts the page.
+- Submission materials: `docs/app-review/`.
 
 ## 13. Not tested, decisions
 

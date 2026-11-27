@@ -27,7 +27,8 @@ export const ExcelFileQueries = {
     }
   },
 
-  insertDataIntoDailyTable: async (tableName, data, uploadDate, client) => {
+  // codeOf(row, index), when given, decides each row's seq_route_code (the daily upload that finds drivers by name); without it, as always.
+  insertDataIntoDailyTable: async (tableName, data, uploadDate, client, codeOf = null) => {
     try {
       if (!data || data.length === 0) {
         return;
@@ -64,7 +65,7 @@ export const ExcelFileQueries = {
             row.RecipientPhone,
             row.Status,
             row.CompleteTime ? new Date(row.CompleteTime) : null,
-            `${row.Sequence}${routeModified}`,
+            codeOf ? codeOf(row, i + rowIndex) : `${row.Sequence}${routeModified}`,
             new Date(uploadDate + "T12:00:00Z")
           );
         });
