@@ -201,7 +201,7 @@ describe("the profile page", () => {
   it("speaks Spanish when the driver's language is Spanish", async () => {
     await startServer({ language: "es" });
     await mount("es");
-    expect(await screen.findByText("Mi perfil")).toBeTruthy();
+    expect(await screen.findByRole("heading", { name: "Mi perfil" })).toBeTruthy();
     fireEvent.click(await screen.findByRole("button", { name: /Editar/ }));
     expect(screen.getByLabelText(/Nombre completo/)).toBeTruthy();
     expect(screen.getByRole("button", { name: "Guardar" })).toBeTruthy();

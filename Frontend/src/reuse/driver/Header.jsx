@@ -5,7 +5,8 @@ import { accessDriver, driverLogout } from "../../redux/slice/driver/driverSlice
 import { saveDriverLanguage, loadDriverLanguage } from "../../redux/slice/languageSlice.js";
 import { useDispatch, useSelector } from "react-redux";
 import { useNavigate } from "react-router-dom";
-import { Menu, X, Globe, User } from "lucide-react";
+import { Menu, X, Globe, CircleUserRound } from "lucide-react";
+import ProfileButton from "../ProfileButton.jsx";
 import { useEvereeSetup } from "../../hooks/useEvereeSetup.js";
 import { useQuickbooksSetup } from "../../hooks/useQuickbooksSetup.js";
 import useTranslation from "../../hooks/useTranslation.js";
@@ -122,19 +123,7 @@ function Header() {
         </div>
 
         {/* User Profile */}
-        <button
-          type="button"
-          onClick={() => navigate("/driver/profile")}
-          aria-label={`${t('profile')}: ${driver?.name ?? ''}`}
-          className="flex flex-col items-center px-2 py-1 rounded-md hover:bg-white/10 transition-colors"
-        >
-          <div className="w-7 h-7 md:w-8 md:h-8 rounded-full bg-yellow-400 text-black font-bold grid place-items-center">
-            <User className="w-4 h-4 md:w-5 md:h-5" aria-hidden="true" />
-          </div>
-          <div className="font-semibold truncate max-w-[120px] md:max-w-[150px]">
-            {driver?.name}
-          </div>
-        </button>
+        <ProfileButton to="/driver/profile" name={driver?.name} />
 
         {linksInHeader && <AccountLinks area="driver" className="flex text-white [&_a]:text-white" />}
 
@@ -148,7 +137,8 @@ function Header() {
       </div>
 
       {/* Hamburger Menu - Mobile (<768px) */}
-      <div className="md:hidden relative ml-auto">
+      <div className="md:hidden relative ml-auto flex items-center gap-1">
+        <ProfileButton to="/driver/profile" name={driver?.name} variant="icon" />
         <button
           onClick={() => setMenuOpen(!menuOpen)}
           aria-label="Toggle menu"
@@ -204,10 +194,11 @@ function Header() {
                   aria-label={`${t('profile')}: ${driver?.name ?? ''}`}
                   className="w-full px-4 py-2 flex items-center gap-2 text-left hover:bg-brand-50 transition-colors"
                 >
-                  <span className="w-6 h-6 rounded-full bg-yellow-400 text-black text-xs grid place-items-center">
-                    <User className="w-4 h-4" aria-hidden="true" />
+                  <CircleUserRound className="w-6 h-6 shrink-0 text-brand" aria-hidden="true" />
+                  <span className="flex flex-col leading-tight min-w-0">
+                    <span className="truncate font-medium">{driver?.name}</span>
+                    <span className="text-xs text-ink-muted">{t('profTitle')}</span>
                   </span>
-                  <span className="truncate">{driver?.name}</span>
                 </button>
               </li>
               
