@@ -62,23 +62,52 @@ export const deductionOf = ({ amount, appliedCents, paidCents, grossCents = appl
   };
 };
 
+// What a hand-entered claim (a "manual claim" in a driver's ledger, #142) has had taken off pay: its recovery lines. applied and paid follow the
+// carrier claims' meaning (finalized runs; paid out); left is what the payroll still has to recover (drafts and repayments outside payroll counted).
+const MANUAL_HISTORY = `LEFT JOIN LATERAL (
+      SELECT (COALESCE(SUM(-l.amount) FILTER (WHERE r.status = 'finalized'), 0) * 100)::bigint AS applied_cents,
+             (COALESCE(SUM(-l.amount) FILTER (WHERE r.status = 'finalized' AND s.payout_status = 'paid'), 0) * 100)::bigint AS paid_cents,
+             (COALESCE(SUM(-l.amount), 0) * 100)::bigint AS taken_cents
+        FROM pay_statement_lines l
+        JOIN pay_statements s ON s.id = l.statement_id
+        JOIN pay_runs r ON r.id = s.pay_run_id
+       WHERE l.ledger_entry_id = e.id AND l.active AND l.line_type = 'recovery') h ON true
+    LEFT JOIN LATERAL (
+      SELECT (COALESCE(SUM(CASE WHEN st.kind = 'reversal' THEN -st.amount ELSE st.amount END), 0) * 100)::bigint AS settled_cents
+        FROM driver_ledger_settlements st WHERE st.entry_id = e.id) settled ON true`;
+
 // scope: { adminId } for an ordinary admin (only their assigned cities) or { all: true } for a super admin.
 // Returns { claims, total, page, pageSize, totalPages, counts: { matched, unmatched } }. The counts follow the city and search, not the tab.
+// Two kinds of claim are listed: the carrier's (source 'file', from the weekly upload) and the ones an admin entered by hand in a driver's ledger
+// (source 'manual', for daily cities above all, which have no carrier file). A hand-entered claim already names its driver, so it is always matched:
+// chargeable, or exempt when it was entered as exempt. A voided one is not listed.
 export const listClaims = async (db, scope, filters) => {
   const params = [];
   const add = (value) => { params.push(value); return `$${params.length}`; };
-  const where = ['c.superseded_at IS NULL'];
-  if (!scope.all) where.push(`c.import_city_id IN (SELECT city_id FROM admin_city_ref WHERE admin_id = ${add(scope.adminId)})`);
-  if (filters.cityId) where.push(`c.import_city_id = ${add(filters.cityId)}`);
+  const fileWhere = ['c.superseded_at IS NULL'];
+  const manualWhere = [`e.entry_type = 'manual_claim'`, 'NOT EXISTS (SELECT 1 FROM driver_ledger_entries v WHERE v.voids_entry_id = e.id)'];
+  if (!scope.all) {
+    const admin = add(scope.adminId);
+    fileWhere.push(`c.import_city_id IN (SELECT city_id FROM admin_city_ref WHERE admin_id = ${admin})`);
+    manualWhere.push(`e.city_id IN (SELECT city_id FROM admin_city_ref WHERE admin_id = ${admin})`);
+  }
+  if (filters.cityId) {
+    const city = add(filters.cityId);
+    fileWhere.push(`c.import_city_id = ${city}`);
+    manualWhere.push(`e.city_id = ${city}`);
+  }
   if (filters.search) {
     const like = add(`%${filters.search.replace(/[\\%_]/g, (m) => `\\${m}`)}%`);
-    where.push(`(c.waybill ILIKE ${like} OR c.claim_type ILIKE ${like} OR c.courier_name ILIKE ${like} OR d.name ILIKE ${like})`);
+    fileWhere.push(`(c.waybill ILIKE ${like} OR c.claim_type ILIKE ${like} OR c.courier_name ILIKE ${like} OR d.name ILIKE ${like})`);
+    manualWhere.push(`(e.waybill ILIKE ${like} OR e.claim_type ILIKE ${like} OR d.name ILIKE ${like})`);
   }
-  const joins = `FROM courier_claims c
+  const fileJoins = `FROM courier_claims c
     JOIN courier_claim_matches m ON m.claim_id = c.id
     JOIN city ci ON ci.id = c.import_city_id
     LEFT JOIN drivers d ON d.id = m.driver_id`;
-  const from = `${joins} WHERE ${where.join(' AND ')}`;
+  const manualJoins = `FROM driver_ledger_entries e
+    JOIN city ci ON ci.id = e.city_id
+    JOIN drivers d ON d.id = e.driver_id`;
   // The deduction history of the claim itself, by claim identity, so an amended claim keeps what was taken under an earlier version.
   const history = `LEFT JOIN LATERAL (
       SELECT (SUM(-l.amount) FILTER (WHERE r.status = 'finalized') * 100)::bigint AS applied_cents,
@@ -89,30 +118,38 @@ export const listClaims = async (db, scope, filters) => {
         JOIN pay_statements s ON s.id = l.statement_id
         JOIN pay_runs r ON r.id = s.pay_run_id
        WHERE cv.claim_key = c.claim_key) h ON true`;
-  const rowsFrom = `${joins} ${history} WHERE ${where.join(' AND ')}`;
 
   // Each query gets its own parameter list: the filters first, then its own values (a parameter a query does not use would have no type).
   const n = params.length;
   const { rows: [counted] } = await db.query(
-    `SELECT count(*) FILTER (WHERE m.status = ANY($${n + 1}::text[]))::int AS matched,
-            count(*) FILTER (WHERE m.status = ANY($${n + 2}::text[]))::int AS unmatched ${from}`, [...params, MATCHED, UNMATCHED]);
+    `SELECT (SELECT count(*) FILTER (WHERE m.status = ANY($${n + 1}::text[])) ${fileJoins} WHERE ${fileWhere.join(' AND ')})::int
+              + (SELECT count(*) ${manualJoins} WHERE ${manualWhere.join(' AND ')})::int AS matched,
+            (SELECT count(*) FILTER (WHERE m.status = ANY($${n + 2}::text[])) ${fileJoins} WHERE ${fileWhere.join(' AND ')})::int AS unmatched`,
+    [...params, MATCHED, UNMATCHED]);
   const counts = { matched: counted.matched, unmatched: counted.unmatched };
   const total = counts[filters.tab];
 
-  const { rows } = await db.query(
-    `SELECT c.id, c.courier, c.waybill, c.claim_type, to_char(c.claim_at, 'YYYY-MM-DD') AS claim_date, c.deduction_amount::text AS amount,
-            c.courier_name, ci.job AS city, m.status, m.reason, d.name AS driver_name, d.driver_code,
+  const fileRows = `SELECT 'file' AS source, c.id, c.courier, c.waybill, c.claim_type, c.claim_at AS sort_at, to_char(c.claim_at, 'YYYY-MM-DD') AS claim_date,
+            c.deduction_amount::text AS amount, c.courier_name, ci.job AS city, m.status, m.reason, d.name AS driver_name, d.driver_code,
             COALESCE(h.applied_cents, 0)::bigint AS applied_cents, COALESCE(h.paid_cents, 0)::bigint AS paid_cents,
             COALESCE(h.gross_cents, 0)::bigint AS gross_cents, (${NET_COLLECTED_SQL('c')} * 100)::bigint AS collected_cents,
             CASE WHEN m.status = 'chargeable' THEN ((m.eligible_deduction - ${NET_COLLECTED_SQL('c')}) * 100)::bigint END AS left_cents
-       ${rowsFrom} AND m.status = ANY($${n + 1}::text[])
-      ORDER BY c.claim_at DESC, c.id DESC LIMIT $${n + 2} OFFSET $${n + 3}`,
+       ${fileJoins} ${history} WHERE ${fileWhere.join(' AND ')} AND m.status = ANY($${n + 1}::text[])`;
+  const manualRows = `SELECT 'manual' AS source, e.id, e.claim_courier, e.waybill, e.claim_type, e.effective_date::timestamp AS sort_at,
+            to_char(e.effective_date, 'YYYY-MM-DD') AS claim_date, e.amount::text AS amount, NULL::text AS courier_name, ci.job AS city,
+            CASE WHEN e.exempt THEN 'exempt' ELSE 'chargeable' END AS status, e.reason, d.name AS driver_name, d.driver_code,
+            h.applied_cents, h.paid_cents, h.taken_cents AS gross_cents, h.taken_cents AS collected_cents,
+            CASE WHEN e.exempt THEN NULL ELSE (e.amount * 100)::bigint - h.taken_cents - settled.settled_cents END AS left_cents
+       ${manualJoins} ${MANUAL_HISTORY} WHERE ${manualWhere.join(' AND ')}`;
+  const { rows } = await db.query(
+    `SELECT * FROM (${fileRows}${filters.tab === 'matched' ? ` UNION ALL ${manualRows}` : ''}) u
+      ORDER BY u.sort_at DESC, u.source, u.id DESC LIMIT $${n + 2} OFFSET $${n + 3}`,
     [...params, filters.tab === 'matched' ? MATCHED : UNMATCHED, PAGE_SIZE, (filters.page - 1) * PAGE_SIZE]);
 
   return {
     claims: rows.map((r) => ({
-      id: Number(r.id), courier: r.courier, waybill: r.waybill, claimType: r.claim_type, claimDate: r.claim_date, amount: r.amount, city: r.city,
-      status: r.status, reason: r.reason, courierName: r.courier_name, driverName: r.driver_name, driverCode: r.driver_code,
+      id: Number(r.id), source: r.source, courier: r.courier, waybill: r.waybill, claimType: r.claim_type, claimDate: r.claim_date, amount: r.amount,
+      city: r.city, status: r.status, reason: r.reason, courierName: r.courier_name, driverName: r.driver_name, driverCode: r.driver_code,
       deduction: deductionOf({ amount: r.amount, appliedCents: r.applied_cents, paidCents: r.paid_cents, grossCents: r.gross_cents, collectedCents: r.collected_cents, leftCents: r.left_cents }),
     })),
     total, page: filters.page, pageSize: PAGE_SIZE, totalPages: Math.ceil(total / PAGE_SIZE), counts,

@@ -3,6 +3,7 @@ import { formatMoney } from "../../../utils/money.js";
 import { CLAIM_STATUS, deductionWords } from "./claimsApi.js";
 
 // One page of claims. Matched claims name the driver NASA matched; an unmatched claim shows the courier name from the carrier's file, and why it is not matched.
+// A claim entered by hand in Payroll (source "manual") is marked so, with the admin's note; its id is from another table, so its keys say so.
 export default function ClaimsTable({ claims, matched }) {
   return (
     <div className="overflow-x-auto">
@@ -18,9 +19,11 @@ export default function ClaimsTable({ claims, matched }) {
           {claims.map((c) => {
             const status = CLAIM_STATUS[c.status] ?? { label: c.status, tone: "bg-gray-100 text-gray-700", hint: "" };
             const deduction = deductionWords(c.deduction, formatMoney);
+            const byHand = c.source === "manual";
+            const rowId = byHand ? `manual-${c.id}` : String(c.id);
             return (
-              <tr key={c.id} data-testid={`claim-${c.id}`}>
-                <td className="px-3 py-2 border-b font-mono text-xs">{c.waybill}</td>
+              <tr key={rowId} data-testid={`claim-${rowId}`}>
+                <td className="px-3 py-2 border-b font-mono text-xs">{c.waybill || "—"}</td>
                 <td className="px-3 py-2 border-b whitespace-nowrap">{c.claimDate}</td>
                 <td className="px-3 py-2 border-b">{c.claimType}</td>
                 <td className="px-3 py-2 border-b tabular-nums">{formatMoney(c.amount)}</td>
@@ -30,8 +33,10 @@ export default function ClaimsTable({ claims, matched }) {
                 <td className="px-3 py-2 border-b">{c.city}</td>
                 <td className="px-3 py-2 border-b">
                   <span title={status.hint} className={`inline-flex items-center rounded-full px-2 py-1 text-xs font-medium ${status.tone}`}>{status.label}</span>
+                  {byHand && <span className="ml-1 inline-flex items-center rounded-full bg-sky-100 px-2 py-1 text-xs font-medium text-sky-800">Entered by hand</span>}
                   {deduction && <span className="ml-1 inline-flex items-center rounded-full bg-purple-100 px-2 py-1 text-xs font-medium text-purple-800">{deduction.label}</span>}
-                  {deduction && <p className="mt-1 text-xs text-ink-muted" data-testid={`deduction-${c.id}`}>{deduction.detail}</p>}
+                  {deduction && <p className="mt-1 text-xs text-ink-muted" data-testid={`deduction-${rowId}`}>{deduction.detail}</p>}
+                  {byHand && c.reason && <p className="mt-1 text-xs text-ink-muted">{c.reason}</p>}
                   {!matched && c.reason && <p className="mt-1 text-xs text-ink-muted">{c.reason}</p>}
                 </td>
               </tr>

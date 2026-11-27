@@ -49,7 +49,7 @@ export default function Claims() {
         <div>
           <h1 className="text-2xl font-bold text-brand">Claims</h1>
           <p className="text-sm text-ink-muted">
-            Claims from the carrier's weekly file for your cities. This page only shows them: nothing here matches, deducts or changes a claim.
+            Claims for your cities: from the carrier's weekly file, and the ones entered by hand in Payroll (daily cities have no carrier file). This page only shows them: nothing here matches, deducts or changes a claim.
           </p>
         </div>
 
