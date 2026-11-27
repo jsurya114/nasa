@@ -26,6 +26,7 @@ const DailyMatching = lazy(() => import("./components/Admin/dailyMatching/DailyM
 const Support = lazy(() => import("./components/auth/Support.jsx"));
 const DeleteAccount = lazy(() => import("./components/account/DeleteAccount.jsx"));
 const DeletionRequests = lazy(() => import("./components/account/DeletionRequests.jsx"));
+const AdminProfile = lazy(() => import("./components/Admin/Profile.jsx"));
 
 import ProtectedRoutes from "./routes/admin/ProtectedRoute.jsx";
 import AdminPublicOnlyRoute from "./routes/admin/PublicOnlyRoute.jsx";
@@ -82,6 +83,7 @@ function App() {
               <Route path="/admin/driver-availability" element={<AdminDriverAvailability />} />
               <Route path="/admin/claims" element={<AdminClaims />} />
               <Route path="/admin/daily-matching" element={<DailyMatching />} />
+              <Route path="/admin/profile" element={<AdminProfile />} />
               <Route path="/admin/delete-account" element={<DeleteAccount area="admin" />} />
               <Route element={<SuperAdminRoute />}>
                 <Route path="/admin/payment-setup" element={<AdminPaymentSetupOverview />} />

@@ -6,6 +6,8 @@ import { saveDriverLanguage, loadDriverLanguage } from "../../redux/slice/langua
 import { useDispatch, useSelector } from "react-redux";
 import { useNavigate } from "react-router-dom";
 import { Menu, X, Globe, User } from "lucide-react";
+import { useEvereeSetup } from "../../hooks/useEvereeSetup.js";
+import { useQuickbooksSetup } from "../../hooks/useQuickbooksSetup.js";
 import useTranslation from "../../hooks/useTranslation.js";
 import { toast } from "../../utils/toast";
 import { getTranslation } from "../../hooks/translation.js";
@@ -17,6 +19,11 @@ function Header() {
   const { t, currentLanguage } = useTranslation();
   const [menuOpen, setMenuOpen] = useState(false);
   const [langMenuOpen, setLangMenuOpen] = useState(false);
+  // The account links live on the profile page. A driver still locked behind the agreement or payment setup cannot open it yet,
+  // so they keep help, privacy and Delete account here (App Store 5.1.1(v)).
+  const everee = useEvereeSetup();
+  const quickbooks = useQuickbooksSetup();
+  const linksInHeader = everee.locked || quickbooks.locked || driver?.agreement_signed === false;
 
   useEffect(() => {
     dispatch(accessDriver());
@@ -129,7 +136,7 @@ function Header() {
           </div>
         </button>
 
-        <AccountLinks area="driver" className="flex text-white [&_a]:text-white" />
+        {linksInHeader && <AccountLinks area="driver" className="flex text-white [&_a]:text-white" />}
 
         {/* Logout Button */}
         <button
@@ -204,9 +211,11 @@ function Header() {
                 </button>
               </li>
               
-              <li className="border-b border-black/5">
-                <AccountLinks area="driver" onNavigate={() => setMenuOpen(false)} />
-              </li>
+              {linksInHeader && (
+                <li className="border-b border-black/5">
+                  <AccountLinks area="driver" onNavigate={() => setMenuOpen(false)} />
+                </li>
+              )}
 
               {/* Logout */}
               <li>
