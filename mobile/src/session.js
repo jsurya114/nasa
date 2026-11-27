@@ -8,11 +8,19 @@
 // (an older write landing after a sign-out). Every change to an area's stored session therefore goes through one
 // queue per area, and each queued change re-checks, at the moment it runs, that it has not been superseded.
 // A sign-out or a new sign-in raises the area's generation immediately; anything older is dropped or runs first.
+//
+// One person at a time. The phone holds at most ONE session: a sign-in to one area signs the other area out first
+// (deleted here, revoked on the server in the background). Shells before this rule kept one session per area and
+// could hold both; at the first start of this version such a pair is signed out completely, because the two may
+// belong to different people, and the person signs in again.
 
 const { AREAS } = require("./bridge/protocol");
 
 const REFRESH_TIMEOUT_MS = 15000;
 const keyFor = (area) => `nasa.refreshToken.${area}`;
+const otherArea = (area) => (area === "admin" ? "driver" : "admin");
+// A session that could not be checked for these reasons is kept and reported as "offline", not as signed out
+const KEEPS_SESSION = ["network_error", "server_error"];
 
 class SessionError extends Error {
   constructor(code) {
@@ -41,14 +49,37 @@ const createSession = ({ storage, request }) => {
     return run;
   };
 
-  const refresh = (area) => {
+  // Finished before any read or write of a session (see "One person at a time" above).
+  let migration = null;
+  const migrate = () => {
+    migration ??= (async () => {
+      let stored;
+      try {
+        stored = await Promise.all(AREAS.map((area) => storage.getItem(keyFor(area))));
+      } catch {
+        // Cannot tell what the phone holds: sign out of both rather than risk keeping two people
+        stored = AREAS.map(() => true);
+      }
+      if (stored.every(Boolean)) await Promise.all(AREAS.map((area) => clear(area).catch(() => {})));
+    })();
+    return migration;
+  };
+
+  const refresh = async (area) => {
     assertArea(area);
+    await migrate();
+    return refreshNow(area);
+  };
+
+  const refreshNow = (area) => {
     if (refreshing.has(area)) return refreshing.get(area);
 
     const started = generation[area];
     const attempt = (async () => {
       const refreshToken = await storage.getItem(keyFor(area));
       if (!refreshToken) throw new SessionError("no_session");
+      // Signed out (or someone else signed in) while the token was being read: do not use it
+      if (generation[area] !== started) throw new SessionError("signed_out");
 
       let reply;
       try {
@@ -62,7 +93,11 @@ const createSession = ({ storage, request }) => {
         // The rotated token is saved in order with every other change. If a sign-out or a new sign-in happened
         // meanwhile, this write is dropped, and if it was already running, the later change overwrites it.
         await enqueue(area, async () => {
-          if (generation[area] !== started) throw new SessionError("signed_out");
+          if (generation[area] !== started) {
+            // The session ended while the server was answering: revoke the new token it just issued as well
+            revokeIssued(area, reply.data);
+            throw new SessionError("signed_out");
+          }
           await storage.setItem(keyFor(area), reply.data.refreshToken);
           if (generation[area] !== started) throw new SessionError("signed_out");
           accessTokens[area] = reply.data.accessToken;
@@ -91,13 +126,57 @@ const createSession = ({ storage, request }) => {
     return attempt;
   };
 
+  // Background, never rejects: revokes tokens the server issued for a session that has already ended here.
+  const revokeIssued = (area, { accessToken, refreshToken }) => {
+    request(`/${area}/logout`, { token: accessToken, body: { refreshToken } }).catch(() => {});
+  };
+
+  // Sign out. The stored refresh token is wiped FIRST, so the session can never come back at the next start,
+  // even if the server cannot be reached. This answers as soon as that is done. Revoking the token on the
+  // server continues in the background (`revocation` never rejects), so a slow network does not hold the page up.
+  async function clear(area) {
+    assertArea(area);
+    generation[area] += 1;
+    refreshing.delete(area);
+    accessTokens[area] = null;
+
+    // Runs after every earlier write for this area, so it removes whatever they stored and it is the last word,
+    // unless a newer sign-in is queued behind it.
+    const refreshToken = await enqueue(area, async () => {
+      const stored = await storage.getItem(keyFor(area));
+      await storage.deleteItem(keyFor(area));
+      return stored;
+    });
+
+    const revoke = async () => {
+      if (!refreshToken) return false;
+      try {
+        const fresh = await request(`/${area}/refresh-token`, { body: { refreshToken } });
+        if (fresh.status !== 200 || !fresh.data?.accessToken) return false;
+        const out = await request(`/${area}/logout`, {
+          token: fresh.data.accessToken,
+          body: { refreshToken: fresh.data.refreshToken },
+        });
+        return out.status === 200;
+      } catch {
+        return false;
+      }
+    };
+
+    return { revocation: revoke() };
+  }
+
   return {
     // After sign-in on the web page. A newer sign-in or a sign-out always wins over this one.
     async set(area, { accessToken, refreshToken }) {
       assertArea(area);
+      // Taken before waiting, so a sign-out asked for while this runs still wins
       const mine = ++generation[area];
       refreshing.delete(area);
       accessTokens[area] = null;
+      await migrate();
+      // Whoever was signed in to the other area is signed out first, so the phone never holds two people
+      await clear(otherArea(area));
       await enqueue(area, async () => {
         if (generation[area] !== mine) return;
         await storage.setItem(keyFor(area), refreshToken);
@@ -106,54 +185,29 @@ const createSession = ({ storage, request }) => {
     },
 
     // At web app start. Returns an access token, or null when this area has no session. A lost connection
-    // answers null too; the page then shows its sign-in screen and the stored session is kept.
+    // answers null too and the stored session is kept (status() tells the two apart).
     async get(area) {
-      assertArea(area);
-      if (accessTokens[area]) return accessTokens[area];
-      try {
-        return await refresh(area);
-      } catch {
-        return null;
-      }
+      return (await status(area)).accessToken;
     },
+
+    // Like get, and also says when a stored session exists but could not be checked (no connection, server down),
+    // so the page can offer Try again instead of the sign-in form. The session is kept in that case.
+    status: (area) => status(area),
 
     refresh,
-
-    // Sign out. The stored refresh token is wiped FIRST, so the session can never come back at the next start,
-    // even if the server cannot be reached. This answers as soon as that is done. Revoking the token on the
-    // server continues in the background (`revocation` never rejects), so a slow network does not hold the page up.
-    async clear(area) {
-      assertArea(area);
-      generation[area] += 1;
-      refreshing.delete(area);
-      accessTokens[area] = null;
-
-      // Runs after every earlier write for this area, so it removes whatever they stored and it is the last word,
-      // unless a newer sign-in is queued behind it.
-      const refreshToken = await enqueue(area, async () => {
-        const stored = await storage.getItem(keyFor(area));
-        await storage.deleteItem(keyFor(area));
-        return stored;
-      });
-
-      const revoke = async () => {
-        if (!refreshToken) return false;
-        try {
-          const fresh = await request(`/${area}/refresh-token`, { body: { refreshToken } });
-          if (fresh.status !== 200 || !fresh.data?.accessToken) return false;
-          const out = await request(`/${area}/logout`, {
-            token: fresh.data.accessToken,
-            body: { refreshToken: fresh.data.refreshToken },
-          });
-          return out.status === 200;
-        } catch {
-          return false;
-        }
-      };
-
-      return { revocation: revoke() };
-    },
+    clear,
   };
+
+  async function status(area) {
+    assertArea(area);
+    await migrate();
+    if (accessTokens[area]) return { accessToken: accessTokens[area] };
+    try {
+      return { accessToken: await refreshNow(area) };
+    } catch (error) {
+      return KEEPS_SESSION.includes(error?.code) ? { accessToken: null, offline: true } : { accessToken: null };
+    }
+  }
 };
 
 module.exports = { REFRESH_TIMEOUT_MS, SessionError, createSession, keyFor };

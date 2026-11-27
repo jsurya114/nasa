@@ -69,6 +69,8 @@ describe("a new Desi driver's QuickBooks setup", () => {
     await waitFor(() => expect(trail.at(-1)).toBe("/driver/quickbooks-setup"));
     expect(screen.getByText(/same address everywhere/)).toBeTruthy();
     expect(document.querySelector("nav")).toBeNull();
+    // Only help, privacy and account deletion stay reachable (App Store 5.1.1(v)); none of them leads into the app
+    expect([...document.querySelectorAll("[aria-label='Account'] a")].map((a) => a.getAttribute("href")).sort()).toEqual(["/driver/delete-account", "/privacy-policy", "/support"]);
     expect((screen.getByLabelText(/Tax ID/)).type).toBe("password");
   });
 

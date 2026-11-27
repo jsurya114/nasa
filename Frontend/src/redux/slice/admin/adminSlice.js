@@ -100,6 +100,15 @@ const adminSlice = createSlice({
         clearError: (state) => {
             state.error = null;
         },
+        // After the one sign-in page (/auth/login) opened an admin account
+        signedIn: (state, action) => {
+            state.loading = false;
+            state.error = null;
+            state.authCheckFailed = false;
+            state.isAuthenticated = true;
+            state.admin = action.payload;
+            state.isSuperAdmin = action.payload?.role === 'superadmin';
+        },
         // Add manual logout action for client-side logout
         manualLogout: (state) => {
             state.isAuthenticated = false;
@@ -179,5 +188,5 @@ const adminSlice = createSlice({
     },
 })
 
-export const { clearError, manualLogout } = adminSlice.actions;
+export const { clearError, manualLogout, signedIn } = adminSlice.actions;
 export default adminSlice.reducer;

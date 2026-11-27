@@ -3,12 +3,15 @@ import { useEffect } from "react";
 import { useSelector, useDispatch } from "react-redux";
 import { accessDriver } from "../../redux/slice/driver/driverSlice.js";
 import AuthCheckRetry from "../../native/AuthCheckRetry.jsx";
+import Loader from "../../components/Loader.jsx";
 import PushSetup from "../../native/PushSetup.jsx";
 import EvereeSetupProvider from "../../hooks/EvereeSetupProvider.jsx";
 import QuickbooksSetupProvider from "../../hooks/QuickbooksSetupProvider.jsx";
 import PaymentSetupBanner from "../../components/Drivers/everee/PaymentSetupBanner.jsx";
 import SetupLock from "../../components/Drivers/everee/SetupLock.jsx";
 import PaymentSetupPrompt from "../../components/Drivers/everee/PaymentSetupPrompt.jsx";
+
+const ALWAYS_OPEN = "/driver/delete-account";
 
 function DProtectRoutes() {
     const dispatch = useDispatch()
@@ -20,7 +23,7 @@ function DProtectRoutes() {
     }, [dispatch])
 
     if (isAuthenticated === null) {
-        return authCheckFailed ? <AuthCheckRetry onRetry={() => dispatch(accessDriver())} /> : null;
+        return authCheckFailed ? <AuthCheckRetry onRetry={() => dispatch(accessDriver())} /> : <Loader />;
     }
 
     if (!isAuthenticated) {
@@ -28,6 +31,9 @@ function DProtectRoutes() {
     }
 
     // Block access if agreement is not signed (unless they are already on the agreement page)
+    // Account deletion stays open before the agreement and payment setup are done
+    if (location.pathname === ALWAYS_OPEN) return <Outlet />;
+
     if (driver && driver.agreement_signed === false && location.pathname !== "/driver/agreement") {
         return <Navigate to="/driver/agreement" />;
     }

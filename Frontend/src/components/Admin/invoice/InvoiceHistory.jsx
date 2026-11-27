@@ -1,3 +1,4 @@
+import { saveProblem } from "../../../native/documents";
 import { useEffect, useState } from "react";
 import { ArrowDown, ArrowUp, Download, Search } from "lucide-react";
 import { Badge } from "./fields.jsx";
@@ -53,8 +54,8 @@ export default function InvoiceHistory({ vendors, onOpen, refreshKey }) {
     try {
       const [invoice, { downloadInvoice }] = await Promise.all([getInvoice(row.id), import("./buildInvoicePdf.js")]);
       await downloadInvoice(invoice);
-    } catch {
-      setNote(`The PDF for invoice ${row.invoiceNumber} could not be made. Try again.`);
+    } catch (failure) {
+      setNote(failure?.name === "BridgeError" ? saveProblem(failure) : `The PDF for invoice ${row.invoiceNumber} could not be made. Try again.`);
     }
   };
 

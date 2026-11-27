@@ -23,6 +23,33 @@ if (appEnv !== "development") {
 }
 
 const appId = process.env.NASA_APP_ID || "com.example.nasalogistics";
+const easProjectIdSetting = process.env.EAS_PROJECT_ID;
+
+// Nothing with a placeholder identity or placeholder artwork may reach testers or the stores. The bundle ID cannot be
+// changed after the first store release, so preview (TestFlight, internal) and production both need the real one.
+// Production also needs the Expo project (push) and NASA's own icon and splash, not Expo's template images.
+// NASA_ASSETS_DIR may point at a folder with NASA's approved artwork (same file names), instead of ./assets.
+const assets = (process.env.NASA_ASSETS_DIR || "./assets").replace(/\/$/, "");
+const PLACEHOLDER_ARTWORK = {
+  "icon.png": "119462bb78eb240a65c869fc067ee599639b3cb5a41953f25c07b17d2a8c7e0f",
+  "splash-icon.png": "5f4c0a732b6325bf4071d9124d2ae67e037cb24fcc9c482ef82bea742109a3b8",
+  "android-icon-foreground.png": "9e3d0315a33c6799de601dd34cd8bf8cc3a8d16f3bf75592baec2ceb7240b391",
+};
+if (appEnv !== "development") {
+  if (!/^[a-z][a-z0-9]*(\.[a-z][a-z0-9]*){2,}$/i.test(appId) || /^com\.example\./i.test(appId)) {
+    throw new Error(`NASA_APP_ID must be NASA's real reverse-domain bundle ID for ${appEnv} builds, got "${appId}"`);
+  }
+}
+if (appEnv === "production") {
+  if (!easProjectIdSetting) throw new Error("EAS_PROJECT_ID must be set for production builds (push notifications need it)");
+  const { createHash } = require("node:crypto");
+  const { readFileSync } = require("node:fs");
+  const { isAbsolute, join } = require("node:path");
+  for (const [file, placeholder] of Object.entries(PLACEHOLDER_ARTWORK)) {
+    const hash = createHash("sha256").update(readFileSync(isAbsolute(assets) ? join(assets, file) : join(__dirname, assets, file))).digest("hex");
+    if (hash === placeholder) throw new Error(`${assets}/${file} is still Expo's placeholder; production builds need NASA's approved artwork`);
+  }
+}
 
 // Plain http to a computer on the local network is allowed in development builds only. Preview and production
 // builds keep both platforms' default of refusing it.
@@ -55,7 +82,7 @@ const withoutLocalNetworkExceptions = (config) =>
 // Push notifications need the Expo project that owns the push credentials. It is created by the owner's Expo account
 // (`eas init`); until then push reports itself unavailable and everything else works. The Firebase file for Android
 // push is passed as a path (an EAS secret file) and is never committed.
-const easProjectId = process.env.EAS_PROJECT_ID;
+const easProjectId = easProjectIdSetting;
 const googleServicesFile = process.env.GOOGLE_SERVICES_FILE;
 
 module.exports = {
@@ -64,11 +91,15 @@ module.exports = {
     slug: "nasa-logistics",
     version: "0.1.0",
     orientation: "portrait",
-    icon: "./assets/icon.png",
+    icon: `${assets}/icon.png`,
     userInterfaceStyle: "light",
+    splash: { image: `${assets}/splash-icon.png`, resizeMode: "contain", backgroundColor: "#4C2A85" },
     ios: {
       supportsTablet: false,
       bundleIdentifier: appId,
+      // The app has no tracking and no tracking domains. Required-reason API entries come from each SDK's own
+      // privacy manifest, merged by the build; none are copied in by hand here.
+      privacyManifests: { NSPrivacyTracking: false, NSPrivacyTrackingDomains: [] },
       infoPlist: {
         NSCameraUsageDescription: CAMERA_REASON,
         ...(isDevelopment ? { NSAppTransportSecurity: { NSAllowsLocalNetworking: true } } : {}),
@@ -80,9 +111,9 @@ module.exports = {
       ...(googleServicesFile ? { googleServicesFile } : {}),
       adaptiveIcon: {
         backgroundColor: "#4C2A85",
-        foregroundImage: "./assets/android-icon-foreground.png",
-        backgroundImage: "./assets/android-icon-background.png",
-        monochromeImage: "./assets/android-icon-monochrome.png",
+        foregroundImage: `${assets}/android-icon-foreground.png`,
+        backgroundImage: `${assets}/android-icon-background.png`,
+        monochromeImage: `${assets}/android-icon-monochrome.png`,
       },
     },
     plugins: [

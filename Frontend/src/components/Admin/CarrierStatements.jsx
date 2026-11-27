@@ -1,3 +1,4 @@
+import { saveDocument, saveProblem } from "../../native/documents";
 import React, { useCallback, useEffect, useState } from "react";
 import Header from "../../reuse/Header";
 import Nav from "../../reuse/Nav";
@@ -32,12 +33,10 @@ export default function CarrierStatements() {
   const download = async () => {
     setExportError(null);
     try {
-      const url = URL.createObjectURL(new Blob([await exportStatementsCsv()], { type: "text/csv;charset=utf-8" }));
-      const link = document.createElement("a");
-      link.href = url;
-      link.download = csvFileName();
-      link.click();
-      URL.revokeObjectURL(url);
+      const csv = await exportStatementsCsv();
+      try {
+        await saveDocument({ bytes: csv, fileName: csvFileName(), mimeType: "text/csv" });
+      } catch (error) { setExportError(saveProblem(error)); }
     } catch (error) { setExportError(messageFor(error)); }
   };
 

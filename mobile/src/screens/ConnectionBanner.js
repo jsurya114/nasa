@@ -1,18 +1,20 @@
 import { Pressable, StyleSheet, Text, View } from "react-native";
 
 const MESSAGES = {
-  offline: "No connection. What you typed is kept.",
-  server: "NASA is not responding. What you typed is kept.",
+  offline: "No connection. Nothing new is saved until it is back.",
+  server: "NASA is not responding. Nothing new is saved until it answers.",
 };
 
 // A slim bar over the page after a connection problem that happens once the page has loaded. The page underneath
-// stays mounted, so nothing the person typed is lost. Nothing is saved or queued while the bar shows.
+// stays as it is. Reload starts the page again: only forms that keep a draft (the journey form) come back filled in,
+// so the button says so instead of promising that everything typed survives. Nothing is saved or queued here.
 export default function ConnectionBanner({ kind, onRetry }) {
   return (
     <View style={styles.bar} accessibilityRole="alert" accessibilityLiveRegion="polite">
       <Text style={styles.text}>{MESSAGES[kind] ?? MESSAGES.offline}</Text>
-      <Pressable onPress={onRetry} style={styles.button} accessibilityRole="button" accessibilityLabel="Try again">
-        <Text style={styles.buttonText}>Try again</Text>
+      <Pressable onPress={onRetry} style={styles.button} accessibilityRole="button" accessibilityLabel="Reload page"
+        accessibilityHint="Unsaved changes on this page may be lost">
+        <Text style={styles.buttonText}>Reload</Text>
       </Pressable>
     </View>
   );

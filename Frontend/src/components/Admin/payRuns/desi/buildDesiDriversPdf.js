@@ -1,3 +1,4 @@
+import { saveDocument } from "../../../../native/documents";
 import { PDFDocument, rgb } from "pdf-lib";
 import fontkit from "@pdf-lib/fontkit";
 import {
@@ -124,15 +125,8 @@ export const buildDesiDriversPdf = async ({ drivers, run, cityName, today }, ass
 const safePart = (text) => String(text ?? "").replace(/[^A-Za-z0-9]+/g, "-").replace(/^-|-$/g, "");
 export const fileNameOf = (cityName, run) => `desi-drivers-list-${safePart(cityName) || "city"}-${run.period_start}-to-${run.period_end}.pdf`;
 
-// Makes the PDF and saves it through the browser.
+// Makes the PDF and saves it: a download in a browser, the phone's share sheet in the app.
 export const downloadDesiDriversPdf = async ({ drivers, run, cityName, today }) => {
   const bytes = await buildDesiDriversPdf({ drivers, run, cityName, today }, await loadInvoiceAssets());
-  const url = URL.createObjectURL(new Blob([bytes], { type: "application/pdf" }));
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = fileNameOf(cityName, run);
-  document.body.appendChild(link);
-  link.click();
-  link.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 10_000);
+  return saveDocument({ bytes, fileName: fileNameOf(cityName, run), mimeType: "application/pdf" });
 };
