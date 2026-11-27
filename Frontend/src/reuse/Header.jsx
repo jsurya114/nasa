@@ -3,13 +3,13 @@ import logo from "../assets/logo.png";
 import { adminLogout } from "../redux/slice/admin/adminSlice";
 import { useDispatch, useSelector } from "react-redux";
 import { useNavigate } from "react-router-dom";
-import { Menu, X, User } from "lucide-react";
-import AccountLinks from "../components/account/AccountLinks.jsx";
+import { Menu, X, CircleUserRound } from "lucide-react";
+import ProfileButton from "./ProfileButton.jsx";
 
 function Header() {
   const dispatch = useDispatch();
   const navigate = useNavigate();
-  const { admin, isSuperAdmin } = useSelector((state) => state.admin);
+  const { admin } = useSelector((state) => state.admin);
   const [menuOpen, setMenuOpen] = useState(false);
 
   // useEffect(() => {
@@ -42,16 +42,8 @@ function Header() {
 
       {/* Right Side - Desktop (≥768px) */}
       <div className="hidden md:flex items-center gap-3 text-sm md:text-base">
-        <div className="flex flex-col items-center">
-          <div className="w-7 h-7 md:w-8 md:h-8 rounded-full bg-yellow-400 text-black font-bold grid place-items-center">
-            <User className="w-4 h-4 md:w-5 md:h-5" aria-hidden="true" />
-          </div>
-          <div className="font-semibold truncate max-w-[120px] md:max-w-[150px]">
-            {admin?.name}
-          </div>
-        </div>
-
-        <AccountLinks area="admin" isSuperAdmin={isSuperAdmin} className="flex text-white [&_a]:text-white" />
+        {/* The profile page holds help, privacy, deletion requests and Delete account */}
+        <ProfileButton to="/admin/profile" name={admin?.name} />
         <button
           className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-xl font-semibold shadow-sm"
           onClick={handleLogout}
@@ -61,7 +53,8 @@ function Header() {
       </div>
 
      {/* Hamburger Menu - Mobile (<768px) */}
-<div className="md:hidden relative ml-auto">
+<div className="md:hidden relative ml-auto flex items-center gap-1">
+  <ProfileButton to="/admin/profile" name={admin?.name} variant="icon" />
   <button
     onClick={() => setMenuOpen(!menuOpen)}
     aria-label="Toggle menu"
@@ -79,14 +72,16 @@ function Header() {
         Dashboard Admin
       </div>
 
-      <div className="flex flex-col items-center">
-        <div className="w-8 h-8 rounded-full bg-yellow-400 text-black font-bold grid place-items-center">
-          <User className="w-5 h-5" aria-hidden="true" />
-        </div>
+      <button
+        type="button"
+        onClick={() => { setMenuOpen(false); navigate("/admin/profile"); }}
+        aria-label={`My profile: ${admin?.name ?? ""}`}
+        className="w-full flex flex-col items-center rounded-xl py-2 hover:bg-black/5 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
+      >
+        <CircleUserRound className="w-8 h-8 text-brand" aria-hidden="true" />
         <div className="font-semibold text-center">{admin?.name}</div>
-      </div>
-
-      <AccountLinks area="admin" isSuperAdmin={isSuperAdmin} onNavigate={() => setMenuOpen(false)} />
+        <div className="text-xs text-ink-muted">My profile</div>
+      </button>
       <button
         className="w-full bg-red-600 hover:bg-red-700 text-white px-3 py-3 rounded-xl font-semibold"
         onClick={handleLogout}

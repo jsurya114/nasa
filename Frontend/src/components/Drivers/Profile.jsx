@@ -6,6 +6,7 @@ import Nav from "../../reuse/driver/Nav";
 import useTranslation from "../../hooks/useTranslation.js";
 import { toast } from "../../utils/toast";
 import { clearSaveErrors, loadProfile, saveProfile } from "../../redux/slice/driver/profileSlice.js";
+import AccountSection from "../account/AccountSection.jsx";
 
 // Same limits as the server (drivers.name 100, email 150, phone 20): they only stop typing past the end, the server does the checking.
 const FIELDS = [
@@ -179,6 +180,9 @@ function Profile() {
               </div>
             </form>
           )}
+        </div>
+        <div className="mt-4">
+          <AccountSection area="driver" />
         </div>
       </main>
       <Nav />

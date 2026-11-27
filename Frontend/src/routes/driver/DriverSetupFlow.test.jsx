@@ -116,6 +116,8 @@ describe("the way in for a driver", () => {
     await serve({ signed: true, setup: status({ state: "in-progress", canStart: false, enforced: false }) });
     await mount("/driver/pay");
     expect(await screen.findByText("Driver pay")).toBeTruthy();
+    // Not locked: the account links are on the profile page, not in the header
+    expect(document.querySelector("[aria-label='Account']")).toBeNull();
   });
 
   it("a driver whose setup is complete reaches every page", async () => {
