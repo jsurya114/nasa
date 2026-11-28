@@ -13,6 +13,7 @@ import { parseRange } from '../services/reporting/inputs.js';
 // transaction that is always rolled back. The second needs two connections, so its few rows are committed and removed again at the end.
 const hasDb = process.env.PAYROLL_TEST_DB === '1';
 const MIGRATION = new URL('../migrations/2026-11-11-invoices.sql', import.meta.url);
+const OVERTIME_MIGRATION = new URL('../migrations/2026-11-28-invoice-item-overtime.sql', import.meta.url);
 
 test('invoices: saved, reloaded, numbered once, edited while pending, locked when paid, listed, and counted in Insights by receipt date', { skip: !hasDb && 'set PAYROLL_TEST_DB=1 and the DB_* variables to run' }, async (t) => {
   const { default: pool } = await import('../config/db.js');
@@ -29,6 +30,7 @@ test('invoices: saved, reloaded, numbered once, edited while pending, locked whe
   try {
     await db.query('BEGIN');
     await db.query(readFileSync(MIGRATION, 'utf8'));
+    await db.query(readFileSync(OVERTIME_MIGRATION, 'utf8'));
     const tag = randomBytes(3).toString('hex').toUpperCase();
     const admin = { id: (await one('SELECT id FROM admin ORDER BY id LIMIT 1')).id, role: 'superadmin' };
     const hourlyVendor = await createVendor(db, admin, parseVendor({ billingName: `Hourly Co ${tag}`, addressLine1: '1 Main St', addressLine2: 'Dallas, TX', billingType: 'hourly' }));
@@ -73,6 +75,15 @@ test('invoices: saved, reloaded, numbered once, edited while pending, locked whe
       assert.equal(invoice.total, '1465.97');
       const sum = (await one('SELECT sum(line_total)::text AS s FROM invoice_lines WHERE invoice_id = $1', [invoice.id])).s;
       assert.equal(sum, invoice.total, 'the saved lines add up to the saved total');
+    });
+
+    await t.test('item-based overtime: rate x quantity + OT hours x OT rate (100 x 2 + 2 x 30 = 260), saved and reloaded', async () => {
+      const { invoice } = await createInvoice(db, admin, parseInvoice(itemBody({ invoiceNumber: `OT${tag}`, lines: [
+        { date: '2026-06-01', item: 'Box truck', rate: '100', quantity: '2', otHours: '2', otRate: '30' },
+        { date: '2026-06-02', item: 'Box truck', rate: '100', quantity: '2' },
+      ] })), null);
+      assert.deepEqual(invoice.lines.map((l) => [l.otHours, l.otRate, l.total]), [['2', '30.00', '260.00'], [null, null, '200.00']]);
+      assert.equal(invoice.total, '460.00');
     });
 
     await t.test('an invoice number is used once (ignoring case), a retried create returns the same invoice, and the vendor must bill that way', async () => {

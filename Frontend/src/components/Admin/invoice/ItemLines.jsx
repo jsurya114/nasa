@@ -1,16 +1,17 @@
 import { INPUT } from "./fieldStyles.js";
-import { LIMITS, datesBetween, entriesOutside, isPartialItem, itemLineCents, itemRowsFor, itemSubtotalCents, moneyText, usDate, weekdayOf } from "./invoiceRules.js";
+import { LIMITS, datesBetween, entriesOutside, isHalfOvertime, isPartialItem, itemLineCents, itemRowsFor, itemSubtotalCents, moneyText, usDate, weekdayOf } from "./invoiceRules.js";
 
 // The item-based invoice: one row for every calendar date of the billing period, From to To, both included and weekends too. The date and the day
-// are filled in; the item, rate and quantity are typed. A row left empty is not billed and not printed. Each line's total is rate x quantity rounded
-// to the cent, and the subtotal is the sum of those rounded lines (the server works it out the same way and saves that).
+// are filled in; the item, rate and quantity are typed, and overtime (OT hours and OT rate) when there is any. A row left empty is not billed and not
+// printed. Each line's total is rate x quantity + OT hours x OT rate, rounded to the cent (100 x 2 + 2 x 30 = 260.00), and the subtotal is the sum of
+// those rounded lines (the server works it out the same way and saves that).
 // `entries` holds what was typed, by date, so moving the dates keeps everything typed for a date that is still in the period.
 export default function ItemLines({ start, end, entries, onChange, errors, disabled }) {
   const dates = datesBetween(start, end);
   const rows = itemRowsFor(start, end, entries);
   const lineErrors = errors.lineErrors ?? {};
   const outside = dates.length ? entriesOutside(start, end, entries) : [];
-  const set = (date, field, value) => onChange({ ...entries, [date]: { date, item: "", rate: "", quantity: "", ...entries[date], [field]: value } });
+  const set = (date, field, value) => onChange({ ...entries, [date]: { date, item: "", rate: "", quantity: "", otHours: "", otRate: "", ...entries[date], [field]: value } });
 
   if (dates.length === 0) {
     return (
@@ -31,22 +32,24 @@ export default function ItemLines({ start, end, entries, onChange, errors, disab
         </p>
       )}
       {errors.lines && <p className="text-sm text-red-600" role="alert">{errors.lines}</p>}
-      <div className="hidden grid-cols-[6.5rem_6.5rem_minmax(0,1fr)_7rem_6rem_7rem] gap-2 px-2 text-xs font-semibold uppercase text-ink-muted sm:grid" aria-hidden="true">
-        <span>Date</span><span>Day</span><span>Item</span><span className="text-right">Rate ($)</span><span className="text-right">Quantity</span><span className="text-right">Total</span>
+      <div className="hidden grid-cols-[6rem_6rem_minmax(0,1fr)_6rem_4.5rem_4.5rem_5.5rem_6.5rem] gap-2 px-2 text-xs font-semibold uppercase text-ink-muted sm:grid" aria-hidden="true">
+        <span>Date</span><span>Day</span><span>Item</span><span className="text-right">Rate ($)</span><span className="text-right">Qty</span><span className="text-right">OT (hrs)</span><span className="text-right">OT rate ($)</span><span className="text-right">Total</span>
       </div>
       <ol className="flex flex-col gap-2">
         {rows.map((row, i) => {
           const own = lineErrors[i] ?? {};
           const partial = isPartialItem(row);
+          const halfOvertime = isHalfOvertime(row);
           const cents = itemLineCents(row);
-          const flagged = partial || Object.keys(own).length > 0;
+          const flagged = partial || halfOvertime || Object.keys(own).length > 0;
           const day = weekdayOf(row.date);
           const id = `line-${row.date}`;
           const message = own.row ?? (partial ? "Fill in the item, rate and quantity, or leave the whole row empty." : null);
-          const fieldError = own.date ?? own.item ?? own.rate ?? own.quantity;
+          const overtimeMessage = own.overtime ?? (halfOvertime ? "Enter both the OT hours and the OT rate, or leave both empty." : null);
+          const fieldError = own.date ?? own.item ?? own.rate ?? own.quantity ?? own.otHours ?? own.otRate;
           return (
             <li key={row.date} data-testid={id} data-partial={partial ? "true" : undefined}
-              className={`grid grid-cols-2 items-center gap-2 rounded-xl border p-2 sm:grid-cols-[6.5rem_6.5rem_minmax(0,1fr)_7rem_6rem_7rem] ${flagged ? "border-amber-600 bg-amber-50/60" : "border-line bg-white"} ${day === "Saturday" || day === "Sunday" ? "sm:bg-canvas/60" : ""}`}>
+              className={`grid grid-cols-2 items-center gap-2 rounded-xl border p-2 sm:grid-cols-[6rem_6rem_minmax(0,1fr)_6rem_4.5rem_4.5rem_5.5rem_6.5rem] ${flagged ? "border-amber-600 bg-amber-50/60" : "border-line bg-white"} ${day === "Saturday" || day === "Sunday" ? "sm:bg-canvas/60" : ""}`}>
               <span className="text-sm font-semibold tabular-nums text-ink" data-testid={`${id}-date`}>{usDate(row.date)}</span>
               <span className="text-right text-sm text-ink-muted sm:text-left" data-testid={`${id}-day`}>{day}</span>
               <input aria-label={`Item, ${day} ${usDate(row.date)}`} className={`${INPUT} col-span-2 sm:col-span-1`} value={row.item} disabled={disabled} onChange={(e) => set(row.date, "item", e.target.value)}
@@ -55,8 +58,12 @@ export default function ItemLines({ start, end, entries, onChange, errors, disab
                 placeholder="Rate" autoComplete="off" aria-invalid={Boolean(own.rate)} />
               <input aria-label={`Quantity, ${usDate(row.date)}`} inputMode="decimal" className={`${INPUT} text-right`} value={row.quantity} disabled={disabled} onChange={(e) => set(row.date, "quantity", e.target.value)}
                 placeholder="Qty" autoComplete="off" aria-invalid={Boolean(own.quantity)} />
+              <input aria-label={`OT hours, ${usDate(row.date)}`} inputMode="decimal" className={`${INPUT} text-right`} value={row.otHours ?? ""} disabled={disabled} onChange={(e) => set(row.date, "otHours", e.target.value)}
+                placeholder="OT hrs" autoComplete="off" aria-invalid={Boolean(own.otHours || own.overtime || halfOvertime)} />
+              <input aria-label={`OT rate, ${usDate(row.date)}`} inputMode="decimal" className={`${INPUT} text-right`} value={row.otRate ?? ""} disabled={disabled} onChange={(e) => set(row.date, "otRate", e.target.value)}
+                placeholder="OT rate" autoComplete="off" aria-invalid={Boolean(own.otRate || own.overtime || halfOvertime)} />
               <span className="col-span-2 text-right text-sm font-bold tabular-nums text-ink sm:col-span-1" data-testid={`${id}-total`}>{cents === null ? "—" : moneyText(cents)}</span>
-              {(message || fieldError) && <p className="col-span-2 text-sm text-amber-900 sm:col-span-6" data-testid={`${id}-problem`}>{[message, fieldError].filter(Boolean).join(" ")}</p>}
+              {(message || overtimeMessage || fieldError) && <p className="col-span-2 text-sm text-amber-900 sm:col-span-8" data-testid={`${id}-problem`}>{[message, overtimeMessage, fieldError].filter(Boolean).join(" ")}</p>}
             </li>
           );
         })}
