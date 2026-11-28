@@ -2,7 +2,7 @@ import { MAX_ROWS } from "./invoiceTemplate.js";
 
 // Pure rules for the invoice forms: what is allowed, how a number is read and printed, and how the item-based dates are laid out. No React, no PDF,
 // no network. The server checks everything again and is the authority for every amount: the figures here are a preview of what it will save, worked
-// out the same way (whole cents, rate x quantity rounded half up, subtotal = the sum of the rounded lines).
+// out the same way (whole cents, rate x quantity + OT hours x OT rate rounded once half up, subtotal = the sum of the rounded lines).
 
 export const LIMITS = Object.freeze({
   invoiceNumber: 20, name: 80, address: 80, contactName: 80, email: 150, job: 40, item: 80, reference: 80, periodDays: 366,
@@ -35,6 +35,10 @@ export const toCents = (value) => {
 
 // rate (cents) x quantity (hundredths) -> cents, rounded half up: $200.00 x 4 = $800.00, $0.33 x 0.5 = $0.17.
 export const lineTotalCents = (rateCents, quantityHundredths) => Number((BigInt(rateCents) * BigInt(quantityHundredths) + 50n) / 100n);
+
+// An item line: rate x quantity + OT rate x OT hours, in cents, rounded once (half up): 100 x 2 + 2 x 30 = 260.00. Missing overtime counts as none.
+export const itemLineTotalCents = (rateCents, quantityHundredths, otRateCents = null, otHoursHundredths = null) =>
+  Number((BigInt(rateCents) * BigInt(quantityHundredths) + BigInt(otRateCents ?? 0) * BigInt(otHoursHundredths ?? 0) + 50n) / 100n);
 
 // 146597 -> "$1,465.97"
 export const moneyText = (cents) => `$${Math.floor(cents / 100).toLocaleString("en-US")}.${String(cents % 100).padStart(2, "0")}`;
@@ -122,15 +126,21 @@ export const hourlyTotalCents = (rows) => rows.reduce((sum, r) => sum + (toCents
 
 // ---------- item-based ----------
 
-export const blankItem = (date) => ({ date, item: "", rate: "", quantity: "" });
-export const isBlankItem = (row) => !clean(row.item) && !clean(row.rate) && !clean(row.quantity);
+export const blankItem = (date) => ({ date, item: "", rate: "", quantity: "", otHours: "", otRate: "" });
+export const isBlankItem = (row) => !clean(row.item) && !clean(row.rate) && !clean(row.quantity) && !clean(row.otHours) && !clean(row.otRate);
 export const isPartialItem = (row) => !isBlankItem(row) && (!clean(row.item) || !clean(row.rate) || !clean(row.quantity));
+// Overtime is optional, but its hours and rate go together.
+export const isHalfOvertime = (row) => Boolean(clean(row.otHours)) !== Boolean(clean(row.otRate));
 
-// The line's money in cents, or null while the rate or quantity is missing or not a number.
+// The line's money in cents, or null while the rate, quantity or a half-filled overtime is missing or not a number.
 export const itemLineCents = (row) => {
   const rate = toCents(row.rate);
   const quantity = toCents(row.quantity);
-  return rate === null || quantity === null ? null : lineTotalCents(rate, quantity);
+  if (rate === null || quantity === null || isHalfOvertime(row)) return null;
+  const otHours = clean(row.otHours) ? toCents(row.otHours) : null;
+  const otRate = clean(row.otRate) ? toCents(row.otRate) : null;
+  if ((clean(row.otHours) && otHours === null) || (clean(row.otRate) && otRate === null)) return null;
+  return itemLineTotalCents(rate, quantity, otRate, otHours);
 };
 // The subtotal: the sum of the complete lines, each already rounded to the cent.
 export const itemSubtotalCents = (rows) => rows.reduce((sum, r) => sum + (isPartialItem(r) || isBlankItem(r) ? 0 : itemLineCents(r) ?? 0), 0);
@@ -159,10 +169,16 @@ const checkItems = (rows, errors) => {
     if (clean(row.rate) && (rate === null || rate > LIMITS.rateCents)) own.rate = "Enter the rate, like 200 or 200.50.";
     const quantity = clean(row.quantity) ? toCents(row.quantity) : null;
     if (clean(row.quantity) && (quantity === null || quantity > LIMITS.quantityHundredths)) own.quantity = "Enter the quantity, like 4 or 2.5.";
-    if (!hasErrors(own) && lineTotalCents(rate, quantity) > LIMITS.costCents) own.quantity = "This line comes to more than 99,999,999.99. Check the rate and quantity.";
+    const otHours = clean(row.otHours) ? toCents(row.otHours) : null;
+    if (clean(row.otHours) && (otHours === null || otHours > LIMITS.quantityHundredths)) own.otHours = "Enter the OT hours, like 2 or 1.5.";
+    const otRate = clean(row.otRate) ? toCents(row.otRate) : null;
+    if (clean(row.otRate) && (otRate === null || otRate > LIMITS.rateCents)) own.otRate = "Enter the OT rate, like 30 or 30.50.";
+    if (isHalfOvertime(row)) own.overtime = "Enter both the OT hours and the OT rate, or leave both empty.";
+    const total = hasErrors(own) ? 0 : itemLineTotalCents(rate, quantity, otRate, otHours);
+    if (total > LIMITS.costCents) own.quantity = "This line comes to more than 99,999,999.99. Check the rate, quantity and overtime.";
     if (hasErrors(own)) { lineErrors[i] = own; return; }
     valid += 1;
-    money += lineTotalCents(rate, quantity);
+    money += total;
   });
   if (hasErrors(lineErrors)) errors.lineErrors = lineErrors;
   else if (valid === 0) errors.lines = "Enter at least one line: an item, its rate and quantity.";
@@ -205,7 +221,7 @@ export const checkInvoice = (form) => {
     lines = (form.rows ?? []).map((r) => ({ job: r.job, reHours: r.reHours, overtime: r.overtime, totalHours: r.totalHours, totalCost: r.totalCost }));
     checkHourly(form.rows ?? [], errors);
   } else if (form.type === "item") {
-    lines = itemRowsFor(start, end, form.entries ?? {}).map((r) => ({ date: r.date, item: r.item, rate: r.rate, quantity: r.quantity }));
+    lines = itemRowsFor(start, end, form.entries ?? {}).map((r) => ({ date: r.date, item: r.item, rate: r.rate, quantity: r.quantity, otHours: r.otHours, otRate: r.otRate }));
     if (!errors.periodStart && !errors.periodEnd) checkItems(lines, errors);
   } else errors.type = "Choose a vendor to pick the invoice format.";
 
@@ -229,7 +245,7 @@ export const formFromInvoice = (invoice) => {
     });
     if (base.rows.length === 0) base.rows = [blankRow()];
   } else {
-    base.entries = Object.fromEntries(invoice.lines.map((l) => [l.date, { date: l.date, item: l.item, rate: l.rate, quantity: l.quantity }]));
+    base.entries = Object.fromEntries(invoice.lines.map((l) => [l.date, { date: l.date, item: l.item, rate: l.rate, quantity: l.quantity, otHours: l.otHours ?? "", otRate: l.otRate ?? "" }]));
   }
   return base;
 };

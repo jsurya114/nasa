@@ -3,17 +3,17 @@ import { saveDocument } from "../../../native/documents";
 import { PDFDocument, rgb } from "pdf-lib";
 import fontkit from "@pdf-lib/fontkit";
 import { ISSUER, TERMS_TEXT, TERMS_TITLE } from "./invoiceTemplate.js";
-import { SIGNATURE } from "./invoiceSignature.js";
 import { amountText, costText, fileNameFor, periodText, readAmount, usDate, weekdayOf } from "./invoiceRules.js";
 import montserratRegularUrl from "@fontsource/montserrat/files/montserrat-latin-400-normal.woff?url";
 import montserratBoldUrl from "@fontsource/montserrat/files/montserrat-latin-700-normal.woff?url";
 import openSansBoldUrl from "@fontsource/open-sans/files/open-sans-latin-700-normal.woff?url";
 import logoUrl from "../../../assets/invoice-logo.png?url";
+import signatureUrl from "../../../assets/invoice-signature.png?url";
 
 // Draws a saved invoice as a Letter PDF, in the browser, from what the server saved (its number, dates, bill-to block, issuer, terms and lines), so
 // a PDF made again later is the same invoice. Two formats on one design (the template the company supplied):
 //   Hourly       one page: jobs with RE hours, overtime, total hours and total cost.
-//   Item-based   Date | Day | Item | Rate | Quantity | Total, one line per billed date, then the subtotal. Runs over as many pages as it needs; every
+//   Item-based   Date | Day | Item | Rate | Qty | OT (hrs) | OT (rate) | Total, one line per billed date, then the subtotal. Runs over as many pages as it needs; every
 //                page repeats the column headers and is numbered, and the last page carries the subtotal, terms, contact block and signature.
 // Positions are in points from the top left of the page (the way the template was measured); `y` is always the text baseline.
 
@@ -44,8 +44,8 @@ const fetchBytes = async (url) => {
 let cached = null;
 export const loadInvoiceAssets = async () => {
   if (!cached) {
-    cached = Promise.all([montserratRegularUrl, montserratBoldUrl, openSansBoldUrl, logoUrl].map(fetchBytes)).then(
-      ([regular, bold, addressBold, logo]) => ({ regular, bold, addressBold, logo }),
+    cached = Promise.all([montserratRegularUrl, montserratBoldUrl, openSansBoldUrl, logoUrl, signatureUrl].map(fetchBytes)).then(
+      ([regular, bold, addressBold, logo, signature]) => ({ regular, bold, addressBold, logo, signature }),
     );
     cached.catch(() => { cached = null; });
   }
@@ -143,9 +143,12 @@ const ITEM = {
   rowHeight: 18, rowPitch: 20, firstRowTopPage1: 266, firstRowTopLater: 97.5, laterHeaderTop: 70,
   // The lowest a line may reach: on a page that continues, near the foot; on the last page, above the subtotal and the terms.
   fullBottom: 760, lastBottom: 548, subtotalGap: 4,
-  columns: { date: 69.8, day: 136, item: 212, itemWidth: 165, rate: 444, quantity: 514, total: 582 },
+  // Right-aligned columns are given by their right edge. Overtime sits after the quantity, as the client's layout asks.
+  columns: { date: 69.8, day: 124, item: 186, itemWidth: 138, rate: 372, quantity: 412, otHours: 466, otRate: 522, total: 582 },
 };
 const ROW_TINT = rgb(0.996, 0.906, 0.875); // a light orange for every other line, so a long table stays easy to follow
+// Where the signature image goes: its width in points and the lowest point it reaches (just below the signature line at 736.7).
+const SIGNATURE_BOX = { width: 112, bottom: 743 };
 
 // How many item lines fit below `firstRowTop` without going past `bottom` (a last page also keeps room for the subtotal band).
 const capacity = (firstRowTop, bottom, last) => {
@@ -250,7 +253,8 @@ export const buildInvoicePdf = async (invoice, assets) => {
   let last = first;
   if (invoice.type === "item") {
     const c = ITEM.columns;
-    const labels = [["DATE", c.date, "left"], ["DAY", c.day, "left"], ["ITEM", c.item, "left"], ["RATE", c.rate, "right"], ["QUANTITY", c.quantity, "right"], ["TOTAL", c.total, "right"]];
+    const labels = [["DATE", c.date, "left"], ["DAY", c.day, "left"], ["ITEM", c.item, "left"], ["RATE", c.rate, "right"], ["QTY", c.quantity, "right"],
+      ["OT (HRS)", c.otHours, "right"], ["OT (RATE)", c.otRate, "right"], ["TOTAL", c.total, "right"]];
     itemPages.forEach((pageLines, index) => {
       const page = index === 0 ? first : newPage();
       let firstRowTop = ITEM.firstRowTopPage1;
@@ -273,13 +277,16 @@ export const buildInvoicePdf = async (invoice, assets) => {
         drawText(page, item.text, { x: c.item, y: baseline, size: item.size, font: regular });
         cell(amountText(line.rate), c.rate, "right");
         cell(quantityText(line.quantity), c.quantity, "right");
+        // A line without overtime leaves both overtime cells empty.
+        if (line.otHours !== null && line.otHours !== undefined && line.otHours !== "") cell(quantityText(line.otHours), c.otHours, "right");
+        if (line.otRate !== null && line.otRate !== undefined && line.otRate !== "") cell(amountText(line.otRate), c.otRate, "right");
         cell(amountText(line.total), c.total, "right", bold);
       });
       if (index === pageCount - 1) {
         const top = firstRowTop + pageLines.length * ITEM.rowPitch + ITEM.subtotalGap;
         rect(page, { x: TABLE.left, top, width: TABLE.width, height: TABLE.headerHeight, color: COLORS.purple });
         const baseline = top + TABLE.headerHeight / 2 + SIZE.head * 0.35;
-        drawText(page, "SUBTOTAL", { x: c.quantity, y: baseline, size: SIZE.head, font: bold, color: COLORS.white, align: "right" });
+        drawText(page, "SUBTOTAL", { x: c.otRate, y: baseline, size: SIZE.head, font: bold, color: COLORS.white, align: "right" });
         drawText(page, amountText(invoice.total), { x: c.total, y: baseline, size: SIZE.head + 0.6, font: bold, color: COLORS.white, align: "right" });
         last = page;
       }
@@ -317,9 +324,14 @@ export const buildInvoicePdf = async (invoice, assets) => {
   drawText(last, "Email", { x: contactX, y: 707.3, size: SIZE.contact, font: bold });
   issuer.emails.forEach((email, i) => drawText(last, email, { x: contactX, y: 719.5 + i * 12.1, size: SIZE.contact, font: regular }));
 
-  // Signature: the line and its label always; the owner's signature itself when it is switched on.
+  // Signature: the line and its label always; the owner's signature itself (an image with a clear background, from the owner's own signature)
+  // when it is switched on. It is centred over the line and crosses it slightly, as a pen signature does.
   if (invoice.includeSignature) {
-    for (const path of SIGNATURE.paths) last.drawSvgPath(path, { x: 468.98, y: toPdfY(681.45), color: COLORS.ink });
+    if (!assets.signature) throw new Error("The signature image is missing.");
+    const signature = await doc.embedPng(assets.signature);
+    const width = SIGNATURE_BOX.width;
+    const height = (signature.height / signature.width) * width;
+    last.drawImage(signature, { x: 505.1 - width / 2, y: toPdfY(SIGNATURE_BOX.bottom), width, height });
   }
   last.drawLine({ start: { x: 465, y: toPdfY(736.7) }, end: { x: 545.2, y: toPdfY(736.7) }, thickness: 1.5, color: COLORS.black });
   drawText(last, "SIGNATURE", { x: 505.1, y: 751.4, size: sizeForWidth(bold, "SIGNATURE", 76), font: bold, align: "center" });

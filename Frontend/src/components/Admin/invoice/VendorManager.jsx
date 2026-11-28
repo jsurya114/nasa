@@ -70,7 +70,7 @@ function VendorForm({ vendor, onClose, onSaved }) {
         <fieldset aria-describedby={shown.billingType ? "vendor-type-error" : undefined}>
           <legend className="text-sm font-semibold text-ink">Billing type</legend>
           <div className="mt-2 grid gap-2 sm:grid-cols-2">
-            {[["hourly", "Hourly", "Jobs with RE hours, overtime and total cost."], ["item", "Item-based", "One line per date: item, rate and quantity."]].map(([value, label, hint]) => (
+            {[["hourly", "Hourly", "Jobs with RE hours, overtime and total cost."], ["item", "Item-based", "One line per date: item, rate, quantity and any overtime."]].map(([value, label, hint]) => (
               <label key={value} className={`flex min-h-11 cursor-pointer items-start gap-3 rounded-xl border p-3 text-sm ${form.billingType === value ? "border-brand-500 bg-brand-50" : "border-line bg-white"}`}>
                 <input type="radio" name="vendor-type" value={value} checked={form.billingType === value} onChange={set("billingType")} className="mt-0.5 h-5 w-5 accent-[var(--color-brand-800)]" />
                 <span><span className="block font-semibold text-ink">{label}</span><span className="text-ink-muted">{hint}</span></span>

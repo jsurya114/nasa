@@ -3,7 +3,8 @@
 //
 // Money is handled in whole cents (BigInt where it multiplies), never in floating point:
 //   Hourly       the invoice total is the sum of the job costs exactly as entered.
-//   Item-based   each line is rate x quantity rounded to the cent (half up), and the subtotal is the sum of those rounded lines.
+//   Item-based   each line is rate x quantity, plus OT hours x OT rate when the line has overtime, rounded once to the cent (half up), and the
+//                subtotal is the sum of those rounded lines. Example: 100 x 2 + 2 x 30 = 260.00.
 
 export class InvoiceInputError extends Error {
   constructor(message, errors) {
@@ -40,6 +41,10 @@ export const centsText = (cents) => `${Math.floor(cents / 100)}.${String(cents %
 
 // rate (cents) x quantity (hundredths) -> cents, rounded half up. 200.00 x 4 = 800.00; 0.33 x 0.5 = 0.17 (0.165 rounds up).
 export const lineTotalCents = (rateCents, quantityHundredths) => Number((BigInt(rateCents) * BigInt(quantityHundredths) + 50n) / 100n);
+
+// An item line: rate x quantity + OT rate x OT hours, in cents, rounded once (half up). Missing overtime counts as none.
+export const itemLineTotalCents = (rateCents, quantityHundredths, otRateCents = null, otHoursHundredths = null) =>
+  Number((BigInt(rateCents) * BigInt(quantityHundredths) + BigInt(otRateCents ?? 0) * BigInt(otHoursHundredths ?? 0) + 50n) / 100n);
 
 export const isRealDate = (iso) => {
   if (!DATE.test(iso ?? '')) return false;
@@ -125,8 +130,10 @@ const parseItemLines = (rows, period, errors) => {
     const item = clean(row?.item);
     const rateText = clean(row?.rate);
     const quantityText = clean(row?.quantity);
+    const otHoursText = clean(row?.otHours);
+    const otRateText = clean(row?.otRate);
     // A row with nothing typed is not a line: it is skipped, never printed and never an error.
-    if (!item && !rateText && !quantityText) return;
+    if (!item && !rateText && !quantityText && !otHoursText && !otRateText) return;
     const own = {};
     const date = String(row?.date ?? '');
     if (!isRealDate(date)) own.date = 'Not a real date.';
@@ -138,11 +145,17 @@ const parseItemLines = (rows, period, errors) => {
     if (rateText && (rate === null || rate > LIMITS.rateCents)) own.rate = 'Enter the rate, like 200 or 200.50.';
     const quantity = quantityText ? toCents(quantityText) : null; // hundredths
     if (quantityText && (quantity === null || quantity > LIMITS.quantityHundredths)) own.quantity = 'Enter the quantity, like 4 or 2.5.';
-    const lineTotal = Object.keys(own).length ? 0 : lineTotalCents(rate, quantity);
+    // Overtime is optional, but its hours and rate go together.
+    const otHours = otHoursText ? toCents(otHoursText) : null; // hundredths of an hour
+    if (otHoursText && (otHours === null || otHours > LIMITS.hoursCents)) own.otHours = 'Enter the OT hours, like 2 or 1.5.';
+    const otRate = otRateText ? toCents(otRateText) : null;
+    if (otRateText && (otRate === null || otRate > LIMITS.rateCents)) own.otRate = 'Enter the OT rate, like 30 or 30.50.';
+    if (Boolean(otHoursText) !== Boolean(otRateText)) own.overtime = 'Enter both the OT hours and the OT rate, or leave both empty.';
+    const lineTotal = Object.keys(own).length ? 0 : itemLineTotalCents(rate, quantity, otRate, otHours);
     if (lineTotal > LIMITS.costCents) own.quantity = 'This line comes to more than 99,999,999.99. Check the rate and quantity.';
     if (Object.keys(own).length) { lineErrors[i] = own; return; }
     seen.add(date);
-    lines.push({ position: lines.length + 1, kind: 'item', date, item, rate, quantity, lineTotal });
+    lines.push({ position: lines.length + 1, kind: 'item', date, item, rate, quantity, otHours, otRate, lineTotal });
   });
   if (Object.keys(lineErrors).length) errors.lineErrors = lineErrors;
   else if (lines.length === 0) errors.lines = 'Enter at least one line: an item, its rate and quantity.';
