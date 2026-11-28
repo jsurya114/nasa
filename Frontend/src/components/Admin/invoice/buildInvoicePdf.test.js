@@ -13,6 +13,7 @@ const assets = {
   bold: file("../../../../node_modules/@fontsource/montserrat/files/montserrat-latin-700-normal.woff"),
   addressBold: file("../../../../node_modules/@fontsource/open-sans/files/open-sans-latin-700-normal.woff"),
   logo: file("../../../assets/invoice-logo.png"),
+  signature: file("../../../assets/invoice-signature.png"),
 };
 
 // Saved invoices, shaped as the server returns them.
@@ -55,6 +56,26 @@ describe("the invoice PDF", () => {
     const withSignature = await buildInvoicePdf(hourly(), assets);
     const without = await buildInvoicePdf(hourly({ includeSignature: false }), assets);
     expect(without.length).toBeLessThan(withSignature.length);
+  });
+
+  it("refuses to print a signed invoice without the signature image, rather than leaving it blank", async () => {
+    const noSignature = { ...assets, signature: undefined };
+    await expect(buildInvoicePdf(hourly(), noSignature)).rejects.toThrow(/signature/i);
+    expect((await buildInvoicePdf(hourly({ includeSignature: false }), noSignature)).length).toBeGreaterThan(0);
+  });
+
+  it("item-based: prints OT (HRS) and OT (RATE) after the quantity, and leaves them empty on a line without overtime", async () => {
+    const withOvertime = item(2, {
+      total: "460.00",
+      lines: [
+        { position: 1, kind: "item", date: "2026-06-01", item: "Box truck with driver", rate: "100.00", quantity: "2", otHours: "2", otRate: "30.00", total: "260.00" },
+        { position: 2, kind: "item", date: "2026-06-02", item: "Box truck with driver", rate: "100.00", quantity: "2", otHours: null, otRate: null, total: "200.00" },
+      ],
+    });
+    const doc = await PDFDocument.load(await buildInvoicePdf(withOvertime, assets));
+    expect(doc.getPageCount()).toBe(1);
+    // Older invoices (no overtime fields at all) still print.
+    expect((await buildInvoicePdf(item(3), assets)).length).toBeGreaterThan(0);
   });
 
   it("is made the same way twice (no clock or random value in the file)", async () => {

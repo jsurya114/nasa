@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import {
-  InvoiceInputError, centsText, chicagoToday, datesBetween, lineTotalCents, parseHistoryQuery, parseInvoice, parsePayment, parseVendor, toCents, weekdayOf,
+  InvoiceInputError, centsText, chicagoToday, datesBetween, itemLineTotalCents, lineTotalCents, parseHistoryQuery, parseInvoice, parsePayment, parseVendor, toCents, weekdayOf,
 } from '../services/invoices/invoiceRules.js';
 
 // Invoices: the server's rules and money. No database.
@@ -65,6 +65,20 @@ test('item-based: blank rows are skipped, partial rows are flagged, at least one
   assert.match(errorsOf(() => parseInvoice(item([{ date: '2026-06-01', item: 'X', rate: '1', quantity: '1' }, { date: '2026-06-01', item: 'Y', rate: '1', quantity: '1' }]))).lineErrors[1].date, /twice/);
   const numbers = errorsOf(() => parseInvoice(item([{ date: '2026-06-01', item: 'X', rate: '-1', quantity: 'two' }])));
   assert.ok(numbers.lineErrors[0].rate && numbers.lineErrors[0].quantity);
+});
+
+test('item-based overtime: rate x quantity + OT hours x OT rate, rounded once; both OT fields or neither', () => {
+  assert.equal(itemLineTotalCents(10000, 200, 3000, 200), 26000, '100 x 2 + 2 x 30 = 260.00');
+  assert.equal(itemLineTotalCents(33, 50, 33, 50), 33, 'rounded once on the whole line');
+  const { lines, totalCents } = parseInvoice(item([
+    { date: '2026-06-01', item: 'Box truck', rate: '100', quantity: '2', otHours: '2', otRate: '30' },
+    { date: '2026-06-02', item: 'Box truck', rate: '100', quantity: '2', otHours: '', otRate: '' },
+  ]));
+  assert.deepEqual(lines.map((l) => [l.otHours, l.otRate, l.lineTotal]), [[200, 3000, 26000], [null, null, 20000]]);
+  assert.equal(totalCents, 46000);
+  assert.match(errorsOf(() => parseInvoice(item([{ date: '2026-06-01', item: 'Box truck', rate: '100', quantity: '2', otHours: '2' }]))).lineErrors[0].overtime, /both the OT hours and the OT rate/);
+  assert.match(errorsOf(() => parseInvoice(item([{ date: '2026-06-01', item: 'Box truck', rate: '100', quantity: '2', otHours: '-1', otRate: '30' }]))).lineErrors[0].otHours, /OT hours/);
+  assert.match(errorsOf(() => parseInvoice(item([{ date: '2026-06-01', item: '', rate: '', quantity: '', otHours: '2', otRate: '30' }]))).lineErrors[0].row, /Fill in the item/, 'overtime alone is not a line');
 });
 
 test('the header: number, vendor, period (no reversed range), bill-to', () => {

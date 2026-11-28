@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  amountText, blankRow, checkInvoice, chicagoToday, costText, datesBetween, entriesOutside, fileNameFor, formFromInvoice, hoursText, isPartialItem,
+  amountText, blankRow, checkInvoice, isHalfOvertime, itemLineCents, itemLineTotalCents, chicagoToday, costText, datesBetween, entriesOutside, fileNameFor, formFromInvoice, hoursText, isPartialItem,
   itemRowsFor, itemSubtotalCents, lineTotalCents, moneyText, readAmount, toCents, totalDiffers, usDate, weekdayOf, withDerivedTotal,
 } from "./invoiceRules.js";
 
@@ -113,6 +113,28 @@ describe("item-based", () => {
     expect(checkInvoice(item({ "2026-06-02": line("2026-06-02", { rate: "9999999.99", quantity: "99999.99" }) })).errors.lineErrors[1].quantity).toMatch(/more than 99,999,999.99/);
   });
 
+  it("adds overtime after the quantity: rate x quantity + OT hours x OT rate (100 x 2 + 2 x 30 = 260)", () => {
+    expect(itemLineTotalCents(10000, 200, 3000, 200)).toBe(26000);
+    expect(itemLineCents({ rate: "100", quantity: "2", otHours: "2", otRate: "30" })).toBe(26000);
+    expect(itemLineCents({ rate: "100", quantity: "2", otHours: "", otRate: "" })).toBe(20000);
+    // Rounded once, half up, on the whole line: 0.33 x 0.5 + 0.33 x 0.5 = 0.33 (not 0.17 + 0.17).
+    expect(itemLineCents({ rate: "0.33", quantity: "0.5", otHours: "0.5", otRate: "0.33" })).toBe(33);
+    const { errors, body } = checkInvoice(item({ "2026-06-01": line("2026-06-01", { rate: "100", quantity: "2", otHours: "2", otRate: "30" }), "2026-06-02": line("2026-06-02", { rate: "100", quantity: "2" }) }));
+    expect(errors).toEqual({});
+    expect(body.lines[0]).toMatchObject({ otHours: "2", otRate: "30" });
+    expect(itemSubtotalCents(body.lines)).toBe(46000);
+  });
+
+  it("needs both OT hours and OT rate, or neither", () => {
+    expect(isHalfOvertime({ otHours: "2", otRate: "" })).toBe(true);
+    expect(isHalfOvertime({ otHours: "", otRate: "" })).toBe(false);
+    expect(itemLineCents({ rate: "100", quantity: "2", otHours: "2", otRate: "" })).toBeNull();
+    expect(checkInvoice(item({ "2026-06-02": line("2026-06-02", { otHours: "2" }) })).errors.lineErrors[1].overtime).toMatch(/both the OT hours and the OT rate/);
+    expect(checkInvoice(item({ "2026-06-02": line("2026-06-02", { otHours: "x", otRate: "30" }) })).errors.lineErrors[1].otHours).toMatch(/OT hours/);
+    // Overtime alone is not a line: the item, rate and quantity are still needed.
+    expect(checkInvoice(item({ "2026-06-02": { date: "2026-06-02", item: "", rate: "", quantity: "", otHours: "2", otRate: "30" } })).errors.lineErrors[1].row).toMatch(/Fill in the item/);
+  });
+
   it("leaves out what was typed for dates outside the period", () => {
     const { errors, body } = checkInvoice(item({ "2026-06-01": line("2026-06-01"), "2026-06-20": line("2026-06-20") }));
     expect(errors).toEqual({});
@@ -128,7 +150,7 @@ describe("a saved invoice back in the form", () => {
     expect(h.includeSignature).toBe(false);
     const i = formFromInvoice({ invoiceNumber: "2", vendorId: 2, type: "item", periodStart: "2026-06-01", periodEnd: "2026-06-03", billTo,
       lines: [{ date: "2026-06-02", item: "Van", rate: "200.00", quantity: "4", total: "800.00" }] });
-    expect(i.entries["2026-06-02"]).toEqual({ date: "2026-06-02", item: "Van", rate: "200.00", quantity: "4" });
+    expect(i.entries["2026-06-02"]).toEqual({ date: "2026-06-02", item: "Van", rate: "200.00", quantity: "4", otHours: "", otRate: "" });
     expect(checkInvoice(i).errors).toEqual({});
   });
 

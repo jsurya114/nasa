@@ -68,7 +68,8 @@ export const updateVendor = async (db, admin, id, v) => {
 
 const lineView = (l) => (l.kind === 'hourly'
   ? { position: l.position, kind: 'hourly', job: l.job, reHours: hours(l.re_hours), overtime: hours(l.overtime), totalHours: hours(l.total_hours), totalCost: money(l.line_total) }
-  : { position: l.position, kind: 'item', date: day(l.line_date), item: l.item, rate: money(l.rate), quantity: hours(l.quantity), total: money(l.line_total) });
+  : { position: l.position, kind: 'item', date: day(l.line_date), item: l.item, rate: money(l.rate), quantity: hours(l.quantity),
+      otHours: hours(l.ot_hours ?? null), otRate: money(l.ot_rate ?? null), total: money(l.line_total) });
 
 const invoiceView = (r, lines) => ({
   id: Number(r.id),
@@ -114,9 +115,10 @@ const insertLines = async (db, invoiceId, lines) => {
         [invoiceId, l.position, l.job, centsText(l.reHours), centsText(l.overtime), centsText(l.totalHours), centsText(l.lineTotal)]);
     } else {
       await db.query(
-        `INSERT INTO invoice_lines (invoice_id, position, kind, line_date, item, rate, quantity, line_total)
-         VALUES ($1, $2, 'item', $3, $4, $5, $6, $7)`,
-        [invoiceId, l.position, l.date, l.item, centsText(l.rate), centsText(l.quantity), centsText(l.lineTotal)]);
+        `INSERT INTO invoice_lines (invoice_id, position, kind, line_date, item, rate, quantity, ot_hours, ot_rate, line_total)
+         VALUES ($1, $2, 'item', $3, $4, $5, $6, $7, $8, $9)`,
+        [invoiceId, l.position, l.date, l.item, centsText(l.rate), centsText(l.quantity),
+          l.otHours === null ? null : centsText(l.otHours), l.otRate === null ? null : centsText(l.otRate), centsText(l.lineTotal)]);
     }
   }
 };
